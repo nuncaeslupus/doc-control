@@ -41,6 +41,7 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # The test helpers hold OOXML namespace URIs and content types as long literals.
 "tests/helpers.py" = ["E501"]
+"tests/ops/test_stylesets.py" = ["E501"]  # the style-sheet fixture is one long XML literal
 
 [tool.mypy]
 python_version = "3.11"

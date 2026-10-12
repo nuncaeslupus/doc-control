@@ -65,6 +65,8 @@ def load_operations() -> dict[str, Operation]:
         read,
         rename,
         segment,
+        styleset,
+        stylewrite,
         text,
     )
 
