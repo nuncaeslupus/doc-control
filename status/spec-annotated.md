@@ -11,11 +11,12 @@
 **Date**: 2026-10-12
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
-**Revision**: 2
+**Revision**: 3
 **Status**: draft
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
+- r3 — applied `word-control-spec-notes-2026-10-12-r2.md` and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; `move` primitive so marker-driven edits (writer notes in the text) can be applied with primitives
 
 <!-- -->
 
@@ -70,10 +71,12 @@ Anchors and segmentation
 - [ ] Spanish sentence segmentation `boundary_f1 >= 0.98` on a gold set of at least 500 sentences covering abbreviations, `¿¡`, `«»`, ellipses and raya dialogue.
 
 Parity and coverage
-- [ ] docx-fixer parity: every docx-fixer rule implemented in its code (39) exists as a bundled recipe and every docx-fixer round-trip case passes (`docx_fixer_cases_failing == 0`).
+- [ ] docx-fixer parity (D-17): every generally useful docx-fixer rule ships as a bundled recipe and its round-trip cases pass (`docx_fixer_general_cases_failing == 0`); every owner-specific rule (house style ids, house template, the owner's author-note patterns) is expressible as a declarative user recipe or user style set, shown by tests on synthetic documents (`owner_rules_not_expressible == 0`). The owner's actual user recipes and style sets live on the owner's side, never in the repo.
+- [ ] Bundled recipes beyond docx-fixer cover common needs (whitespace and empty-paragraph cleanup, quotes and dashes per language, ellipsis, fake centring and fake tabs, leftover revisions/comments/highlights/hidden text, direct formatting to style, language tags, scene-break normalisation, heading hygiene); the final list is fixed in `design`, each with tests (`bundled_recipes_without_tests == 0`).
+- [ ] Private corpus: real documents are used only from a directory outside the repo given by an environment variable; tests skip when it is absent; no file name, title, path or excerpt of a private document is ever committed or printed in CI logs (`private_corpus_identifiers_in_repo == 0`, checked by the hygiene gate against a local denylist that itself stays outside the repo).
 - [ ] Styles: installing an exported style set reproduces the style definitions (`style_definition_diffs_after_roundtrip == 0`); exported `.dotx` passes the validator; applying a style is recorded as a tracked formatting change.
 - [ ] `line_coverage >= 0.90` for the package.
-- [ ] Judged, not measured: one manual check on real Word (Windows, Word 2016 or later, and M365 when available) that tool output opens without a repair prompt and that every revision and comment can be accepted, rejected, replied to and resolved. Recorded as evidence with screenshots; blocked until a Windows machine is available.
+- [ ] Judged, not measured: one manual check on real Word (Windows, Word 2016 or later, and M365 when available) that tool output opens without a repair prompt and that every revision and comment can be accepted, rejected, replied to and resolved. Recorded as evidence with screenshots. Left `unmeasured` for the first release by owner decision (2026-10-12); done when a Windows machine is available.
 
 <!-- -->
 
@@ -177,21 +180,24 @@ Parity and coverage
 
 **Scope of v1 (from the decisions log)**
 - Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote.
-- Write primitives: replace a range's text, insert/delete paragraphs, apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, `restore` from the undo log.
+- Write primitives: replace a range's text, insert/delete paragraphs, move a range of paragraphs (written as a tracked deletion plus a tracked insertion in v1), apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, `restore` from the undo log.
 - Addresses `p142#a7b2` with `stale` errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
 - Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, `.doc-control/` next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit `history purge` (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by `history orphans` so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; `.dotx` export/import; style sets stored on the user's side.
-- Recipes: bundled (Python allowed, tested here; Spanish-novel set ported from docx-fixer for parity) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
+- Recipes: bundled (Python allowed, tested here; only generally useful recipes, including the general docx-fixer rules and other common fixes; owner-specific rules become user recipes, D-17) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
 - CLI with JSON I/O, `help --json`, `capabilities`, API version in every response, stable error codes with hints.
 - Out of scope (later specs): live engine (Windows first, then Mac), MCP server and `.mcpb`/plugin packaging, Skill packaging for the chat sandbox, Google Docs/`.odt`, contract test suite (after literary-critic integrates), visual review page.
 
 **Immediate next action**: owner reviews this spec through the annotated reader; on approval, run `design` to write contracts (operation schemas, error codes, address and anchor formats, `.doc-control/` layout), the risk register and the task split, starting with the splice writer and its fuzz tests, since every other gate depends on it.
 
 **Open questions**:
-- [ ] Test corpus: may we use one or two of the owner's real manuscripts (kept out of the repo under `/private/`, used only for local benchmarks and parity checks), or synthetic documents only?
-- [ ] Real-Word verification needs a Windows machine with Word; until then the judged criterion stays `unmeasured`. Acceptable for a first release, or must it block the release?
-- [ ] Python tooling: claude-arsenal's `python-bootstrap` defaults to Python 3.12+ and strict mypy; we keep 3.11 (D-7). Confirm we override only the version floor and keep the rest of its defaults (uv, ruff, strict mypy, standard Makefile).
+- [x] Test corpus: both synthetic and real documents; real ones stay outside the repo and are never named in it (answered 2026-10-12).
+- [x] Real-Word verification: left `unmeasured` for the first release; done when a Windows machine is available (answered 2026-10-12).
+- [x] Python tooling: arsenal defaults (uv, ruff, strict mypy, standard Makefile) with the floor moved to Python 3.11 (answered 2026-10-12).
+- [ ] Repository rename `word-control` → `doc-control` (owner, in GitHub Settings; old URLs redirect). References in the repo are updated after the rename.
+
+**Writer notes in the text** (owner request, 2026-10-12): a writer may leave instructions inside the manuscript, e.g. a paragraph `========== Move this after chapter X`. Detecting and interpreting them is downstream work (literary-critic or the agent); the core only has to make applying them possible with primitives: `find` (regex) locates the markers, chapter detection resolves "chapter X", and one batch moves the target range, deletes the marker paragraph, and optionally adds a comment, all as tracked changes. A contract example in `design` covers this scenario end to end.
 
 **Decisions log** (carried unchanged from `explore-idea`):
 
@@ -210,9 +216,10 @@ Parity and coverage
 | D-11 | Three layers: core primitives; bundled recipes (may use Python, tested in repo); user recipes on the user's side, written by the agent, declarative only | agreed | 2026-10-12 |
 | D-12 | API version in every response + `capabilities` command + deprecation period; contract test suite once literary-critic integrates | agreed | 2026-10-12 |
 | D-13 | Backups and undo log in `.doc-control/` next to the document; keep last 20 backups or 30 days (whichever more); setting to use the app-data folder instead | agreed | 2026-10-12 |
-| D-14 | docx-fixer frozen now; archived at parity (rules ported as bundled recipes, its round-trip cases pass); reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
+| D-14 | docx-fixer frozen now; archived at parity (rules ported as bundled recipes, its round-trip cases pass); reviewing tracked changes in Word with the agent replaces its review page | superseded by D-17 | 2026-10-12 |
 | D-15 | Undo log is permanent and append-only (before/after of every changed paragraph); `restore` brings any logged paragraph back as a tracked change; backup on every open; history searchable by quote | agreed | 2026-10-12 |
 | D-16 | Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with `.dotx` export/import; style application tracked, definition changes covered by dry run + backup + undo log | agreed | 2026-10-12 |
+| D-17 | docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
 
 
 > Sections 5–6 (contracts, risks) are appended by `design`.

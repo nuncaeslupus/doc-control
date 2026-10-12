@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="7dfa768116093af38d5483d0cd6b1f19ba91b7ca407e70f576b19e99eb012a7f">
+<meta name="arsenal-source-sha256" content="4abdf1afb29c5c57dd4f817a60168f9c9e1e2cd3ee9766fde2b78e7186fbe87c">
 <title>Word Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -169,11 +169,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-12
 <strong>Ticket / PR</strong>: nuncaeslupus/word-control#2
 <strong>Author</strong>: Claude (with the owner, via <code>explore-idea</code>)
-<strong>Revision</strong>: 2
+<strong>Revision</strong>: 3
 <strong>Status</strong>: draft
 <strong>Revision log</strong>:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and <code>docs/research/01-tooling-and-risks.md</code>, <code>docs/research/02-docx-fixer-inventory.md</code>
-- r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules</p></div>
+- r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
+- r3 — applied <code>word-control-spec-notes-2026-10-12-r2.md</code> and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; <code>move</code> primitive so marker-driven edits (writer notes in the text) can be applied with primitives</p></div>
 <div class="note" data-for="s-spec-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></div><textarea class="note-ta" data-key="s-spec-intro" data-label="Preamble &amp; scope" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-1">
@@ -235,10 +236,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 - [ ] <code>reanchor_success_ratio &gt;= 0.98</code> on an edit corpus where up to 10% of characters around the anchor changed; <code>wrong_anchor_matches == 0</code> (ambiguous or weak matches return <code>ambiguous</code> / <code>not_found</code>, never a guess).
 - [ ] Spanish sentence segmentation <code>boundary_f1 &gt;= 0.98</code> on a gold set of at least 500 sentences covering abbreviations, <code>¿¡</code>, <code>«»</code>, ellipses and raya dialogue.</p>
 <p>Parity and coverage
-- [ ] docx-fixer parity: every docx-fixer rule implemented in its code (39) exists as a bundled recipe and every docx-fixer round-trip case passes (<code>docx_fixer_cases_failing == 0</code>).
+- [ ] docx-fixer parity (D-17): every generally useful docx-fixer rule ships as a bundled recipe and its round-trip cases pass (<code>docx_fixer_general_cases_failing == 0</code>); every owner-specific rule (house style ids, house template, the owner's author-note patterns) is expressible as a declarative user recipe or user style set, shown by tests on synthetic documents (<code>owner_rules_not_expressible == 0</code>). The owner's actual user recipes and style sets live on the owner's side, never in the repo.
+- [ ] Bundled recipes beyond docx-fixer cover common needs (whitespace and empty-paragraph cleanup, quotes and dashes per language, ellipsis, fake centring and fake tabs, leftover revisions/comments/highlights/hidden text, direct formatting to style, language tags, scene-break normalisation, heading hygiene); the final list is fixed in <code>design</code>, each with tests (<code>bundled_recipes_without_tests == 0</code>).
+- [ ] Private corpus: real documents are used only from a directory outside the repo given by an environment variable; tests skip when it is absent; no file name, title, path or excerpt of a private document is ever committed or printed in CI logs (<code>private_corpus_identifiers_in_repo == 0</code>, checked by the hygiene gate against a local denylist that itself stays outside the repo).
 - [ ] Styles: installing an exported style set reproduces the style definitions (<code>style_definition_diffs_after_roundtrip == 0</code>); exported <code>.dotx</code> passes the validator; applying a style is recorded as a tracked formatting change.
 - [ ] <code>line_coverage &gt;= 0.90</code> for the package.
-- [ ] Judged, not measured: one manual check on real Word (Windows, Word 2016 or later, and M365 when available) that tool output opens without a repair prompt and that every revision and comment can be accepted, rejected, replied to and resolved. Recorded as evidence with screenshots; blocked until a Windows machine is available.</p></div>
+- [ ] Judged, not measured: one manual check on real Word (Windows, Word 2016 or later, and M365 when available) that tool output opens without a repair prompt and that every revision and comment can be accepted, rejected, replied to and resolved. Recorded as evidence with screenshots. Left <code>unmeasured</code> for the first release by owner decision (2026-10-12); done when a Windows machine is available.</p></div>
 <div class="note" data-for="s-spec-1"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></div><textarea class="note-ta" data-key="s-spec-1" data-label="§1 Problem statement" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-2">
@@ -434,19 +437,21 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p><strong>Recommended option</strong>: Option B — it is the only option that can meet <code>unintended_changes == 0</code> with byte-identical untouched content, keeps the package stdlib-only for the chat sandbox (D-7), and gives the live engine an engine-neutral contract. docx-fixer remains the source of OOXML lessons, rules and test cases.</p>
 <p><strong>Scope of v1 (from the decisions log)</strong>
 - Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote.
-- Write primitives: replace a range's text, insert/delete paragraphs, apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, <code>restore</code> from the undo log.
+- Write primitives: replace a range's text, insert/delete paragraphs, move a range of paragraphs (written as a tracked deletion plus a tracked insertion in v1), apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, <code>restore</code> from the undo log.
 - Addresses <code>p142#a7b2</code> with <code>stale</code> errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
 - Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, <code>.doc-control/</code> next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit <code>history purge</code> (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by <code>history orphans</code> so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; <code>.dotx</code> export/import; style sets stored on the user's side.
-- Recipes: bundled (Python allowed, tested here; Spanish-novel set ported from docx-fixer for parity) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
+- Recipes: bundled (Python allowed, tested here; only generally useful recipes, including the general docx-fixer rules and other common fixes; owner-specific rules become user recipes, D-17) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
 - CLI with JSON I/O, <code>help --json</code>, <code>capabilities</code>, API version in every response, stable error codes with hints.
 - Out of scope (later specs): live engine (Windows first, then Mac), MCP server and <code>.mcpb</code>/plugin packaging, Skill packaging for the chat sandbox, Google Docs/<code>.odt</code>, contract test suite (after literary-critic integrates), visual review page.</p>
 <p><strong>Immediate next action</strong>: owner reviews this spec through the annotated reader; on approval, run <code>design</code> to write contracts (operation schemas, error codes, address and anchor formats, <code>.doc-control/</code> layout), the risk register and the task split, starting with the splice writer and its fuzz tests, since every other gate depends on it.</p>
 <p><strong>Open questions</strong>:
-- [ ] Test corpus: may we use one or two of the owner's real manuscripts (kept out of the repo under <code>/private/</code>, used only for local benchmarks and parity checks), or synthetic documents only?
-- [ ] Real-Word verification needs a Windows machine with Word; until then the judged criterion stays <code>unmeasured</code>. Acceptable for a first release, or must it block the release?
-- [ ] Python tooling: claude-arsenal's <code>python-bootstrap</code> defaults to Python 3.12+ and strict mypy; we keep 3.11 (D-7). Confirm we override only the version floor and keep the rest of its defaults (uv, ruff, strict mypy, standard Makefile).</p>
+- [x] Test corpus: both synthetic and real documents; real ones stay outside the repo and are never named in it (answered 2026-10-12).
+- [x] Real-Word verification: left <code>unmeasured</code> for the first release; done when a Windows machine is available (answered 2026-10-12).
+- [x] Python tooling: arsenal defaults (uv, ruff, strict mypy, standard Makefile) with the floor moved to Python 3.11 (answered 2026-10-12).
+- [ ] Repository rename <code>word-control</code> → <code>doc-control</code> (owner, in GitHub Settings; old URLs redirect). References in the repo are updated after the rename.</p>
+<p><strong>Writer notes in the text</strong> (owner request, 2026-10-12): a writer may leave instructions inside the manuscript, e.g. a paragraph <code>========== Move this after chapter X</code>. Detecting and interpreting them is downstream work (literary-critic or the agent); the core only has to make applying them possible with primitives: <code>find</code> (regex) locates the markers, chapter detection resolves "chapter X", and one batch moves the target range, deletes the marker paragraph, and optionally adds a comment, all as tracked changes. A contract example in <code>design</code> covers this scenario end to end.</p>
 <p><strong>Decisions log</strong> (carried unchanged from <code>explore-idea</code>):</p>
 <table>
 <thead>
@@ -539,7 +544,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <tr>
 <td>D-14</td>
 <td>docx-fixer frozen now; archived at parity (rules ported as bundled recipes, its round-trip cases pass); reviewing tracked changes in Word with the agent replaces its review page</td>
-<td>agreed</td>
+<td>superseded by D-17</td>
 <td>2026-10-12</td>
 </tr>
 <tr>
@@ -551,6 +556,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <tr>
 <td>D-16</td>
 <td>Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with <code>.dotx</code> export/import; style application tracked, definition changes covered by dry run + backup + undo log</td>
+<td>agreed</td>
+<td>2026-10-12</td>
+</tr>
+<tr>
+<td>D-17</td>
+<td>docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page</td>
 <td>agreed</td>
 <td>2026-10-12</td>
 </tr>
@@ -681,7 +692,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-spec-notes-'+today()+'-r2.md';
+    var name='word-control-spec-notes-'+today()+'-r3.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -703,7 +714,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r2.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r3.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 
