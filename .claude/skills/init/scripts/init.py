@@ -66,6 +66,12 @@ plugin writes its output there too, not to its own default location.
 _CONFIG_TEMPLATE = """\
 # claude-arsenal host configuration — yours; upstream never rewrites this file.
 
+# The newest bundle version whose new settings you have looked at. When an
+# upgrade adds a key, every session start prints one `NEW SETTING` line for it
+# (its default and what it does) until you set that key here or raise this
+# value to its version. /init seeds it with the version that created the file.
+config-acknowledged = "@BUNDLE_VERSION@"
+
 # How far must a task PR get before an agent may merge it?
 #
 #   always               The gates open_task_pr.sh already ran are the whole bar.
@@ -81,6 +87,14 @@ _CONFIG_TEMPLATE = """\
 #                        comments are all addressed. The usual choice for a repo
 #                        that has CI and a review bot — pick this one if you
 #                        expect "wait for green, answer the bot, then merge".
+#
+# For both review policies, when no bot or human review is available on the
+# head — the bot is rate-limited, over a free-tier cap, skipped the repo, or
+# silent past bot-wait-min — a CLEARING ADVERSARIAL REVIEW recorded for the
+# head SHA is the review: `claude-arsenal/bin/adversarial_review.sh marker
+# --post <pr>` after its verdict (see [review] at the end for whose marker
+# counts). A bot review that lands after the merge still gets its findings
+# fixed or answered, in a follow-up PR.
 #   never                An agent never merges. It reports the PR ready and
 #                        stops; a human merges.
 #
@@ -193,6 +207,28 @@ context-window = 0
 orchestrator = ""
 workers = "sonnet"
 reviewers = ""
+
+# Who may clear a PR as its second reader, for the review half of merge-policy.
+# A reviewer that cannot approve on GitHub (it posts with the PR author's
+# credential) records its verdict as a comment marker —
+# `claude-arsenal/bin/adversarial_review.sh marker --post <pr>` — and this
+# decides whether a CLEAR marker from the author's own login counts.
+#
+#   distinct-session  (default) It does when the marker names a reviewer
+#                     session that is none of the sessions in the PR's
+#                     `Claude-Session:` commit trailers. For a fleet where every
+#                     session shares one credential. A marker with no session,
+#                     or one an implementer used, never clears. Known gap: a
+#                     subagent reports its parent's session id, so the reviewer
+#                     has to run as its own session, not as a subagent of the
+#                     implementer.
+#   distinct-login    It never does: the marker must come from another login.
+#                     Set this when the second reader is a person or a bot
+#                     account posting on its own login.
+#
+# A BLOCK marker blocks the head it names under either value.
+[review]
+reviewer-identity = "distinct-session"
 """
 
 # Permissive on purpose: until the probe runs, every `surface:` task stays
@@ -1858,6 +1894,26 @@ def _setup_branch_protection(repo_path: Path, arsenal: Path, enabled: bool) -> b
     return any("visibility: private" in line for line in lines)
 
 
+def _report_repo_health(repo_path: Path, arsenal: Path) -> None:
+    """Print the repository housekeeping that is missing (repo_health.py, read-only)."""
+    script = arsenal / "scripts" / "repo_health.py"
+    if os.environ.get("ARSENAL_BRANCH_PROTECTION", "1") == "0" or not script.is_file():
+        return
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    for line in proc.stdout.strip().splitlines()[:-1]:
+        print(f"  {line}")
+
+
 def _suggest_host_gate(repo_path: Path) -> str | None:
     """A starting value for `host-gate`, from the tooling the repo visibly has."""
     makefile = repo_path / "Makefile"
@@ -1962,6 +2018,56 @@ def _report_gate_choices(repo_path: Path, private: bool = False) -> None:
     print(f"  MERGE-POLICY is `{policy}` — confirm it with the user ({advice}).")
 
 
+def _acknowledged_at_install(bundle: Path) -> str:
+    """The `config-acknowledged` a freshly created config.toml starts at.
+
+    The installing version — or the newest `since` in the bundle's registry, if
+    that is later (a pre-release tree whose keys already name the release they
+    will ship in). A fresh host has every key this bundle knows about in front of
+    it for the first time; announcing them as "new" on its first session would
+    teach it to ignore the line that later matters.
+    """
+    ver_file = bundle / ".bundle-version"
+    seeded = ver_file.read_text(encoding="utf-8").strip() if ver_file.is_file() else ""
+    script = bundle / "scripts" / "arsenal_config.py"
+    spec = importlib.util.spec_from_file_location("_arsenal_config_registry", script)
+    if spec is None or spec.loader is None:
+        return seeded
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        versions = [entry.since for entry in module.SETTINGS.values()]
+        if seeded:
+            versions.append(seeded)
+        return str(max(versions, key=module._version))
+    except (OSError, AttributeError, ValueError, SyntaxError, ImportError):
+        return seeded
+
+
+def _report_new_settings(repo_path: Path, arsenal: Path) -> None:
+    """Print the vendored arsenal_config.py's NEW SETTING lines, if any.
+
+    Delegated, not re-derived: the registry and the comparison both live in
+    arsenal_config.py, which is also what validates the file, so the notice
+    cannot disagree with the loader. Nothing is printed for a host with nothing
+    new — the common case costs a session zero lines. Never fatal: a notice
+    that cannot be computed is not a reason to fail the refresh.
+    """
+    script = arsenal / "scripts" / "arsenal_config.py"
+    if not script.is_file():
+        return
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        out = subprocess.run(
+            [sys.executable, str(script), "--repo-root", str(repo_path), "--new-settings"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        ).stdout
+        if out.strip():
+            print(out.rstrip())
+
+
 def init_base(
     repo_path: Path,
     bundle_override: Path | None = None,
@@ -2037,7 +2143,8 @@ def init_base(
     # which is build output and gets replaced.
     config = home / "config.toml"
     if not config.exists():
-        config.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
+        seeded = _acknowledged_at_install(bundle)
+        config.write_text(_CONFIG_TEMPLATE.replace("@BUNDLE_VERSION@", seeded), encoding="utf-8")
         print(f"  created: {config.relative_to(repo_path)}")
 
     # Create session handover. This is the ONLY handover the bundle scaffolds.
@@ -2123,8 +2230,17 @@ def init_base(
     # The GitHub-side and config-side safety nets. Deliberate runs only: the
     # session-start refresh is --silent and must stay cheap and offline.
     if not silent:
+        # Once, with branch protection: a re-run must not cost a GitHub round trip.
+        first = not _config_value(_home(repo_path) / "config.toml", "branch-protection")
         private = _setup_branch_protection(repo_path, arsenal, branch_protection)
+        if first and branch_protection:
+            _report_repo_health(repo_path, arsenal)
         _report_gate_choices(repo_path, private=private)
+
+    # Settings a newer bundle added that this host has neither set nor
+    # acknowledged — printed whatever --silent says, because session start is
+    # the only place a downstream repo would ever hear about them (#496).
+    _report_new_settings(repo_path, arsenal)
 
     ver_path = arsenal / ".bundle-version"
     if silent:

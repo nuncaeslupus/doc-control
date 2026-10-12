@@ -15,6 +15,11 @@ file the header names must be committed beside the spec. `--require-approved`
 additionally demands a **Status** approving the current revision — `design`
 runs it before starting.
 
+When `status/ideas.md` exists (explore-idea's backlog), it also warns — never
+fails — when an agreed `D-N` decision of a sub-project tied to this spec is not
+cited anywhere in it. The parser is the bundle's `ideas_log.py`; when it cannot
+be imported, the warning is skipped.
+
 Human-readable on stdout; problems on stderr. Exit 0 = well-formed, 1 = missing
 or unfilled required sections, a notes file not in the repo, or (with
 --require-approved) no backed approval, 2 = usage error (file missing).
@@ -27,6 +32,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _review_record as review_record
+
+# The ideas-backlog parser ships once, in the bundle beside query_status.py.
+# Optional: a spec check must not fail because a sibling skill is missing.
+sys.path.insert(1, str(Path(__file__).resolve().parents[2] / "init" / "assets" / "scripts"))
+try:
+    import ideas_log
+except ImportError:  # pragma: no cover - only when the init skill is absent
+    ideas_log = None  # type: ignore[assignment]
 
 SECTION_RE = re.compile(r"^##\s+(\d+)\.\s+(.*\S)\s*$")
 # A placeholder line, allowing a leading list/blockquote/ordinal marker: `- <x>`, `> <x>`, `1. <x>`.
@@ -112,6 +125,31 @@ def lint(text: str) -> tuple[list[str], list[str]]:
     return problems, notes
 
 
+def ideas_file(spec_path: Path) -> Path:
+    """`status/ideas.md`: beside a spec kept in `status/`, else under the working directory."""
+    beside = spec_path.parent / "ideas.md"
+    return beside if beside.is_file() else Path("status") / "ideas.md"
+
+
+def ideas_warnings(text: str, spec_path: Path, ideas_path: Path) -> list[str]:
+    """Agreed decisions from the ideas backlog that this spec does not cite."""
+    if ideas_log is None or not ideas_path.is_file():
+        return []
+    log = ideas_log.load(ideas_path)
+    if log is None:
+        return []
+    owed, reason = ideas_log.decisions_for_spec(log, spec_path)
+    if reason:
+        return [reason]
+    missing = [d.id for d in owed if not re.search(rf"\b{re.escape(d.id)}\b", text)]
+    if not missing:
+        return []
+    return [
+        f"agreed decision(s) {', '.join(missing)} in {ideas_path} are not in this spec — "
+        "carry the D-N rows under the Recommendation section"
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -145,6 +183,8 @@ def main() -> int:
         problems += review_record.approval_problems(text, path)
     for note in notes:
         print(f"  · {note}")
+    for warning in ideas_warnings(text, path, ideas_file(path)):
+        print(f"  ! {warning}")
     if problems:
         for p in problems:
             print(f"  ✗ {p}")

@@ -272,6 +272,10 @@ reviewer has cleared. It records the review outcome in the PR body under every
 mode but `off`. Only then does it commit (Conventional
 Commits + the dynamic `Co-Authored-By` from the `github` skill, never a hardcoded
 model), pushes, and opens a PR. The PR diff is just that task's code.
+Where the harness mandates one designated branch, `--branch <name>` (or
+`ARSENAL_PR_BRANCH`) commits and pushes there instead of cutting a new one; with
+no PR backend it prints the PR body, `Closes #<issue>` included, for the caller's
+own GitHub tools.
 
 **The PR body must carry `Closes #<issue>`.** That is the entire completion
 mechanism: GitHub closes the issue when the PR merges into the default branch, so

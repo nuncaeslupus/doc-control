@@ -413,6 +413,18 @@ def main(argv: list[str] | None = None) -> int:
             suffix = f"  [{'; '.join(marks)}]" if marks else ""
             print(f"  {task['id']}  p{task['priority']:<3} {current:<9} {task['display']}{suffix}")
 
+    # explore-idea's backlog, as one line — and nothing at all when the repo has
+    # none, since this runs at every session start. Ideas are not tasks; the line
+    # only says unspecified work is waiting there.
+    try:
+        from ideas_log import summary_line
+
+        ideas = summary_line(Path.cwd() / "status" / "ideas.md")
+        if ideas:
+            print(ideas)
+    except Exception:
+        pass
+
     if _report(notes, warnings, problems, fail_on_problems=args.fail_on_problems):
         return 1
     return 0

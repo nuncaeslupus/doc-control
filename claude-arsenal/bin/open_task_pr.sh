@@ -2,6 +2,7 @@
 # open_task_pr.sh <task_id> <title> [<type>]
 # open_task_pr.sh <task_id> --title <title> [--type <type>] [--body-file <path>]
 # open_task_pr.sh <task_id> --preflight
+# open_task_pr.sh <task_id> <title> --branch <name>   (or ARSENAL_PR_BRANCH)
 # open_task_pr.sh --help
 # Commit a worker's task changes on a feature branch cut from the host DEFAULT
 # branch (origin/main), push it, and open a PR that closes the task's issue.
@@ -54,7 +55,8 @@
 #      ARSENAL_ISSUES_JSON (saved issue list, default /tmp/arsenal-issues.json);
 #      ARSENAL_HOME (task tree, default arsenal);
 #      ARSENAL_ALLOW_UNLINKED_PR=1 (open a PR that closes nothing — see below);
-#      ARSENAL_ALLOW_SHARED_ADD (operator escape hatch, see the guard below).
+#      ARSENAL_ALLOW_SHARED_ADD (operator escape hatch, see the guard below);
+#      ARSENAL_PR_BRANCH (same as --branch).
 # Exit: 0 branch pushed (PR opened or branch emitted), 1 on push failure /
 #       usage / an unresolvable issue handle.
 
@@ -67,6 +69,7 @@ _usage() {
 usage: open_task_pr.sh <task_id> <title> [<type>]
        open_task_pr.sh <task_id> --title <title> [--type <type>] [--body-file <path>]
        open_task_pr.sh <task_id> --preflight
+       open_task_pr.sh <task_id> <title> --branch <name>
 
   <task_id>            the queue task this PR completes (e.g. lo-cf3d)
   <title>              the PR/commit subject, WITHOUT the Conventional Commits type
@@ -79,6 +82,12 @@ Options:
                        The `Closes #<issue>` line, the acceptance-gate note and
                        the review receipt are still written by this script — a
                        body that dropped them would break task completion.
+  --branch <name>      commit and push on <name> instead of cutting
+                       arsenal/<task_id>-<slug> off the default branch. For a
+                       session that must work on one designated branch: pass
+                       the current branch and it is reused as is (no checkout).
+                       A <name> that does not exist yet is cut off the default
+                       branch like the generated one. Env: ARSENAL_PR_BRANCH.
   --preflight          run only the cheap half — the review receipt, the task
                        gate, the issue handle, the archive, and `preflight-gate`
                        if the repo declares one — then put the tree back and
@@ -87,7 +96,7 @@ Options:
 
 Env: ARSENAL_QUEUE_REMOTE, ARSENAL_COAUTHOR, ARSENAL_TASK_ISSUE,
      ARSENAL_ISSUES_JSON, ARSENAL_HOME, ARSENAL_ALLOW_UNLINKED_PR,
-     ARSENAL_ALLOW_SHARED_ADD
+     ARSENAL_ALLOW_SHARED_ADD, ARSENAL_PR_BRANCH
 USAGE
 }
 
@@ -102,6 +111,7 @@ TITLE=""
 TYPE=""
 BODY_FILE=""
 PREFLIGHT=""
+BRANCH_OPT="${ARSENAL_PR_BRANCH:-}"
 _positional=()
 
 # The count check above is not the invariant this comment claims. `--title
@@ -128,6 +138,8 @@ while [[ $# -gt 0 ]]; do
         --type=*)     _reject_optionlike --type "${1#--type=}" || exit 1; TYPE="${1#--type=}"; shift ;;
         --body-file)  [[ $# -ge 2 ]] || { echo "open_task_pr: --body-file needs a value" >&2; _usage >&2; exit 1; }; _reject_optionlike --body-file "$2" || exit 1; BODY_FILE="$2"; shift 2 ;;
         --body-file=*) _reject_optionlike --body-file "${1#--body-file=}" || exit 1; BODY_FILE="${1#--body-file=}"; shift ;;
+        --branch)     [[ $# -ge 2 ]] || { echo "open_task_pr: --branch needs a value" >&2; _usage >&2; exit 1; }; _reject_optionlike --branch "$2" || exit 1; BRANCH_OPT="$2"; shift 2 ;;
+        --branch=*)   _reject_optionlike --branch "${1#--branch=}" || exit 1; BRANCH_OPT="${1#--branch=}"; shift ;;
         --preflight)  PREFLIGHT=1; shift ;;
         --) shift; while [[ $# -gt 0 ]]; do _positional+=("$1"); shift; done ;;
         -*) echo "open_task_pr: unknown option: $1" >&2; _usage >&2; exit 1 ;;
@@ -150,6 +162,11 @@ fi
 # placeholder subject is what merged `tmp/pr.md: --body-file` (#352).
 [[ -n "${TITLE}" || -n "${PREFLIGHT}" ]] \
     || { echo "open_task_pr.sh requires <title>" >&2; _usage >&2; exit 1; }
+# Checked before anything runs: a name git would refuse fails the push at the
+# very end, after the gates and the commit, which is the costliest place to learn it.
+if [[ -n "${BRANCH_OPT}" ]] && ! git check-ref-format --branch "${BRANCH_OPT}" >/dev/null 2>&1; then
+    echo "open_task_pr: --branch '${BRANCH_OPT}' is not a valid branch name" >&2; exit 1
+fi
 if [[ -n "${BODY_FILE}" && ! -f "${BODY_FILE}" ]]; then
     echo "open_task_pr: --body-file ${BODY_FILE} does not exist" >&2; exit 1
 fi
@@ -480,6 +497,11 @@ slug="$(export LC_ALL=C; printf '%s' "${TITLE}" | tr -d '\n\r' \
     | sed -E 's/[^a-z0-9-]+//g; s/-+$//')"
 [[ -z "${slug}" ]] && slug="task"
 BRANCH="arsenal/${TASK_ID}-${slug}"
+# A session told to develop and push on ONE designated branch must not cut and
+# push another (#503). --branch reuses that branch: when it is the current one
+# the switch below is a no-op, so the commit lands on top of whatever the
+# session already committed there, and every check above still ran.
+[[ -n "${BRANCH_OPT}" ]] && BRANCH="${BRANCH_OPT}"
 
 _phase fetch
 # Resolve the host default branch from the remote's published HEAD symref, then
@@ -1067,6 +1089,7 @@ fi
 # No PR backend at all. Say what still has to happen, including the keyword —
 # the caller opening this PR by hand is the one path where the body is written
 # by someone other than this script.
-echo "open_task_pr: no PR backend here — open the PR for ${BRANCH} with a body containing '${closes_line:-Closes #<issue>}', or the merge will not close the task" >&2
+echo "open_task_pr: no PR backend here — open the PR for ${BRANCH} (base ${default_base}, title '${PR_TITLE}') with a body containing '${closes_line:-Closes #<issue>}', or the merge will not close the task. The body this script would have used:" >&2
+printf '%s\n' "${BODY}" >&2
 echo "branch:${BRANCH}"
 exit 0

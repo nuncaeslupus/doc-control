@@ -15,7 +15,7 @@
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied
-> (``- r2 — applied `<project>-spec-notes-<date>-r1.md` ``), and commit that
+> (``- r2 — applied `<repo>-spec-v1-<date>-notes.md` ``), and commit that
 > export beside this file in the same commit. On approval set
 > **Status** to `approved (YYYY-MM-DD, revision N)` and, when the reviewer sent
 > no notes for that revision, add `— without annotations`.
@@ -25,6 +25,8 @@
 ## 1. Problem statement
 
 <One clear paragraph describing what is happening, what should happen, and why it matters.>
+
+**Ideas covered**: <I-N ids from `status/ideas.md`, when the work came from `explore-idea`; otherwise delete this line>
 
 **Success criteria (measurable)** — the objective conditions that define "done"; each seeds a task **Gate** in the plan (`design`), and `review` / `ship` verify them:
 

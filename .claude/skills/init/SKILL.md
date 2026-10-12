@@ -82,6 +82,14 @@ Init runs non-interactively, so it prints what is undecided and the session asks
   and the manual step; pass both to the user. `branch_protection.py` (in
   `claude-arsenal/scripts/`) re-runs it: `--dry-run` previews, `--force` adds to an
   existing rule.
+- **`repo_health: GAP …`** — that first run also lists repository housekeeping that is
+  missing (description, topics, homepage, a `main` default branch, secret
+  scanning, a release for the newest tag, a PyPI page that links back), each with
+  its fix command. Show the list and run only the fixes the user confirms; a
+  `NOTE` line is a decision for them, not a fix. `repo_health.py` re-runs it.
+  Load `claude-arsenal:core:init § references/repo-housekeeping.md` when a gap is
+  a missing license (the user chooses it; the reference has the questions to ask)
+  or names a package index, and before a package's first publish.
 - **A skill folder "is not arsenal-vendored — left alone"** — init replaces and
   prunes only folders carrying the `.arsenal-vendored` marker, so a same-named
   folder without it keeps the shipped skill out. Ask the user whether to remove or
