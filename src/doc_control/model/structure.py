@@ -35,8 +35,10 @@ Overrides
 
 Stable ids
     ``ch-<8 hex>`` hashes the heading's fingerprint and how many earlier chapters share it;
-    ``sc-<8 hex>`` hashes the chapter id, the opening paragraph's fingerprint and how many
-    earlier scenes of the same chapter open the same way. Neither depends on a position, a
+    ``sc-<8 hex>`` hashes the chapter id and the fingerprint of the scene's first text
+    paragraph (the one after its break), plus a count only when two scenes of a chapter
+    begin with identical text; a chapter's first scene is keyed on the chapter alone.
+    Neither depends on a position, a
     count of paragraphs or any other chapter's text, so editing or inserting text elsewhere
     leaves them unchanged. Editing a chapter's own heading changes its id (and its scenes').
 """
@@ -50,7 +52,13 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from doc_control.model.document import Document
-from doc_control.model.segment import ChapterHeading, is_scene_break, parse_chapter_heading
+from doc_control.model.layout import _break_only, blank_before, centred, is_empty, page_break_before
+from doc_control.model.segment import (
+    ChapterHeading,
+    is_scene_break,
+    number_word,
+    parse_chapter_heading,
+)
 
 Kind = Literal["chapter", "scene"]
 Action = Literal["force", "deny"]
@@ -69,6 +77,8 @@ class Para:
     heading_source: str | None = None  # "outline_level" or "heading_style"
     centred: bool = False
     page_break_before: bool = False
+    blank_before: int | None = None  # empty paragraphs just above; None = count from the texts
+    empty: bool | None = None  # None = no visible text
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,7 @@ class Profile:
     heading_styles: bool = True
     chapter_patterns: bool = True
     scene_markers: bool = True
+    language: str = "es"  # "es" accepts a lone "I" as a numeral; others need more signals
 
 
 @dataclass(frozen=True)
@@ -121,15 +132,18 @@ class Structure:
 
 
 def paragraphs_of(doc: Document) -> list[Para]:
-    """The detection facts of every paragraph of ``doc``."""
+    """The detection facts of every paragraph of ``doc``, from :mod:`doc_control.model.layout`."""
     out: list[Para] = []
-    previous_break = False  # the paragraph above is empty and holds a page break
+    pending = False  # a page break was seen and only empty paragraphs have followed
     for para in doc.index.paragraphs:
         props = doc.props[para.number - 1]
         level = doc.heading_level(para)
         source = None
         if level is not None:
             source = "outline_level" if props.outline_level is not None else "heading_style"
+        empty = is_empty(doc, para)
+        breaks = page_break_before(doc, para) or pending
+        pending = empty and (breaks or _break_only(doc, para))
         out.append(
             Para(
                 para.number,
@@ -137,11 +151,12 @@ def paragraphs_of(doc: Document) -> list[Para]:
                 para.fp,
                 level,
                 source,
-                props.centred,
-                props.page_break_before or previous_break,
+                centred(doc, para),
+                breaks,
+                blank_before(doc, para),
+                empty,
             )
         )
-        previous_break = props.has_page_break and not para.text.strip()
     return out
 
 
@@ -167,12 +182,19 @@ def detect(
     overrides: Sequence[Override] = (),
 ) -> Structure:
     n = len(paras)
-    blank = [not p.text.strip() for p in paras]
+    # A heading with no text (auto-numbered) is a heading, not a blank line.
+    blank = [
+        (p.empty if p.empty is not None else not p.text.strip()) and p.heading_level is None
+        for p in paras
+    ]
     blank_before = [0] * n
     run = 0
-    for i in range(n):
-        blank_before[i] = 0 if blank[i] else run
-        run = run + 1 if blank[i] else 0
+    for i, para in enumerate(paras):
+        blank_before[i] = para.blank_before if para.blank_before is not None else run
+        if para.blank_before is None and blank[i]:
+            run += 1
+        elif para.blank_before is None:
+            run = 0
 
     actions, unmatched = _resolve_overrides(paras, blank, overrides)
     suppressed: list[tuple[int, Kind, str]] = []
@@ -186,7 +208,8 @@ def detect(
     scene_opener_signals = {i: s for i, s in scene_opener_signals.items() if "denied" not in s}
 
     def content(i: int) -> bool:
-        return not blank[i] and i not in chapters and not is_scene_break(paras[i].text)
+        text = paras[i].text
+        return bool(text.strip()) and i not in chapters and not is_scene_break(text)
 
     def words(lo: int, hi: int) -> int:
         return sum(_words(paras[i].text) for i in range(lo, hi) if content(i))
@@ -259,7 +282,12 @@ def detect(
                 )
             else:
                 opening = tuple(scene_opener_signals[o])
-            sid = _unique("scene", (owner or "-", paras[o].fp), seen_scenes)
+            if o == lo:
+                key = "start"
+            else:  # the first text of the scene, so adding scenes elsewhere moves no id
+                text_at = next((i for i in range(o, end) if content(i)), o)
+                key = paras[text_at].fp
+            sid = _unique("scene", (owner or "-", key), seen_scenes)
             scenes.append(
                 DetectedScene(
                     sid, owner, paras[o].number, paras[end - 1].number, words(o, end), opening
@@ -318,7 +346,10 @@ def _chapter_starts(
             signals.append("page_break_before")
         if blank_before[i]:
             signals.append("blank_lines")
-        heading = parse_chapter_heading(para.text) or ChapterHeading("chapter", None, "")
+        heading = parse_chapter_heading(para.text)
+        if heading is None and (value := number_word(para.text)) is not None:
+            heading = ChapterHeading("numeral", value, "")
+        heading = heading or ChapterHeading("chapter", None, "")
         found[i] = (signals, heading)
     return found
 
@@ -335,14 +366,20 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     if styled and para.heading_source:
         signals.append(para.heading_source)
     heading = parse_chapter_heading(para.text) if profile.chapter_patterns else None
+    laid_out = styled or para.centred or para.page_break_before
     if heading is not None:
         if heading.kind in ("chapter", "part"):
             signals.append("chapter_word")
         elif heading.kind == "numeral":
-            if styled or para.centred or para.page_break_before:
+            lone_i = para.text.strip().rstrip(".)") == "I"
+            if lone_i and profile.language != "es":  # "I" is a pronoun in English
+                laid_out = styled or (para.centred and para.page_break_before)
+            if laid_out:
                 signals.append("numeral")
         else:
             signals.append("section_name")
+    elif profile.chapter_patterns and laid_out and number_word(para.text) is not None:
+        signals.append("numeral")  # Uno, Dos… Veinte; Primera…
     return signals
 
 

@@ -66,6 +66,11 @@ _PROFILE_PROPERTIES: dict[str, Any] = {
         "type": "boolean",
         "description": "`Capítulo 3`, `Prólogo`, numerals start chapters (default true).",
     },
+    "language": {
+        "type": "string",
+        "enum": list(LANGUAGES),
+        "description": "es (default) accepts a lone `I` as a numeral; others need more signals.",
+    },
     "scene_markers": {
         "type": "boolean",
         "description": "Ornament paragraphs (`* * *`) start scenes (default true).",
@@ -148,7 +153,13 @@ def segment(request: dict[str, Any]) -> Reply:
     base: dict[str, Any] = {"unit": unit}
     if found.unmatched_overrides:
         base["unmatched_overrides"] = [
-            {"fp": o.fp, "kind": o.kind, "action": o.action} for o in found.unmatched_overrides
+            {
+                "fp": o.fp,
+                "kind": o.kind,
+                "action": o.action,
+                **({"nth": o.nth} if o.nth is not None else {}),
+            }
+            for o in found.unmatched_overrides
         ]
     kind = "chapter" if unit == "chapters" else "scene"
     shown = [s for s in found.suppressed if s[1] == kind]
@@ -168,7 +179,8 @@ def _address(doc: Document, number: int) -> Address:
 
 
 def _profile(request: dict[str, Any]) -> Profile:
-    return Profile(**request.get("profile", {}))
+    language = request.get("language", DEFAULT_LANGUAGE)
+    return Profile(**{"language": language, **request.get("profile", {})})
 
 
 def _overrides(request: dict[str, Any]) -> list[Override]:

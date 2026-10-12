@@ -4,6 +4,7 @@ title: "T31: Layout facts in `para.get` and `outline`: `empty`, `blank_before`, 
 label: "layout facts in para"
 priority: 10
 deps: [t-dd07d765]
+status: merged
 ---
 
 # T31: Layout facts in `para.get` and `outline`: `empty`, `blank_before`, heading level (via `basedOn`), style, centred, page break before

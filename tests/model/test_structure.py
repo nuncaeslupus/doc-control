@@ -190,7 +190,9 @@ def test_ids_survive_edits_inside_other_chapters_and_insertions_elsewhere() -> N
     # edit the text of every paragraph of chapters 2, 3 and 5 except their headings
     edited = list(texts)
     for i, text in enumerate(texts):
-        if text.startswith(BODY) and (f"Texto {2}." in text or f"Texto {5}." in text):
+        # not the first paragraph of a scene: that one names the scene's id
+        edit = f"Texto {2}." in text or f"Texto {5}." in text
+        if text.startswith(BODY) and edit and not text.endswith(".0."):
             edited[i] = text + " Y siguió lloviendo."
     after = detect(build(*edited))
     assert id_set(after) == id_set(before)
@@ -398,7 +400,7 @@ def test_segment_chapters_report_ids_and_signals(
         (8, "chapter"),
     ]
     assert chapters[0]["signals"] == ["heading_style"]
-    assert chapters[1]["signals"] == ["numeral", "centred", "page_break_before", "blank_lines"]
+    assert chapters[1]["signals"] == ["numeral", "centred", "page_break_before"]
     assert chapters[2]["signals"] == ["chapter_word", "page_break_before"]
     assert all(c["id"].startswith("ch-") for c in chapters)
     assert env["result"]["total"] == 3 and env["next"] is None
@@ -494,3 +496,80 @@ def test_segment_rejects_a_malformed_override_fingerprint(
         overrides=[{"fp": "NOT-HEX!!", "kind": "chapter", "action": "force"}],
     )
     assert code != 0 and env["error"]["code"] == "SCHEMA_INVALID"
+
+
+# ----------------------------------------------------------- review follow-ups
+
+
+def test_scene_ids_do_not_move_when_scenes_are_added_before_them() -> None:
+    base = ["Capítulo 1", "a " + BODY, "***", "b " + BODY, "***", "c " + BODY]
+    before = detect(build(*base))
+    grown = detect(build(*base[:2], "***", "x " + BODY, "***", "y " + BODY, *base[2:]))
+    assert {s.id for s in before.scenes} <= {s.id for s in grown.scenes}
+    assert len(grown.scenes) == 5
+    # a scene whose first text repeats gets a disambiguator rather than a clash
+    twin = detect(build("Capítulo 1", BODY, "***", BODY, "***", BODY, "***", BODY))
+    assert len({s.id for s in twin.scenes}) == 4
+
+
+def test_spelled_numbers_are_chapters_with_a_layout_signal() -> None:
+    paras = build(
+        "Uno", BODY, ("Dos", {"centred": True}), BODY, ("Tercera", {"page_break_before": True})
+    )
+    found = detect(paras)
+    assert [(c.first, c.kind, c.number) for c in found.chapters] == [
+        (3, "numeral", 2),
+        (5, "numeral", 3),
+    ]
+    assert detect(paras, Profile(chapter_patterns=False)).chapters == ()
+
+
+def test_lone_i_depends_on_language() -> None:
+    paras = build("I", BODY, ("I", {"centred": True}), BODY)
+    assert [c.first for c in detect(paras).chapters] == [3]
+    assert detect(paras, Profile(language="en")).chapters == ()
+    both = build(("I", {"centred": True, "page_break_before": True}), BODY)
+    assert len(detect(both, Profile(language="en")).chapters) == 1
+
+
+def test_numbering_only_heading_is_a_heading_not_a_blank() -> None:
+    heading = {"heading_level": 1, "heading_source": "heading_style", "empty": True}
+    found = detect(build(("", heading), BODY, ("", heading), BODY))
+    assert [c.first for c in found.chapters] == [1, 3]
+    assert found.chapters[0].signals == ("heading_style",)
+
+
+def test_unmatched_overrides_report_nth() -> None:
+    found = detect(build(BODY), overrides=[Override("00000000", "scene", "deny", nth=2)])
+    assert found.unmatched_overrides[0].nth == 2
+
+
+def test_layout_facts_come_from_the_shared_layout_module(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    br = '<w:r><w:br w:type="page"/></w:r>'
+    centre = '<w:jc w:val="center"/>'
+    styles = (
+        '<w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/>'
+        '</w:style><w:style w:type="paragraph" w:styleId="Fancy"><w:name w:val="Fancy"/>'
+        '<w:basedOn w:val="Normal"/><w:pPr><w:pageBreakBefore/><w:jc w:val="center"/></w:pPr>'
+        "</w:style>"
+    )
+    sect = '<w:sectPr><w:type w:val="nextPage"/></w:sectPr>'
+    cases = {
+        "custom style": _p("a") + _p("IV", '<w:pStyle w:val="Fancy"/>') + _p("b"),
+        "section break": _p("a", sect) + _p("IV", centre) + _p("b"),
+        "break at start": _p("a") + f"<w:p>{br}<w:r><w:t>IV</w:t></w:r></w:p>" + _p("b"),
+        "break paragraph, then empty": _p("a")
+        + f"<w:p>{br}</w:p><w:p/>"
+        + _p("IV", centre)
+        + _p("b"),
+        "break ends previous": f"<w:p><w:r><w:t>a</w:t></w:r>{br}</w:p>"
+        + _p("IV", centre)
+        + _p("b"),
+    }
+    for name, body in cases.items():
+        doc = _write(tmp_path / "layout.docx", body, styles)
+        code, env = _call(capsys, "segment", doc=str(doc))
+        assert code == 0, env
+        assert [c["text"] for c in env["result"]["chapters"]] == ["IV"], name

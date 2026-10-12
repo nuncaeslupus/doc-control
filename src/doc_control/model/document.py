@@ -18,7 +18,8 @@ from doc_control.model.styles import StyleTable, load_styles
 from doc_control.ooxml.zipio import Package
 
 DOCUMENT_PART = "word/document.xml"
-_OFF = frozenset({"0", "false", "off"})
+_TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
+_TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
 @dataclass(frozen=True)
@@ -27,9 +28,6 @@ class ParaProps:
 
     style: str | None  # explicit ``w:pStyle``, else None
     outline_level: int | None  # explicit ``w:outlineLvl`` (0-9), else None
-    centred: bool = False  # direct ``w:jc`` centre
-    page_break_before: bool = False  # direct ``w:pageBreakBefore``
-    has_page_break: bool = False  # holds a ``w:br w:type="page"``
 
 
 class Document:
@@ -58,19 +56,37 @@ class Document:
             elem = spans.parse_paragraph(para.span_index)
             ppr = elem.find(W + "pPr")
             style = level = None
-            centred = before = False
             if ppr is not None:
                 pstyle = ppr.find(W + "pStyle")
                 style = pstyle.get(W + "val") if pstyle is not None else None
                 outline = ppr.find(W + "outlineLvl")
                 raw = outline.get(W + "val") if outline is not None else None
                 level = int(raw) if raw is not None and raw.isdigit() else None
-                jc = ppr.find(W + "jc")
-                centred = jc is not None and jc.get(W + "val") == "center"
-                pbb = ppr.find(W + "pageBreakBefore")
-                before = pbb is not None and pbb.get(W + "val", "1").lower() not in _OFF
-            page_break = any(br.get(W + "type") == "page" for br in elem.iter(W + "br"))
-            out.append(ParaProps(style, level, centred, before, page_break))
+            out.append(ParaProps(style, level))
+        return tuple(out)
+
+    @cached_property
+    def cells(self) -> tuple[int, ...]:
+        """Per paragraph, the byte offset of its innermost table cell (-1: not in a cell)."""
+        data = self.index.spans.data
+        events = sorted(
+            [(m.start(), True) for m in _TC_OPEN.finditer(data)]
+            + [(m.start(), False) for m in _TC_CLOSE.finditer(data)]
+        )
+        spans = self.index.spans.paragraphs
+        out: list[int] = []
+        stack: list[int] = []
+        e = 0
+        for para in self.index.paragraphs:
+            start = spans[para.span_index].start
+            while e < len(events) and events[e][0] < start:
+                pos, opens = events[e]
+                if opens:
+                    stack.append(pos)
+                elif stack:
+                    stack.pop()
+                e += 1
+            out.append(stack[-1] if stack else -1)
         return tuple(out)
 
     def style_id(self, para: Paragraph) -> str | None:
