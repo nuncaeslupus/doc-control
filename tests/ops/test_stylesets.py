@@ -162,7 +162,20 @@ def doc(tmp_path: Path) -> Path:
         + _para("Child", "cell")
         + "</w:tc></w:tr></w:tbl>"
     )
+    # The footnote must be real: referenced from the body, related and typed.
+    body += '<w:p><w:r><w:t>noted</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>'
     parts["word/document.xml"] = _part(f"<w:body>{body}</w:body>")
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace(
+        b"</Types>",
+        b'<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-'
+        b'officedocument.wordprocessingml.footnotes+xml"/></Types>',
+    )
+    parts["word/_rels/document.xml.rels"] = (
+        b'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.'
+        b'openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="'
+        b'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" '
+        b'Target="footnotes.xml"/></Relationships>'
+    )
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, data in parts.items():
             zf.writestr(name, data)
