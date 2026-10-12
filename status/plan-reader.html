@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="213eaf50f0c7c35188af0ad5e1c77201bd96dd42a0e25e28c34ca9654412fc06">
+<title>Word Control — Plan (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2da;
+  --card:#ffffff;--accent:#0f766e;--accent2:#b45309;--chip:#eef2f1;
+  --note:#fff8ec;--note-line:#f0cf94;--code:#f3f1ec;--link:#0f766e;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#e9e7e2;--muted:#a09c95;--line:#2e2c33;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#26313055;
+    --note:#251f10;--note-line:#6b531c;--code:#26242b;--link:#5eead4;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+a{color:var(--link)}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto}
+pre code{background:none;padding:0}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#b45309}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:22px 0 6px}
+.hero h1{font-size:25px;line-height:1.2;margin:.1em 0 .3em}
+.hero p{color:var(--muted);margin:.3em 0}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:26px 0}
+.part-title{font-size:21px;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 8px;position:sticky;top:54px;background:var(--bg);z-index:10}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+.sec{padding:6px 0 2px;border-bottom:1px solid var(--line);scroll-margin-top:100px}
+.sec:last-child{border-bottom:none}
+.sec-h{margin:10px 0 6px;line-height:1.3;position:sticky;top:94px;background:var(--bg);z-index:5;padding-top:6px}
+h3.sec-h{font-size:18.5px}
+h4.sec-h{font-size:16.5px;color:var(--fg)}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p{margin:.55em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent2);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;width:100%;font-size:13.5px;margin:.6em 0;display:block;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+.note{background:var(--note);border:1px solid var(--note-line);border-radius:10px;
+  padding:8px 11px;margin:10px 0 16px}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.note-ico{color:var(--accent2);font-weight:800}
+.note-label{font-size:12px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.05em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted)}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:15.5px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:.8}
+.note.filled{box-shadow:0 0 0 2px var(--note-line) inset}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">Word Control — Plan<small>annotatable reader · 2026-10-12</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 11 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Word Control — Plan</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Plan</summary><ul>
+<li><a href="#s-plan-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-plan-technical-solution">Technical solution</a></li>
+<li><a href="#s-plan-architecture-overview">Architecture overview</a></li>
+<li><a href="#s-plan-data-flow">Data flow</a></li>
+<li><a href="#s-plan-state-changes">State changes</a></li>
+<li><a href="#s-plan-technology-choices">Technology choices</a></li>
+<li><a href="#s-plan-out-of-scope">Out of scope</a></li>
+<li><a href="#s-plan-implementation-tasks">Implementation tasks</a></li>
+<li><a href="#s-plan-evidence-log">Evidence log</a></li>
+<li><a href="#s-plan-dependency-graph">Dependency graph</a></li>
+<li><a href="#s-plan-sign-off">Sign-off</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge plan">Plan</span>Plan</h2>
+<article class="sec" id="s-plan-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-12
+<strong>Specification</strong>: <code>status/specification.md</code> (approved, revision 6)
+<strong>Author</strong>: Claude
+<strong>Revision</strong>: 3
+<strong>Status</strong>: approved (2026-10-12, revision 3) — without annotations
+<strong>Revision log</strong>:
+- r1 — first draft
+- r2 — owner decision D-18 (2026-10-12): tasks T31–T36 for literary-critic indexing support; T29 also depends on them
+- r3 — owner decision D-19 (2026-10-12): T37 <code>compare</code> (redline document from two versions); T29 depends on it</p></div>
+<div class="note" data-for="s-plan-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN · intro</span></div><textarea class="note-ta" data-key="s-plan-intro" data-label="Preamble &amp; scope" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-technical-solution">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technical solution</span></h3>
+<div class="note" data-for="s-plan-technical-solution"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Technical solution</span></div><textarea class="note-ta" data-key="s-plan-technical-solution" data-label="Technical solution" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-architecture-overview">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Architecture overview</span></h4>
+<div class="sec-body"><p>A single stdlib-only package, <code>doc_control</code>, in four layers. Each layer only calls the one below it.</p>
+<pre><code class="language-text">cli.py / Python API          JSON envelope, schema validation, capabilities, help --json
+        │
+ops/                         operation registry (one JSON Schema per op), batch engine, recipes, stylesets
+        │
+model/                       document index: paragraphs, visible text + offsets, runs, addresses,
+        │                    anchors, segmentation (sentences, dialogue, scene breaks, chapters)
+ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer, splice writer,
+                             revision/comment/style part writers | lock + change detection, store,
+                             backups, undo log, footprint verifier, auto-restore
+</code></pre></div>
+<div class="note" data-for="s-plan-architecture-overview"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Architecture overview</span></div><textarea class="note-ta" data-key="s-plan-architecture-overview" data-label="Architecture overview" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-data-flow">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Data flow</span></h4>
+<div class="sec-body"><ol>
+<li><strong>Read</strong>: open zip → read <code>[Content_Types].xml</code>, <code>document.xml</code> and the parts the operation needs → index paragraphs with byte spans → answer, capped to the token budget with a <code>next</code> cursor.</li>
+<li><strong>Write (batch)</strong>:<ol>
+<li>validate the request against its schema;</li>
+<li>check the <code>~$</code> lock file and <code>expect.sha256</code>;</li>
+<li>re-resolve every address and fingerprint (<code>STALE_ADDRESS</code> on mismatch);</li>
+<li>plan edits and compute the expected footprint;</li>
+<li>if <code>dry_run</code>, return the preview;</li>
+<li>otherwise back up, build the new XML for touched paragraphs and entries, splice them into the original part bytes, and write a temp zip copying untouched members raw;</li>
+<li>verify: every part parses, the footprint matches, and reject-all text is unchanged;</li>
+<li><code>os.replace</code> the temp file over the document, append to the undo log, and return <code>op_id</code>, <code>address_map</code> and the new sha256;</li>
+<li>on any failure, leave the original untouched (or restore it from the backup) and return <code>VERIFY_FAILED_RESTORED</code>.</li>
+</ol>
+</li>
+</ol></div>
+<div class="note" data-for="s-plan-data-flow"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Data flow</span></div><textarea class="note-ta" data-key="s-plan-data-flow" data-label="Data flow" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-state-changes">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">State changes</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Database</th>
+<th>Change</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Document</td>
+<td>the <code>.docx</code></td>
+<td>UPDATE</td>
+<td>Only through verified batches; tracked by default</td>
+</tr>
+<tr>
+<td>Document store</td>
+<td><code>.doc-control/&lt;stem&gt;/backups/</code></td>
+<td>CREATE/DELETE</td>
+<td>Backup on open-for-write and before every write; pruned to 20 or 30 days, whichever keeps more</td>
+</tr>
+<tr>
+<td>Document store</td>
+<td><code>.doc-control/&lt;stem&gt;/log.jsonl</code></td>
+<td>CREATE (append)</td>
+<td>One line per applied batch; removed only by <code>history.purge</code> (tombstone line)</td>
+</tr>
+<tr>
+<td>User store</td>
+<td><code>recipes/</code>, <code>stylesets/</code></td>
+<td>CREATE/UPDATE</td>
+<td>Written only when the agent saves a user recipe or style set</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-state-changes"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › State changes</span></div><textarea class="note-ta" data-key="s-plan-state-changes" data-label="State changes" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-technology-choices">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technology choices</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python ≥ 3.11, stdlib only (<code>zipfile</code>, <code>xml.etree</code>, <code>hashlib</code>, <code>json</code>, <code>re</code>, <code>unicodedata</code>)</td>
+<td>Runs in the chat sandbox (D-7); no packaging burden</td>
+</tr>
+<tr>
+<td>Read with ElementTree, write by splicing paragraph bytes</td>
+<td>Avoids the <code>mc:Ignorable</code> namespace-loss trap; byte-identity outside the footprint (Option B)</td>
+</tr>
+<tr>
+<td>uv, ruff, strict mypy, standard Makefile (arsenal defaults, floor 3.11)</td>
+<td>Owner decision 2026-10-12</td>
+</tr>
+<tr>
+<td>pytest for tests (dev dependency only)</td>
+<td>Standard; never imported by the package</td>
+</tr>
+<tr>
+<td>.NET OOXML validator and LibreOffice headless in CI only</td>
+<td>Independent check that output is valid; not runtime dependencies</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-technology-choices"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Technology choices</span></div><textarea class="note-ta" data-key="s-plan-technology-choices" data-label="Technology choices" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-out-of-scope">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Out of scope</span></h4>
+<div class="sec-body"><ul>
+<li>Live engine (Windows COM, Mac), MCP server, <code>.mcpb</code>/plugin packaging, Skill packaging, Google Docs/<code>.odt</code>, review page, contract test suite for downstream repos (later specs).</li>
+<li>Editing headers, footers, footnotes and endnotes (read-only listing in v1).</li>
+<li>Editing across fields, hyperlinks, content controls (refused with <code>UNSUPPORTED_CONTENT</code>).</li>
+<li>Word move-revision markup (moves are a tracked delete plus a tracked insert in v1).</li>
+</ul></div>
+<div class="note" data-for="s-plan-out-of-scope"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Out of scope</span></div><textarea class="note-ta" data-key="s-plan-out-of-scope" data-label="Out of scope" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-implementation-tasks">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Implementation tasks</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Description</th>
+<th>Service</th>
+<th>Size</th>
+<th>Depends</th>
+<th>Gate</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T1</td>
+<td>Bootstrap: <code>pyproject.toml</code> (requires-python ≥3.11), uv, ruff, strict mypy, Makefile (<code>check</code>, <code>lint</code>, <code>test</code>, <code>bench</code>), CI runs <code>make check</code>; hygiene gate kept</td>
+<td>repo</td>
+<td>S</td>
+<td>—</td>
+<td><code>make_check_exit_code == 0</code></td>
+<td><code>test_package_imports_without_third_party_modules</code> in <code>tests/test_package.py</code> — importing <code>doc_control</code> loads no module outside the stdlib</td>
+</tr>
+<tr>
+<td>T2</td>
+<td>Error codes, response envelope, operation registry with JSON Schemas, CLI skeleton (<code>capabilities</code>, <code>help --json</code>), no interactive prompts</td>
+<td>core/cli</td>
+<td>M</td>
+<td>T1</td>
+<td><code>operations_without_json_schema == 0</code></td>
+<td><code>test_registry_every_op_has_schema_and_appears_in_capabilities</code> in <code>tests/test_registry.py</code> — every registered op has a schema and is listed</td>
+</tr>
+<tr>
+<td>T3</td>
+<td>Zip I/O: open package, read parts, write temp zip copying untouched members with original <code>ZipInfo</code> and order, atomic replace</td>
+<td>ooxml</td>
+<td>M</td>
+<td>T1</td>
+<td><code>untouched_parts_byte_identical_ratio == 1.0</code></td>
+<td><code>test_rewrite_one_part_keeps_other_members_byte_identical</code> in <code>tests/ooxml/test_zipio.py</code> — after rewriting <code>document.xml</code> every other member's bytes are unchanged</td>
+</tr>
+<tr>
+<td>T4</td>
+<td>Paragraph span tokenizer and splice writer for <code>word/document.xml</code>, with fuzzing</td>
+<td>ooxml</td>
+<td>L</td>
+<td>T3</td>
+<td><code>splice_roundtrip_mismatches == 0</code></td>
+<td><code>test_splice_identity_edit_returns_identical_bytes</code> in <code>tests/ooxml/test_splice.py</code> — splicing unchanged paragraphs back yields the original bytes for every corpus document</td>
+</tr>
+<tr>
+<td>T5</td>
+<td>Synthetic corpus generator (revisions, comments with replies, fields, hyperlinks, tables, footnotes, styles, <code>mc:Ignorable</code> namespaces, 100k-word novel) and private-corpus hook via <code>DOC_CONTROL_PRIVATE_CORPUS</code></td>
+<td>tests</td>
+<td>M</td>
+<td>T3</td>
+<td><code>synthetic_docs_failing_validator == 0</code></td>
+<td><code>test_corpus_generator_documents_pass_validator</code> in <code>tests/corpus/test_generator.py</code> — every generated document passes the OOXML validator</td>
+</tr>
+<tr>
+<td>T6</td>
+<td>Document index: paragraphs, visible text with offsets to runs, addresses and fingerprints, range parsing</td>
+<td>model</td>
+<td>M</td>
+<td>T4, T5</td>
+<td><code>address_resolution_errors == 0</code></td>
+<td><code>test_address_roundtrip_every_paragraph_resolves</code> in <code>tests/model/test_address.py</code> — every paragraph's address resolves back to the same paragraph</td>
+</tr>
+<tr>
+<td>T7</td>
+<td>Read operations: <code>info</code>, <code>outline</code>, <code>stats</code>, <code>para.get</code>, <code>styles.list</code>, <code>style.get</code>, <code>comments.list</code>, <code>revisions.list</code>, token caps and cursors</td>
+<td>ops</td>
+<td>M</td>
+<td>T2, T6</td>
+<td><code>default_response_tokens_p95 &lt;= 2000</code></td>
+<td><code>test_read_ops_large_doc_responses_stay_under_budget</code> in <code>tests/ops/test_read.py</code> — on the 100k-word document every default response is ≤ 8,000 bytes and carries <code>next</code> when truncated</td>
+</tr>
+<tr>
+<td>T8</td>
+<td><code>find</code>: literal, regex, case- and accent-insensitive, whole word, capped results with cursors</td>
+<td>ops</td>
+<td>M</td>
+<td>T2, T6</td>
+<td><code>find_100k_words_p95_ms &lt;= 1000</code></td>
+<td><code>test_find_accent_insensitive_matches_unaccented_query</code> in <code>tests/ops/test_find.py</code> — <code>maria</code> finds <code>María</code> when accent-insensitive</td>
+</tr>
+<tr>
+<td>T9</td>
+<td>Safety basics: <code>~$</code> lock detection, sha256 change detection, <code>.doc-control/</code> store layout, document id, backups and retention, app-data option</td>
+<td>safety</td>
+<td>M</td>
+<td>T3</td>
+<td><code>writes_with_word_lock_present == 0</code></td>
+<td><code>test_write_with_lock_file_present_returns_doc_locked</code> in <code>tests/safety/test_lock.py</code> — a batch with a <code>~$</code> file next to the document fails with <code>DOC_LOCKED</code> and leaves it untouched</td>
+</tr>
+<tr>
+<td>T10</td>
+<td>Footprint verifier, auto-restore, fault injection at every write stage</td>
+<td>safety</td>
+<td>M</td>
+<td>T4, T9</td>
+<td><code>partial_writes_on_failure == 0</code></td>
+<td><code>test_fault_at_each_stage_leaves_original_unchanged</code> in <code>tests/safety/test_verify.py</code> — injecting a failure at each stage leaves the document byte-identical and returns <code>VERIFY_FAILED_RESTORED</code></td>
+</tr>
+<tr>
+<td>T11</td>
+<td>Tracked text operations: <code>text.replace</code>, <code>para.insert</code>, <code>para.delete</code>, <code>para.move</code> (<code>w:ins</code>/<code>w:del</code>/<code>w:delText</code>, deleted paragraph marks, unique ids, author and tag, date)</td>
+<td>ops/ooxml</td>
+<td>L</td>
+<td>T6, T10</td>
+<td><code>text_after_reject_all_mismatches == 0</code></td>
+<td><code>test_reject_all_after_edits_restores_original_text</code> in <code>tests/ops/test_tracked_text.py</code> — rejecting every revision written by the tool restores the original text exactly</td>
+</tr>
+<tr>
+<td>T12</td>
+<td>Batch engine: all-or-nothing, dry run with preview, overlap detection, address map, stale detection fuzz</td>
+<td>ops</td>
+<td>L</td>
+<td>T11</td>
+<td><code>edits_applied_to_wrong_paragraph == 0</code></td>
+<td><code>test_stale_address_after_structural_change_is_rejected</code> in <code>tests/ops/test_batch.py</code> — random inserts between read and write always produce <code>STALE_ADDRESS</code>, never an edit elsewhere</td>
+</tr>
+<tr>
+<td>T13</td>
+<td>Undo log, <code>undo</code>, <code>restore</code>, <code>history.list</code>, <code>history.search</code>, <code>history.purge</code> (tombstone), orphans listing, backup on open</td>
+<td>safety</td>
+<td>M</td>
+<td>T12</td>
+<td><code>undo_roundtrip_mismatches == 0</code></td>
+<td><code>test_undo_each_logged_op_restores_prior_state</code> in <code>tests/safety/test_history.py</code> — undoing any logged batch returns text and paragraph properties to their prior state</td>
+</tr>
+<tr>
+<td>T14</td>
+<td>Formatting operations: <code>style.apply</code>, <code>format.apply</code> as tracked <code>w:pPrChange</code>/<code>w:rPrChange</code></td>
+<td>ops</td>
+<td>M</td>
+<td>T12</td>
+<td><code>content_edits_without_revision_markup == 0</code></td>
+<td><code>test_style_apply_tracked_records_ppr_change</code> in <code>tests/ops/test_format.py</code> — applying a style in tracked mode writes a <code>w:pPrChange</code> with the previous style</td>
+</tr>
+<tr>
+<td>T15</td>
+<td>Comments: <code>comment.add</code>, <code>comment.reply</code>, <code>comment.resolve</code> across comments, commentsExtended, commentsIds, commentsExtensible and people parts</td>
+<td>ops/ooxml</td>
+<td>L</td>
+<td>T12</td>
+<td><code>ooxml_validator_errors_introduced == 0</code></td>
+<td><code>test_comment_reply_and_resolve_pass_validator</code> in <code>tests/ops/test_comments.py</code> — adding, replying to and resolving comments on every corpus document introduces no validator errors</td>
+</tr>
+<tr>
+<td>T16</td>
+<td><code>revision.accept</code>, <code>revision.reject</code> for tool-written and existing revisions</td>
+<td>ops</td>
+<td>M</td>
+<td>T12</td>
+<td><code>revision_accept_reject_mismatches == 0</code></td>
+<td><code>test_accept_then_text_equals_expected_final_text</code> in <code>tests/ops/test_revisions.py</code> — accepting all revisions yields the expected final text</td>
+</tr>
+<tr>
+<td>T17</td>
+<td><code>term.rename</code> with whole word, case, preserve-case and inflection options, as one batch; benchmark</td>
+<td>ops</td>
+<td>M</td>
+<td>T8, T12</td>
+<td><code>rename_100k_words_p95_s &lt;= 5</code></td>
+<td><code>test_rename_preserves_case_variants</code> in <code>tests/ops/test_rename.py</code> — renaming <code>Lucía</code>→<code>Elena</code> also turns <code>LUCÍA</code> into <code>ELENA</code> and skips <code>Lucíana</code> with whole word</td>
+</tr>
+<tr>
+<td>T18</td>
+<td>Segmentation: Spanish and generic sentences, dialogue lines (raya), scene breaks, chapters; gold set of ≥ 500 sentences</td>
+<td>model</td>
+<td>M</td>
+<td>T6</td>
+<td><code>boundary_f1 &gt;= 0.98</code></td>
+<td><code>test_spanish_abbreviations_do_not_split_sentences</code> in <code>tests/model/test_segment.py</code> — <code>Sr. García llegó.</code> is one sentence</td>
+</tr>
+<tr>
+<td>T19</td>
+<td>Anchors: <code>anchor.create</code>, <code>anchor.resolve</code>, re-anchoring with score and ambiguity rules</td>
+<td>model</td>
+<td>M</td>
+<td>T8, T18</td>
+<td><code>reanchor_success_ratio &gt;= 0.98</code></td>
+<td><code>test_ambiguous_anchor_returns_candidates_not_guess</code> in <code>tests/model/test_anchor.py</code> — two equally good matches return <code>ANCHOR_AMBIGUOUS</code></td>
+</tr>
+<tr>
+<td>T20</td>
+<td><code>page.estimate</code> (page breaks, <code>lastRenderedPageBreak</code>, word-count model) always flagged as estimated</td>
+<td>ops</td>
+<td>S</td>
+<td>T6</td>
+<td><code>page_estimates_without_estimated_flag == 0</code></td>
+<td><code>test_page_estimate_is_flagged_estimated</code> in <code>tests/ops/test_page.py</code> — every response carries <code>"estimated": true</code></td>
+</tr>
+<tr>
+<td>T21</td>
+<td>Style write operations (<code>style.create</code>, <code>style.update</code>, <code>style.rename</code>, <code>style.merge</code>) and JSON style sets (<code>styleset.export</code>, <code>styleset.install</code>)</td>
+<td>ops</td>
+<td>M</td>
+<td>T12</td>
+<td><code>style_definition_diffs_after_roundtrip == 0</code></td>
+<td><code>test_export_then_install_reproduces_style_definitions</code> in <code>tests/ops/test_stylesets.py</code> — installing an exported set into a blank document reproduces the definitions</td>
+</tr>
+<tr>
+<td>T22</td>
+<td><code>.dotx</code> export and import of style sets</td>
+<td>ops</td>
+<td>M</td>
+<td>T21</td>
+<td><code>dotx_validator_errors == 0</code></td>
+<td><code>test_exported_dotx_passes_validator</code> in <code>tests/ops/test_dotx.py</code> — every exported template passes the validator</td>
+</tr>
+<tr>
+<td>T23</td>
+<td>Declarative recipe engine, user recipe store, <code>recipe.list</code>, <code>recipe.run</code> (proposal batch, repeat until stable)</td>
+<td>ops/recipes</td>
+<td>L</td>
+<td>T8, T12</td>
+<td><code>user_recipe_capabilities_outside_batch == 0</code></td>
+<td><code>test_user_recipe_with_unknown_key_is_rejected</code> in <code>tests/recipes/test_engine.py</code> — a recipe with any key outside the schema fails with <code>RECIPE_INVALID</code></td>
+</tr>
+<tr>
+<td>T24</td>
+<td>Bundled recipes: generally useful docx-fixer rules, with their round-trip cases</td>
+<td>recipes</td>
+<td>L</td>
+<td>T14, T23</td>
+<td><code>docx_fixer_general_cases_failing == 0</code></td>
+<td><code>test_dialogue_dash_recipe_fixes_hyphen_openers</code> in <code>tests/recipes/test_es_typography.py</code> — <code>- Hola</code> becomes <code>—Hola</code> as a tracked change</td>
+</tr>
+<tr>
+<td>T25</td>
+<td>Other common bundled recipes (whitespace and empty paragraphs, quotes and dashes per language, ellipsis, fake centring and tabs, leftovers, direct formatting to style, language tags, scene breaks, heading hygiene)</td>
+<td>recipes</td>
+<td>M</td>
+<td>T14, T23</td>
+<td><code>bundled_recipes_without_tests == 0</code></td>
+<td><code>test_every_bundled_recipe_has_a_test_module</code> in <code>tests/recipes/test_inventory.py</code> — each bundled recipe has at least one passing test</td>
+</tr>
+<tr>
+<td>T26</td>
+<td>Owner-rule expressibility: house styles, template and author-note patterns as user recipes and style sets, on synthetic documents</td>
+<td>recipes</td>
+<td>S</td>
+<td>T21, T23</td>
+<td><code>owner_rules_not_expressible == 0</code></td>
+<td><code>test_house_rules_expressible_as_user_recipes</code> in <code>tests/recipes/test_user_expressibility.py</code> — each owner-specific docx-fixer rule has a declarative equivalent that passes its case</td>
+</tr>
+<tr>
+<td>T27</td>
+<td>CI extras: OOXML validator and LibreOffice round trip, no-network smoke on 3.11, benchmark job, private-corpus hygiene check</td>
+<td>repo/ci</td>
+<td>M</td>
+<td>T5, T10</td>
+<td><code>private_corpus_identifiers_in_repo == 0</code></td>
+<td><code>test_hygiene_flags_denylisted_name</code> in <code>tests/ci/test_hygiene.py</code> — the hygiene check fails when a denylisted identifier appears in a tracked file</td>
+</tr>
+<tr>
+<td>T28</td>
+<td>Writer-notes scenario: marker paragraph <code>========== Move this after chapter X</code> applied with <code>find</code> + chapters + one tracked batch</td>
+<td>ops</td>
+<td>S</td>
+<td>T12, T15, T18</td>
+<td><code>writer_note_scenario_failures == 0</code></td>
+<td><code>test_marker_move_after_chapter_applies_as_tracked_batch</code> in <code>tests/scenarios/test_writer_notes.py</code> — the passage moves after chapter X, the marker is deleted, both as revisions</td>
+</tr>
+<tr>
+<td>T29</td>
+<td>Coverage and documentation: README usage, error-code reference, generated operation reference from schemas</td>
+<td>repo</td>
+<td>M</td>
+<td>T7, T13, T17, T19, T20, T22, T24, T25, T26, T27, T28, T31, T32, T33, T34, T35, T36, T37</td>
+<td><code>line_coverage &gt;= 0.90</code></td>
+<td><code>test_docs_list_every_error_code</code> in <code>tests/test_docs.py</code> — every error code in <code>errors.py</code> appears in the reference</td>
+</tr>
+<tr>
+<td>T30</td>
+<td>Manual real-Word check (Windows, Word 2016+ and M365): open without repair, accept/reject/reply/resolve</td>
+<td>manual</td>
+<td>S</td>
+<td>T15, T16</td>
+<td><code>real_word_repair_prompts == 0</code></td>
+<td>Manual checklist in <code>docs/real-word-check.md</code> — evidence recorded as <code>unmeasured</code> until a Windows machine is available</td>
+</tr>
+<tr>
+<td>T31</td>
+<td>Layout facts in <code>para.get</code> and <code>outline</code>: <code>empty</code>, <code>blank_before</code>, heading level (via <code>basedOn</code>), style, centred, page break before</td>
+<td>ops</td>
+<td>S</td>
+<td>T7</td>
+<td><code>layout_fact_mismatches == 0</code></td>
+<td><code>test_para_get_reports_blank_before_and_heading_level</code> in <code>tests/ops/test_layout.py</code> — a heading after two empty paragraphs reports <code>blank_before: 2</code> and its level</td>
+</tr>
+<tr>
+<td>T32</td>
+<td><code>text.normalized</code>: NFC, soft hyphens and zero-width removed, whitespace collapsed, with a two-way offset map</td>
+<td>model</td>
+<td>S</td>
+<td>T6</td>
+<td><code>offset_map_roundtrip_mismatches == 0</code></td>
+<td><code>test_offset_map_roundtrip_collapsed_to_visible</code> in <code>tests/model/test_normalized.py</code> — every offset maps collapsed → visible → collapsed unchanged</td>
+</tr>
+<tr>
+<td>T33</td>
+<td>Structure detection: stable chapter and scene ids, detection signals, fingerprint-keyed overrides, profile settings (minimum chapter words)</td>
+<td>model</td>
+<td>M</td>
+<td>T18</td>
+<td><code>structure_override_failures == 0</code></td>
+<td><code>test_override_forces_chapter_start_by_fingerprint</code> in <code>tests/model/test_structure.py</code> — an override makes the given paragraph start a chapter and is reported as the signal</td>
+</tr>
+<tr>
+<td>T34</td>
+<td><code>anchor.resolve</code> exact mode and match kind</td>
+<td>model</td>
+<td>S</td>
+<td>T19</td>
+<td><code>exact_mode_fuzzy_matches == 0</code></td>
+<td><code>test_exact_mode_rejects_fuzzy_candidate</code> in <code>tests/model/test_anchor_exact.py</code> — a one-character change returns <code>ANCHOR_NOT_FOUND</code> in exact mode and <code>match: fuzzy</code> in best mode</td>
+</tr>
+<tr>
+<td>T35</td>
+<td><code>diff</code>: paragraph alignment between two document versions (unchanged, modified, moved, split, merged) with a cross-version address map</td>
+<td>ops</td>
+<td>M</td>
+<td>T6</td>
+<td><code>diff_alignment_errors == 0</code></td>
+<td><code>test_diff_detects_moved_and_split_paragraphs</code> in <code>tests/ops/test_diff.py</code> — a corpus pair with a moved and a split paragraph is aligned exactly</td>
+</tr>
+<tr>
+<td>T36</td>
+<td><code>locate</code>: chapter, scene, estimated page and shortest unique first-and-last-words phrase per paragraph</td>
+<td>ops</td>
+<td>S</td>
+<td>T8, T20, T33</td>
+<td><code>locators_not_unique == 0</code></td>
+<td><code>test_locator_phrase_is_unique_in_document</code> in <code>tests/ops/test_locate.py</code> — every returned phrase matches exactly one place in the document</td>
+</tr>
+<tr>
+<td>T37</td>
+<td><code>compare</code>: write a new redline <code>.docx</code> from two versions, every difference as a tracked change (paragraph alignment from <code>diff</code>, word-level changes inside modified paragraphs)</td>
+<td>ops</td>
+<td>M</td>
+<td>T11, T35</td>
+<td><code>compare_redline_text_mismatches == 0</code></td>
+<td><code>test_compare_accept_all_equals_new_reject_all_equals_old</code> in <code>tests/ops/test_compare.py</code> — accepting all revisions in the redline yields the new text and rejecting all yields the old text</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Status legend</strong>: ☐ not started · ◐ in progress · ☑ merged</p>
+<p><strong>Merge order</strong>: T1 → T2, T3 → T4, T5, T9 → T6, T10 → T7, T8, T11, T18, T20 → T12 → T13–T17, T21, T23, T19 → T22, T24–T28, T31–T37 → T29; T30 when a Windows machine is available.
+<strong>Branch pattern</strong>: <code>doc-control-T&lt;N&gt;-&lt;description&gt;</code> from the default branch</p></div>
+<div class="note" data-for="s-plan-implementation-tasks"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Implementation tasks</span></div><textarea class="note-ta" data-key="s-plan-implementation-tasks" data-label="Implementation tasks" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-evidence-log">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Evidence log</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Gate</th>
+<th>Measured</th>
+<th>Command</th>
+<th>SHA</th>
+<th>Env</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-evidence-log"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Evidence log</span></div><textarea class="note-ta" data-key="s-plan-evidence-log" data-label="Evidence log" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-dependency-graph">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Dependency graph</span></h4>
+<div class="sec-body"><pre><code class="language-text">T1 ─┬─&gt; T2 ──────────────┬─&gt; T7
+    └─&gt; T3 ─┬─&gt; T4 ─┬─&gt; T6 ─┼─&gt; T8 ─┬─&gt; T17
+            │       │       ├─&gt; T18 ─┼─&gt; T19
+            ├─&gt; T5 ─┘       ├─&gt; T20  │
+            └─&gt; T9 ─&gt; T10 ──┴─&gt; T11 ─&gt; T12 ─┬─&gt; T13, T14, T15, T16, T21 ─&gt; T22
+                                            └─&gt; T23 ─&gt; T24, T25, T26
+T5, T10 ─&gt; T27     T12, T15, T18 ─&gt; T28     all tasks except T30 (through T29's Depends list) ─&gt; T29     T15, T16 ─&gt; T30
+T7 ─&gt; T31   T6 ─&gt; T32, T35   T18 ─&gt; T33   T19 ─&gt; T34   T8, T20, T33 ─&gt; T36   T11, T35 ─&gt; T37
+</code></pre></div>
+<div class="note" data-for="s-plan-dependency-graph"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Dependency graph</span></div><textarea class="note-ta" data-key="s-plan-dependency-graph" data-label="Dependency graph" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+<article class="sec" id="s-plan-sign-off">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Sign-off</span></h3>
+<div class="sec-body"><ul>
+<li>[ ] Design reviewed by the owner</li>
+<li>[ ] Contracts agreed with literary-critic (adapter targets API 1.x)</li>
+<li>[ ] Store layout (<code>.doc-control/</code>) validated</li>
+<li>[ ] Ready for execution</li>
+</ul></div>
+<div class="note" data-for="s-plan-sign-off"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Sign-off</span></div><textarea class="note-ta" data-key="s-plan-sign-off" data-label="Sign-off" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'word-control-plan-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Plan notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var name='word-control-plan-notes-'+today()+'-r3.md';
+    var saved=download(name,r.text);openModal(r.text);
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    dirty=false;setState('✓ Backup saved '+nowStamp(),'ok');
+    toast('Exported '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-plan-notes-'+today()+'-r3.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>
