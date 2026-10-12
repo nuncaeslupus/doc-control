@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import Address, AddressRange, fingerprint, parse_address, parse_range
+from doc_control.model.segment import DEFAULT_LANGUAGE, sentence_span
 from doc_control.ooxml.splice import MC_NS, W_NS, DocumentSpans, scan
 from doc_control.ooxml.zipio import Package
 
@@ -119,8 +120,8 @@ class Paragraph:
 class ResolvedRange:
     """A range checked against the document, with offsets filled in.
 
-    A whole-paragraph range covers ``0`` to the end of the last paragraph. For a
-    sentence range the offsets stay ``None``: segmentation resolves them.
+    A whole-paragraph range covers ``0`` to the end of the last paragraph. A sentence
+    range (``.s<k>``) gets the offsets of that sentence, found by segmentation.
     """
 
     range: AddressRange
@@ -282,17 +283,29 @@ class DocumentIndex:
             )
         return para
 
-    def resolve_range(self, value: AddressRange | str) -> ResolvedRange:
+    def resolve_range(
+        self, value: AddressRange | str, language: str = DEFAULT_LANGUAGE
+    ) -> ResolvedRange:
         """Check a range against the document and fill in its offsets.
 
         ``STALE_ADDRESS`` for a position or fingerprint that does not match;
-        ``ADDRESS_INVALID`` for an offset beyond its paragraph's text.
+        ``ADDRESS_INVALID`` for an offset beyond its paragraph's text or a sentence
+        number beyond the paragraph's sentences (split per ``language``).
         """
         rng = parse_range(value) if isinstance(value, str) else value
         first = self.resolve_address(rng.start)
         last = first if rng.end == rng.start else self.resolve_address(rng.end)
         start, end = rng.start_offset, rng.end_offset
-        if rng.sentence is None:
+        if rng.sentence is not None:
+            span = sentence_span(first.text, rng.sentence, language)
+            if span is None:
+                raise DocControlError(
+                    ErrorCode.ADDRESS_INVALID,
+                    f"{rng} names a sentence the paragraph does not have",
+                    address=str(rng),
+                )
+            start, end = span.start, span.end
+        else:
             if start is None or end is None:
                 start, end = 0, len(last.text)
             elif start > len(first.text) or end > len(last.text) or (first is last and start > end):
