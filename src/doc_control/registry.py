@@ -64,6 +64,7 @@ def load_operations() -> dict[str, Operation]:
         meta,
         page,
         read,
+        recipe,
         rename,
         revision,
         segment,

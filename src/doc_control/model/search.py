@@ -164,31 +164,56 @@ class Matcher:
             raise _invalid(f"invalid regular expression: {exc}") from exc
         self._folder = _folder(options.ignore_accents, fold_case)
 
+    @property
+    def pattern(self) -> re.Pattern[str]:
+        """The compiled pattern (a regex's groups are read from it)."""
+        return self._pattern
+
     def spans(self, text: str) -> Iterator[Span]:
         """Non-empty matches of ``text`` as ``(start, end)`` offsets into ``text``."""
+        for start, end, _ in self.matches(text):
+            yield start, end
+
+    def matches(self, text: str) -> Iterator[Match]:
+        """Non-empty matches as ``(start, end, groups)``, offsets into ``text``.
+
+        Groups are the capture groups' text ("" for one that did not take part). A group
+        is read from ``text`` itself when its edges map back to it; when an edge falls
+        inside what one character folds to (``ß`` is ``ss``) the folded text is used,
+        so a match is never dropped for its groups.
+        """
         folded, units = self._folder.fold(text)
-        found = [
-            (m.start(), m.end()) for m in self._pattern.finditer(folded) if m.end() > m.start()
-        ]
+        found = [m for m in self._pattern.finditer(folded) if m.end() > m.start()]
         if not found:
             return
         if text.isascii():
-            yield from found
+            for m in found:
+                yield m.start(), m.end(), tuple(g or "" for g in m.groups())
             return
         parts = units if units is not None else text
         pieces = [self._folder.unit(u) for u in parts]
         bounds = list(itertools.accumulate(map(len, units), initial=0)) if units else None
         starts = list(itertools.accumulate(map(len, pieces), initial=0))
         boundaries = set(starts)
-        for fs, fe in found:
+
+        def origin(pos: int, end: bool) -> int:
+            i = bisect.bisect_left(starts, pos) if end else bisect.bisect_right(starts, pos) - 1
+            return i if bounds is None else bounds[i]
+
+        for m in found:
+            fs, fe = m.span()
             if fs not in boundaries or fe not in boundaries:
                 continue  # inside a unit, or inside what one character folds to
-            first = bisect.bisect_right(starts, fs) - 1
-            end = bisect.bisect_left(starts, fe)
-            if bounds is None:
-                yield first, end
-            else:
-                yield bounds[first], bounds[end]
+            groups: list[str] = []
+            for n in range(1, (self._pattern.groups or 0) + 1):
+                gs, ge = m.span(n)
+                if gs < 0:
+                    groups.append("")
+                elif gs in boundaries and ge in boundaries:
+                    groups.append(text[origin(gs, False) : origin(ge, True)])
+                else:
+                    groups.append(folded[gs:ge])
+            yield origin(fs, False), origin(fe, True), tuple(groups)
 
 
 def _check_regex(pattern: str) -> None:
@@ -247,6 +272,7 @@ def _catastrophic(parsed: Any) -> bool:
 
 # -- scanning many paragraphs -------------------------------------------------------------
 
+Match = tuple[int, int, tuple[str, ...]]  # (start, end, capture groups)
 Item = tuple[int, str]  # (paragraph number, visible text)
 
 
@@ -274,13 +300,17 @@ class LocalScan:
                 yield number, found
 
 
-def _worker(options: SearchOptions, items: Sequence[Item], progress: Any, conn: Any) -> None:
+def _worker(
+    options: SearchOptions, items: Sequence[Item], progress: Any, conn: Any, detail: bool = False
+) -> None:
     """Child process body: stream matches back, publishing the paragraph being searched."""
     try:
         matcher = Matcher(options)
         for number, text in items:
             progress.value = number
-            found = list(matcher.spans(text)) if text else []
+            found: list[Any] = []
+            if text:
+                found = list(matcher.matches(text) if detail else matcher.spans(text))
             if found:
                 conn.send((number, found))
         conn.send(None)
@@ -302,20 +332,29 @@ class IsolatedScan:
     ``if __name__ == "__main__":``, as ``spawn`` re-imports the main module.
     """
 
-    def __init__(self, options: SearchOptions, items: Sequence[Item], deadline: float) -> None:
+    def __init__(
+        self,
+        options: SearchOptions,
+        items: Sequence[Item],
+        deadline: float,
+        detail: bool = False,
+    ) -> None:
+        self._detail = detail
         self._options = options
         self._items = list(items)
         self._deadline = deadline
         self.stopped_at: int | None = None
 
-    def __iter__(self) -> Generator[tuple[int, list[Span]], None, None]:
+    def __iter__(self) -> Generator[tuple[int, list[Any]], None, None]:
         if not self._items:
             return
         ctx = multiprocessing.get_context("spawn")
         progress = ctx.Value("q", self._items[0][0], lock=False)
         recv, send = ctx.Pipe(duplex=False)
         proc = ctx.Process(
-            target=_worker, args=(self._options, self._items, progress, send), daemon=True
+            target=_worker,
+            args=(self._options, self._items, progress, send, self._detail),
+            daemon=True,
         )
         try:
             proc.start()
