@@ -49,6 +49,7 @@ from doc_control.ooxml import resolve as xml
 from doc_control.ooxml.revisions import PPR
 from doc_control.ooxml.zipio import Package
 from doc_control.ops.tracked import next_in_container
+from doc_control.safety.history import has_live_text, record, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 from doc_control.schema import validate
@@ -162,6 +163,7 @@ class ResolutionResult:
     after_sha256: str | None = None
     backup: Path | None = None
     warnings: list[str] = field(default_factory=list)
+    op_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -182,6 +184,8 @@ class ResolutionResult:
         if not self.dry_run:
             out["sha256"] = self.after_sha256
             out["backup"] = str(self.backup) if self.backup else None
+            if self.op_id:
+                out["op_id"] = self.op_id
         return out
 
 
@@ -193,6 +197,9 @@ class PreparedResolution:
     new_data: bytes | None  # None: nothing to change
     footprint: Footprint
     result: ResolutionResult
+    changes: list[dict[str, Any]] = field(default_factory=list)
+    """The undo-log record: each rewritten paragraph's bytes before and after."""
+    joined: bool = False  # paragraphs were merged; the log cannot restore them
 
 
 # -- selection --------------------------------------------------------------------------
@@ -423,7 +430,19 @@ def prepare_resolutions(
         before_sha256=pkg.sha256,
         warnings=warnings,
     )
-    return PreparedResolution(pkg, new_data, footprint, result)
+    changes = [
+        {
+            "part": DOCUMENT_PART,
+            "kind": "replace",
+            "index": span,
+            "before": to_text(spans.paragraph_bytes(span)),
+            "after": to_text(data),
+            "text_before": next(p.text for p in index.paragraphs if p.span_index == span),
+            "deleted": not has_live_text(data),
+        }
+        for span, data in sorted(replacements.items())
+    ]
+    return PreparedResolution(pkg, new_data, footprint, result, changes, bool(gone))
 
 
 def _address_map(old: DocumentIndex, new: DocumentIndex, gone: set[int]) -> dict[str, str]:
@@ -556,9 +575,42 @@ def apply_resolutions(
         env=env,
         stage=stage,
     )
+    warnings = list(result.warnings)
+    op_id: str | None = None
+    try:
+        op_id = record(
+            doc_path,
+            "batch",
+            before_sha256=written.before_sha256,
+            after_sha256=written.after_sha256,
+            backup=written.backup,
+            changes=prepared.changes,
+            request=[_as_request(op) for op in ops],
+            footprint={DOCUMENT_PART: result.footprint},
+            # Joined paragraphs are not logged, so `undo` refuses this entry (safety.history).
+            extra={"parts": ["joined paragraphs"]} if prepared.joined else None,
+            now=now,
+            env=env,
+        )
+    except (DocControlError, OSError) as exc:
+        warnings.append(f"HISTORY_NOT_RECORDED: the write succeeded but could not be logged: {exc}")
     return replace(
         result,
         before_sha256=written.before_sha256,
         after_sha256=written.after_sha256,
         backup=written.backup,
+        warnings=warnings,
+        op_id=op_id,
     )
+
+
+def _as_request(op: ResolveRevisions) -> dict[str, Any]:
+    out: dict[str, Any] = {"op": f"revision.{op.action}"}
+    if op.ids is not None:
+        out["ids"] = list(op.ids)
+    for key in ("author", "at"):
+        if getattr(op, key) is not None:
+            out[key] = getattr(op, key)
+    if op.all:
+        out["all"] = True
+    return out

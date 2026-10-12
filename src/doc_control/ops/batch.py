@@ -13,9 +13,14 @@ response with a per-operation preview. The result carries ``address_map`` (old t
 address of every paragraph whose index changed) and, with the envelope's ``doc``, the
 new sha256.
 
-The operation kinds are batch operations only; they are not registered as
-standalone writes. ``revision.*`` operations resolve revisions (see
-:mod:`doc_control.ops.revision`) and cannot be mixed with the editing kinds.
+The text operation kinds are batch operations only; they are not registered as
+standalone writes. The style kinds (``style.create``, ``style.update``, ``style.rename``,
+``style.merge``, see :mod:`doc_control.ops.stylewrite`) are batch kinds too, but a batch
+holds either text kinds or style kinds, never both: style definition changes are not
+tracked changes, so a style batch is one verified write of ``word/styles.xml`` (and the
+references to renamed or merged styles) with the same dry run, ``expect`` and backup.
+``revision.accept`` and ``revision.reject`` (see :mod:`doc_control.ops.revision`) are batch
+kinds that resolve revisions; they cannot share a batch with other kinds.
 """
 
 from __future__ import annotations
@@ -37,10 +42,16 @@ from doc_control.ops.revision import (
     OPERATION_SCHEMAS as REVISION_SCHEMAS,
 )
 from doc_control.ops.revision import apply_resolutions, resolution_from_dict
+from doc_control.ops.stylewrite import STYLE_KINDS, apply_style_ops, op_schema
 from doc_control.ops.tracked import OPERATION_SCHEMAS, apply_edits, edit_from_dict
 from doc_control.registry import operation
 
-ALL_SCHEMAS = {**OPERATION_SCHEMAS, **COMMENT_SCHEMAS, **REVISION_SCHEMAS}
+ALL_SCHEMAS = {
+    **OPERATION_SCHEMAS,
+    **COMMENT_SCHEMAS,
+    **{k: op_schema(k) for k in STYLE_KINDS},
+    **REVISION_SCHEMAS,
+}
 BATCH_KINDS = tuple(ALL_SCHEMAS)
 
 _SCHEMA: dict[str, Any] = {
@@ -104,9 +115,9 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     "batch",
     "write",
     "Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, "
-    "comment.add, comment.reply and comment.resolve together, or revision.accept and "
-    "revision.reject to resolve revisions (by ids, author, address range or all), all or "
-    "nothing; dry_run previews.",
+    "comment.add, comment.reply and comment.resolve together, all or nothing, or "
+    "style.create/update/rename/merge together, or revision.accept and revision.reject to "
+    "resolve revisions (by ids, author, address range or all); dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
@@ -139,6 +150,20 @@ def batch(request: dict[str, Any]) -> Reply:
             dry_run=request.get("dry_run", False),
         )
         return Reply(res.to_dict(), doc=Document(path).envelope_doc())
+    style_ops = [isinstance(o, dict) and o.get("op") in STYLE_KINDS for o in request["ops"]]
+    if any(style_ops):
+        if not all(style_ops):
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                "style operations and text operations cannot share a batch",
+            )
+        styled = apply_style_ops(
+            Path(path),
+            request["ops"],
+            expect_sha256=expect.get("sha256"),
+            dry_run=request.get("dry_run", False),
+        )
+        return Reply(styled, doc=Document(path).envelope_doc())
     edits = edits_from_request(request["ops"])
     apply = apply_batch if any(is_comment_edit(e) for e in edits) else apply_edits
     result = apply(

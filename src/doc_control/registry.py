@@ -57,6 +57,7 @@ def load_operations() -> dict[str, Operation]:
         compare,
         diff,
         find,
+        history,
         layout,
         locate,
         meta,
@@ -65,6 +66,8 @@ def load_operations() -> dict[str, Operation]:
         rename,
         revision,
         segment,
+        styleset,
+        stylewrite,
         text,
     )
 

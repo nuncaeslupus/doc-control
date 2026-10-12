@@ -37,6 +37,10 @@ AUTHORS = ("Ana", "Ben", "Claude")
 A = 'w:id="{}" w:author="Ana" w:date="2026-01-01T00:00:00Z"'
 
 
+def run_op(reply: Any) -> dict[str, Any]:
+    return dict(reply.result)
+
+
 def resolve_doc(path: Path, action: str, **sel: Any) -> dict[str, Any]:
     return apply_resolutions(path, [ResolveRevisions(action, **sel)], env={}).to_dict()
 
@@ -349,3 +353,33 @@ def test_comment_survives_accepting_the_deletion_of_its_text(corpus_doc: CorpusW
     assert [c.text for c in comments] == ["note"] and comments[0].at is not None
     assert b"commentReference" in xml_of(path) and pending(path) == []
     assert texts(path)[target.number - 1] == target.text[:2] + target.text[8:]
+
+
+def test_resolutions_are_logged_and_undo_follows_the_history_rules(tmp_path: Path) -> None:
+    from doc_control.ops.history import undo
+    from doc_control.safety.history import read_log
+
+    plain = (
+        f"<w:p><w:ins {A.format(1)}><w:r><w:t>a</w:t></w:r></w:ins><w:r><w:t>b</w:t></w:r></w:p>"
+    )
+    path = revsim.make_doc(tmp_path / "d.docx", plain)
+    before = xml_of(path)
+    out = batch({"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
+    assert run_op(out)["op_id"] == "h-000001"
+    entry = read_log(tmp_path / ".doc-control" / "d.docx" / "log.jsonl").entries[0]
+    assert entry["request"] == [{"op": "revision.reject", "all": True}] and not entry.get("parts")
+    assert texts(path) == ["b"]
+    undo({"doc": str(path)})
+    assert xml_of(path) == before
+
+    merging = (
+        f"<w:p><w:pPr><w:rPr><w:del {A.format(1)}/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"
+        "<w:p><w:r><w:t>y</w:t></w:r></w:p>"
+    )
+    path = revsim.make_doc(tmp_path / "m.docx", merging)
+    out = batch({"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
+    assert run_op(out)["op_id"] == "h-000001" and texts(path) == ["xy"]
+    written = path.read_bytes()
+    with pytest.raises(DocControlError) as err:
+        undo({"doc": str(path)})
+    assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT and path.read_bytes() == written
