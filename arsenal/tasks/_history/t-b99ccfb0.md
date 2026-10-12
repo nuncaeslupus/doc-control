@@ -4,6 +4,7 @@ title: "T22: `.dotx` export and import of style sets"
 label: "dotx export and import"
 priority: 5
 deps: [t-f2f3fe85]
+status: merged
 ---
 
 # T22: `.dotx` export and import of style sets

@@ -56,6 +56,7 @@ def load_operations() -> dict[str, Operation]:
         comments,
         compare,
         diff,
+        dotx,
         find,
         history,
         layout,
