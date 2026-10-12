@@ -21,6 +21,9 @@ Options
     ``Elenaa``. Each form is matched as a whole word too. Where forms overlap, the
     longest wins.
 
+Deferred: a nested ``{"op": "term.rename"}`` inside ``batch`` (it needs the document to
+expand); ``term.rename`` is its own write operation for now.
+
 Not renamed, never corrupted
     Hidden text (runs with ``w:vanish``) and field instructions are not part of the
     visible text, so they are not searched and stay as they are. A match with a character
@@ -170,19 +173,31 @@ def _cased(c: str) -> bool:
 
 
 def match_case(matched: str, exact: str, target: str) -> str:
-    """``target`` dressed in the capitalisation of ``matched``."""
+    """``target`` dressed in the capitalisation of ``matched``.
+
+    The exact spelling of the old term, and any odd mix, give ``target`` as written. All
+    capitals (two letters or more) give ``target.upper()``. Lower case gives
+    ``target.lower()`` unless ``target`` has a capital after its first letter (``McDonald``).
+    A capital first letter followed by lower case capitalises the first letter of
+    ``target``, unless ``target`` is not all lower case or title case (``iPhone``).
+    """
     if matched == exact:
         return target
     letters = [c for c in matched if _cased(c)]
     if not letters:
         return target
     if all(c == c.lower() for c in letters):
-        return target.lower()
+        inner = [c for c in target if _cased(c)][1:]
+        return target if any(c != c.lower() for c in inner) else target.lower()
     if len(letters) > 1 and all(c == c.upper() for c in letters):
         return target.upper()
     if letters[0] == letters[0].upper() and all(c == c.lower() for c in letters[1:]):
+        shape = [c for c in target if _cased(c)]
+        plain = all(c == c.lower() for c in shape[1:])  # all lower case or title case
         i = next((i for i, c in enumerate(target) if _cased(c)), None)
-        return target if i is None else target[:i] + target[i].upper() + target[i + 1 :]
+        if i is None or not plain:
+            return target
+        return target[:i] + target[i].upper() + target[i + 1 :]
     return target
 
 

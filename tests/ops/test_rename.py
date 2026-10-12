@@ -85,6 +85,28 @@ def test_match_case_shapes() -> None:
     assert match_case("123", "123", "456") == "456"
 
 
+def test_match_case_keeps_internal_capitals() -> None:
+    assert match_case("mcdonald", "Pedro", "McDonald") == "McDonald"
+    assert match_case("pedro", "Pedro", "McDonald") == "McDonald"
+    assert match_case("Phone", "phone", "iPhone") == "iPhone"
+    assert match_case("PHONE", "phone", "iPhone") == "IPHONE"
+    assert match_case("Phone", "phone", "telefono") == "Telefono"
+    assert match_case("phone", "Phone", "NASA") == "NASA"
+
+
+def test_rename_nfd_text_matches_like_nfc(tmp_path: Path) -> None:
+    nfd = "Luci\u0301a llegó; LUCI\u0301A gritó; Luci\u0301ana no."
+    doc = make_docx(tmp_path / "d.docx", nfd)
+    out = run(doc, "Lucía", "Elena", dry_run=True)
+    assert [(c["before"], c["after"]) for c in out["preview"]] == [
+        ("Luci\u0301a", "Elena"),
+        ("LUCI\u0301A", "ELENA"),
+    ]
+    assert run(doc, "Luci\u0301a", "Elena", dry_run=True)["counts"]["replaced"] == 2
+    run(doc, "Lucía", "Elena")
+    assert accepted(doc)[0].startswith("Elena llegó; ELENA gritó; Luci\u0301ana")
+
+
 def test_options_case_sensitive_whole_word_and_accents(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "d.docx", "Lucía lucía LUCÍA Lucia Lucíana")
     plan = run(doc, "Lucía", "Elena", case_sensitive=True, dry_run=True)
