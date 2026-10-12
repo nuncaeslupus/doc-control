@@ -4,6 +4,7 @@ title: "T6: Document index: paragraphs, visible text with offsets to runs, addre
 label: "document index"
 priority: 5
 deps: [t-e5d218b7, t-85e83731]
+status: merged
 ---
 
 # T6: Document index: paragraphs, visible text with offsets to runs, addresses and fingerprints, range parsing
