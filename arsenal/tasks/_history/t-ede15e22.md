@@ -1,5 +1,6 @@
 ---
 id: t-ede15e22
+status: merged
 title: "T13: Undo log, `undo`, `restore`, `history.list`, `history.search`, `history.purge` (tombstone), orphans listing, backup on open"
 label: "undo log undo restore"
 priority: 5
