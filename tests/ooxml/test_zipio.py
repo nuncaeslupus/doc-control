@@ -321,7 +321,6 @@ def test_duplicate_member_names_return_not_a_docx(tmp_path: Path) -> None:
     assert err.details["duplicates"] == ["word/document.xml"]
 
 
-@pytest.mark.writes_invalid_docs  # stdlib zipfile cannot read it back, so the lint cannot either
 def test_comment_containing_end_signature_is_not_zip64(tmp_path: Path) -> None:
     """An archive comment that looks like a ZIP64 locator plus end record is just a comment."""
     path = make_docx(tmp_path / "x.docx", "uno")

@@ -11,9 +11,14 @@ py="$work/venv/bin/python"
 
 # Network off: a fresh network namespace when the kernel allows it, otherwise a
 # sitecustomize that makes every socket connection fail.
-if unshare -rn true 2>/dev/null; then
-  isolate=(unshare -rn)
-  echo "isolation: network namespace"
+me=$(id -un)
+if [ "$(id -u)" = 0 ] && unshare -n true 2>/dev/null; then
+  isolate=(unshare -n)
+  echo "isolation: network namespace (root)"
+elif sudo -n unshare -n true 2>/dev/null; then
+  # Run as the invoking user inside the namespace; the venv stays user-owned.
+  isolate=(sudo -n unshare -n -- sudo -n -u "$me" env "PATH=$PATH")
+  echo "isolation: network namespace (sudo)"
 else
   mkdir "$work/block"
   cat >"$work/block/sitecustomize.py" <<'PY'

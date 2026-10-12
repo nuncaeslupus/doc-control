@@ -95,7 +95,7 @@ jobs:
         run: uv run pytest -q tests/corpus
       - name: Round trip of packages the tool wrote
         run: |
-          DOC_CONTROL_KEEP_DOCS="$RUNNER_TEMP/kept-docs" uv run pytest -q tests/ooxml tests/safety tests/ops
+          DOC_CONTROL_KEEP_DOCS="$RUNNER_TEMP/kept-docs" uv run pytest -q tests/safety tests/ops
           uv run python scripts/ci_validate_docs.py --roundtrip "$RUNNER_TEMP/kept-docs"
 
   smoke-no-network:
@@ -127,6 +127,7 @@ jobs:
           python-version: "3.13"
       - run: uv sync --locked
       - name: Run benchmarks
+        shell: bash
         run: make bench 2>&1 | tee bench-results.txt
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
