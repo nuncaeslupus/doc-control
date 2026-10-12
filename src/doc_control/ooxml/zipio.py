@@ -214,8 +214,19 @@ def restore_file(src: Path, dest: Path) -> None:
     commit_bytes(src.read_bytes(), dest, None)
 
 
-def commit_bytes(payload: bytes, dest: Path, stage: Callable[[str], None] | None) -> None:
-    """Write ``payload`` to ``dest`` via a same-directory temp file and an atomic replace."""
+def commit_bytes(
+    payload: bytes,
+    dest: Path,
+    stage: Callable[[str], None] | None,
+    *,
+    exclusive: bool = False,
+) -> None:
+    """Write ``payload`` to ``dest`` via a same-directory temp file and an atomic replace.
+
+    With ``exclusive`` the file is created only if ``dest`` does not exist, also if it
+    appears meanwhile (``FileExistsError``): a hard link, or an exclusive copy where
+    links are unsupported, never a replace.
+    """
 
     def at(name: str) -> None:
         if stage is not None:
@@ -233,10 +244,35 @@ def commit_bytes(payload: bytes, dest: Path, stage: Callable[[str], None] | None
             os.fsync(fh.fileno())
         tmp.chmod(mode)
         at("replace")
-        _replace(tmp, dest)
+        if exclusive:
+            _claim(tmp, dest)
+        else:
+            _replace(tmp, dest)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+def _claim(tmp: Path, dest: Path) -> None:
+    """Give ``tmp`` the name ``dest`` without replacing an existing file."""
+    try:
+        os.link(tmp, dest)
+    except FileExistsError:
+        raise
+    except (OSError, NotImplementedError):
+        if os.name == "nt":
+            tmp.rename(dest)  # Windows rename never clobbers
+            return
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(tmp.read_bytes())
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
+    tmp.unlink()
 
 
 def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:

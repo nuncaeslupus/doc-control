@@ -17,7 +17,7 @@ from doc_control.cli import main
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex
 from doc_control.ooxml.zipio import Package
-from doc_control.ops.compare import compare_documents, word_edits
+from doc_control.ops.compare import accepts_to, compare_documents, word_edits
 from doc_control.registry import REGISTRY, load_operations
 from tests.corpus import validator
 from tests.corpus.generator import KINDS, generate
@@ -90,19 +90,16 @@ def text_mismatches(old_doc: Path, new_doc: Path, out: Path) -> int:
     that reject-all gets wrong (a different paragraph count counts every paragraph)."""
     result = compare_documents(old_doc, new_doc, out, author=AUTHOR)
     accepted, rejected = redline_texts(out)
-    # A cell's last paragraph cannot be removed (the warning says so): one empty one remains.
-    unremovable = any("cannot be removed" in w for w in result.warnings)
     with zipfile.ZipFile(old_doc) as zf:
         pending = any(revsim.deleted_marks(zf.read("word/document.xml")))
     total = 0
-    # Another author's pending paragraph deletion in the old file joins paragraphs on accept.
-    for got, want in ((accepted, texts(new_doc)), (rejected, texts(old_doc))):
-        if (pending or unremovable) and got is accepted:
-            continue
-        if len(got) != len(want):
-            total += max(len(got), len(want))
-        else:
-            total += sum(a != b for a, b in zip(got, want, strict=True))
+    # Only the known differences are tolerated (see accepts_to): an unremovable cell-last
+    # paragraph leaves an empty one, another author's pending deletion joins paragraphs.
+    unremovable = any("cannot be removed" in w for w in result.warnings)
+    if not accepts_to(accepted, texts(new_doc), unremovable=unremovable, foreign=pending):
+        total += max(len(accepted), len(texts(new_doc)))
+    if rejected != texts(old_doc):
+        total += max(len(rejected), len(texts(old_doc)))
     return total
 
 
@@ -405,3 +402,72 @@ def test_compare_word_diff_of_huge_paragraphs_is_bounded(tmp_path: Path) -> None
     old = make_docx(tmp_path / "o.docx", big)
     new = make_docx(tmp_path / "n.docx", changed)
     assert text_mismatches(old, new, tmp_path / "r.docx") == 0
+
+
+def _para(text: str) -> str:
+    return f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"
+
+
+def test_compare_repeated_paragraph_before_a_table_cell_does_not_crash(tmp_path: Path) -> None:
+    body = _para("c") + _para("c") + f"<w:tbl><w:tr><w:tc>{_para('a')}</w:tc></w:tr></w:tbl>"
+    old = revsim.make_doc(tmp_path / "o.docx", body + _para("end"))
+    new = make_docx(tmp_path / "n.docx", "a", "c", "end")
+    assert text_mismatches(old, new, tmp_path / "r.docx") == 0
+
+
+def test_compare_fuzz_with_tables_in_the_old_document(tmp_path: Path) -> None:
+    bad = 0
+    for seed in range(150):
+        rng = random.Random(seed)
+        parts: list[str] = []
+        for _ in range(rng.randint(2, 8)):
+            if rng.random() < 0.3:
+                cell = "".join(_para(rng.choice(_WORDS)) for _ in range(rng.randint(1, 2)))
+                parts.append(f"<w:tbl><w:tr><w:tc>{cell}</w:tc></w:tr></w:tbl>")
+                parts.append(_para("sep"))
+            else:
+                parts.append(_para(rng.choice(_WORDS)))
+        old = revsim.make_doc(tmp_path / "o.docx", "".join(parts))
+        new = make_docx(tmp_path / "n.docx", *edit_texts(rng, texts(old), rng.randint(1, 6)))
+        out = tmp_path / "r.docx"
+        out.unlink(missing_ok=True)
+        try:
+            bad += text_mismatches(old, new, out)
+        except DocControlError as err:
+            assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+    assert bad == 0
+
+
+def test_compare_moved_paragraph_with_a_bookmark_is_deleted_and_inserted(tmp_path: Path) -> None:
+    marked = (
+        '<w:p><w:bookmarkStart w:id="7" w:name="m"/><w:r><w:t>marked paragraph text</w:t></w:r>'
+        '<w:bookmarkEnd w:id="7"/></w:p>'
+    )
+    body = _para("one one one") + marked + _para("two two two") + _para("three three three")
+    old = revsim.make_doc(tmp_path / "o.docx", body)
+    new = make_docx(
+        tmp_path / "n.docx",
+        "one one one",
+        "two two two",
+        "three three three",
+        "marked paragraph text",
+    )
+    result = compare_documents(old, new, tmp_path / "r.docx", author=AUTHOR)
+    assert result.warnings == []
+    assert redline_texts(tmp_path / "r.docx") == (texts(new), texts(old))
+
+
+def test_compare_never_overwrites_a_file_that_appears_meanwhile(tmp_path: Path) -> None:
+    old = make_docx(tmp_path / "o.docx", "Before text here.")
+    new = make_docx(tmp_path / "n.docx", "After text here.")
+    out = tmp_path / "r.docx"
+
+    def appear(stage: str) -> None:
+        if stage == "replace":
+            out.write_bytes(b"someone else's file")
+
+    with pytest.raises(DocControlError) as err:
+        compare_documents(old, new, out, stage=appear)
+    assert err.value.code is ErrorCode.SCHEMA_INVALID
+    assert out.read_bytes() == b"someone else's file"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["n.docx", "o.docx", "r.docx"]

@@ -55,7 +55,14 @@ from doc_control.model.align import (
     align,
 )
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
-from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author, format_date, mark_state
+from doc_control.ooxml.revisions import (
+    DEFAULT_AUTHOR,
+    ParagraphEditor,
+    RevisionContext,
+    format_author,
+    format_date,
+    mark_state,
+)
 from doc_control.ooxml.zipio import Package, build_package, commit_bytes
 from doc_control.ops.tracked import (
     DeleteParagraphs,
@@ -272,7 +279,8 @@ def _unmove_trailing(plan: _Plan) -> None:
             if j in plan.moved_out:
                 plan.moved_out.discard(j)
                 plan.removed.add(j)
-                del plan.moves[by_old[j]]
+                if j in by_old:
+                    plan.moves.pop(by_old[j], None)
             j -= 1
 
 
@@ -283,7 +291,9 @@ def _edits(plan: _Plan) -> list[Edit]:
     anchors = _anchor(plan, kept_by_new)
     anchored = {a for a in anchors.values() if a is not None}
     for j in [j for j, o in plan.moves.items() if not _can_move(plan, o, anchors.get(j))]:
-        plan.removed.add(plan.moves.pop(j))  # no tracked move possible: delete and insert
+        gone = plan.moves.pop(j)  # no tracked move possible: delete and insert
+        plan.moved_out.discard(gone)
+        plan.removed.add(gone)
 
     _unmove_trailing(plan)
     # Removal runs and the trailing special case: the last paragraph of a container.
@@ -362,9 +372,21 @@ def _edits(plan: _Plan) -> list[Edit]:
     return edits
 
 
+def _carryable(old: DocumentIndex, para: Paragraph) -> bool:
+    """False if the paragraph holds a bookmark, comment anchor or field a copy cannot carry."""
+    elem = old.spans.parse_paragraph(para.span_index)
+    try:
+        ParagraphEditor(elem, para, RevisionContext(set(), "x", "d")).copy_runs()
+    except DocControlError:
+        return False
+    return True
+
+
 def _can_move(plan: _Plan, source: int, anchor: int | None) -> bool:
     """A tracked move needs a target slot in front of a neighbour, away from the source."""
     old = plan.old
+    if not _carryable(old, old.paragraphs[source]):
+        return False
     if anchor is None:
         return source != 0
     last = plan.tails[anchor][-1] if anchor in plan.tails else anchor
@@ -400,6 +422,19 @@ class CompareResult:
             "author": self.author,
             "date": self.date,
         }
+
+
+def accepts_to(got: list[str], want: list[str], *, unremovable: bool, foreign: bool) -> bool:
+    """Is ``got`` (accept-all) the new text? Exact, except for the two known differences:
+    an unremovable last paragraph leaves one extra empty paragraph, and another author's
+    pending paragraph deletion joins paragraphs (the text must still agree)."""
+    if got == want:
+        return True
+    if foreign:
+        return "".join(got) == "".join(want)
+    if unremovable:
+        return [t for t in got if t] == [t for t in want if t] and len(got) >= len(want)
+    return False
 
 
 def _accepted_texts(data: bytes, ids: set[str]) -> tuple[list[str], bool]:
@@ -487,27 +522,30 @@ def compare_documents(
         result = prepared.result
         revisions, author_out, date_out = result.revision_ids, result.author, result.date
         footprint = prepared.footprint
-        if not plan.trailing:
-            got, foreign = _accepted_texts(prepared.new_data, {str(r) for r in revisions})
-            want = [p.text for p in index_new.paragraphs]
-            if foreign:
-                plan.warnings.append(
-                    "the old document has tracked paragraph deletions by other authors: "
-                    "accepting everything also joins those paragraphs"
-                )
-            elif got != want:
-                bad = next(
-                    (n for n, (a, b) in enumerate(zip(got, want, strict=False), 1) if a != b), 0
-                )
-                raise DocControlError(
-                    ErrorCode.INTERNAL,
-                    "self-check: accepting the redline does not give the new text "
-                    f"(paragraph {bad})",
-                    paragraph=bad,
-                )
+        got, foreign = _accepted_texts(prepared.new_data, {str(r) for r in revisions})
+        want = [p.text for p in index_new.paragraphs]
+        if not accepts_to(got, want, unremovable=plan.trailing, foreign=foreign):
+            bad = next((n for n, (a, b) in enumerate(zip(got, want, strict=False), 1) if a != b), 0)
+            raise DocControlError(
+                ErrorCode.INTERNAL,
+                f"self-check: accepting the redline does not give the new text (paragraph {bad})",
+                paragraph=bad,
+            )
+        if foreign:
+            plan.warnings.append(
+                "the old document has tracked paragraph deletions by other authors: "
+                "accepting everything also joins those paragraphs"
+            )
         payload = build_package(pkg_old, {DOCUMENT_PART: prepared.new_data})
 
-    commit_bytes(payload, output, stage)
+    try:
+        commit_bytes(payload, output, stage, exclusive=True)
+    except FileExistsError as exc:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"output already exists, nothing was written: {output}",
+            path=str(output),
+        ) from exc
     written = Package(output)
     if footprint is not None:
         problems = verify_footprint(pkg_old, written, footprint)
