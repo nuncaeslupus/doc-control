@@ -1,17 +1,17 @@
 {
   "recipe": "dashes-em",
   "version": 1,
-  "description": "Two or three hyphens (with or without spaces around) become an unspaced em dash",
+  "description": "Two or three hyphens between two words (with or without a space on each side) become an unspaced em dash; options, URLs, number ranges, sums and longer hyphen runs are left alone",
   "match": {
     "find": {
-      "regex": "(?<=\\S) ?-{2,3} ?(?=\\S)"
+      "regex": "(?<![\\w/\\\\@:=#%~+])([^\\W\\d_]+)(?: -{2,3} |-{2,3})(?!-)([^\\W\\d_]+)(?![\\w/\\\\@:=%~-])"
     }
   },
   "propose": [
     {
       "op": "text.replace",
       "at": "$match",
-      "text": "—"
+      "text": "$1—$2"
     }
   ]
 }

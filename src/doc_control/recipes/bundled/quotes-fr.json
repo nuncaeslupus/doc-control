@@ -1,10 +1,10 @@
 {
   "recipe": "quotes-fr",
   "version": 1,
-  "description": "Straight double quotes in pairs become French guillemets with non-breaking spaces",
+  "description": "Straight double quotes in pairs become French guillemets with non-breaking spaces; a quote mark after a digit (inches) never opens a quotation",
   "match": {
     "find": {
-      "regex": "\"\\s*([^\"]*?\\S)\\s*\""
+      "regex": "(?<!\\d)\"\\s*([^\"]*?\\S)\\s*\""
     }
   },
   "propose": [

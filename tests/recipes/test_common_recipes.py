@@ -79,9 +79,7 @@ def test_recipe_gives_expected_text_and_is_idempotent(tmp_path: Path, name: str)
     assert batch["ops"], name
     assert isinstance(REGISTRY["batch"].run(batch), Reply)
     assert texts(doc) == after
-    # a second run finds nothing left to fix (format.apply may be re-proposed; it writes nothing)
-    again = [o for o in propose(doc, name)["ops"] if o["op"] != "format.apply"]
-    assert again == []
+    assert propose(doc, name)["ops"] == []  # a second run finds nothing left to fix
 
 
 def test_proposing_and_previewing_write_nothing(tmp_path: Path) -> None:
@@ -146,3 +144,64 @@ def test_quote_recipes_work_on_the_same_paragraph_in_turn(tmp_path: Path) -> Non
         assert batch["ops"], name
         assert isinstance(REGISTRY["batch"].run(batch), Reply)
     assert texts(doc) == ["\u2018It's mine,\u2019 he said, \u201cno.\u201d"]
+
+
+def unchanged(tmp_path: Path, name: str, *paragraphs: str) -> None:
+    doc = make_docx(tmp_path / "a.docx", *paragraphs)
+    assert propose(doc, name)["ops"] == [], paragraphs
+
+
+def test_dashes_em_leaves_options_urls_ranges_sums_and_long_runs(tmp_path: Path) -> None:
+    unchanged(
+        tmp_path,
+        "dashes-em",
+        "run --verbose now",
+        "see http://a.com/a--b today",
+        "in 2020--2021 it",
+        "5 -- 3 is two",
+        "a ---- b",
+        "a----b",
+    )
+
+
+def test_dashes_spaced_en_leaves_sums_negatives_and_list_dashes(tmp_path: Path) -> None:
+    unchanged(tmp_path, "dashes-spaced-en", "5 - 3 = 2", "-5 - -3", "- item - x", "x2 - y")
+
+
+@pytest.mark.parametrize("name", ["quotes-en", "quotes-de", "quotes-fr"])
+def test_quote_recipes_leave_inch_and_foot_marks(tmp_path: Path, name: str) -> None:
+    unchanged(tmp_path, name, 'the 5" pipe and the 6" pipe', "He is 5'10\" tall")
+
+
+def test_quotes_after_inch_marks_still_pair_up(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", 'the 5" pipe said "hi"')
+    assert isinstance(REGISTRY["batch"].run(propose(doc, "quotes-en")), Reply)
+    assert texts(doc) == ['the 5" pipe said \u201chi\u201d']
+
+
+def test_single_quotes_leave_rock_n_roll(tmp_path: Path) -> None:
+    unchanged(tmp_path, "quotes-en-single", "rock 'n' roll")
+
+
+def test_scene_break_does_not_propose_centring_for_a_centred_paragraph(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "* * *")
+    first = propose(doc, "scene-break")["ops"]
+    assert [o["op"] for o in first] == ["format.apply"]  # text is right, centring is not
+    assert isinstance(REGISTRY["batch"].run(propose(doc, "scene-break")), Reply)
+    reply = REGISTRY["recipe.run"].run({"doc": str(doc), "recipe": "scene-break"})
+    assert isinstance(reply, Reply) and reply.result["batch"]["ops"] == []
+    assert reply.result["skipped"] == [] and reply.warnings == []
+
+
+def test_undeletable_blank_paragraph_is_skipped_not_fatal(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "Keep", "  ", "Keep too", "   ")  # last one: no mark
+    reply = REGISTRY["recipe.run"].run({"doc": str(doc), "recipe": "blank-paragraphs"})
+    assert isinstance(reply, Reply)
+    ops = reply.result["batch"]["ops"]
+    assert [(o["op"], o["at"].split("#")[0]) for o in ops] == [("para.delete", "p2")]
+    skipped = reply.result["skipped"]
+    assert [s["at"].split("#")[0] for s in skipped] == ["p4"]
+    assert "last paragraph" in skipped[0]["reason"]
+    assert any(w.startswith("SKIPPED") for w in reply.warnings)
+    assert isinstance(REGISTRY["batch"].run(reply.result["batch"]), Reply)
+    assert texts(doc) == ["Keep", "", "Keep too", "   "]

@@ -1,10 +1,10 @@
 {
   "recipe": "quotes-en",
   "version": 1,
-  "description": "Straight double quotes in pairs become English curly quotes",
+  "description": "Straight double quotes in pairs become English curly quotes; a quote mark after a digit (inches) never opens a quotation",
   "match": {
     "find": {
-      "regex": "\"([^\"]+)\""
+      "regex": "(?<!\\d)\"([^\"\\s][^\"]*)\""
     }
   },
   "propose": [
