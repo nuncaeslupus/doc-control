@@ -1,0 +1,50 @@
+"""Operation registry: one JSON Schema per operation, shared by CLI and MCP."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from doc_control.schema import validate
+
+Handler = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class Operation:
+    name: str
+    kind: Literal["read", "write"]
+    summary: str
+    schema: dict[str, Any]
+    handler: Handler
+
+    def run(self, request: dict[str, Any]) -> dict[str, Any]:
+        validate(request, self.schema)
+        return self.handler(request)
+
+
+REGISTRY: dict[str, Operation] = {}
+
+
+def operation(
+    name: str, kind: Literal["read", "write"], summary: str, schema: dict[str, Any]
+) -> Callable[[Handler], Handler]:
+    """Register a handler; the schema must describe an object request."""
+
+    def wrap(handler: Handler) -> Handler:
+        if name in REGISTRY:
+            raise ValueError(f"operation registered twice: {name}")
+        if schema.get("type") != "object":
+            raise ValueError(f"schema for {name} must be an object schema")
+        REGISTRY[name] = Operation(name, kind, summary, schema, handler)
+        return handler
+
+    return wrap
+
+
+def load_operations() -> dict[str, Operation]:
+    """Import every operation module so their decorators run."""
+    from doc_control.ops import meta  # noqa: F401
+
+    return REGISTRY
