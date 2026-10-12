@@ -1,0 +1,7 @@
+{
+  "recipe": "house-note-lines",
+  "version": 1,
+  "description": "Remove paragraphs that are nothing but a capitalised working-note marker",
+  "match": {"find": {"regex": "^\\s*(?:X{4,}|CHECK|FIXME|TODO|DELETE)\\W*$", "scope": "paragraph"}},
+  "propose": [{"op": "para.delete", "at": "$para"}]
+}
