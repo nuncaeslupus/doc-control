@@ -93,10 +93,13 @@ __all__ = [
     "Edit",
     "InsertParagraph",
     "MoveParagraphs",
+    "PreparedEdits",
     "ReplaceText",
     "TrackedResult",
     "apply_edits",
     "edit_from_dict",
+    "next_in_container",
+    "prepare_edits",
 ]
 
 PREVIEW_LIMIT = 200
@@ -394,15 +397,41 @@ class _NewParagraph:
 
 
 class _Planner:
-    def __init__(self, index: DocumentIndex) -> None:
+    def __init__(self, index: DocumentIndex, *, layered: bool = False) -> None:
         self.index = index
+        self.layered = layered
         self.layout = _Layout(index)
         self.plans: dict[int, _ParaPlan] = {}
         self.new: list[_NewParagraph] = []
         self.slots: dict[tuple[str, int], int] = {}
         self.previews: list[dict[str, Any]] = []
+        self.removed: dict[int, int] = {}  # paragraph number -> op that deletes or moves it
+        self.anchored: dict[int, set[int]] = {}  # paragraph number -> ops placed relative to it
 
     # -- bookkeeping --
+
+    def _conflict(self, para: Paragraph, a: int, b: int) -> DocControlError:
+        return DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"edit {max(a, b)} is placed relative to {para.address}, which edit "
+            f"{min(a, b)} deletes or moves: addresses refer to the document as read",
+            paragraph=str(para.address),
+            edits=sorted((a, b)),
+        )
+
+    def _anchor(self, para: Paragraph, edit: int) -> None:
+        """Edit ``edit`` inserts or moves relative to ``para``."""
+        other = self.removed.get(para.number)
+        if other is not None and other != edit and not self.layered:
+            raise self._conflict(para, other, edit)
+        self.anchored.setdefault(para.number, set()).add(edit)
+
+    def _remove(self, para: Paragraph, edit: int) -> None:
+        """Edit ``edit`` deletes or moves ``para`` away."""
+        for other in sorted(self.anchored.get(para.number, ())):
+            if other != edit and not self.layered:
+                raise self._conflict(para, other, edit)
+        self.removed[para.number] = edit
 
     def _plan(self, para: Paragraph, edit: int, *, exclusive: bool) -> _ParaPlan:
         plan = self.plans.setdefault(para.number, _ParaPlan(para))
@@ -430,13 +459,13 @@ class _Planner:
         plan.intervals.append(new)
 
     def _claim_slot(self, slot: tuple[str, int], edit: int) -> None:
-        if slot in self.slots and self.slots[slot] != edit:
+        if slot in self.slots and self.slots[slot] != edit and not self.layered:
             raise DocControlError(
                 ErrorCode.BATCH_CONFLICT,
                 f"edits {self.slots[slot]} and {edit} insert at the same place",
                 edits=[self.slots[slot], edit],
             )
-        self.slots[slot] = edit
+        self.slots.setdefault(slot, edit)
 
     def _run_of(self, at: str) -> list[Paragraph]:
         """Paragraphs of ``pN#fp`` or ``pN#fp..pM#fp`` (adjacent, in one container)."""
@@ -511,7 +540,9 @@ class _Planner:
         paras = list(self.index.paragraphs[first.number - 1 : last.number])
         self._require_adjacent(paras, edit.at)
         for para in paras:
-            plan = self._plan(para, i, exclusive=para is not last)
+            if para is not last:
+                self._remove(para, i)
+            plan = self._plan(para, i, exclusive=para is not last and not self.layered)
             if para is first:
                 self._add_interval(plan, _Interval(s, len(para.text), edit.text, i))
             elif para is last:
@@ -536,6 +567,7 @@ class _Planner:
                 address=edit.at,
             )
         for para in paras:
+            self._remove(para, i)
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
@@ -555,9 +587,10 @@ class _Planner:
         )
         assert anchor_at is not None
         anchor = self.index.resolve_address(parse_address(anchor_at))
+        self._anchor(anchor, i)
         slot, native = self._slot_for(anchor, where, i)
         if native:
-            self._plan(anchor, i, exclusive=True).mark = "ins"
+            self._plan(anchor, i, exclusive=not self.layered).mark = "ins"
         self.new.append(_NewParagraph(i, slot, anchor, edit.text, None, native, edit.text))
         self.previews.append(
             {"op": i, "at": f"{where} {anchor.address}", "before": "", "after": _short(edit.text)}
@@ -587,6 +620,7 @@ class _Planner:
                 "it cannot be moved away",
                 address=edit.at,
             )
+        self._anchor(target, i)
         slot, native = self._slot_for(target, where, i)
         if native:
             raise DocControlError(
@@ -596,6 +630,7 @@ class _Planner:
                 address=target_at,
             )
         for para in paras:
+            self._remove(para, i)
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
@@ -637,6 +672,153 @@ def _merge_marks(texts: Sequence[str], carry_forward: Sequence[bool]) -> list[st
     return out
 
 
+@dataclass(frozen=True)
+class PreparedEdits:
+    """The edited ``word/document.xml`` of a package, checked but not written anywhere."""
+
+    pkg: Package
+    new_data: bytes
+    footprint: Footprint
+    result: TrackedResult
+
+
+def next_in_container(index: DocumentIndex, para: Paragraph) -> Paragraph | None:
+    """The paragraph right after ``para`` in the same container, or None if ``para`` is the
+    last of its cell, section or the body (Word cannot delete such a mark)."""
+    return _Layout(index).next_adjacent(para)
+
+
+def prepare_edits(
+    pkg: Package,
+    edits: Sequence[Edit],
+    *,
+    author: str = DEFAULT_AUTHOR,
+    tag: str | None = None,
+    now: datetime | None = None,
+    dry_run: bool = False,
+    layered: bool = False,
+    index: DocumentIndex | None = None,
+) -> PreparedEdits:
+    """Plan and build ``edits`` on ``pkg`` without writing: the part of :func:`apply_edits`
+    that works on bytes, self-checked (see there).
+
+    With ``layered`` several paragraphs may be inserted at the same place (they
+    keep the order of the edits), a paragraph may be edited and also be the anchor of an
+    insertion after the end of its container, and the first paragraph of a range across
+    paragraphs may carry other (non-overlapping) edits; used by ``compare``.
+    """
+    if not edits:
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
+    _check_name(author, "author")
+    if tag is not None:
+        _check_name(tag, "tag")
+    if index is None:
+        index = DocumentIndex.from_package(pkg)
+
+    planner = _Planner(index, layered=layered)
+    for i, edit in enumerate(edits):
+        if isinstance(edit, ReplaceText):
+            planner.replace(i, edit)
+        elif isinstance(edit, InsertParagraph):
+            planner.insert(i, edit)
+        elif isinstance(edit, DeleteParagraphs):
+            planner.delete(i, edit)
+        else:
+            planner.move(i, edit)
+
+    ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
+    spans = index.spans
+    scopes = _bookmark_scopes(pkg, index, planner, ctx)
+    replacements: dict[int, bytes] = {}
+    for number in sorted(planner.plans):
+        plan = planner.plans[number]
+        para = plan.para
+        elem = spans.parse_paragraph(para.span_index)
+        editor = ParagraphEditor(elem, para, ctx)
+        if plan.delete_all:
+            if plan.moved_by is not None:
+                editor.detach_bookmarks(scopes[plan.moved_by])
+            editor.delete_content()
+            _require_no_live_text(elem, para)
+        for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
+            editor.replace(part.start, part.end, part.text)
+        if plan.mark:
+            editor.mark(plan.mark)
+        replacements[para.span_index] = _serialize(spans, elem, para.span_index)
+
+    after: dict[int, list[bytes]] = {}
+    before: dict[int, list[bytes]] = {}
+    last_native = {item.slot: item for item in planner.new if item.native}
+    for item in planner.new:
+        ref_elem = spans.parse_paragraph(item.ref.span_index)
+        # Several paragraphs after the end of a container: only the last keeps the original mark.
+        native = item.native and last_native[item.slot] is item
+        p, props = new_paragraph(ref_elem, ctx, inserted_mark=not native)
+        content: ET.Element | None
+        if item.source is not None:
+            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
+            content = inserted_content(ctx, runs=runs)
+        else:
+            content = inserted_content(ctx, text=item.text, run_props=props)
+        if content is not None:
+            p.append(content)
+        target = after if item.slot[0] == "after" else before
+        target.setdefault(item.slot[1], []).append(_serialize(spans, p, item.slot[1]))
+
+    new_data = spans.splice(replacements, insert_after=after, insert_before=before)
+    footprint = Footprint(
+        replaced=frozenset(replacements),
+        inserted_after=frozenset(after),
+        inserted_before=frozenset(before),
+    )
+
+    # The new numbering: each old paragraph, with the inserted ones around it.
+    by_slot: dict[tuple[str, int], list[_NewParagraph]] = {}
+    for item in planner.new:
+        by_slot.setdefault(item.slot, []).append(item)
+    sequence: list[tuple[Paragraph | None, _NewParagraph | None]] = []
+    expected: list[str] = []
+    for para in index.paragraphs:
+        for item in by_slot.get(("before", para.span_index), []):
+            sequence.append((None, item))
+            expected.append(item.expected)
+        sequence.append((para, None))
+        expected.append(_expected_text(para, planner.plans.get(para.number)))
+        for item in by_slot.get(("after", para.span_index), []):
+            sequence.append((None, item))
+            expected.append(item.expected)
+    new_index = _self_check(index, new_data, ctx, expected, sequence, planner)
+
+    address_map: dict[str, str] = {}
+    moved_to: dict[int, int] = {}  # old number of a moved paragraph -> number of its copy
+    for number, (_, copy) in enumerate(sequence, start=1):
+        if copy is not None and copy.source is not None:
+            moved_to[copy.source.number] = number
+    for number, (old, _) in enumerate(sequence, start=1):
+        if old is None:
+            continue
+        number = moved_to.get(old.number, number)
+        if old.number != number:
+            address_map[str(old.address)] = str(new_index.paragraph(number).address)
+    result = TrackedResult(
+        applied=len(edits),
+        dry_run=dry_run,
+        preview=planner.previews,
+        address_map=address_map,
+        footprint=[
+            f"p{number}"
+            for number, (old, item) in enumerate(sequence, start=1)
+            if item is not None or (old is not None and old.number in planner.plans)
+        ],
+        revision_ids=[int(r) for r in ctx.revision_ids],
+        author=ctx.author,
+        date=ctx.date,
+        before_sha256=pkg.sha256,
+        warnings=_reference_warnings(pkg, scopes),
+    )
+    return PreparedEdits(pkg, new_data, footprint, result)
+
+
 def apply_edits(
     doc_path: Path,
     edits: Sequence[Edit],
@@ -674,105 +856,14 @@ def apply_edits(
         check_unlocked(doc_path)
     check_changed(doc_path, expect_sha256)
     pkg = Package(doc_path)
-    index = DocumentIndex.from_package(pkg)
-
-    planner = _Planner(index)
-    for i, edit in enumerate(edits):
-        if isinstance(edit, ReplaceText):
-            planner.replace(i, edit)
-        elif isinstance(edit, InsertParagraph):
-            planner.insert(i, edit)
-        elif isinstance(edit, DeleteParagraphs):
-            planner.delete(i, edit)
-        else:
-            planner.move(i, edit)
-
-    ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
-    spans = index.spans
-    scopes = _bookmark_scopes(pkg, index, planner, ctx)
-    replacements: dict[int, bytes] = {}
-    for number in sorted(planner.plans):
-        plan = planner.plans[number]
-        para = plan.para
-        elem = spans.parse_paragraph(para.span_index)
-        editor = ParagraphEditor(elem, para, ctx)
-        if plan.delete_all:
-            if plan.moved_by is not None:
-                editor.detach_bookmarks(scopes[plan.moved_by])
-            editor.delete_content()
-            _require_no_live_text(elem, para)
-        for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
-            editor.replace(part.start, part.end, part.text)
-        if plan.mark:
-            editor.mark(plan.mark)
-        replacements[para.span_index] = _serialize(spans, elem, para.span_index)
-
-    after: dict[int, list[bytes]] = {}
-    before: dict[int, list[bytes]] = {}
-    for item in planner.new:
-        ref_elem = spans.parse_paragraph(item.ref.span_index)
-        p, props = new_paragraph(ref_elem, ctx, inserted_mark=not item.native)
-        content: ET.Element | None
-        if item.source is not None:
-            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
-            content = inserted_content(ctx, runs=runs)
-        else:
-            content = inserted_content(ctx, text=item.text, run_props=props)
-        if content is not None:
-            p.append(content)
-        target = after if item.slot[0] == "after" else before
-        target.setdefault(item.slot[1], []).append(_serialize(spans, p, item.slot[1]))
-
-    new_data = spans.splice(replacements, insert_after=after, insert_before=before)
-    footprint = Footprint(
-        replaced=frozenset(replacements),
-        inserted_after=frozenset(after),
-        inserted_before=frozenset(before),
-    )
-
-    # The new numbering: each old paragraph, with the inserted ones around it.
-    by_slot: dict[tuple[str, int], list[_NewParagraph]] = {}
-    for item in planner.new:
-        by_slot.setdefault(item.slot, []).append(item)
-    sequence: list[tuple[Paragraph | None, _NewParagraph | None]] = []
-    expected: list[str] = []
-    for para in index.paragraphs:
-        for item in by_slot.get(("before", para.span_index), []):
-            sequence.append((None, item))
-            expected.append(item.expected)
-        sequence.append((para, None))
-        expected.append(_expected_text(para, planner.plans.get(para.number)))
-        for item in by_slot.get(("after", para.span_index), []):
-            sequence.append((None, item))
-            expected.append(item.expected)
-    new_index = _self_check(index, new_data, ctx, expected, sequence, planner)
-
-    address_map: dict[str, str] = {}
-    for number, (old, _) in enumerate(sequence, start=1):
-        if old is not None and old.number != number:
-            address_map[str(old.address)] = str(new_index.paragraph(number).address)
-    result = TrackedResult(
-        applied=len(edits),
-        dry_run=dry_run,
-        preview=planner.previews,
-        address_map=address_map,
-        footprint=[
-            f"p{number}"
-            for number, (old, item) in enumerate(sequence, start=1)
-            if item is not None or (old is not None and old.number in planner.plans)
-        ],
-        revision_ids=[int(r) for r in ctx.revision_ids],
-        author=ctx.author,
-        date=ctx.date,
-        before_sha256=pkg.sha256,
-        warnings=_reference_warnings(pkg, scopes),
-    )
+    prepared = prepare_edits(pkg, edits, author=author, tag=tag, now=now, dry_run=dry_run)
+    result = prepared.result
     if dry_run:
         return result
     written = write_verified(
         doc_path,
-        {DOCUMENT_PART: new_data},
-        footprint,
+        {DOCUMENT_PART: prepared.new_data},
+        prepared.footprint,
         pkg.sha256,
         now=now,
         env=env,

@@ -599,7 +599,8 @@ def test_move_is_a_tracked_deletion_plus_a_tracked_insertion(tmp_path: Path) -> 
     assert revsim.resolved(original, None, "current") == ["one", "two", "three", "four"]
     old = [str(p.address) for p in build_index(original).paragraphs]
     now = [str(p.address) for p in paragraphs(path)]
-    assert result.address_map == {old[3]: now[4]}  # only "four" moved down a place
+    # "two" is now its inserted copy, and "four" moved down a place
+    assert result.address_map == {old[1]: now[3], old[3]: now[4]}
     assert result.to_dict()["footprint"] == {"word/document.xml": ["p2", "p4"]}
 
 
@@ -1200,8 +1201,11 @@ def test_public_names() -> None:
         "Edit",
         "InsertParagraph",
         "MoveParagraphs",
+        "PreparedEdits",
         "ReplaceText",
         "TrackedResult",
         "apply_edits",
         "edit_from_dict",
+        "next_in_container",
+        "prepare_edits",
     }
