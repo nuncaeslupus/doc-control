@@ -1,0 +1,326 @@
+# Gold set for sentence segmentation (T18).
+# One paragraph per line; sentences are separated by " | ". A paragraph's text is its
+# sentences joined by one space. "@es" and "@generic" switch the language.
+# Sources: every line is an original sentence written for this fixture, except the
+# "cervantes" paragraphs, which are from Don Quijote de la Mancha (Cervantes, 1605;
+# public domain). The "galdos" paragraphs are written fresh in the manner of
+# Benito Pérez Galdós (public domain author); none is copied from him.
+# No private or owner-supplied text is used.
+@es
+# --- plain narration
+La casa estaba al final del camino. | Nadie la había habitado en años. | Las ventanas tenían los postigos cerrados.
+Llovió toda la noche. | Por la mañana el río se había desbordado. | Los vecinos sacaron los muebles a la calle.
+El perro dormía junto a la puerta. | Cuando oyó los pasos levantó la cabeza.
+Marta cerró el libro y miró por la ventana. | Ya era tarde.
+Salimos al amanecer. | El aire olía a pan recién hecho. | En la plaza solo había un barrendero.
+La tormenta llegó sin avisar. | Los niños corrieron a refugiarse bajo el porche. | Nadie dijo una palabra.
+Mi abuelo tenía un huerto pequeño. | Cultivaba tomates, pimientos y unas lechugas tercas. | Cada tarde los regaba con paciencia.
+El tren se detuvo en medio del campo. | Los pasajeros se asomaron a las ventanillas. | No se veía ninguna estación.
+Encendió la lámpara y buscó la carta. | Estaba donde la había dejado. | La leyó dos veces seguidas.
+La biblioteca cerraba a las ocho. | A las siete y media ya solo quedaba el bibliotecario. | Apagó las luces una a una.
+Hacía frío en la cocina. | La estufa se había apagado hacía horas. | Nadie quiso levantarse a encenderla.
+El barco salió del puerto con la marea. | Las gaviotas lo siguieron un buen rato. | Después solo quedó el mar.
+No sabía qué decir. | Se quedó mirando el suelo mientras el reloj marcaba los segundos.
+Los árboles se inclinaban con el viento. | Una puerta golpeaba en alguna parte. | La noche prometía ser larga.
+El mercado empezaba a llenarse de gente. | Las frutas brillaban bajo el sol. | Una mujer discutía el precio de las naranjas.
+Pablo volvió a casa con los zapatos empapados. | Dejó el paraguas en el recibidor y subió sin hacer ruido.
+La carta no tenía remitente. | Solo una fecha y una firma ilegible. | Aun así, Elena supo de quién era.
+Hubo un largo silencio en la sala. | Alguien tosió. | El juez ordenó que se continuara.
+El pueblo se despertó con el repique de las campanas. | Era domingo y hacía sol. | Todo parecía en su sitio.
+Cerró los ojos un momento. | Cuando los abrió, la habitación estaba vacía.
+El camino subía entre encinas y piedras. | A mitad de la cuesta se detuvieron a beber. | El agua sabía a hierro.
+En el patio crecía un limonero. | Sus frutos caían sin que nadie los recogiera. | Las hormigas los aprovechaban.
+La niña dibujaba en el cristal empañado. | Primero una casa, luego un sol, luego tres pájaros torcidos.
+Todo el invierno nevó sin parar. | Las cumbres desaparecieron bajo la niebla. | Los pastores bajaron los rebaños al valle.
+# --- abbreviations
+El Sr. García llegó tarde. | Nadie le preguntó por qué.
+Sr. García llegó.
+La Sra. Martínez abrió la puerta. | Llevaba un abrigo gris.
+Hablé con el Dr. Ruiz y con la Dra. Pérez. | Ambos coincidieron en el diagnóstico.
+El Prof. Vidal dio la clase de ayer. | Fue larguísima.
+Vivo en la Av. de la Constitución, número 12. | Es una calle tranquila.
+El Lic. Torres firmó el contrato. | Después se marchó sin despedirse.
+El Ing. Salas revisó los planos. | Faltaba una cota en el tercer plano.
+Consulta la pág. 45 para más detalles. | Allí está la tabla completa.
+Véase el art. 12 del reglamento. | Dice algo muy distinto de lo que nos contaron.
+Los Sres. Gómez y los Sres. López compartían el palco. | No se hablaban.
+Mañana a las 10 a.m. salimos hacia el aeropuerto. | Llevad el pasaporte.
+Compró pan, leche, huevos, etc. | Luego volvió a casa.
+Compró pan, leche, huevos, etc. y lo guardó todo en la nevera. | No le quedó dinero.
+Trabajó años en EE.UU. antes de volver a España. | Nunca hablaba de ello.
+Vive en EE.UU. | Su hermana también.
+Habló con la Srta. Ramos sobre el horario. | Quedaron en verse el lunes.
+El núm. 7 de la lista estaba tachado. | Nadie recordaba por qué.
+El Dr. Mendoza y el Sr. Alonso llegaron juntos. | La reunión empezó a las cinco.
+Era el cap. 3 del libro. | Lo leí de una sentada.
+La distancia es de 12 km. | Se hace en dos horas a pie.
+Vd. no debería preocuparse. | Todo está bajo control.
+El Sr. Lara, el Dr. Prieto y la Dra. Nieto fueron los primeros en llegar. | Los demás tardaron.
+Se lo dije a Ud. ayer. | No me hizo caso.
+El apdo. 45 sigue sin respuesta. | Escribiré de nuevo.
+Pedro, Luis, Ana, etc. | Todos estaban invitados.
+Nos vimos en la c/ Mayor. | Ella llegó tarde.
+# --- initials and names
+J. R. Tolkien escribió esa novela. | Me la regaló mi tía.
+Hablé con M. Fernández por teléfono. | Dijo que volvería a llamar.
+Fue F. García Lorca quien lo escribió. | Todos lo sabían.
+La obra es de A. Machado. | Se publicó en 1912.
+El informe lo firma J. M. Aguirre. | Está fechado en marzo.
+Conocí a L. Martín en la universidad. | Seguimos en contacto.
+# --- numbers and punctuation inside words
+El resultado fue 3.14 y no 3.41. | Hubo que repetir el cálculo.
+Pagó 1.250 euros por el piano. | Era una ganga.
+Son las 5.30 de la tarde. | Todavía hay luz.
+La temperatura subió a 38,5 grados. | Nadie se atrevió a salir.
+Escribe a info@ejemplo.com para más información. | Responderán en un día.
+Visita www.ejemplo.org mañana. | Habrá novedades.
+Costó 2.000 pesetas en 1975. | Hoy parece poco.
+El 15 de marzo de 1999 nació mi hermana. | Pesó 3,2 kilos.
+Llegamos el 3.º día de viaje. | Estábamos agotados.
+Vive en el 2.º B. | Tiene vistas al parque.
+Son 4 de 10. | Faltan seis.
+# --- question and exclamation marks
+¿Quién eres? | ¿Qué haces aquí? | ¿Cómo has entrado?
+¡Qué susto me diste! | ¡No vuelvas a hacerlo!
+¿Vienes o te quedas? | Dímelo ya.
+¡Corre! | ¡Corre, que llegan!
+¿Por qué no me lo dijiste? | Habría ido contigo.
+Se preguntó si valía la pena. | ¿Valía la pena? | No lo sabía.
+¡Qué día tan largo! | Me voy a dormir.
+¿Dónde están las llaves? | Las dejé aquí mismo. | ¡Es increíble!
+Si lo sabes, ¿por qué no lo dices? | Me tienes en vilo.
+Dijo que no vendría, ¡y vino! | Qué sorpresa.
+¿Y si nos equivocamos? | ¿Y si todo era mentira?
+¡Hola! | ¿Hay alguien? | Nadie respondió.
+¿Cuántos años tienes? | Ya soy mayor. | ¡Pero si no llegas a la mesa!
+¡Silencio! | Que nadie se mueva.
+¿De verdad lo crees? | Yo no.
+Pensó: ¿qué más da? | Y siguió caminando.
+¡Ay, Dios mío! | Qué desastre.
+¿Te acuerdas de aquel verano? | Hacía un calor insoportable. | ¡Y aun así nos bañábamos de noche!
+¡Qué bonito es el mar en invierno! | Nadie lo diría.
+¿Será posible? | ¡Otra vez la misma historia!
+Pero ¿qué dices? | No entiendo nada.
+Y entonces, ¿qué? | Entonces nada. | Se acabó.
+¿Quién llama a estas horas? | Abrió con cuidado. | No había nadie.
+# --- ellipsis
+Pues... no sé qué decirte. | Me has dejado sin palabras.
+Esperó... y esperó... y nada. | Al fin se cansó.
+No quiero hablar de eso... | Vámonos.
+Quizá... quizá tengas razón. | Pero no me convence.
+Y así fue pasando el tiempo... | Un día llegó una carta.
+Dudó un instante… y abrió la puerta. | Dentro, nada.
+Lo vi todo… | Fue horrible.
+Entonces… ¿qué hacemos? | Alguien tiene que decidir.
+Bueno… supongo que sí. | Tampoco hay otra opción.
+Se calló de pronto... | ¿Había oído algo? | Contuvo el aliento.
+Tal vez... | Pero no, imposible.
+Hizo una pausa... y continuó con voz firme. | Todos escuchaban.
+Fue... complicado. | Muy complicado.
+Una cosa más... | Nadie debe saberlo.
+# --- quotes
+«No me iré», dijo. | Y no se fue.
+Escribió en la pared: «Volveré». | Nadie volvió a verlo.
+«¿Quién anda ahí?» preguntó el guarda. | Nadie contestó.
+«¡Basta ya!» gritó ella. | Todos callaron.
+Lo llamaban «el Largo». | Nunca supe por qué.
+«Es tarde.» | Eso fue todo lo que dijo.
+Dijo «hola» y se fue. | No volvió.
+«Hace frío», murmuró. | Se subió el cuello del abrigo.
+El cartel decía «Cerrado por vacaciones». | Dimos la vuelta.
+Ella respondió: «No sé nada». | Él no insistió.
+«Vamos a casa.» | Y se pusieron en marcha.
+«Todo irá bien», me dijo mi madre. | Yo quise creerla.
+Lo escribió entre comillas: “fin de curso”. | Luego lo tachó.
+“No lo haré”, repitió. | Lo dijo tres veces.
+"Nunca más", escribió en el espejo. | Alguien lo borró por la mañana.
+«¿Estás seguro?» dijo ella. | Él asintió sin mirarla.
+«Hola. | Adiós.» | Así terminó la llamada.
+Gritó «¡fuego!» y todos salieron. | Era una broma.
+El título de la novela es «La casa vacía». | Se publicó en 1998.
+Murmuró «ojalá» y apagó la luz. | Dormía a los pocos minutos.
+# --- parentheses
+Llegó tarde (como siempre). | Nadie se sorprendió.
+Habló con su hermano (el mayor). | No se pusieron de acuerdo.
+(Nadie sabía dónde estaba.) | Pasaron los días.
+Dejó la nota sobre la mesa (¿para quién?). | Nadie la leyó.
+Pidió un café (solo). | Se lo bebió de pie.
+# --- cervantes
+En un lugar de la Mancha, de cuyo nombre no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocín flaco y galgo corredor.
+Una olla de algo más vaca que carnero, salpicón las más noches, duelos y quebrantos los sábados, lentejas los viernes, algún palomino de añadidura los domingos, consumían las tres partes de su hacienda.
+El resto della concluían sayo de velarte, calzas de velludo para las fiestas, con sus pantuflos de lo mismo.
+Frisaba la edad de nuestro hidalgo con los cincuenta años. | Era de complexión recia, seco de carnes, enjuto de rostro, gran madrugador y amigo de la caza.
+Es, pues, de saber que este sobredicho hidalgo, los ratos que estaba ocioso, que eran los más del año, se daba a leer libros de caballerías con tanta afición y gusto, que olvidó casi de todo punto el ejercicio de la caza.
+En resolución, él se enfrascó tanto en su lectura, que se le pasaban las noches leyendo de claro en claro, y los días de turbio en turbio. | Así, del poco dormir y del mucho leer, se le secó el celebro de manera que vino a perder el juicio.
+«Sancho amigo, la libertad es uno de los más preciosos dones que a los hombres dieron los cielos.» | Así lo dijo don Quijote.
+No son todos los tiempos unos, ni corren siempre los mismos vientos. | Quien no se aventura no pasa la mar.
+# --- galdos (original sentences in the manner of a 19th-century novel)
+Doña Perfecta recibió a su sobrino con una frialdad que no supo disimular. | El joven, sin embargo, fingió no advertirla.
+Aquella tarde, en la calle de Toledo, don Baldomero hizo su balance mental de los negocios. | No eran malos, pero tampoco prometían fortuna.
+Fortunata salió del portal con el mantón sobre la cabeza. | Había dejado de llover, aunque las nubes seguían bajas.
+La ciudad dormía bajo la lluvia. | Solo las campanas de la catedral dictaban las horas a nadie.
+Don Jacinto se pasó la mano por la barba y suspiró. | La conversación se prolongaba más de lo debido.
+# --- dialogue with raya
+—Hola —dijo Ana. | —¿Vienes?
+—¿Vienes? —preguntó él.
+—No —respondió ella—. | Estoy cansada.
+—Vámonos ya —dijo Luis—. | Se hace tarde. | —Espera un momento.
+—¡Qué calor! —exclamó Marta—. | No aguanto más.
+—Ven aquí —ordenó el abuelo—. | Siéntate a mi lado. | Obedecí sin rechistar.
+—No lo sé —dijo—. | Tal vez mañana.
+—Es verdad —admitió ella—. | Tienes razón.
+—¿Quién es? —preguntó la madre desde la cocina. | —Nadie, mamá —contestó Pablo—. | Es el cartero.
+—Dame eso. | —No. | —Dámelo, te digo.
+—Buenos días. | —Buenos días, doña Carmen. | —¿Cómo está su marido?
+—Mejor, gracias a Dios —respondió ella—. | Ayer comió algo.
+—Entonces —dijo el médico, ajustándose las gafas—, no hay motivo de alarma. | Descanse unos días.
+—Lo vi con mis propios ojos —insistió el criado—. | Entró por la puerta trasera.
+—¡Fuego! —gritó alguien. | —¡Fuego en el almacén!
+—Espera. | Escucha eso.
+—No quiero —dijo la niña—. | No me gusta.
+—No vengas más —le dijo—. | Lo digo en serio. | —Está bien —murmuró él—. | Me iré.
+—Qué raro —pensó—. | Estaba cerrado.
+—Siéntese, por favor —dijo el Sr. Ortega—. | La Dra. Vega llegará enseguida.
+—Se lo repito: no sé nada —replicó el acusado.
+—¡Cállate! —dijo ella. | —¡Cállate de una vez!
+—Vamos a ver —empezó el maestro—. | ¿Quién sabe la respuesta? | Nadie levantó la mano.
+—Te lo juro. | —No jures. | —Te lo juro por mi madre.
+—Hace mucho que no te veía. | —Sí, mucho.
+—Adiós —dijo al fin. | Y colgó.
+—¿Dónde has estado? —preguntó—. | Te hemos buscado por todas partes.
+—En ninguna parte... —dijo él—. | Solo he dado un paseo.
+—Mira —dijo Julia, señalando el cielo—. | Va a llover.
+—No pienso volver. | Lo he decidido —dijo Carlos.
+—¡Socorro! | —Ya voy.
+—Te esperaré en la estación —dijo ella—. | A las ocho. | —Allí estaré.
+—¿Cuánto es? —preguntó. | —Son 3,50 —contestó el camarero.
+—Dr. Vidal, ¿puede venir un momento? —llamó la enfermera.
+—Yo no fui —murmuró Tomás. | —Claro que no —dijo su hermana—. | Nunca eres tú.
+—Siempre llegas tarde. | —Y tú siempre me esperas.
+—Es la última vez —advirtió. | Nadie le creyó.
+—Quiero un té —pidió Elena. | —¿Con leche? | —Sin nada.
+Mi tío me miró desde el fondo del pasillo. | —Ven —dijo—. | Tengo algo que enseñarte. | Lo seguí sin hacer preguntas.
+Ella dudó antes de responder. | —No es asunto tuyo —dijo al fin—. | Déjame en paz.
+Bajó la escalera despacio. | —¡Eh! —gritó alguien desde arriba—. | ¡Se te olvida el sombrero!
+—Con permiso —dijo el recién llegado, quitándose la gorra—. | Busco al Sr. Ramos.
+—Soy yo. | —Entonces tengo una carta para usted.
+—¿Y ahora qué? —preguntó Inés. | Nadie supo qué contestar.
+—Vete de aquí... —susurró—. | Vete antes de que sea tarde.
+—Tranquilo —dijo ella—. | Ya pasó todo. | Él asintió, aunque no estaba convencido.
+# --- mixed
+Entró corriendo en la sala. | —¡Ya están aquí! —anunció. | Todos se levantaron.
+Mi padre siempre decía: «Más vale tarde que nunca». | Yo, en cambio, prefería llegar pronto.
+El Sr. Díaz, que vivía en el 3.º, se quejó del ruido. | La Sra. Vega le pidió disculpas.
+Llamó a su hermano. | —¿Estás en casa? —preguntó. | —Sí —dijo él—. | Pasa cuando quieras.
+Pasó la tarde releyendo sus notas (las pocas que conservaba). | Al caer la noche ya no recordaba nada.
+La profesora preguntó: «¿Quién ha terminado?» | Nadie levantó la mano.
+No contestó. | ¿Para qué? | Ya nada importaba.
+Él dijo que sí; ella, que no. | La discusión duró toda la cena.
+Nevaba. | Nevaba sin ruido. | Nevaba sobre la ciudad y sobre los tejados.
+La reunión empezó a las 9 a.m. | A las 11 todavía discutían el orden del día.
+Gané 1.500 euros en la lotería. | ¡Y los perdí en una semana!
+Cuando llegó, ya no estaban. | Preguntó a los vecinos, pero nadie sabía nada. | Entonces comprendió.
+Luisa, la hermana pequeña, entró de puntillas. | Dejó el paquete sobre la cama y salió.
+Se sentó. | Respiró hondo. | Empezó a escribir.
+El gato saltó a la mesa. | Tiró el vaso. | Nadie se movió.
+Una vez más, Pedro intentó explicarse. | Una vez más, nadie lo escuchó.
+Habían pasado diez años. | El pueblo seguía igual, o casi.
+Escribió «fin». | Cerró la libreta. | Se fue a dormir tranquilo.
+Dijo que vendría a las 8.30. | Llegó a las nueve y cuarto.
+Era el 1.º de mayo. | Las calles estaban vacías.
+@generic
+# --- plain narration
+The house stood at the end of the lane. | Nobody had lived in it for years. | The shutters were closed.
+It rained all night. | By morning the river had burst its banks. | The neighbours carried their furniture into the street.
+The dog slept by the door. | When it heard footsteps it lifted its head.
+She closed the book and looked out of the window. | It was already late.
+We left at dawn. | The air smelled of fresh bread. | Only a street sweeper was in the square.
+The storm came without warning. | The children ran for shelter under the porch. | Nobody said a word.
+My grandfather kept a small vegetable garden. | He grew tomatoes, peppers and some stubborn lettuces. | Every evening he watered them patiently.
+The train stopped in the middle of the fields. | Passengers leaned out of the windows. | There was no station in sight.
+He lit the lamp and looked for the letter. | It was where he had left it. | He read it twice.
+The library closed at eight. | By half past seven only the librarian remained. | He switched the lights off one by one.
+It was cold in the kitchen. | The stove had gone out hours before. | Nobody wanted to get up and light it.
+The ship left harbour with the tide. | The gulls followed it for a while. | Then there was only the sea.
+He did not know what to say. | He stared at the floor while the clock counted the seconds.
+The trees bent in the wind. | A door banged somewhere. | The night promised to be long.
+# --- abbreviations
+Mr. Smith arrived late. | Nobody asked why.
+Mrs. Jones opened the door. | She wore a grey coat.
+I spoke with Dr. Brown and Prof. White. | They agreed on the diagnosis.
+Ms. Taylor signed the contract. | Then she left without a word.
+We met at 10 a.m. on Fifth Ave. | It was raining.
+He bought bread, milk, eggs, etc. | Then he went home.
+He bought bread, milk, eggs, etc. and put everything in the fridge. | He had no money left.
+She worked in the U.S. for years. | She never talked about it.
+J. K. Rowling wrote the series. | My aunt gave me the first book.
+Mr. and Mrs. Green came with their son. | He was very quiet.
+It cost $3.50 at the shop. | That seemed cheap.
+He lives at 42 Elm St. | It is a quiet street.
+The firm is Smith & Sons Ltd. | It was founded in 1890.
+See Fig. 3 for details. | The table follows.
+Capt. Reyes gave the order. | The crew obeyed at once.
+Visit www.example.org tomorrow. | There will be news.
+Pi is about 3.14159. | Nobody needs more digits.
+He said hello to St. John and left. | It was a short visit.
+Gen. Lee surrendered in April. | The war was over.
+# --- questions, exclamations
+Who are you? | What are you doing here? | How did you get in?
+What a fright you gave me! | Never do that again!
+Are you coming or staying? | Tell me now.
+Run! | Run, they are coming!
+Why didn't you tell me? | I would have gone with you.
+What a long day! | I am going to bed.
+Where are the keys? | I left them right here. | This is unbelievable!
+What if we are wrong? | What if it was all a lie?
+Hello! | Is anyone there? | Nobody answered.
+Silence! | Nobody move.
+Do you really think so? | I don't.
+# --- ellipsis
+Well... that is hard to say. | You have left me speechless.
+She waited... and waited... and nothing. | At last she gave up.
+I don't want to talk about it... | Let's go.
+Perhaps... perhaps you are right. | But I am not convinced.
+And so time went by... | One day a letter came.
+He hesitated for a moment... and opened the door. | Inside, nothing.
+I saw everything… | It was horrible.
+Well… maybe so. | There is no other choice anyway.
+# --- quotes
+"I'm not going," he said. | And he didn't.
+She wrote on the wall: "I will return." | Nobody saw her again.
+"Who goes there?" asked the guard. | Nobody answered.
+"Enough!" she shouted. | Everyone fell silent.
+They called him "the Tall One." | I never knew why.
+"It's late." | That was all he said.
+He said "hello" and left. | He did not come back.
+"It's cold," she muttered. | She turned up her collar.
+The sign read "Closed for holidays." | We turned back.
+"Everything will be fine," my mother told me. | I wanted to believe her.
+"Are you sure?" she asked. | He nodded without looking at her.
+He shouted "fire!" and everyone ran out. | It was a joke.
+The novel is called "The Empty House." | It came out in 1998.
+“I will not do it,” he repeated. | He said it three times.
+“Never again,” she wrote on the mirror. | Someone wiped it off in the morning.
+# --- dialogue and misc
+"Come here," said Grandfather. | "Sit next to me." | I obeyed without a word.
+"What time is it?" asked Tom. | "Almost nine," said Mary. | "We should go."
+She hesitated before answering. | "It is none of your business," she said at last. | "Leave me alone."
+He went down the stairs slowly. | "Hey!" somebody called from above. | "You forgot your hat!"
+"Excuse me," said the newcomer, taking off his cap. | "I am looking for Mr. Ramos."
+"That's me." | "Then I have a letter for you."
+He stood up. | He took a deep breath. | He began to write.
+The cat jumped on the table. | It knocked the glass over. | Nobody moved.
+Ten years had passed. | The town was the same, or nearly.
+He wrote "the end." | He closed the notebook. | He went to bed content.
+It was May 1st. | The streets were empty.
+He said he would come at 8.30. | He came at a quarter past nine.
+The meeting started at 9 a.m. | By 11 they were still arguing over the agenda.
+He won $1,500 in the lottery. | And he lost it in a week!
+When she arrived, they were gone. | She asked the neighbours, but nobody knew anything. | Then she understood.
+Once again, Peter tried to explain himself. | Once again, nobody listened.
+Snow fell. | It fell without a sound. | It fell on the city and on the rooftops.
+He paid the bill (a small fortune). | Then he walked home in the dark.
+It was a hot, still afternoon. | Nothing moved in the street. | Even the birds were silent.
+She looked at him for a long time. | "You knew," she said finally. | "You knew all along."
+The professor asked, "Who has finished?" | Nobody raised a hand.
+Dr. Patel and Mr. Singh arrived together. | The meeting began at five.

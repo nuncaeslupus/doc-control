@@ -131,6 +131,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T4 | `splice_roundtrip_mismatches == 0` | 0 (400 generated documents) | `uv run pytest tests/ooxml/test_splice.py` | 41065c5 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T6 | `address_resolution_errors == 0` | 0 (440 generated documents, 12679 paragraphs) | `uv run pytest tests/model/test_address.py` | 284e850 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T8 | `find_100k_words_p95_ms <= 1000` | 378 (24 timed finds over the 100k-word novel: literal whole word, folded, regex, no match) | `uv run pytest -q -m bench tests/ops/test_find.py -s` | cd35e0b | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
+| T18 | `boundary_f1 >= 0.98` | 0.9973 (gold set: 667 sentences, 368 internal boundaries; es + generic; own and public-domain text) | `uv run pytest -q -s tests/model/test_segment.py` (micro F1 of internal sentence boundaries) | 8c64351 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | b4704e6 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
 
 ### Dependency graph
