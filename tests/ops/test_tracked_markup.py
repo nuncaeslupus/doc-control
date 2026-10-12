@@ -1189,7 +1189,14 @@ def test_edit_from_dict_builds_each_edit_and_validates() -> None:
 
 
 def test_operation_schemas_are_well_formed() -> None:
-    assert set(OPERATION_SCHEMAS) == {"text.replace", "para.insert", "para.delete", "para.move"}
+    assert set(OPERATION_SCHEMAS) == {
+        "text.replace",
+        "para.insert",
+        "para.delete",
+        "para.move",
+        "style.apply",
+        "format.apply",
+    }
     for name, schema in OPERATION_SCHEMAS.items():
         assert check_schema(schema) == [], name
         assert schema["properties"]["op"]["enum"] == [name]
@@ -1197,6 +1204,8 @@ def test_operation_schemas_are_well_formed() -> None:
 
 def test_public_names() -> None:
     assert set(tracked.__all__) == {
+        "ApplyFormat",
+        "ApplyStyle",
         "DeleteParagraphs",
         "Edit",
         "InsertParagraph",

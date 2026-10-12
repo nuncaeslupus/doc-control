@@ -1,11 +1,12 @@
-"""Tracked text operations: ``text.replace``, ``para.insert``, ``para.delete``, ``para.move``.
+"""Tracked operations: ``text.replace``, ``para.insert``, ``para.delete``, ``para.move``,
+``style.apply``, ``format.apply``.
 
 :func:`apply_edits` applies a list of edits to a closed ``.docx`` in one verified
 write. Every address in the list refers to the document as it was read (all are
 resolved before anything changes), every change is a tracked revision and
 nothing outside the edited paragraphs changes.
 
-The four edits
+The six edits
     ``text.replace`` ``at`` is a range (``p3#fp:10-15``, a whole paragraph
     ``p3#fp``, or across paragraphs ``p3#fp:10..p5#fp:2``) and ``text`` the new
     text (``""`` deletes). A range across paragraphs deletes the tail of the
@@ -35,6 +36,20 @@ The four edits
     them, and comment anchors, are refused. Moving to after the last paragraph of a container
     is refused (use ``before`` its successor or insert text).
 
+    ``style.apply`` gives whole paragraphs (``p3#fp`` or ``p3#fp..p5#fp``) a paragraph
+    style, or a range of text a character style, by id or name. Paragraph properties are
+    a tracked ``w:pPrChange`` holding the previous properties (so the previous style);
+    run properties a ``w:rPrChange`` on each run of the range, split at its ends.
+
+    ``format.apply`` changes direct formatting the same way. Run properties (``bold``,
+    ``italic``, ``underline``, ``small_caps``, ``font``, ``size_pt``) apply to a paragraph,
+    a run of paragraphs or a range of text; paragraph properties (``align``,
+    ``indent_left_cm``, ``indent_right_cm``, ``indent_first_line_cm``, ``spacing_before_pt``,
+    ``spacing_after_pt``, ``line_spacing``) to whole paragraphs only. Setting what is already
+    set writes nothing; a paragraph or run that already holds an unresolved tracked property
+    change is refused (``UNSUPPORTED_CONTENT``). Rejecting the change gives the previous
+    properties back.
+
 Offsets
     Offsets are Python code points of the visible text. A write never splits a
     base character from what attaches to it: a boundary in front of a combining
@@ -43,7 +58,10 @@ Offsets
     ``ADDRESS_INVALID``.
 
 Several edits in one call
-    Edits on different paragraphs are independent. Text replacements in the
+    Edits on different paragraphs are independent. Formatting edits on one paragraph
+    combine (different properties, disjoint ranges) and may sit beside text replacements
+    that neither overlap nor touch their range; the same property set twice, or overlapping
+    ranges, raise ``BATCH_CONFLICT``. Text replacements in the
     same paragraph must not overlap or touch an insertion point. Two inserts at
     the same place, or any other edit on a paragraph already edited, raise
     ``BATCH_CONFLICT``.
@@ -68,6 +86,8 @@ from typing import Any
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import parse_address
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
+from doc_control.model.styles import StyleTable, load_styles
+from doc_control.ooxml.formatting import ALIGNMENTS, PARAGRAPH_KEYS, RUN_KEYS
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     BookmarkScope,
@@ -90,6 +110,8 @@ from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 from doc_control.schema import validate
 
 __all__ = [
+    "ApplyFormat",
+    "ApplyStyle",
     "DeleteParagraphs",
     "Edit",
     "InsertParagraph",
@@ -154,7 +176,19 @@ class MoveParagraphs:
     before: str | None = None
 
 
-Edit = ReplaceText | InsertParagraph | DeleteParagraphs | MoveParagraphs
+@dataclass(frozen=True)
+class ApplyStyle:
+    at: str
+    style: str
+
+
+@dataclass(frozen=True)
+class ApplyFormat:
+    at: str
+    props: dict[str, Any]
+
+
+Edit = ReplaceText | InsertParagraph | DeleteParagraphs | MoveParagraphs | ApplyStyle | ApplyFormat
 
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 OPERATION_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -199,6 +233,56 @@ OPERATION_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["op", "at"],
         "additionalProperties": False,
     },
+    "style.apply": {
+        "type": "object",
+        "properties": {
+            "op": {"enum": ["style.apply"]},
+            "at": {
+                **_STR,
+                "description": "Paragraph p3#fp or run p3#fp..p5#fp (paragraph style), or a "
+                "range p3#fp:10-15 (character style).",
+            },
+            "style": {**_STR, "description": "Style id or name (see styles.list)."},
+        },
+        "required": ["op", "at", "style"],
+        "additionalProperties": False,
+    },
+    "format.apply": {
+        "type": "object",
+        "properties": {
+            "op": {"enum": ["format.apply"]},
+            "at": {
+                **_STR,
+                "description": "Paragraph p3#fp, run p3#fp..p5#fp or range p3#fp:10-15 "
+                "(run properties only for a range).",
+            },
+            "bold": {"type": "boolean"},
+            "italic": {"type": "boolean"},
+            "underline": {"type": "boolean"},
+            "small_caps": {"type": "boolean"},
+            "font": {**_STR, "description": "Font family name."},
+            "size_pt": {"type": "number", "minimum": 1, "maximum": 1638},
+            "align": {"enum": list(ALIGNMENTS)},
+            "indent_left_cm": {"type": "number", "minimum": -100, "maximum": 100},
+            "indent_right_cm": {"type": "number", "minimum": -100, "maximum": 100},
+            "indent_first_line_cm": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "description": "Negative makes a hanging indent.",
+            },
+            "spacing_before_pt": {"type": "number", "minimum": 0, "maximum": 1584},
+            "spacing_after_pt": {"type": "number", "minimum": 0, "maximum": 1584},
+            "line_spacing": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 20,
+                "description": "Line height as a multiple of single spacing.",
+            },
+        },
+        "required": ["op", "at"],
+        "additionalProperties": False,
+    },
 }
 
 
@@ -216,6 +300,20 @@ def edit_from_dict(raw: Mapping[str, Any]) -> Edit:
         return ReplaceText(raw["at"], raw["text"])
     if op == "para.delete":
         return DeleteParagraphs(raw["at"])
+    if op == "style.apply":
+        _check_name(raw["style"], "style")
+        return ApplyStyle(raw["at"], raw["style"])
+    if op == "format.apply":
+        props = {k: raw[k] for k in (*RUN_KEYS, *PARAGRAPH_KEYS) if k in raw}
+        if not props:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                "format.apply needs at least one property",
+                expected=[*RUN_KEYS, *PARAGRAPH_KEYS],
+            )
+        if "font" in props:
+            _check_name(props["font"], "font")
+        return ApplyFormat(raw["at"], props)
     after, before = raw.get("after"), raw.get("before")
     if (after is None) == (before is None):
         raise DocControlError(
@@ -377,9 +475,22 @@ class _Interval:
 
 
 @dataclass
+class _Format:
+    """Run properties to set on visible characters ``[start, end)`` of a paragraph."""
+
+    start: int
+    end: int
+    props: dict[str, Any]
+    edit: int
+
+
+@dataclass
 class _ParaPlan:
     para: Paragraph
     intervals: list[_Interval] = field(default_factory=list)
+    formats: list[_Format] = field(default_factory=list)
+    ppr: dict[str, Any] = field(default_factory=dict)  # paragraph properties to set
+    ppr_by: dict[str, int] = field(default_factory=dict)  # property -> edit that sets it
     delete_all: bool = False
     mark: str | None = None
     touchers: set[int] = field(default_factory=set)
@@ -401,8 +512,12 @@ class _NewParagraph:
 
 
 class _Planner:
-    def __init__(self, index: DocumentIndex, *, layered: bool = False) -> None:
+    def __init__(
+        self, index: DocumentIndex, *, layered: bool = False, pkg: Package | None = None
+    ) -> None:
         self.index = index
+        self.pkg = pkg
+        self._styles: StyleTable | None = None
         self.layered = layered
         self.layout = _Layout(index)
         self.plans: dict[int, _ParaPlan] = {}
@@ -451,16 +566,24 @@ class _Planner:
         plan.exclusive = plan.exclusive or exclusive
         return plan
 
-    def _add_interval(self, plan: _ParaPlan, new: _Interval) -> None:
-        for old in plan.intervals:
+    def _check_overlap(self, plan: _ParaPlan, new: _Interval) -> None:
+        olds = [*plan.intervals, *(_Interval(f.start, f.end, "", f.edit) for f in plan.formats)]
+        for old in olds:
             if old.edit != new.edit and old.clashes(new):
                 raise DocControlError(
                     ErrorCode.BATCH_CONFLICT,
                     f"edits {old.edit} and {new.edit} overlap in {plan.para.address}",
                     paragraph=str(plan.para.address),
-                    edits=[old.edit, new.edit],
+                    edits=sorted([old.edit, new.edit]),
                 )
+
+    def _add_interval(self, plan: _ParaPlan, new: _Interval) -> None:
+        self._check_overlap(plan, new)
         plan.intervals.append(new)
+
+    def _add_format(self, plan: _ParaPlan, new: _Format) -> None:
+        self._check_overlap(plan, _Interval(new.start, new.end, "", new.edit))
+        plan.formats.append(new)
 
     def _claim_slot(self, slot: tuple[str, int], edit: int) -> None:
         if slot in self.slots and self.slots[slot] != edit and not self.layered:
@@ -649,6 +772,139 @@ class _Planner:
             }
         )
 
+    # -- formatting --
+
+    @property
+    def styles(self) -> StyleTable:
+        if self._styles is None:
+            assert self.pkg is not None
+            self._styles = load_styles(self.pkg)
+        return self._styles
+
+    def _format_targets(self, at: str) -> list[tuple[Paragraph, int, int, bool]]:
+        """``(paragraph, start, end, whole)`` for a paragraph, a run of paragraphs or a range."""
+        if ".." in at and ":" not in at:
+            first_at, _, last_at = at.partition("..")
+            a = self.index.resolve_address(parse_address(first_at))
+            b = self.index.resolve_address(parse_address(last_at))
+            if b.number < a.number:
+                raise DocControlError(
+                    ErrorCode.ADDRESS_INVALID, f"{at!r} ends before it starts", address=at
+                )
+            return [
+                (p, 0, len(p.text), True) for p in self.index.paragraphs[a.number - 1 : b.number]
+            ]
+        rng = self.index.resolve_range(at)
+        if rng.sentence is not None:
+            raise DocControlError(
+                ErrorCode.ADDRESS_INVALID,
+                "sentence addresses need segmentation, which is not available yet",
+                address=at,
+            )
+        assert rng.start_offset is not None and rng.end_offset is not None
+        whole = rng.range.start_offset is None
+        if not whole:
+            _check_boundary(rng.first, rng.start_offset, at)
+            _check_boundary(rng.last, rng.end_offset, at)
+        paras = self.index.paragraphs[rng.first.number - 1 : rng.last.number]
+        return [
+            (
+                p,
+                rng.start_offset if p is rng.first else 0,
+                rng.end_offset if p is rng.last else len(p.text),
+                whole,
+            )
+            for p in paras
+        ]
+
+    def _set_ppr(self, i: int, para: Paragraph, props: dict[str, Any]) -> None:
+        plan = self._plan(para, i, exclusive=False)
+        for key in props:
+            other = plan.ppr_by.get(key)
+            if other is not None and other != i:
+                raise DocControlError(
+                    ErrorCode.BATCH_CONFLICT,
+                    f"edits {other} and {i} both set {key} of {para.address}",
+                    paragraph=str(para.address),
+                    edits=sorted([other, i]),
+                )
+            plan.ppr_by[key] = i
+        plan.ppr.update(props)
+
+    def _set_runs(self, i: int, para: Paragraph, s: int, e: int, props: dict[str, Any]) -> None:
+        if s == e:
+            return  # no text, no run to format
+        plan = self._plan(para, i, exclusive=False)
+        self._add_format(plan, _Format(s, e, props, i))
+
+    def _previous_styles(self, paras: Sequence[Paragraph]) -> str:
+        found: list[str] = []
+        for para in paras:
+            elem = self.index.spans.parse_paragraph(para.span_index)
+            ppr = elem.find(f"{{{W_NS}}}pPr")
+            style = ppr.find(f"{{{W_NS}}}pStyle") if ppr is not None else None
+            value = (style.get(f"{{{W_NS}}}val") if style is not None else None) or "(default)"
+            if value not in found:
+                found.append(value)
+        return ", ".join(found)
+
+    def style(self, i: int, edit: ApplyStyle) -> None:
+        found = self.styles.find(edit.style)
+        if found is None:
+            raise DocControlError(
+                ErrorCode.STYLE_NOT_FOUND,
+                f"no style {edit.style!r} in the document",
+                style=edit.style,
+            )
+        targets = self._format_targets(edit.at)
+        if found.type == "paragraph":
+            if not all(whole for *_, whole in targets):
+                raise DocControlError(
+                    ErrorCode.SCHEMA_INVALID,
+                    f"{found.id!r} is a paragraph style: address whole paragraphs, not text",
+                    address=edit.at,
+                )
+            for para, _, _, _ in targets:
+                self._set_ppr(i, para, {"style": found.id})
+            before = self._previous_styles([t[0] for t in targets])
+        elif found.type == "character":
+            for para, s, e, _ in targets:
+                self._set_runs(i, para, s, e, {"style": found.id})
+            before = _short(targets[0][0].text[targets[0][1] : targets[0][2]])
+        else:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                f"{found.id!r} is a {found.type} style: only paragraph and character "
+                "styles can be applied here",
+                style=found.id,
+            )
+        self.previews.append({"op": i, "at": edit.at, "before": before, "after": found.id})
+
+    def format(self, i: int, edit: ApplyFormat) -> None:
+        run_props = {k: v for k, v in edit.props.items() if k in RUN_KEYS}
+        para_props = {k: v for k, v in edit.props.items() if k in PARAGRAPH_KEYS}
+        targets = self._format_targets(edit.at)
+        if para_props and not all(whole for *_, whole in targets):
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                f"{sorted(para_props)} apply to whole paragraphs, not a text range",
+                address=edit.at,
+            )
+        for para, s, e, _ in targets:
+            if para_props:
+                self._set_ppr(i, para, para_props)
+            if run_props:
+                self._set_runs(i, para, s, e, run_props)
+        first, s, e, _ = targets[0]
+        self.previews.append(
+            {
+                "op": i,
+                "at": edit.at,
+                "before": _short(first.text[s:e]),
+                "after": ", ".join(f"{k}={v}" for k, v in edit.props.items()),
+            }
+        )
+
 
 # -- applying ---------------------------------------------------------------------------------
 
@@ -721,7 +977,7 @@ def prepare_edits(
     if index is None:
         index = DocumentIndex.from_package(pkg)
 
-    planner = _Planner(index, layered=layered)
+    planner = _Planner(index, layered=layered, pkg=pkg)
     for i, edit in enumerate(edits):
         if isinstance(edit, ReplaceText):
             planner.replace(i, edit)
@@ -729,8 +985,12 @@ def prepare_edits(
             planner.insert(i, edit)
         elif isinstance(edit, DeleteParagraphs):
             planner.delete(i, edit)
-        else:
+        elif isinstance(edit, MoveParagraphs):
             planner.move(i, edit)
+        elif isinstance(edit, ApplyStyle):
+            planner.style(i, edit)
+        else:
+            planner.format(i, edit)
 
     ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
     spans = index.spans
@@ -746,10 +1006,16 @@ def prepare_edits(
                 editor.detach_bookmarks(scopes[plan.moved_by])
             editor.delete_content()
             _require_no_live_text(elem, para)
-        for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
-            editor.replace(part.start, part.end, part.text)
+        steps: list[_Interval | _Format] = [*plan.intervals, *plan.formats]
+        for part in sorted(steps, key=lambda x: (x.start, x.end), reverse=True):
+            if isinstance(part, _Interval):
+                editor.replace(part.start, part.end, part.text)
+            else:
+                editor.format_range(part.start, part.end, part.props)
         if plan.mark:
             editor.mark(plan.mark)
+        if plan.ppr:
+            editor.format_paragraph(plan.ppr)
         replacements[para.span_index] = _serialize(spans, elem, para.span_index)
 
     after: dict[int, list[bytes]] = {}
@@ -793,6 +1059,11 @@ def prepare_edits(
         for item in by_slot.get(("after", para.span_index), []):
             sequence.append((None, item))
             expected.append(item.expected)
+    if not ctx.revision_ids and all(isinstance(e, ApplyStyle | ApplyFormat) for e in edits):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            "the operations change nothing: the properties are already set",
+        )
     new_index = _self_check(index, new_data, ctx, expected, sequence, planner)
 
     address_map: dict[str, str] = {}
@@ -865,15 +1136,20 @@ def _log_changes(
 
 def edits_as_request(edits: Sequence[Edit]) -> list[dict[str, Any]]:
     """The edits as the ``ops`` objects a batch request carries (for the undo log)."""
+    names: dict[type, str] = {
+        ReplaceText: "text.replace",
+        InsertParagraph: "para.insert",
+        DeleteParagraphs: "para.delete",
+        MoveParagraphs: "para.move",
+        ApplyStyle: "style.apply",
+        ApplyFormat: "format.apply",
+    }
     out: list[dict[str, Any]] = []
     for edit in edits:
-        name = {
-            ReplaceText: "text.replace",
-            InsertParagraph: "para.insert",
-            DeleteParagraphs: "para.delete",
-            MoveParagraphs: "para.move",
-        }[type(edit)]
-        out.append({"op": name, **{k: v for k, v in vars(edit).items() if v is not None}})
+        fields = {k: v for k, v in vars(edit).items() if v is not None}
+        if isinstance(edit, ApplyFormat):
+            fields = {"at": edit.at, **edit.props}  # the request carries the properties flat
+        out.append({"op": names[type(edit)], **fields})
     return out
 
 
@@ -1044,6 +1320,33 @@ def _expected_text(para: Paragraph, plan: _ParaPlan | None) -> str:
     return text
 
 
+def _formatted(plan: _ParaPlan | None) -> bool:
+    return plan is not None and bool(plan.ppr or plan.formats)
+
+
+def _properties(p: ET.Element) -> tuple[str, list[tuple[str, str]]]:
+    """The paragraph's own properties and the (run properties, character) of its text."""
+    ppr = p.find(f"{{{W_NS}}}pPr")
+    skip = {f"{{{W_NS}}}{n}" for n in ("rPr", "sectPr", "pPrChange")}
+    para = "".join(
+        ET.tostring(c, "unicode") for c in (ppr if ppr is not None else []) if c.tag not in skip
+    )
+    chars: list[tuple[str, str]] = []
+    for run in p.iter(f"{{{W_NS}}}r"):
+        rpr = run.find(f"{{{W_NS}}}rPr")
+        key = ""
+        if rpr is not None:
+            kept = [c for c in rpr if c.tag != f"{{{W_NS}}}rPrChange"]
+            key = "".join(ET.tostring(c, "unicode") for c in kept)
+        for child in run:
+            local = child.tag.rpartition("}")[2]
+            if local in ("t", "delText"):
+                chars.extend((key, ch) for ch in "".join(child.itertext()))
+            elif local != "rPr":
+                chars.append((key, f"<{local}>"))
+    return para, chars
+
+
 def _self_check(
     old: DocumentIndex,
     new_data: bytes,
@@ -1078,6 +1381,15 @@ def _self_check(
         elem = new.spans.parse_paragraph(para.span_index)
         joins[number - 1] = any(kind == "ins" and rid in ids for kind, rid in mark_state(elem))
         reject_revisions(elem, ids)
+        original = sequence[number - 1][0]
+        if original is not None and _formatted(planner.plans.get(original.number)):
+            before = old.spans.parse_paragraph(original.span_index)
+            if _properties(before) != _properties(elem):
+                raise DocControlError(
+                    ErrorCode.INTERNAL,
+                    f"self-check: rejecting the revisions does not restore the formatting "
+                    f"of {original.address}",
+                )
         rejected[para.span_index] = new.spans.serialize(elem, para.span_index)
     restored = build_index(new.spans.splice(rejected))
     merged = _merge_marks([p.text for p in restored.paragraphs], joins)

@@ -1,7 +1,8 @@
 """The ``batch`` write operation: all-or-nothing tracked edits in one verified write.
 
 A request lists ``ops`` (``text.replace``, ``para.insert``, ``para.delete``,
-``para.move``; their schemas are in :data:`OPERATION_SCHEMAS`). Every address refers to
+``para.move``, ``style.apply``, ``format.apply``; their schemas are in
+:data:`OPERATION_SCHEMAS`). Every address refers to
 the document as it was read. Before anything is written each operation is validated:
 addresses must resolve and still match their fingerprint (``STALE_ADDRESS``), ranges
 must not overlap (``BATCH_CONFLICT``, naming both operation indexes in ``edits``) and
@@ -11,7 +12,7 @@ response with a per-operation preview. The result carries ``address_map`` (old t
 address of every paragraph whose index changed) and, with the envelope's ``doc``, the
 new sha256.
 
-The four operation kinds are batch operations only; they are not registered as
+The operation kinds are batch operations only; they are not registered as
 standalone writes.
 """
 
@@ -86,8 +87,8 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
 @operation(
     "batch",
     "write",
-    "Apply text.replace, para.insert, para.delete and para.move together as tracked "
-    "changes, all or nothing; dry_run previews.",
+    "Apply text.replace, para.insert, para.delete, para.move, style.apply and format.apply "
+    "together as tracked changes, all or nothing; dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:

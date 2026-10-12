@@ -101,8 +101,14 @@ def random_ops(path: Path, rng: random.Random) -> list[dict[str, Any]]:
     picks = rng.sample(range(len(addr) - 1), min(len(addr) - 1, rng.randint(1, 4)))
     ops: list[dict[str, Any]] = []
     for i in picks:
-        kind = rng.choice(["replace", "range", "insert", "delete", "move"])
-        if kind == "replace":
+        kind = rng.choice(["replace", "range", "insert", "delete", "move", "format", "bold"])
+        if kind == "format":
+            ops.append(
+                {"op": "format.apply", "at": addr[i], "align": rng.choice(["center", "right"])}
+            )
+        elif kind == "bold":
+            ops.append({"op": "format.apply", "at": f"{addr[i]}:0-3", "bold": True})
+        elif kind == "replace":
             ops.append({"op": "text.replace", "at": addr[i], "text": f"nuevo {rng.random():.4f}"})
         elif kind == "range":
             ops.append({"op": "text.replace", "at": f"{addr[i]}:0-3", "text": "ZZ"})
@@ -489,3 +495,24 @@ def test_undo_whose_log_append_fails_still_succeeds_with_a_warning(
     assert snapshot(path) == before  # the document write stands
     assert reply.result["op_id"] is None and reply.result["undid"] == "h-000001"
     assert reply.warnings and reply.warnings[0].startswith("HISTORY_NOT_RECORDED")
+
+
+def test_undo_restores_a_format_apply_batch_exactly(tmp_path: Path) -> None:
+    path = formatted_docx(tmp_path / "d.docx")
+    original = snapshot(path)
+    a = addresses(path)
+    result = run_batch(
+        path,
+        [
+            {"op": "format.apply", "at": a[1], "align": "right", "indent_first_line_cm": 0.6},
+            {"op": "format.apply", "at": f"{a[2]}:2-8", "bold": True, "font": "Arial"},
+            {"op": "text.replace", "at": a[4], "text": "otro"},
+        ],
+    )
+    changed = snapshot(path)
+    assert changed[1] != original[1] and result["op_id"] == "h-000001"
+    entry = read_log(tmp_path / ".doc-control" / "d.docx" / "log.jsonl").entries[0]
+    assert [r["op"] for r in entry["request"]] == ["format.apply", "format.apply", "text.replace"]
+    assert entry["request"][0]["align"] == "right"
+    undo({"doc": str(path)})
+    assert snapshot(path) == original  # pPr, rPr and the whole document.xml, byte for byte
