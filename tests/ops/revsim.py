@@ -77,8 +77,11 @@ def numbered_paragraphs(root: ET.Element) -> list[ET.Element]:
     return out
 
 
+ANY = "*"  # every author's revisions, not one's
+
+
 def _mine(elem: ET.Element, author: str | None) -> bool:
-    return author is not None and elem.get(W + "author") == author
+    return author is not None and (author == ANY or elem.get(W + "author") == author)
 
 
 def _collect(node: ET.Element, author: str | None, mode: str, shown: bool, out: list[str]) -> None:
@@ -87,10 +90,10 @@ def _collect(node: ET.Element, author: str | None, mode: str, shown: bool, out: 
         tag = child.tag
         if not isinstance(tag, str) or tag in _SKIP:
             continue
-        if tag == W + "ins":
+        if tag in (W + "ins", W + "moveTo"):
             if not (_mine(child, author) and mode == "reject"):
                 _collect(child, author, mode, shown, out)
-        elif tag == W + "del":
+        elif tag in (W + "del", W + "moveFrom"):
             if _mine(child, author) and mode == "reject":
                 _collect(child, author, mode, True, out)
         elif tag == W + "r":
@@ -119,8 +122,8 @@ def mark_removed(p: ET.Element, author: str | None, mode: str) -> bool:
     for mark in rpr:
         if not _mine(mark, author):
             continue
-        if (mark.tag == W + "ins" and mode == "reject") or (
-            mark.tag == W + "del" and mode == "accept"
+        if (mark.tag in (W + "ins", W + "moveTo") and mode == "reject") or (
+            mark.tag in (W + "del", W + "moveFrom") and mode == "accept"
         ):
             return True
     return False
@@ -129,14 +132,15 @@ def mark_removed(p: ET.Element, author: str | None, mode: str) -> bool:
 def merge(texts: list[str], joins: list[bool]) -> list[str]:
     out: list[str] = []
     carry = ""
+    open_ = False
     for text, join in zip(texts, joins, strict=True):
         text = carry + text
         if join:
-            carry = text
+            carry, open_ = text, True
         else:
             out.append(text)
-            carry = ""
-    if carry:
+            carry, open_ = "", False
+    if open_:  # the last mark cannot go: its paragraph stays, even when empty
         out.append(carry)
     return out
 

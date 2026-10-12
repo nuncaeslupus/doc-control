@@ -1,8 +1,9 @@
 """The ``batch`` write operation: all-or-nothing tracked edits in one verified write.
 
 A request lists ``ops`` (``text.replace``, ``para.insert``, ``para.delete``,
-``para.move``, ``style.apply``, ``format.apply``; their schemas are in
-:data:`OPERATION_SCHEMAS`). Every address refers to
+``para.move``, ``style.apply``, ``format.apply``, ``revision.accept``, ``revision.reject``;
+``comment.add``, ``comment.reply``, ``comment.resolve``; their schemas are in
+:data:`ALL_SCHEMAS`). Every address refers to
 the document as it was read. Before anything is written each operation is validated:
 addresses must resolve and still match their fingerprint (``STALE_ADDRESS``), ranges
 must not overlap (``BATCH_CONFLICT``, naming both operation indexes in ``edits``) and
@@ -18,6 +19,8 @@ standalone writes. The style kinds (``style.create``, ``style.update``, ``style.
 holds either text kinds or style kinds, never both: style definition changes are not
 tracked changes, so a style batch is one verified write of ``word/styles.xml`` (and the
 references to renamed or merged styles) with the same dry run, ``expect`` and backup.
+``revision.accept`` and ``revision.reject`` (see :mod:`doc_control.ops.revision`) are batch
+kinds that resolve revisions; they cannot share a batch with other kinds.
 """
 
 from __future__ import annotations
@@ -35,6 +38,10 @@ from doc_control.ops.comments import (
     comment_from_dict,
     is_comment_edit,
 )
+from doc_control.ops.revision import (
+    OPERATION_SCHEMAS as REVISION_SCHEMAS,
+)
+from doc_control.ops.revision import apply_resolutions, resolution_from_dict
 from doc_control.ops.stylewrite import STYLE_KINDS, apply_style_ops, op_schema
 from doc_control.ops.tracked import OPERATION_SCHEMAS, apply_edits, edit_from_dict
 from doc_control.registry import operation
@@ -43,6 +50,7 @@ ALL_SCHEMAS = {
     **OPERATION_SCHEMAS,
     **COMMENT_SCHEMAS,
     **{k: op_schema(k) for k in STYLE_KINDS},
+    **REVISION_SCHEMAS,
 }
 BATCH_KINDS = tuple(ALL_SCHEMAS)
 
@@ -108,7 +116,8 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     "write",
     "Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, "
     "comment.add, comment.reply and comment.resolve together, all or nothing, or "
-    "style.create/update/rename/merge together; dry_run previews.",
+    "style.create/update/rename/merge together, or revision.accept and revision.reject to "
+    "resolve revisions (by ids, author, address range or all); dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
@@ -116,6 +125,31 @@ def batch(request: dict[str, Any]) -> Reply:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
     expect = request.get("expect", {})
     path = request["doc"]
+    kinds = {op.get("op") in REVISION_SCHEMAS for op in request["ops"]}
+    if True in kinds:
+        if False in kinds:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                "revision.accept/revision.reject cannot be combined with text or paragraph "
+                "edits in one batch: send them as separate batches",
+            )
+        resolutions = []
+        for i, raw in enumerate(request["ops"]):
+            try:
+                resolutions.append(resolution_from_dict(raw))
+            except DocControlError as err:
+                if err.code is not ErrorCode.SCHEMA_INVALID:
+                    raise
+                raise DocControlError(
+                    ErrorCode.SCHEMA_INVALID, f"ops[{i}]: {err.message}", op_index=i
+                ) from err
+        res = apply_resolutions(
+            Path(path),
+            resolutions,
+            expect_sha256=expect.get("sha256"),
+            dry_run=request.get("dry_run", False),
+        )
+        return Reply(res.to_dict(), doc=Document(path).envelope_doc())
     style_ops = [isinstance(o, dict) and o.get("op") in STYLE_KINDS for o in request["ops"]]
     if any(style_ops):
         if not all(style_ops):
