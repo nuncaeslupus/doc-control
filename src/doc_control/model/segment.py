@@ -19,7 +19,7 @@ Sentences
 
     ``etc.`` and ``no.`` end a sentence only before a capital. A line break (``\\n``)
     always ends one. ``language`` selects the abbreviation list: ``"es"`` (the
-    default) or ``"generic"`` for English and anything else.
+    default) or ``"en"``/``"generic"``; any other value is ``SCHEMA_INVALID``.
 
 Dialogue
     :func:`dialogue_lines` finds the lines that open with a raya (``—``) and splits
@@ -40,8 +40,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from doc_control.errors import DocControlError, ErrorCode
+
 DEFAULT_LANGUAGE = "es"
-LANGUAGES = ("es", "generic")
+LANGUAGES = ("es", "en", "generic")
 
 _TERMINATORS = ".!?\N{HORIZONTAL ELLIPSIS}"
 _CLOSERS = "\"'»\u201d\u2019)]}\u203a"
@@ -56,6 +58,7 @@ _COMMON_ABBREVIATIONS = _words(
     "vs dr dra prof sr sra srta ud uds vd vds st jr mr mrs ms mt fig vol ed no etc cf pp tel apdo"
 )
 _SPANISH_ABBREVIATIONS = _words(
+    "dña doña dn excmo excma ilmo ilma "
     "lic ing arq sres sras av avda pág págs art arts cap caps núm nº dpto depto aprox "
     "máx mín cía cia ej admón gral cnel cmdr mons fr izq dcha esq pl pza ctra"
 )
@@ -137,7 +140,7 @@ class Segmentation:
 
 def split_sentences(text: str, language: str = DEFAULT_LANGUAGE) -> list[Span]:
     """The sentences of one paragraph's ``text``, in order, trimmed of whitespace."""
-    abbreviations = _ABBREVIATIONS["es" if language == "es" else "generic"]
+    abbreviations = _abbreviations(language)
     spans: list[Span] = []
     base = 0
     for line in text.split("\n"):
@@ -146,10 +149,23 @@ def split_sentences(text: str, language: str = DEFAULT_LANGUAGE) -> list[Span]:
     return spans
 
 
+def _abbreviations(language: str) -> frozenset[str]:
+    if language not in LANGUAGES:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"unknown language {language!r}; expected one of {', '.join(LANGUAGES)}",
+            language=language,
+        )
+    return _ABBREVIATIONS["es" if language == "es" else "generic"]
+
+
 def sentence_span(text: str, k: int, language: str = DEFAULT_LANGUAGE) -> Span | None:
     """Sentence ``k`` (1-based) of ``text``, or ``None`` when there are fewer."""
     spans = split_sentences(text, language)
     return spans[k - 1] if 1 <= k <= len(spans) else None
+
+
+_SPACED_ELLIPSIS = re.compile(r"\.(?: \.){2,}")
 
 
 def _split_line(line: str, base: int, abbreviations: frozenset[str]) -> list[Span]:
@@ -162,6 +178,9 @@ def _split_line(line: str, base: int, abbreviations: frozenset[str]) -> list[Spa
             i += 1
             continue
         run_start = i
+        spaced = _SPACED_ELLIPSIS.match(line, i)
+        if spaced is not None:
+            i = spaced.end()
         while i < n and line[i] in _TERMINATORS:
             i += 1
         while i < n and line[i] in _CLOSERS:
@@ -189,7 +208,11 @@ def _ends_sentence(
 ) -> bool:
     """Whether the terminator run at ``run_start`` ends the sentence, given what follows."""
     follower = _classify_follower(line, nxt)
-    if line[run_start] == "." and not line.startswith("..", run_start):
+    if (
+        line[run_start] == "."
+        and not line.startswith("..", run_start)
+        and _SPACED_ELLIPSIS.match(line, run_start) is None
+    ):
         token = _word_before(line, sentence_start, run_start)
         folded = token.lower()
         start = run_start - len(token)
@@ -290,6 +313,8 @@ def is_scene_break(text: str) -> bool:
     marks = "".join(text.split())
     if not marks or len(set(marks)) != 1:
         return False
+    if len(marks) == 1 and marks in "*#":
+        return True
     if marks[0] in _ORNAMENTS:
         return True
     return len(marks) >= 3 and marks[0] in _BREAK_CHARS
@@ -301,6 +326,7 @@ _WORDS = (
     "uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince "
     "dieciséis diecisiete dieciocho diecinueve veinte",
     "primero segundo tercero cuarto quinto sexto séptimo octavo noveno décimo",
+    "primera segunda tercera cuarta quinta sexta séptima octava novena décima",
     "one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
     "fifteen sixteen seventeen eighteen nineteen twenty",
     "first second third fourth fifth sixth seventh eighth ninth tenth",
@@ -308,7 +334,7 @@ _WORDS = (
 _NUMBER_WORDS: dict[str, int] = {
     word: i for group in _WORDS for i, word in enumerate(group.split(), 1)
 }
-_NUMBER_WORDS.update({"una": 1, "primera": 1})
+_NUMBER_WORDS["una"] = 1
 _ROMAN = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
 _ROMAN_FORMS = (
     ("M", 1000), ("CM", 900), ("D", 500), ("CD", 400), ("C", 100), ("XC", 90),
@@ -316,7 +342,12 @@ _ROMAN_FORMS = (
 )  # fmt: skip
 _HEADING = re.compile(
     r"(?P<word>cap[ií]tulo|cap\.|chapter|chap\.|parte|part|libro|book)\s*"
-    r"(?P<num>\d{1,4}|[ivxlcdm]{1,8}|[^\W\d_]{3,12})\s*[.:)\-\u2013\u2014]?\s*(?P<title>.*)",
+    r"(?P<num>\d{1,4}|[ivxlcdm]{1,8}|[^\W\d_]{3,12})(?![^\W\d_])\s*[.:)\-\u2013\u2014]?\s*(?P<title>.*)",
+    re.IGNORECASE,
+)
+_REVERSED = re.compile(
+    r"(?P<num>[^\W\d_]{4,8})\s+(?P<word>cap[ií]tulo|chapter|parte|part|libro|book)"
+    r"\s*(?:[.:\-\u2013\u2014]\s*(?P<title>.*))?",
     re.IGNORECASE,
 )
 _NAMED = re.compile(
@@ -376,6 +407,12 @@ def parse_chapter_heading(text: str) -> ChapterHeading | None:
         if number is None:
             return None
         return ChapterHeading(_KIND_BY_WORD[m["word"].lower()], number, m["title"].strip())
+    m = _REVERSED.fullmatch(stripped)
+    if m is not None:
+        number = _number(m["num"])
+        if number is None:
+            return None
+        return ChapterHeading(_KIND_BY_WORD[m["word"].lower()], number, (m["title"] or "").strip())
     m = _NAMED.fullmatch(stripped)
     if m is not None:
         return ChapterHeading(_KIND_BY_WORD[m["word"].lower()], None, (m["title"] or "").strip())
@@ -389,6 +426,7 @@ def parse_chapter_heading(text: str) -> ChapterHeading | None:
 
 def segment_document(texts: Sequence[str], language: str = DEFAULT_LANGUAGE) -> Segmentation:
     """Segment a document given each main-story paragraph's visible text, in order."""
+    _abbreviations(language)
     sentences = tuple(tuple(split_sentences(t, language)) for t in texts)
     dialogue = tuple((n, line) for n, t in enumerate(texts, 1) for line in dialogue_lines(t))
     breaks = tuple(n for n, t in enumerate(texts, 1) if is_scene_break(t))

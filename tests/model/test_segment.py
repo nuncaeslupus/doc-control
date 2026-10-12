@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import build_index
 from doc_control.model.segment import (
     ChapterHeading,
@@ -247,3 +248,55 @@ def test_segment_document() -> None:
     assert seg.scene_breaks == (4,)
     assert [(c.first, c.last, c.heading.number) for c in seg.chapters] == [(2, 5, 1), (6, 7, 2)]
     assert segment_document([]).chapters == ()
+
+
+def test_more_spanish_titles_and_abbreviations() -> None:
+    for text, count in [
+        ("La Sra. Pérez y Dña. Rosa vinieron. Ud. no.", 2),
+        ("El Excmo. Sr. Ruiz habló.", 1),
+        ("La Excma. Sra. Vega y el Ilmo. Sr. Gil llegaron.", 1),
+        ("Dn. Pedro y D.ª Ana vinieron.", 1),
+    ]:
+        assert len(split_sentences(text)) == count, text
+
+
+def test_spaced_ellipsis_is_one_ellipsis() -> None:
+    text = "Esperó. . . Nadie vino."
+    assert [s.text(text) for s in split_sentences(text)] == ["Esperó. . .", "Nadie vino."]
+    text = "Pues. . . no sé."
+    assert [s.text(text) for s in split_sentences(text)] == ["Pues. . . no sé."]
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "number"),
+    [
+        ("Parte segunda", "part", 2),
+        ("Segunda parte", "part", 2),
+        ("Primera parte", "part", 1),
+        ("PARTE DÉCIMA", "part", 10),
+        ("Capítulo tercero", "chapter", 3),
+        ("Cuarta parte", "part", 4),
+        ("Décima parte", "part", 10),
+    ],
+)
+def test_ordinal_headings_in_both_orders(text: str, kind: str, number: int) -> None:
+    heading = parse_chapter_heading(text)
+    assert heading is not None
+    assert (heading.kind, heading.number) == (kind, number)
+
+
+@pytest.mark.parametrize("text", ["#", "*", "  *  ", "   #   "])
+def test_single_mark_scene_breaks(text: str) -> None:
+    assert is_scene_break(text)
+
+
+def test_unknown_language_is_schema_invalid() -> None:
+    for call in (
+        lambda: split_sentences("Hola.", "fr"),
+        lambda: sentence_span("Hola.", 1, "xx"),
+        lambda: segment_document([], "fr"),
+    ):
+        with pytest.raises(DocControlError) as err:
+            call()
+        assert err.value.code is ErrorCode.SCHEMA_INVALID
+    assert split_sentences("Hi.", "en") == split_sentences("Hi.", "generic")
