@@ -37,7 +37,7 @@ _SUPPRESSED_LIMIT = 20
 _UNITS = ["chapters", "scenes", "sentences", "dialogue"]
 _HEX = frozenset("0123456789abcdef")
 
-_PROFILE_PROPERTIES: dict[str, Any] = {
+PROFILE_PROPERTIES: dict[str, Any] = {
     "min_chapter_words": {
         "type": "integer",
         "minimum": 0,
@@ -78,6 +78,38 @@ _PROFILE_PROPERTIES: dict[str, Any] = {
 }
 
 
+OVERRIDES_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "description": "Force or deny a chapter or scene at paragraphs by fingerprint.",
+    "items": {
+        "type": "object",
+        "properties": {
+            "fp": {
+                "type": "string",
+                "minLength": FINGERPRINT_LENGTH,
+                "description": "Paragraph fingerprint, 8 lower-case hex digits.",
+            },
+            "kind": {"type": "string", "enum": list(KINDS)},
+            "action": {"type": "string", "enum": list(ACTIONS)},
+            "nth": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Only the nth paragraph with this fingerprint.",
+            },
+        },
+        "required": ["fp", "kind", "action"],
+        "additionalProperties": False,
+    },
+}
+
+PROFILE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Detection settings for this document.",
+    "properties": PROFILE_PROPERTIES,
+    "additionalProperties": False,
+}
+
+
 @operation(
     "segment",
     "read",
@@ -106,35 +138,8 @@ _PROFILE_PROPERTIES: dict[str, Any] = {
                 "enum": list(LANGUAGES),
                 "description": "Sentence rules (default es).",
             },
-            "overrides": {
-                "type": "array",
-                "description": "Force or deny a chapter or scene at paragraphs by fingerprint.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "fp": {
-                            "type": "string",
-                            "minLength": FINGERPRINT_LENGTH,
-                            "description": "Paragraph fingerprint, 8 lower-case hex digits.",
-                        },
-                        "kind": {"type": "string", "enum": list(KINDS)},
-                        "action": {"type": "string", "enum": list(ACTIONS)},
-                        "nth": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "Only the nth paragraph with this fingerprint.",
-                        },
-                    },
-                    "required": ["fp", "kind", "action"],
-                    "additionalProperties": False,
-                },
-            },
-            "profile": {
-                "type": "object",
-                "description": "Detection settings for this document.",
-                "properties": _PROFILE_PROPERTIES,
-                "additionalProperties": False,
-            },
+            "overrides": OVERRIDES_SCHEMA,
+            "profile": PROFILE_SCHEMA,
             **PAGING_PROPERTIES,
         },
         "required": ["doc"],
@@ -149,7 +154,7 @@ def segment(request: dict[str, Any]) -> Reply:
         return paged("segment", doc, request, "sentences", _sentences(doc, request, language))
     if unit == "dialogue":
         return paged("segment", doc, request, "dialogue", _dialogue(doc, request))
-    found = detect(paragraphs_of(doc), _profile(request), _overrides(request))
+    found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
     base: dict[str, Any] = {"unit": unit}
     if found.unmatched_overrides:
         base["unmatched_overrides"] = [
@@ -178,12 +183,12 @@ def _address(doc: Document, number: int) -> Address:
     return doc.index.paragraph(number).address
 
 
-def _profile(request: dict[str, Any]) -> Profile:
+def profile_of(request: dict[str, Any]) -> Profile:
     language = request.get("language", DEFAULT_LANGUAGE)
     return Profile(**{"language": language, **request.get("profile", {})})
 
 
-def _overrides(request: dict[str, Any]) -> list[Override]:
+def overrides_of(request: dict[str, Any]) -> list[Override]:
     out: list[Override] = []
     for i, raw in enumerate(request.get("overrides", [])):
         fp = raw["fp"]

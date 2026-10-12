@@ -133,6 +133,11 @@ def _folder(accents: bool, case: bool) -> _Folder:
     return _FOLDERS[key]
 
 
+def fold_text(text: str, *, ignore_case: bool = True, ignore_accents: bool = True) -> str:
+    """``text`` folded the way a search folds it (see the module docstring)."""
+    return _folder(ignore_accents, ignore_case).fold(text)[0]
+
+
 class Matcher:
     """A compiled search; reusable across paragraphs."""
 
