@@ -628,10 +628,15 @@ class ParagraphEditor:
         new.set(ID, self.ctx.continuation_id())
         return new
 
-    def _insert_after(self, parent: ET.Element, node: ET.Element, new: ET.Element) -> None:
+    def _insert_after(
+        self, parent: ET.Element, node: ET.Element, new: ET.Element | Sequence[ET.Element]
+    ) -> None:
         """Put ``new`` right after ``node``, outside any ``w:ins`` ``parent`` is."""
+        news = [new] if isinstance(new, ET.Element) else list(new)
         if parent is self.p:
-            parent.insert(list(parent).index(node) + 1, new)
+            at = list(parent).index(node) + 1
+            for j, item in enumerate(news):
+                parent.insert(at + j, item)
             return
         kids = list(parent)
         following = kids[kids.index(node) + 1 :]
@@ -642,12 +647,18 @@ class ParagraphEditor:
                 parent.remove(c)
                 rest.append(c)
             self.p.insert(at, rest)
-        self.p.insert(at, new)
+        for j, item in enumerate(news):
+            self.p.insert(at + j, item)
 
-    def _insert_before(self, parent: ET.Element, node: ET.Element, new: ET.Element) -> None:
+    def _insert_before(
+        self, parent: ET.Element, node: ET.Element, new: ET.Element | Sequence[ET.Element]
+    ) -> None:
         """Put ``new`` right before ``node``, outside any ``w:ins`` ``parent`` is."""
+        news = [new] if isinstance(new, ET.Element) else list(new)
         if parent is self.p:
-            parent.insert(list(parent).index(node), new)
+            at = list(parent).index(node)
+            for j, item in enumerate(news):
+                parent.insert(at + j, item)
             return
         kids = list(parent)
         at = list(self.p).index(parent)
@@ -657,9 +668,9 @@ class ParagraphEditor:
                 parent.remove(c)
                 rest.append(c)
             self.p.insert(at + 1, rest)
-            self.p.insert(at + 1, new)
-        else:
-            self.p.insert(at, new)
+            at += 1
+        for j, item in enumerate(news):
+            self.p.insert(at + j, item)
 
     # -- the edits ---------------------------------------------------------------
 
@@ -767,6 +778,40 @@ class ParagraphEditor:
             raise unsupported(
                 "the insertion point is next to a field, link or other structure",
                 **self._where("insertion point"),
+            )
+
+    def place(self, offset: int, nodes: Sequence[ET.Element]) -> None:
+        """Put zero-width ``nodes`` (comment markers) at visible ``offset``; no text changes.
+
+        Offset ``0`` and the end of the text go to the paragraph's edges, so a
+        whole-paragraph anchor works next to a field or link. Elsewhere the run at
+        the offset is cut and the nodes land between the halves, outside any
+        ``w:ins``. Several placements in one paragraph must be made from the
+        highest offset down: a placement shifts what follows it. Raises
+        ``UNSUPPORTED_CONTENT`` inside a field, link or other structure.
+        """
+        if offset <= 0:
+            at = 1 if len(self.p) and self.p[0].tag == PPR else 0
+            for j, item in enumerate(nodes):
+                self.p.insert(at + j, item)
+            return
+        if offset >= len(self.para.text):
+            self.p.extend(nodes)
+            return
+        after = self.para.pieces_in(offset, offset + 1)
+        before = self.para.pieces_in(offset - 1, offset)
+        if after and self._editable(after[0]):
+            parent, run, k = self._site(after[0])
+            _, right = self._cut(parent, run, k, offset - after[0].start)
+            self._insert_before(parent, right if right is not None else run, nodes)
+        elif before and self._editable(before[0]):
+            parent, run, k = self._site(before[0])
+            left, _ = self._cut(parent, run, k, offset - before[0].start)
+            self._insert_after(parent, left if left is not None else run, nodes)
+        else:
+            raise unsupported(
+                "the anchor point is inside or next to a field, link or other structure",
+                **self._where("anchor point"),
             )
 
     def _editable(self, piece: Piece) -> bool:

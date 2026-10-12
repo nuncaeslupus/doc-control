@@ -25,10 +25,17 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR
-from doc_control.ops.tracked import OPERATION_SCHEMAS, Edit, apply_edits, edit_from_dict
+from doc_control.ops.comments import (
+    COMMENT_SCHEMAS,
+    apply_batch,
+    comment_from_dict,
+    is_comment_edit,
+)
+from doc_control.ops.tracked import OPERATION_SCHEMAS, apply_edits, edit_from_dict
 from doc_control.registry import operation
 
-BATCH_KINDS = tuple(OPERATION_SCHEMAS)
+ALL_SCHEMAS = {**OPERATION_SCHEMAS, **COMMENT_SCHEMAS}
+BATCH_KINDS = tuple(ALL_SCHEMAS)
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -42,7 +49,7 @@ _SCHEMA: dict[str, Any] = {
                 "is a BATCH_CONFLICT. Kinds: "
                 + "; ".join(
                     f"{name} {sorted(set(s['properties']) - {'op'})}"
-                    for name, s in OPERATION_SCHEMAS.items()
+                    for name, s in ALL_SCHEMAS.items()
                 )
                 + "."
             ),
@@ -69,12 +76,15 @@ _SCHEMA: dict[str, Any] = {
 }
 
 
-def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
+def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     """Build every edit, naming the operation (``ops[i]``) that fails validation."""
-    edits: list[Edit] = []
+    edits: list[Any] = []
     for i, raw in enumerate(ops):
         try:
-            edits.append(edit_from_dict(raw))
+            if raw.get("op") in COMMENT_SCHEMAS:
+                edits.append(comment_from_dict(raw))
+            else:
+                edits.append(edit_from_dict(raw))
         except DocControlError as err:
             if err.code is not ErrorCode.SCHEMA_INVALID:
                 raise
@@ -87,8 +97,8 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
 @operation(
     "batch",
     "write",
-    "Apply text.replace, para.insert, para.delete, para.move, style.apply and format.apply "
-    "together as tracked changes, all or nothing; dry_run previews.",
+    "Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, "
+    "comment.add, comment.reply and comment.resolve together, all or nothing; dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
@@ -97,7 +107,8 @@ def batch(request: dict[str, Any]) -> Reply:
     edits = edits_from_request(request["ops"])
     expect = request.get("expect", {})
     path = request["doc"]
-    result = apply_edits(
+    apply = apply_batch if any(is_comment_edit(e) for e in edits) else apply_edits
+    result = apply(
         Path(path),
         edits,
         expect_sha256=expect.get("sha256"),
