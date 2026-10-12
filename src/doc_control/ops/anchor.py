@@ -120,8 +120,7 @@ def anchor_resolve(request: dict[str, Any]) -> Reply:
         raise DocControlError(
             ErrorCode.ANCHOR_NOT_FOUND,
             (
-                "no place holds the quote verbatim with a score of"
-                f" {MIN_SCORE:.2f} or more against the anchor"
+                "no verbatim occurrence of the quote"
                 if exact_only
                 else f"no place scores {MIN_SCORE:.2f} or more against the anchor"
             ),

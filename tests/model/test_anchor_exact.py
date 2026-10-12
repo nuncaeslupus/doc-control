@@ -121,3 +121,41 @@ def test_unknown_mode_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
         run("anchor.resolve", doc=str(doc), anchor={"exact": "Uno."}, mode="loose")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
+
+
+def test_verbatim_quote_with_changed_context_is_exact(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "Hoy llovía. María cerró la puerta con cuidado. Nada más.")
+    anchor = {
+        "exact": "María cerró la puerta con cuidado",
+        "prefix": "Al final de la larga noche, ",
+        "suffix": " y se fue sin mirar atrás.",
+        "hint": "p1",
+    }
+    found = run("anchor.resolve", doc=str(doc), anchor=anchor, mode="exact")
+    assert found["match"] == "exact"
+    assert found["at"].endswith(":12-45")
+
+
+def test_short_verbatim_quote_is_exact_in_exact_mode(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "Nada que ver. Dijo que sí. Fin.")
+    anchor = {"exact": "Dijo que sí", "prefix": "Otro texto distinto, ", "suffix": " y mucho más"}
+    assert run("anchor.resolve", doc=str(doc), anchor=anchor, mode="exact")["match"] == "exact"
+
+
+def test_two_verbatim_occurrences_are_ambiguous_in_exact_mode(tmp_path: Path) -> None:
+    doc = make_docx(
+        tmp_path / "a.docx", "Uno. María cerró la puerta.", "Dos. María cerró la puerta."
+    )
+    anchor = {"exact": "María cerró la puerta", "prefix": "zzz ", "suffix": " zzz"}
+    with pytest.raises(DocControlError) as err:
+        run("anchor.resolve", doc=str(doc), anchor=anchor, mode="exact")
+    assert err.value.code is ErrorCode.ANCHOR_AMBIGUOUS
+    assert len(err.value.details["candidates"]) == 2
+
+
+def test_exact_mode_not_found_says_no_verbatim_occurrence(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "Nada que ver.")
+    with pytest.raises(DocControlError) as err:
+        run("anchor.resolve", doc=str(doc), anchor={"exact": "María cerró"}, mode="exact")
+    assert err.value.code is ErrorCode.ANCHOR_NOT_FOUND
+    assert "verbatim" in err.value.message
