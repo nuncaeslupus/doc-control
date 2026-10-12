@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml import zipio
 from doc_control.ooxml.splice import scan
 from doc_control.ooxml.zipio import Package, sha256_file
-from doc_control.safety.store import DocStore
+from doc_control.safety.store import DocStore, backup
 from doc_control.safety.verify import (
     DOCUMENT_PART,
     STAGES,
@@ -25,6 +26,7 @@ from doc_control.safety.verify import (
 )
 from tests.helpers import make_docx
 
+NOW = datetime(2026, 10, 12, 11, 45, 0, tzinfo=UTC)
 PARAS = ("uno", "dos", "tres")
 NEW_P = b"<w:p><w:r><w:t>cambiado</w:t></w:r></w:p>"
 MEDIA = {"word/media/a.bin": b"\x00\x01binary\x02" * 40, "word/styles.xml": b"<s/>"}
@@ -314,7 +316,12 @@ FAULTS: list[Fault] = [
     Fault("word_lock_before_replace", _lock_at("fsync"), code=ErrorCode.DOC_LOCKED),
     Fault("real_replace_denied", _replace_denied, code=ErrorCode.DOC_LOCKED),
     Fault("real_replace_applied_then_error", _replace_then_error),
-    Fault("real_replace_then_truncated_file", _replace_then_truncated),
+    Fault(
+        "foreign_truncation_after_replace",
+        _replace_then_truncated,
+        code=ErrorCode.DOC_CHANGED_ON_DISK,
+        foreign=True,
+    ),
     Fault("real_backup_disk_full", _backup_disk_full, code=ErrorCode.INTERNAL),
     Fault(
         "verify_change_outside_paragraphs", _no_fault, footprint=Footprint(replaced=frozenset({0}))
@@ -355,23 +362,30 @@ def _inject(
 
 
 def _partial_write(tmp_path: Path, expected: bytes, fault: Fault) -> bool:
-    """Whether the document, the directory or the backups are left in a bad state."""
+    """Whether a fault left a partial write: the gate counts these.
+
+    A partial write is a document holding bytes that are neither the original nor
+    the intended result, with no recoverable copy of them. So after a fault the
+    document must either be the original (a parseable package, with a backup
+    holding it) or, when another program wrote to it, those very bytes (kept
+    untouched, with a copy in the store). Stray temp files count too.
+    """
     path = tmp_path / "Novela.docx"
     try:
         if path.read_bytes() != expected:
             return True
-        Package(path)
+        if not fault.foreign:
+            Package(path)
     except (OSError, DocControlError):
         return True
     store = tmp_path / ".doc-control"
     temp_files = list(store.rglob("*.tmp")) if store.exists() else []
     if [n for n in _stray(tmp_path) if n != "~$Novela.docx"] or temp_files:
         return True
-    if fault.foreign and fault.copy_kept:
-        # The user's save stays and a copy of it is kept next to the backups.
-        return not any(b.read_bytes() == expected for b in _foreign_copies(tmp_path))
     if fault.foreign:
-        return False
+        # Their bytes stay; a copy of them is kept, unless we never touched the file.
+        kept = any(c.read_bytes() == expected for c in _foreign_copies(tmp_path))
+        return fault.copy_kept and not kept
     # Every fault past the backup stage must leave a backup that restores the original.
     needs_backup = fault.name not in ("hook_backup", "hook_backup_runtime", "real_backup_disk_full")
     return needs_backup and not any(b.read_bytes() == expected for b in _backups(tmp_path))
@@ -439,10 +453,13 @@ def test_restore_failure_is_internal_and_names_the_backup(
     def boom(src: Path, dest: Path) -> None:
         raise OSError(5, "restore failed too")
 
-    _replace_then_truncated(monkeypatch, path)
+    def hook(name: str) -> None:
+        if name == "verify":
+            path.unlink()
+
     monkeypatch.setattr(verify_mod, "restore_file", boom)
     with pytest.raises(DocControlError) as err:
-        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})))
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
     assert err.value.code == ErrorCode.INTERNAL
     assert Path(err.value.details["backup"]).is_file()
 
@@ -526,23 +543,24 @@ def test_unreadable_document_after_retries_is_not_overwritten(
 ) -> None:
     path = _doc(tmp_path)
     monkeypatch.setattr(verify_mod.time, "sleep", lambda _s: None)
-    real = verify_mod.sha256_file
+    real = Path.read_bytes
     armed = False
 
-    def locked(p: Path) -> str:
-        if armed and p == path:
+    def locked(self: Path) -> bytes:
+        if armed and self == path:
             raise PermissionError(13, "held open")
-        return real(p)
+        return real(self)
 
     def hook(name: str) -> None:
         nonlocal armed
         armed = name == "verify"
 
-    monkeypatch.setattr(verify_mod, "sha256_file", locked)
+    monkeypatch.setattr(Path, "read_bytes", locked)
     with pytest.raises(DocControlError) as err:
         write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
     assert err.value.code == ErrorCode.INTERNAL
-    assert Path(err.value.details["backup"]).read_bytes() != Path(path).read_bytes()
+    monkeypatch.undo()
+    assert Path(err.value.details["backup"]).read_bytes() != path.read_bytes()
 
 
 def test_guard_stage_internal_error_passes_through(tmp_path: Path) -> None:
@@ -566,7 +584,7 @@ def test_interrupt_is_not_masked_by_a_failed_restore(
 
     def hook(name: str) -> None:
         if name == "verify":
-            path.write_bytes(path.read_bytes()[:100])
+            path.unlink()
             raise KeyboardInterrupt
 
     monkeypatch.setattr(verify_mod, "restore_file", boom)
@@ -593,3 +611,38 @@ def test_backup_that_does_not_match_is_deleted(
     assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
     assert _backups(tmp_path) == []
     assert path.read_bytes() == original
+
+
+def test_file_being_rewritten_by_another_program_is_not_replaced(tmp_path: Path) -> None:
+    path = _doc(tmp_path)
+    original = path.read_bytes()
+    handles: list[Any] = []
+
+    def hook(name: str) -> None:
+        if name == "verify":
+            handles.append(path.open("wb"))  # their save starts: the file is now empty
+
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
+    handles[0].write(b"THEIR NEWER SAVE")
+    handles[0].close()
+    assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
+    assert path.read_bytes() == b"THEIR NEWER SAVE"
+    assert any(b.read_bytes() == original for b in _backups(tmp_path))
+
+
+def test_preexisting_backup_survives_a_hash_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _doc(tmp_path)
+    taken = backup(path, now=NOW)
+    real = verify_mod.sha256_file
+
+    def lying(p: Path) -> str:
+        return "0" * 64 if p == taken else real(p)
+
+    monkeypatch.setattr(verify_mod, "sha256_file", lying)
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), now=NOW)
+    assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
+    assert taken.is_file()

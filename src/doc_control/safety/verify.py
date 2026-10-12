@@ -10,12 +10,18 @@ bytes, never a half-written file.
 
 The restore never destroys anyone else's work. Just before the replace the
 document is re-checked (lock file, sha256), and it is put back only if it is
-missing, holds exactly the bytes we wrote, or is a truncated copy of them. If
-anything else is on disk (Word or a sync client saved in between), that file
-is left in place, a copy of it is saved in the backups folder as
+missing or holds exactly the bytes we wrote: our own replace swaps in a fully
+fsynced temp file atomically, so it can never leave a torn copy, and an empty or
+partial file is another program mid-save. If anything else is on disk (Word or
+a sync client saved in between), that file is left in place, a copy of it is
+saved in the backups folder as
 ``foreign-<sha8>-<UTC stamp>.docx`` (a name retention never prunes) and the
 error is ``DOC_CHANGED_ON_DISK``. Reads of the document are retried briefly on
 ``PermissionError``, as antivirus scanners on Windows hold files for a moment.
+
+Unavoidable race: between the restore's last read of the document and its
+replace another program can still save, and that save is lost; the window is
+one read and one rename.
 
 Known gap: a process killed between the replace and the verification leaves
 the new file on disk with no marker saying it was never verified; the backup
@@ -44,6 +50,7 @@ from doc_control.ooxml.zipio import (
 )
 from doc_control.safety import guard_write
 from doc_control.safety.lock import check_unlocked
+from doc_control.safety.store import store_dir
 
 DOCUMENT_PART = "word/document.xml"
 STAGES = ("backup", "temp_write", "fsync", "replace", "verify")
@@ -197,6 +204,7 @@ def write_verified(
     current = "backup"
     touched = False  # the replace may have happened: the document can differ from the original
     backup_path: Path | None = None
+    created_backup = False  # this call made the file, so it may delete it
     original_sha = ""
     payload = b""
 
@@ -212,10 +220,13 @@ def write_verified(
 
     try:
         mark("backup")
+        known = _existing_backups(doc_path, env)
         backup_path = guard_write(doc_path, expect_sha256, now=now, env=env)
+        created_backup = backup_path not in known
         pkg = Package(doc_path)
         if sha256_file(backup_path) != pkg.sha256:
-            backup_path.unlink(missing_ok=True)  # a torn copy is no backup
+            if created_backup:
+                backup_path.unlink(missing_ok=True)  # a torn copy is no backup
             backup_path = None
             raise DocControlError(
                 ErrorCode.DOC_CHANGED_ON_DISK,
@@ -261,6 +272,13 @@ def write_verified(
     return WriteResult(original_sha, after_sha, backup_path)
 
 
+def _existing_backups(doc_path: Path, env: Mapping[str, str] | None) -> set[Path]:
+    try:
+        return set((store_dir(doc_path, env) / "backups").iterdir())
+    except OSError:
+        return set()
+
+
 def _retry(read: Callable[[Path], _T], path: Path) -> _T:
     """``read(path)``, retried a few times on ``PermissionError`` (a scanner holding the file)."""
     for delay in _READ_RETRY_DELAYS:
@@ -284,10 +302,11 @@ def _check_unchanged(doc_path: Path, original_sha: str) -> None:
 
 
 def _restore(doc_path: Path, backup_path: Path, original_sha: str, written: bytes) -> None:
-    """Put the backup back if the document is missing, ours or a truncated copy of ours.
+    """Put the backup back if the document is missing or exactly what we wrote.
 
-    Anything else was saved by someone else since our replace: leave it, keep a
-    copy of it in the backups folder and raise ``DOC_CHANGED_ON_DISK``.
+    Anything else (an empty or partial file included) was saved by someone else
+    since our replace: leave it, keep a copy of it in the backups folder and raise
+    ``DOC_CHANGED_ON_DISK``.
     """
 
     def internal(why: str) -> DocControlError:
@@ -299,19 +318,16 @@ def _restore(doc_path: Path, backup_path: Path, original_sha: str, written: byte
         )
 
     try:
-        digest = _retry(sha256_file, doc_path)
+        current: bytes | None = _retry(Path.read_bytes, doc_path)
     except FileNotFoundError:
-        digest = None
+        current = None
     except OSError as exc:
         raise internal("could not inspect") from exc
-    if digest == original_sha:
-        return
-    if digest is not None and digest != hashlib.sha256(written).hexdigest():
-        try:
-            current = doc_path.read_bytes()
-        except OSError as exc:
-            raise internal("could not inspect") from exc
-        if not (len(current) < len(written) and written.startswith(current)):
+    if current is not None:
+        digest = hashlib.sha256(current).hexdigest()
+        if digest == original_sha:
+            return
+        if digest != hashlib.sha256(written).hexdigest():
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
             copy = backup_path.parent / f"foreign-{digest[:8]}-{stamp}.docx"
             try:
