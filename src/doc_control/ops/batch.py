@@ -1,8 +1,8 @@
 """The ``batch`` write operation: all-or-nothing tracked edits in one verified write.
 
 A request lists ``ops`` (``text.replace``, ``para.insert``, ``para.delete``,
-``para.move``, ``revision.accept``, ``revision.reject``; their schemas are in
-:data:`ALL_SCHEMAS`). Every address refers to
+``para.move``, ``style.apply``, ``format.apply``, ``revision.accept``, ``revision.reject``;
+their schemas are in :data:`ALL_SCHEMAS`). Every address refers to
 the document as it was read. Before anything is written each operation is validated:
 addresses must resolve and still match their fingerprint (``STALE_ADDRESS``), ranges
 must not overlap (``BATCH_CONFLICT``, naming both operation indexes in ``edits``) and
@@ -93,9 +93,9 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
 @operation(
     "batch",
     "write",
-    "Apply text.replace, para.insert, para.delete and para.move together as tracked "
-    "changes, or revision.accept and revision.reject to resolve revisions (by ids, author, "
-    "address range or all), all or nothing; dry_run previews.",
+    "Apply text.replace, para.insert, para.delete, para.move, style.apply and format.apply "
+    "together as tracked changes, or revision.accept and revision.reject to resolve revisions "
+    "(by ids, author, address range or all), all or nothing; dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:

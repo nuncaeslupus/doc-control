@@ -53,6 +53,7 @@ from datetime import UTC, datetime
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import Paragraph, Piece
+from doc_control.ooxml.formatting import apply_ppr, apply_rpr
 from doc_control.ooxml.splice import W_NS, XML_NS
 from doc_control.ooxml.zipio import Package
 
@@ -424,6 +425,34 @@ def set_mark(p: ET.Element, kind: str, ctx: RevisionContext) -> None:
     if kind == "del" and len(rpr) and rpr[0].tag == INS:
         where = 1  # CT_ParaRPr orders ins before del
     rpr.insert(where, ctx.revision(kind))
+
+
+def track_paragraph_format(
+    p: ET.Element, ctx: RevisionContext, props: dict[str, object], where: dict[str, object]
+) -> bool:
+    """Change a paragraph's properties as a ``w:pPrChange`` holding the previous ones.
+
+    The change is the last child of ``w:pPr`` and its ``w:pPr`` the previous properties
+    (without the mark's ``w:rPr``, ``w:sectPr`` and any earlier change). Returns False if
+    nothing would change. A paragraph with an unresolved tracked property change is refused.
+    """
+    ppr = p.find(PPR)
+    if ppr is not None and ppr.find(W + "pPrChange") is not None:
+        raise unsupported("the paragraph has an unresolved tracked property change", **where)
+    work = copy.deepcopy(ppr) if ppr is not None else ET.Element(PPR)
+    previous = ET.Element(PPR)
+    previous.extend(
+        copy.deepcopy(c) for c in work if c.tag not in (RPR, W + "sectPr", W + "pPrChange")
+    )
+    if not apply_ppr(work, props):
+        return False
+    change = ctx.revision("pPrChange")
+    change.append(previous)
+    work.append(change)
+    if ppr is not None:
+        p.remove(ppr)
+    p.insert(0, work)
+    return True
 
 
 def new_paragraph(
@@ -838,16 +867,90 @@ class ParagraphEditor:
     def mark(self, kind: str) -> None:
         set_mark(self.p, kind, self.ctx)
 
+    def format_paragraph(self, props: dict[str, object]) -> bool:
+        """Change paragraph properties as a tracked ``w:pPrChange``; False if nothing changes."""
+        return track_paragraph_format(self.p, self.ctx, props, self._where("paragraph properties"))
+
+    def format_range(self, start: int, end: int, props: dict[str, object]) -> bool:
+        """Change run properties of visible characters ``[start, end)`` as ``w:rPrChange``.
+
+        Runs are split at the ends of the range. Returns False if every run already has
+        the properties. The caller has checked the offsets.
+        """
+        pieces = self.para.pieces_in(start, end)
+        if not pieces:
+            return False
+        sites = [self._site(piece) for piece in pieces]
+        first_piece, last_piece = pieces[0], pieces[-1]
+        first_parent, first_run, first_k = sites[0]
+        last_parent, last_run, last_k = sites[-1]
+        left, _ = self._cut(last_parent, last_run, last_k, end - last_piece.start)
+        assert left is not None
+        last_run = left
+        _, right = self._cut(first_parent, first_run, first_k, start - first_piece.start)
+        if right is not None:
+            first_run = right
+            if last_run is sites[0][1]:
+                last_run = right
+        items = _flat(self.p)
+        order = {id(node): i for i, (_, node) in enumerate(items)}
+        changed = False
+        for _, node in items[order[id(first_run)] : order[id(last_run)] + 1]:
+            kind = _item_kind(node)
+            if kind == "other":
+                raise unsupported(
+                    "the range covers a field, link, drawing, reference or other structure",
+                    **self._where(node.tag.removeprefix(W) if isinstance(node.tag, str) else "?"),
+                )
+            if kind == "text":
+                changed |= self._format_run(node, props)
+        return changed
+
+    def _format_run(self, run: ET.Element, props: dict[str, object]) -> bool:
+        rpr = run.find(RPR)
+        if rpr is not None and rpr.find(W + "rPrChange") is not None:
+            raise unsupported(
+                "the range holds a run with an unresolved tracked format change",
+                **self._where("run"),
+            )
+        work = copy.deepcopy(rpr) if rpr is not None else ET.Element(RPR)
+        if not apply_rpr(work, props):
+            return False
+        change = self.ctx.revision("rPrChange")
+        change.append(copy.deepcopy(rpr) if rpr is not None else ET.Element(RPR))
+        work.append(change)
+        if rpr is not None:
+            run.remove(rpr)
+        run.insert(0, work)
+        return True
+
 
 # -- simulating accept and reject (used to verify a write) ----------------------
+
+
+def _restore_properties(props: ET.Element, change: ET.Element) -> None:
+    """Reject a ``w:pPrChange`` / ``w:rPrChange``: the previous properties come back."""
+    keep = (RPR, W + "sectPr", W + "pPrChange") if props.tag == PPR else (W + "rPrChange",)
+    previous = change.find(PPR if props.tag == PPR else RPR)
+    kept = [c for c in props if c.tag in keep and c is not change]
+    for child in list(props):
+        props.remove(child)
+    if previous is not None:
+        props.extend(list(previous))
+    props.extend(kept)
 
 
 def reject_revisions(p: ET.Element, ids: set[str]) -> None:
     """Reject, in place, the revisions of ``p`` whose id is in ``ids`` (marks excluded).
 
     Inserted content is removed; a deletion is unwrapped and its ``w:delText``
-    becomes ``w:t`` again.
+    becomes ``w:t`` again; a ``w:pPrChange`` / ``w:rPrChange`` puts back the properties it holds.
     """
+
+    for parent in list(p.iter()):
+        for child in list(parent):
+            if child.tag in (W + "pPrChange", W + "rPrChange") and child.get(ID) in ids:
+                _restore_properties(parent, child)
 
     def walk(node: ET.Element) -> None:
         for child in list(node):

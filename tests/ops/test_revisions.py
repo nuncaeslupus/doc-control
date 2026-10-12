@@ -295,3 +295,30 @@ def test_deleted_mark_at_cell_end_does_not_join_across_the_table(tmp_path: Path)
     out = resolve_doc(path, "accept", all=True)
     assert texts(path) == ["cell", "last", "after"] and out["merged_paragraphs"] == 0
     assert out["warnings"] and pending(path) == []
+
+
+def test_reject_restores_and_accept_drops_format_apply_changes(corpus_doc: CorpusWriter) -> None:
+    from tests.ops.test_format import paragraphs, ppr_children
+
+    path = corpus_doc("plain", 0)
+    original = texts(path)
+    target = next(p for p in build_index(xml_of(path)).paragraphs if len(p.text) > 12)
+    old_ppr = ppr_children(paragraphs(xml_of(path))[target.number - 1])
+    at = str(target.address)
+    ops = [
+        {"op": "format.apply", "at": at, "align": "center", "indent_first_line_cm": 0.6},
+        {"op": "format.apply", "at": f"{at}:2-8", "bold": True, "size_pt": 14},
+    ]
+    batch({"doc": str(path), "ops": ops})
+    formatted = path.read_bytes()
+    assert b"rPrChange" in xml_of(path) and b"pPrChange" in xml_of(path)
+    batch({"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
+    restored = paragraphs(xml_of(path))[target.number - 1]
+    assert ppr_children(restored) == old_ppr
+    assert b"Change" not in xml_of(path) and restored.find(f".//{W}b") is None
+    assert texts(path) == original
+    path.write_bytes(formatted)
+    batch({"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
+    kept = paragraphs(xml_of(path))[target.number - 1]
+    assert b"Change" not in xml_of(path) and kept.find(f".//{W}jc") is not None
+    assert kept.find(f".//{W}b") is not None
