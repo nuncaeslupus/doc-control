@@ -61,4 +61,5 @@ testpaths = ["tests"]
 addopts = "--strict-markers -m 'not bench'"
 markers = [
     "bench: wall-clock performance budgets; run with `make bench` (pytest -m bench)",
+    "writes_invalid_docs: the test writes deliberately invalid packages; CI skips them in the OOXML lint",
 ]

@@ -472,3 +472,20 @@ def test_every_history_operation_is_registered_with_a_schema() -> None:
     ):
         assert name in registry and registry[name].schema["type"] == "object"
     assert registry["undo"].kind == registry["restore"].kind == "write"
+
+
+def test_undo_whose_log_append_fails_still_succeeds_with_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = formatted_docx(tmp_path / "d.docx")
+    before = snapshot(path)
+    run_batch(path, [{"op": "para.delete", "at": addresses(path)[2]}])
+
+    def broken(*args: Any, **kwargs: Any) -> str:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(history_ops.history, "record", broken)
+    reply = undo({"doc": str(path)})
+    assert snapshot(path) == before  # the document write stands
+    assert reply.result["op_id"] is None and reply.result["undid"] == "h-000001"
+    assert reply.warnings and reply.warnings[0].startswith("HISTORY_NOT_RECORDED")

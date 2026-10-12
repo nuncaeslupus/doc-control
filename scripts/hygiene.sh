@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Repo hygiene gate: no Word lock files, no real documents outside test
-# fixtures, no oversized files. Runs locally (host-gate) and in CI.
+# fixtures, no oversized files, no private-corpus identifiers (see
+# scripts/hygiene_denylist.py; the denylist itself lives outside the repo). Runs locally (host-gate) and in CI.
 set -euo pipefail
 fail=0
 shopt -s nocasematch
@@ -16,6 +17,8 @@ while IFS= read -r -d '' f; do
     if (( size > 5000000 )); then echo "File over 5 MB: $f ($size bytes)"; fail=1; fi
   fi
 done < <(git ls-files -z)
+
+python3 scripts/hygiene_denylist.py || fail=1
 
 if (( fail )); then exit 1; fi
 echo "hygiene: OK"

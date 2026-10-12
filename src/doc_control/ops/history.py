@@ -159,6 +159,7 @@ def undo(request: dict[str, Any]) -> Reply:
         dry_run=dry_run,
         env=None,
     )
+    warnings: list[str] = []
     result: dict[str, Any] = {
         "undid": entry["op_id"],
         "dry_run": dry_run,
@@ -166,19 +167,25 @@ def undo(request: dict[str, Any]) -> Reply:
     }
     if not dry_run:
         assert outcome.after_sha256 is not None
-        result["op_id"] = history.record(
-            path,
-            "undo",
-            before_sha256=outcome.before_sha256,
-            after_sha256=outcome.after_sha256,
-            backup=outcome.backup,
-            changes=outcome.reverted,
-            request={"op": "undo", "op_id": entry["op_id"]},
-            extra={"undoes": entry["op_id"]},
-        )
+        try:
+            result["op_id"] = history.record(
+                path,
+                "undo",
+                before_sha256=outcome.before_sha256,
+                after_sha256=outcome.after_sha256,
+                backup=outcome.backup,
+                changes=outcome.reverted,
+                request={"op": "undo", "op_id": entry["op_id"]},
+                extra={"undoes": entry["op_id"]},
+            )
+        except (DocControlError, OSError) as exc:
+            result["op_id"] = None
+            warnings.append(
+                f"HISTORY_NOT_RECORDED: the undo succeeded but could not be logged: {exc}"
+            )
         result["sha256"] = outcome.after_sha256
         result["backup"] = str(outcome.backup)
-    return _doc_reply(str(path), result)
+    return Reply(result, doc=Document(str(path)).envelope_doc(), warnings=warnings)
 
 
 # -- restore --------------------------------------------------------------------------------
