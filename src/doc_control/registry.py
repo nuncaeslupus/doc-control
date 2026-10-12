@@ -59,6 +59,7 @@ def load_operations() -> dict[str, Operation]:
         page,
         read,
         segment,
+        text,
     )
 
     return REGISTRY
