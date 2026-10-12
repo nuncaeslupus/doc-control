@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Word / Office temp and lock files
+~$*
+*.tmp
+.~lock.*#
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local test documents (never commit real manuscripts)
+/private/
+
+# claude-arsenal runtime state
+arsenal/session/surface_profile.json
+arsenal/session/rate_limits.json
+arsenal/session/budget_iterations.json
+arsenal/session/worktree_isolation
+arsenal/session/worktree_isolation.why
+arsenal/session/host_branch
+arsenal/session/rescue_refs
+/.claude/worktrees/
+.claude/skills/*/findings.md
+tmp/*-notes.md
+tmp/.arsenal-sessions/

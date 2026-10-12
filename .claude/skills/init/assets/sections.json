@@ -1,0 +1,118 @@
+{
+  "generated_by": "scripts/sync_sections.py",
+  "note": "Generated. Run `make sync-sections` after adding or re-filing a skill.",
+  "sections": [
+    {
+      "name": "core",
+      "default": true,
+      "core": true,
+      "blurb": "the bundle itself — installer, queue engine, and the skills the protocol names",
+      "skills": [
+        {
+          "name": "github",
+          "description": "Applies Conventional Commits and branch naming, opens PRs, and polls review bots and CI until the PR can merge. Use when the user commits, opens a PR or addresses review feedback. Not for reviewing a diff (review) or plain git mechanics (execution)."
+        },
+        {
+          "name": "init",
+          "description": "Sets up claude-arsenal/ in a host repo or registers a workspace (--workspace); safe to re-run. Use when the user wants the arsenal installed, refreshed or a workspace added. Not for adding tasks (queue-add) or resuming work (queue-next)."
+        },
+        {
+          "name": "queue-add",
+          "description": "Adds a task to the claude-arsenal queue. Use when the user wants a new task queued. Not for updating or removing existing tasks."
+        },
+        {
+          "name": "queue-next",
+          "description": "Picks the next unblocked task and runs the worker loop, optionally scoped by tag, workspace or title text (/queue-next [TAG … | WORKSPACE | text]). Use when the user wants to resume work. Not for a repo without init (init)."
+        },
+        {
+          "name": "queue-status",
+          "description": "Reports queue counts by status and audits for missing gates, missing issue handles and broken deps. Use when the user asks how the queue stands. Not for changing task status."
+        },
+        {
+          "name": "session-end",
+          "description": "Wraps up a session — opt-in status/handoff.md, repeated errors worth a skill update, and a CI/review/conflict audit of its PRs. Use when the user signals the end of the job or its opt-in auto-fire hook runs. Not for mid-job checkpoints or cross-session memory."
+        }
+      ]
+    },
+    {
+      "name": "extract",
+      "default": false,
+      "core": false,
+      "blurb": "structured data out of artifacts you did not produce",
+      "skills": [
+        {
+          "name": "har",
+          "description": "Records, reads, searches and filters HAR captures and turns them into scrapers — which request returned a string, how results page, what to send. Use when the user has or needs a HAR capture. Not for a JSON or HTML file with no capture."
+        }
+      ]
+    },
+    {
+      "name": "python",
+      "default": false,
+      "core": false,
+      "blurb": "the Python toolchain — coverage, mutation, dependency and release skills",
+      "skills": [
+        {
+          "name": "coverage-gaps",
+          "description": "Ranks the highest-value missing tests from coverage.py's coverage.json; cheaper than mutmut-report. Use when the user asks what tests are missing or where coverage gaps are. Not for running the suite or non-Python coverage."
+        },
+        {
+          "name": "dep-upgrade",
+          "description": "Upgrades a uv project's dependencies safely — uv lock --upgrade, pip-audit, the test gate, breakage classified. Use when the user wants dependencies upgraded or checked for vulnerabilities. Not for adding one dependency (uv add) or publishing (pypi-release)."
+        },
+        {
+          "name": "mutmut-report",
+          "description": "Triages surviving mutmut mutants as REAL_GAP, EQUIVALENT or UNTESTABLE and reports the test fixes worth making. Use when the user asks which mutants survived. Not for running mutmut, coverage (coverage-gaps) or non-Python mutation testing."
+        },
+        {
+          "name": "pin-check",
+          "description": "Checks whether a test pins a claimed behaviour — reverts that line, runs the scoped test, restores, reports PINNED or NOT PINNED. Use when the user asks if a test catches a change. Not for mutation scoring (mutmut-report) or coverage (coverage-gaps)."
+        },
+        {
+          "name": "pypi-release",
+          "description": "Runs the PyPI release runbook (build, twine check, version bump, tag, upload), catching version drift and stale dist/. Use when the user wants a Python package published. Not for scaffolding (python-bootstrap) or dependency upgrades (dep-upgrade)."
+        },
+        {
+          "name": "python-bootstrap",
+          "description": "Scaffolds or retrofits a Python project to the arsenal defaults (uv, ruff, strict mypy, standard Makefile, 3.12+). Use when the user sets up Python tooling. Not for publishing (pypi-release) or dependency upgrades (dep-upgrade)."
+        }
+      ]
+    },
+    {
+      "name": "workflow",
+      "default": true,
+      "core": false,
+      "blurb": "the spec → design → execute → review → ship discipline",
+      "skills": [
+        {
+          "name": "design",
+          "description": "Defines the technical solution after discovery — contracts, task split, risks, sequencing (validate_plan). Use when the user is planning how to build scoped work. Not for investigation (specify), implementation (execution) or PR review (review)."
+        },
+        {
+          "name": "execution",
+          "description": "Implements code changes from a design, with tests and merge-ready output. Use when the user is building what a design or task describes. Not for investigation (specify), design (design) or one-off scripts."
+        },
+        {
+          "name": "explore-idea",
+          "description": "Shapes a vague idea one question at a time, with pros and cons and logged decisions, then hands off to specify. Use when the user has an idea but no stated problem yet. Not for a problem already stated (specify)."
+        },
+        {
+          "name": "gate-check",
+          "description": "Gives an objective PASS/FAIL, with measured numbers, on a task's acceptance gate from status/plan.md, or audits every gate. Use when the user asks whether a gate passed. Not for writing code (execution) or ranking missing tests (coverage-gaps)."
+        },
+        {
+          "name": "review",
+          "description": "Reviews a PR, diff, design doc or proposal for risks, tech debt and standards. Use when the user wants something reviewed. Not for implementation (execution), design (design) or release sign-off (ship)."
+        },
+        {
+          "name": "ship",
+          "description": "Confirms a change is production-ready — compatibility, tests, observability, rollback. Use when the user wants release sign-off. Not for implementation (execution) or PR review (review)."
+        },
+        {
+          "name": "specify",
+          "description": "Investigates a problem or a feature with unclear impact and proposes options (validate_spec). Use when the user has a problem to understand before building. Not for already-scoped work (design), implementation (execution) or routine edits."
+        }
+      ]
+    }
+  ]
+}
