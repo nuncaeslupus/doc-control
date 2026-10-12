@@ -311,3 +311,12 @@ def test_find_100k_words_p95_ms(tmp_path: Path) -> None:
     p95 = statistics.quantiles(times, n=20)[-1]
     print(f"find_100k_words_p95_ms={p95:.0f}")
     assert p95 <= 1000
+
+
+def test_decomposed_text_and_query_match_composed_ones() -> None:
+    nfd, nfc = "x Lucía y", "x Lucía y"
+    assert spans("Lucía", nfd) == [(2, 8)]
+    assert spans("Lucía", nfc) == [(2, 7)]
+    assert spans("Lucía", nfd, whole_word=True) == [(2, 8)]
+    assert spans("lucía", nfd, ignore_case=True) == [(2, 8)]
+    assert spans("Luci", nfd) == []  # a letter does not match inside its accented form
