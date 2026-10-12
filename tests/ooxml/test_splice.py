@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
-import os
 import random
 import re
 import xml.etree.ElementTree as ET
 import zipfile
-from pathlib import Path
 
 import pytest
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.splice import W_NS, DocumentSpans, ParagraphSpan, scan, splice
+from tests.corpus.private import ENV_VAR, corpus_dir, private_documents
 from tests.ooxml.docgen import FOREIGN_NS, SHADOW_NS, WPS_NS, generate
 
 SEEDS = range(400)
@@ -171,30 +169,31 @@ def test_splice_identity_edit_returns_identical_bytes() -> None:
 def test_private_corpus_passes_the_splice_gate() -> None:
     """The same gate over real documents in ``DOC_CONTROL_PRIVATE_CORPUS`` (skipped if unset).
 
-    Documents are named by a short sha256 of their bytes, never by file name.
+    Documents are named by a short sha256 of their bytes, never by file name, and
+    failures report only the exception type or error code, never document text.
     """
-    root = os.environ.get("DOC_CONTROL_PRIVATE_CORPUS")
-    if not root:
-        pytest.skip("DOC_CONTROL_PRIVATE_CORPUS is not set")
-    paths = sorted(Path(root).rglob("*.docx"))
-    if not paths:
-        pytest.skip("DOC_CONTROL_PRIVATE_CORPUS has no .docx files")
+    if corpus_dir() is None:
+        pytest.skip(f"{ENV_VAR} is not set")
+    docs = list(private_documents())
+    if not docs:
+        pytest.skip(f"{ENV_VAR} has no .docx files")
     mismatches = 0
     failures: list[str] = []
-    for path in paths:
-        raw = path.read_bytes()
-        doc_id = hashlib.sha256(raw).hexdigest()[:12]
+    for doc_id, raw in docs:
         try:
             with zipfile.ZipFile(io.BytesIO(raw)) as zf:
                 data = zf.read("word/document.xml")
             found, _ = _gate_mismatches(data)
-        except (AssertionError, DocControlError, KeyError, zipfile.BadZipFile) as exc:
-            failures.append(f"{doc_id}: {type(exc).__name__}: {exc}"[:300])
+        except DocControlError as exc:
+            failures.append(f"{doc_id}: {exc.code}")
+            continue
+        except (AssertionError, KeyError, zipfile.BadZipFile) as exc:
+            failures.append(f"{doc_id}: {type(exc).__name__}")
             continue
         if found:
             failures.append(f"{doc_id}: {found} identity mismatches")
         mismatches += found
-    print(f"splice_roundtrip_mismatches={mismatches} documents={len(paths)}")
+    print(f"splice_roundtrip_mismatches={mismatches} documents={len(docs)}")
     assert not failures, "\n".join(failures)
 
 
