@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="f15c277217b0fab57b34599ecfbc6e4f932d4f99705f5f1490043e63e5de8fd4">
+<meta name="arsenal-source-sha256" content="dac761ddf46bd079e68eccb81a79d73836a04dcac79c789adeab4caa0979bdf8">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -590,6 +590,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <tr>
 <td>D-19</td>
 <td>doc-control owns every generic primitive useful to control document files (e.g. comparing two documents, diffs, redlines), so literary-critic and other tools build on it; literary- or domain-specific logic stays in the consumers; more features can be added later</td>
+<td>agreed</td>
+<td>2026-10-12</td>
+</tr>
+<tr>
+<td>D-20</td>
+<td>The CLI reads a request from stdin only with <code>--json -</code> (never by default), so an agent's open stdin pipe cannot hang it; a plain <code>&lt; request.json</code> is not read</td>
 <td>agreed</td>
 <td>2026-10-12</td>
 </tr>
