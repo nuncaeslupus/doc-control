@@ -6,9 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from doc_control.envelope import Reply
 from doc_control.schema import check_schema, validate
 
-Handler = Callable[[dict[str, Any]], dict[str, Any]]
+# A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
+Handler = Callable[[dict[str, Any]], dict[str, Any] | Reply]
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class Operation:
     schema: dict[str, Any]
     handler: Handler
 
-    def run(self, request: dict[str, Any]) -> dict[str, Any]:
+    def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         validate(request, self.schema)
         return self.handler(request)
 
@@ -48,6 +50,6 @@ def operation(
 
 def load_operations() -> dict[str, Operation]:
     """Import every operation module so their decorators run."""
-    from doc_control.ops import meta, text  # noqa: F401
+    from doc_control.ops import find, meta, read, text  # noqa: F401
 
     return REGISTRY

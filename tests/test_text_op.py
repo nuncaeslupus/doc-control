@@ -83,7 +83,7 @@ def test_cap_and_cursor_cover_every_paragraph_once(
     )
     cursor = env["result"]["next"]
     assert cursor is not None
-    assert cursor.startswith("c:text.normalized:") and cursor.count(":") == 3
+    assert cursor.startswith("c:text.normalized:") and cursor.count(":") == 4
     assert len(collect(capsys, doc=str(path))) == 120
 
 

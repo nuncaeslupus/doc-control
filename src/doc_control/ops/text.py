@@ -9,27 +9,23 @@ Two inputs, exactly one of which must be given (otherwise ``SCHEMA_INVALID``):
   and the map's original offsets are relative to it (add ``start`` for paragraph offsets).
 * ``text``, a string, which is normalised on its own.
 
-The reply is capped at 8,000 bytes of JSON per call (always at least one paragraph, and
-at most ``limit`` when given). When paragraphs remain, ``next`` is the cursor
-``c:text.normalized:<sha8>:<index>``; pass it back with the same ``at`` to continue. A
-cursor from another version of the file is ``DOC_CHANGED_ON_DISK``.
+The reply is paged like every list (:mod:`doc_control.ops.paging`): at most about 8,000
+bytes and ``limit`` paragraphs per call, ``next`` holding the cursor to continue with the
+same ``at``.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, overload
 
+from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex, Paragraph
 from doc_control.model.normalized import NormalizedText, normalize
-from doc_control.ooxml.zipio import Package
+from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
-
-RESPONSE_CAP = 8000
-_CURSOR = "c:text.normalized"
-
 
 def _map(result: NormalizedText) -> dict[str, list[int]]:
     return {
@@ -40,19 +36,6 @@ def _map(result: NormalizedText) -> dict[str, list[int]]:
 
 def _invalid(message: str, **details: Any) -> DocControlError:
     return DocControlError(ErrorCode.SCHEMA_INVALID, message, **details)
-
-
-def _parse_cursor(cursor: str, sha8: str) -> int:
-    parts = cursor.split(":")
-    if len(parts) != 4 or ":".join(parts[:2]) != _CURSOR or not parts[3].isdigit():
-        raise _invalid(f"malformed cursor: {cursor!r}")
-    if parts[2] != sha8:
-        raise DocControlError(
-            ErrorCode.DOC_CHANGED_ON_DISK,
-            "the cursor was issued for another version of the document",
-            cursor=cursor,
-        )
-    return int(parts[3])
 
 
 def _selection(index: DocumentIndex, at: str | None) -> list[tuple[Paragraph, int, int]]:
@@ -83,8 +66,23 @@ def _entry(para: Paragraph, start: int, end: int) -> dict[str, Any]:
     }
 
 
-def _size(value: Any) -> int:
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+class _Entries(Sequence[dict[str, Any]]):
+    """Entries built on demand, so a page costs only the paragraphs it shows."""
+
+    def __init__(self, selection: list[tuple[Paragraph, int, int]]) -> None:
+        self._selection = selection
+
+    def __len__(self) -> int:
+        return len(self._selection)
+
+    @overload
+    def __getitem__(self, item: int) -> dict[str, Any]: ...
+    @overload
+    def __getitem__(self, item: slice) -> list[dict[str, Any]]: ...
+    def __getitem__(self, item: int | slice) -> dict[str, Any] | list[dict[str, Any]]:
+        if isinstance(item, slice):
+            return [_entry(*row) for row in self._selection[item]]
+        return _entry(*self._selection[item])
 
 
 @operation(
@@ -96,19 +94,18 @@ def _size(value: Any) -> int:
     {
         "type": "object",
         "properties": {
-            "doc": {"type": "string", "description": "Path to a .docx."},
+            "doc": {"type": "string", "minLength": 1, "description": "Path to a .docx."},
             "text": {"type": "string", "description": "Text to normalise instead of `doc`."},
             "at": {
                 "type": "string",
                 "description": "Paragraph address or range, e.g. p142#a7b2a7b2:10-15.",
             },
-            "limit": {"type": "integer", "minimum": 1, "description": "Most paragraphs to return."},
-            "cursor": {"type": "string", "description": "`next` from a previous reply."},
+            **PAGING_PROPERTIES,
         },
         "additionalProperties": False,
     },
 )
-def text_normalized(request: dict[str, Any]) -> dict[str, Any]:
+def text_normalized(request: dict[str, Any]) -> dict[str, Any] | Reply:
     has_doc, has_text = "doc" in request, "text" in request
     if has_doc == has_text:
         raise _invalid("give exactly one of `doc` and `text`")
@@ -118,29 +115,6 @@ def text_normalized(request: dict[str, Any]) -> dict[str, Any]:
             raise _invalid(f"{', '.join(extra)} need `doc`")
         result = normalize(request["text"])
         return {"text": result.text, "offset_map": _map(result)}
-
-    pkg = Package(Path(request["doc"]))
-    index = DocumentIndex.from_package(pkg)
-    sha8 = pkg.sha256[:8]
-    selection = _selection(index, request.get("at"))
-    begin = _parse_cursor(request["cursor"], sha8) if "cursor" in request else 0
-    if begin > len(selection):
-        raise _invalid(f"cursor is past the end: {request['cursor']!r}")
-    limit = request.get("limit", len(selection))
-
-    entries: list[dict[str, Any]] = []
-    used = 0
-    pos = begin
-    while pos < len(selection) and len(entries) < limit:
-        entry = _entry(*selection[pos])
-        used += _size(entry) + 1
-        if entries and used > RESPONSE_CAP:
-            break
-        entries.append(entry)
-        pos += 1
-    more = pos < len(selection)
-    return {
-        "doc": {"path": request["doc"], "sha256": pkg.sha256, "paragraphs": len(index)},
-        "paragraphs": entries,
-        "next": f"{_CURSOR}:{sha8}:{pos}" if more else None,
-    }
+    doc = Document(request["doc"])
+    selection = _selection(doc.index, request.get("at"))
+    return paged("text.normalized", doc, request, "paragraphs", _Entries(selection))
