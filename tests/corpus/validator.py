@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import zipfile
 import zlib
 from collections.abc import Iterator, Mapping
@@ -341,6 +342,15 @@ def libreoffice_round_trip(docs: Mapping[str, bytes], workdir: Path) -> dict[str
     soffice = soffice_path()
     if soffice is None:
         return {doc_id: [] for doc_id in docs}
+    if soffice.startswith("/snap/"):
+        # A snap-confined LibreOffice cannot read /tmp, where pytest keeps tmp_path;
+        # it can read non-hidden directories under the home directory.
+        with tempfile.TemporaryDirectory(dir=Path.home(), prefix="doc-control-lo-") as home_dir:
+            return _round_trip(soffice, docs, Path(home_dir))
+    return _round_trip(soffice, docs, workdir)
+
+
+def _round_trip(soffice: str, docs: Mapping[str, bytes], workdir: Path) -> dict[str, list[str]]:
     src = workdir / "lo-in"
     out = workdir / "lo-out"
     src.mkdir(parents=True, exist_ok=True)

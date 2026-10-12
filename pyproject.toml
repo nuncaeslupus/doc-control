@@ -20,6 +20,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/doc_control"]
 
+[tool.hatch.build.targets.sdist]
+# Without this the sdist ships the agent tooling and planning files (.claude, arsenal, status).
+include = ["/src", "/tests"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
