@@ -4,6 +4,7 @@ title: "T9: Safety basics: `~$` lock detection, sha256 change detection, `.doc-c
 label: "safety basics"
 priority: 5
 deps: [t-129fb2b5]
+status: merged
 ---
 
 # T9: Safety basics: `~$` lock detection, sha256 change detection, `.doc-control/` store layout, document id, backups and retention, app-data option
