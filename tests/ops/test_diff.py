@@ -63,61 +63,95 @@ def _sentences(rng: random.Random, vocab: list[str], count: int) -> list[str]:
 @dataclass
 class Entry:
     kind: str  # same, mod, split, merge, ins
-    ids: tuple[int, ...]  # old paragraph ids it comes from
+    ids: tuple[int, ...]  # old paragraph positions it comes from
     text: str
     moved: bool = False
 
 
-def _edited_pair(seed: int, count: int = 120) -> tuple[list[str], list[str], set[Any]]:
-    """An old and a new version plus the expected set of (kind, old, new) changes."""
+def _edited_pair(seed: int, chapters: int = 14) -> tuple[list[str], list[str], set[Any]]:
+    """An old and a new version plus the expected set of (kind, old, new) changes.
+
+    Ten content paragraphs per chapter, with repeated lines ("Capítulo", "***", "—Sí.")
+    and short unique dialogue lines among them. Edits: modify, delete, insert, move a
+    paragraph, move a block, modify and move, split, merge, and swap two chapters.
+    Kinds of the swapped chapters are expected as "shifted" (moved or unchanged: which
+    side of a swap is the "moved" one is arbitrary).
+    """
     rng = random.Random(seed)
     vocab = _vocabulary(rng)
+    count = chapters * 10
     sents = [_sentences(rng, vocab, rng.randint(4, 6)) for _ in range(count)]
-    old = [" ".join(s) for s in sents]
-    entries = [Entry("same", (i,), old[i]) for i in range(count)]
-    by_id = {e.ids[0]: e for e in entries}
-    k = seed % 5
+    old: list[str] = []
+    pos: dict[int, int] = {}  # content id -> position in the old version
+    chapter_start: dict[int, int] = {}
+    for c in range(count):
+        if c % 10 == 0:
+            chapter_start[c // 10] = len(old)
+            old.append("Capítulo")
+        pos[c] = len(old)
+        old.append(" ".join(sents[c]))
+        if c % 10 == 2:
+            old.append(f"—¿Qué, {rng.choice(vocab)}?")
+        elif c % 10 == 4:
+            old.append("***")
+        elif c % 10 == 7:
+            old.append("—Sí.")
+    entries = [Entry("same", (n,), text) for n, text in enumerate(old)]
 
-    for i in (5 + k, 35 + k, 65 + k):  # modified: a few words replaced
-        words = by_id[i].text.split(" ")
-        for pos in (3, 17, 31):
-            words[pos] = rng.choice(vocab)
-        by_id[i].kind, by_id[i].text = "mod", " ".join(words)
-    deleted = {15 + k, 45 + k}
+    for c in (5, 35, 65, 80):  # modified: a few words replaced
+        words = entries[pos[c]].text.split(" ")
+        for at in (3, 17, 31):
+            words[at] = rng.choice(vocab)
+        entries[pos[c]].kind, entries[pos[c]].text = "mod", " ".join(words)
+    deleted = {pos[15], pos[45]}
 
     out: list[Entry] = []
     for e in entries:
-        i = e.ids[0]
-        if i in deleted:
+        n = e.ids[0]
+        if n in deleted:
             continue
-        if i in (100 + k, 20 + k):  # split at a sentence boundary
-            cut = len(sents[i]) // 2
-            out.append(Entry("split", (i,), " ".join(sents[i][:cut])))
-            out.append(Entry("split", (i,), " ".join(sents[i][cut:])))
-        elif i in (105 + k, 30 + k):  # merge with the next paragraph
-            out.append(Entry("merge", (i, i + 1), old[i] + " " + old[i + 1]))
-        elif i in (106 + k, 31 + k):
+        splitting = [c for c in (100, 20) if pos[c] == n]
+        merging = [c for c in (105, 30) if pos[c] == n]
+        if splitting:  # split at a sentence boundary
+            parts = sents[splitting[0]]
+            cut = len(parts) // 2
+            out.append(Entry("split", (n,), " ".join(parts[:cut])))
+            out.append(Entry("split", (n,), " ".join(parts[cut:])))
+        elif merging:  # merge with the next paragraph
+            out.append(Entry("merge", (n, n + 1), old[n] + " " + old[n + 1]))
+        elif any(pos[c] + 1 == n for c in (105, 30)):
             continue
         else:
             out.append(e)
 
     def pop(ids: list[int]) -> list[Entry]:
-        found = [e for e in out if e.ids[0] in ids and e.kind == "same"]
+        found = [e for e in out if e.ids[0] in ids and e.kind in ("same", "mod")]
         for e in found:
             out.remove(e)
             e.moved = True
         return found
 
     def insert_after(anchor: int, items: list[Entry]) -> None:
-        pos = next(n for n, e in enumerate(out) if anchor in e.ids) + 1
-        out[pos:pos] = items
+        at = next(i for i, e in enumerate(out) if pos[anchor] in e.ids) + 1
+        out[at:at] = items
 
-    moving = pop([75 + k])
-    insert_after(10 + k, moving)
-    block = pop([90 + k, 91 + k, 92 + k])
-    insert_after(40 + k, block)
-    for anchor in (25 + k, 55 + k):
+    insert_after(10, pop([pos[75]]))
+    insert_after(40, pop([pos[90], pos[91], pos[92]]))
+    insert_after(50, pop([pos[80]]))  # modified and moved
+    for anchor in (25, 55):
         insert_after(anchor, [Entry("ins", (), " ".join(_sentences(rng, vocab, 4)))])
+
+    def chapter(x: int) -> list[Entry]:
+        lo = chapter_start[x]
+        hi = chapter_start.get(x + 1, len(old))
+        return [e for e in out if e.ids and lo <= e.ids[0] < hi]
+
+    first, last = chapter(11), chapter(13)  # swap chapters 11 and 13 around chapter 12
+    start = out.index(first[0])
+    end = out.index(last[-1]) + 1
+    middle = out[start + len(first) : end - len(last)]
+    out[start:end] = [*last, *middle, *first]
+    swapped = {e.ids[0] for e in (*first, *middle, *last)}
 
     expected: set[Any] = set()
     placed: dict[tuple[int, ...], list[int]] = {}
@@ -130,7 +164,9 @@ def _edited_pair(seed: int, count: int = 120) -> tuple[list[str], list[str], set
         if e.kind == "ins":
             continue
         js = tuple(placed[e.ids])
-        if e.kind == "split":
+        if e.ids[0] in swapped:
+            expected.add(("shifted", e.ids, js))
+        elif e.kind == "split":
             expected.add(("split", e.ids, js))
         elif e.kind == "merge":
             expected.add(("merged", e.ids, js))
@@ -138,8 +174,8 @@ def _edited_pair(seed: int, count: int = 120) -> tuple[list[str], list[str], set
             expected.add(("modified", e.ids, js))
         else:
             expected.add(("moved" if e.moved else "unchanged", e.ids, js))
-    for i in deleted:
-        expected.add(("deleted", (i,), ()))
+    for n in deleted:
+        expected.add(("deleted", (n,), ()))
     return old, [e.text for e in out], expected
 
 
@@ -147,8 +183,16 @@ def _write(path: Path, paragraphs: list[str]) -> Path:
     return make_docx(path, *paragraphs)
 
 
-def _actual(alignment: Alignment) -> set[Any]:
-    return {(c.kind, c.old, c.new) for c in alignment.changes}
+def _actual(alignment: Alignment, expected: set[Any]) -> set[Any]:
+    shifted = {old for kind, old, _ in expected if kind == "shifted"}
+    return {
+        (
+            "shifted" if c.old in shifted and c.kind in ("unchanged", "moved") else c.kind,
+            c.old,
+            c.new,
+        )
+        for c in alignment.changes
+    }
 
 
 def _alignment_errors(tmp_path: Path, seeds: range) -> int:
@@ -158,7 +202,7 @@ def _alignment_errors(tmp_path: Path, seeds: range) -> int:
         _, _, alignment = diff_documents(
             _write(tmp_path / f"old{seed}.docx", old), _write(tmp_path / f"new{seed}.docx", new)
         )
-        errors += len(expected ^ _actual(alignment))
+        errors += len(expected ^ _actual(alignment, expected))
     return errors
 
 
@@ -173,6 +217,7 @@ def test_diff_ground_truth_covers_every_kind(tmp_path: Path) -> None:
     _, _, expected = _edited_pair(0)
     assert {kind for kind, _, _ in expected} == {
         "unchanged",
+        "shifted",
         "modified",
         "moved",
         "split",
@@ -183,7 +228,7 @@ def test_diff_ground_truth_covers_every_kind(tmp_path: Path) -> None:
 
 
 def test_diff_address_map_follows_the_edits(tmp_path: Path) -> None:
-    old, new, _ = _edited_pair(0)
+    old, new, expected = _edited_pair(0)
     index_old, index_new, alignment = diff_documents(
         _write(tmp_path / "old.docx", old), _write(tmp_path / "new.docx", new)
     )
@@ -193,15 +238,19 @@ def test_diff_address_map_follows_the_edits(tmp_path: Path) -> None:
     for source, target in mapping.items():
         assert target is None or target in new_addresses
         assert source.split("#")[0].startswith("p")
-    # deleted paragraphs (0-based 15 and 45) map to null; the first split part wins for splits
-    assert mapping[str(index_old.paragraph(16).address)] is None
-    assert mapping[str(index_old.paragraph(46).address)] is None
-    unchanged_first = index_old.paragraph(1).address
-    assert mapping[str(unchanged_first)] == str(unchanged_first)
-    split_old = index_old.paragraph(21)  # 0-based 20 is split
-    assert mapping[str(split_old.address)] is not None
-    merged_a, merged_b = index_old.paragraph(31), index_old.paragraph(32)
-    assert mapping[str(merged_a.address)] == mapping[str(merged_b.address)] is not None
+    # deleted paragraphs map to null; the first split part wins; merged parts share a target
+    for kind, olds, news in expected:
+        addresses = [str(index_old.paragraph(n + 1).address) for n in olds]
+        if kind == "deleted":
+            assert mapping[addresses[0]] is None
+        elif kind == "split":
+            assert mapping[addresses[0]] == str(index_new.paragraph(news[0] + 1).address)
+        elif kind == "merged":
+            assert {mapping[a] for a in addresses} == {
+                str(index_new.paragraph(news[0] + 1).address)
+            }
+        elif kind == "unchanged":
+            assert mapping[addresses[0]] == str(index_new.paragraph(news[0] + 1).address)
 
 
 def test_diff_identical_documents_have_no_changes(tmp_path: Path) -> None:
@@ -213,18 +262,31 @@ def test_diff_identical_documents_have_no_changes(tmp_path: Path) -> None:
     assert result["next"] is None
 
 
-def test_diff_unchanged_run_with_shifted_numbers_is_one_record(tmp_path: Path) -> None:
+def test_diff_lists_every_shifted_paragraph_in_the_address_map(tmp_path: Path) -> None:
     body = [
         f"paragraph number {w} with some words" for w in ("alpha", "beta", "gamma", "delta", "eps")
     ]
     old = _write(tmp_path / "old.docx", body)
     new = _write(tmp_path / "new.docx", ["a brand new first paragraph", *body])
     result = run_diff({"old": str(old), "new": str(new)})
-    kinds = [(c["kind"], c.get("count")) for c in result["changes"]]
-    assert kinds == [("inserted", None), ("unchanged", 5)]
-    run = result["changes"][1]
-    assert run["old"][0].startswith("p1#") and run["new"][0].startswith("p2#")
-    assert run["old"][0].split("#")[1] == run["new"][0].split("#")[1]
+    assert [c["kind"] for c in result["changes"]] == ["inserted"] + ["unchanged"] * 5
+    assert len(result["address_map"]) == 5  # every paragraph whose number changed
+    for source, target in result["address_map"].items():
+        assert source.split("#")[1] == target.split("#")[1]
+        assert int(target[1:].split("#")[0]) == int(source[1:].split("#")[0]) + 1
+    collapsed = run_diff({"old": str(old), "new": str(new), "collapse_runs": True})
+    assert [(c["kind"], c.get("count")) for c in collapsed["changes"]] == [
+        ("inserted", None),
+        ("unchanged", 5),
+    ]
+    assert collapsed["address_map"] == {}
+
+
+def test_diff_split_record_with_many_parts_is_not_attempted() -> None:
+    sentence = " ".join(f"word{n}" for n in range(40))
+    parts = [P(" ".join(f"word{n}" for n in range(k, k + 4))) for k in range(0, 40, 4)]
+    kinds = {c.kind for c in align([P(sentence)], parts).changes}
+    assert "split" not in kinds  # ten parts: beyond MAX_GROUP_RUN
 
 
 def test_diff_pages_with_cursor_and_rejects_foreign_cursor(tmp_path: Path) -> None:
@@ -441,3 +503,57 @@ def test_old_new_hashes_reported(tmp_path: Path) -> None:
     result = run_diff({"old": str(path), "new": str(path)})
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     assert result["old"]["sha256"] == digest and result["new"]["paragraphs"] == 1
+
+
+# --- repeated lines, chapter swaps, adversarial runs --------------------------------
+
+
+def _chapters(rng: random.Random, vocab: list[str], count: int) -> list[list[str]]:
+    """Chapters of ["Capítulo", 5 sentences, "***", 4 sentences, "—Sí."]."""
+    return [
+        [
+            "Capítulo",
+            " ".join(_sentences(rng, vocab, 5)),
+            "***",
+            " ".join(_sentences(rng, vocab, 4)),
+            "—Sí.",
+        ]
+        for _ in range(count)
+    ]
+
+
+def test_swapped_chapters_carry_their_repeated_lines() -> None:
+    rng = random.Random(3)
+    chapters = _chapters(rng, _vocabulary(rng), 3)
+    old = [P(t) for c in chapters for t in c]
+    new = [P(t) for c in (chapters[0], chapters[2], chapters[1]) for t in c]
+    result = align(old, new)
+    where = {0: 0, 1: 2, 2: 1}  # old chapter -> its position in the new version
+    expected = {(c * 5 + k,): (where[c] * 5 + k,) for c in range(3) for k in range(5)}
+    assert {c.old: c.new for c in result.changes} == expected
+    assert result.counts()["deleted"] == result.counts()["inserted"] == 0
+
+
+def test_run_of_candidates_is_capped_and_fast() -> None:
+    """Many similar paragraphs on both sides: no near-cubic trimming of one long run."""
+    rng = random.Random(5)
+    vocab = [f"w{n}" for n in range(60)]
+    old = [P(" ".join(rng.choice(vocab) for _ in range(100))) for _ in range(100)]
+    new = [P(" ".join(rng.choice(vocab) for _ in range(5))) for _ in range(500)]
+    start = time.perf_counter()
+    align(old, new)
+    seconds = time.perf_counter() - start
+    print(f"adversarial_align_seconds={seconds:.2f}")
+    assert seconds < 3
+
+
+def test_long_candidate_runs_with_enough_words_stay_fast() -> None:
+    rng = random.Random(6)
+    vocab = [f"w{n}" for n in range(60)]
+    old = [P(" ".join(rng.choice(vocab) for _ in range(100))) for _ in range(100)]
+    new = [P(" ".join(rng.choice(vocab) for _ in range(20))) for _ in range(500)]
+    start = time.perf_counter()
+    align(old, new)
+    seconds = time.perf_counter() - start
+    print(f"adversarial_long_runs_seconds={seconds:.2f}")
+    assert seconds < 3

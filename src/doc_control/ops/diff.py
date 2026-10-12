@@ -15,10 +15,12 @@ Records, in the order of the old version (an insertion right after its predecess
   (``"moved": true`` when it also changed place); ``moved``, ``split``
   (one old, several new), ``merged`` (several old, one new), ``deleted`` (``new`` empty)
   and ``inserted`` (``old`` empty) look alike.
-* ``{"kind": "unchanged", "old": [first], "new": [first], "count": n}``: a run of ``n``
-  consecutive unchanged paragraphs whose number all shifted by the same amount. Their
-  fingerprints are the same on both sides, so paragraph ``p<k>#<fp>`` of the run is
-  ``p<k + shift>#<fp>``. Unchanged paragraphs that kept their address are not listed.
+* ``{"kind": "unchanged", "old": [a], "new": [b]}``: an unchanged paragraph whose address
+  changed (its number shifted). Unchanged paragraphs that kept their address are not
+  listed. With ``collapse_runs: true`` consecutive unchanged paragraphs shifted by the
+  same amount become one record ``{"kind": "unchanged", "old": [first], "new": [first],
+  "count": n}`` and are left out of ``address_map`` (``p<k>#<fp>`` is ``p<k + shift>#<fp>``).
+  By default every paragraph whose address changed is in ``address_map``.
 
 Address map for a split: the old address maps to the first new part (the record lists
 all parts); for a merge every old part maps to the merged paragraph.
@@ -62,7 +64,9 @@ def address_map(
     return out
 
 
-def _records(alignment: Alignment, old: DocumentIndex, new: DocumentIndex) -> list[dict[str, Any]]:
+def _records(
+    alignment: Alignment, old: DocumentIndex, new: DocumentIndex, *, collapse: bool = False
+) -> list[dict[str, Any]]:
     """Output records: unchanged paragraphs that kept their address are left out."""
     out: list[dict[str, Any]] = []
     run: dict[str, Any] | None = None
@@ -75,6 +79,8 @@ def _records(alignment: Alignment, old: DocumentIndex, new: DocumentIndex) -> li
         i, j = change.old[0], change.new[0]
         if i == j:
             run = None
+        elif not collapse:
+            out.append(_record(change, old, new))
         elif run is not None and j - i == shift and next_old == i:
             run["count"] += 1
             next_old = i + 1
@@ -106,7 +112,7 @@ def _record(change: Change, old: DocumentIndex, new: DocumentIndex) -> dict[str,
 def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
     out: dict[str, str | None] = {}
     for rec in records:
-        if rec["kind"] == UNCHANGED:
+        if "count" in rec:  # a collapsed run
             continue
         target = rec["new"][0] if rec["new"] else None
         for address in rec["old"]:
@@ -123,6 +129,10 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
         "properties": {
             "old": {"type": "string", "description": "Path of the earlier version (.docx)."},
             "new": {"type": "string", "description": "Path of the later version (.docx)."},
+            "collapse_runs": {
+                "type": "boolean",
+                "description": "List runs of shifted unchanged paragraphs as one record each.",
+            },
             **PAGING_PROPERTIES,
         },
         "required": ["old", "new"],
@@ -132,7 +142,9 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
 def diff(request: dict[str, Any]) -> Reply:
     old, new = Document(request["old"]), Document(request["new"])
     alignment = align(old.index.paragraphs, new.index.paragraphs)
-    records = _records(alignment, old.index, new.index)
+    records = _records(
+        alignment, old.index, new.index, collapse=request.get("collapse_runs", False)
+    )
 
     # The cursor must also notice the new file changing: fold its hash into the scope.
     scoped = {**request, "new_sha256": new.sha256}

@@ -15,23 +15,28 @@ Kinds
     ``inserted``   only in the new version
 A ``modified`` paragraph that also changed place carries ``moved=True``.
 
-Algorithm (close to O(n log n) on real documents, never O(n^2) over the whole text)
-    1. Exact fingerprints: anchor on fingerprints that are unique on both sides, keep
-       the longest increasing chain (patience diff), recurse into the gaps between
-       anchors; a gap with no anchor goes to difflib if small. The chain is "in order".
-    2. Leftover paragraphs with identical text are paired (these are the moves).
+Algorithm (near-linear on real documents; every quadratic step is capped, see the
+constants: difflib only on gaps up to DIFFLIB_CELLS, split/merge runs up to
+MAX_GROUP_RUN, candidate pairs per paragraph up to TOP_CANDIDATES)
+    1. Anchors: paragraphs whose fingerprint is unique on both sides are paired; the
+       longest increasing chain of them is "in order", the rest are moves.
+    2. Repeated and wordless paragraphs (titles, separators, short replies) are paired
+       by context: next to a paired neighbour, with the partner's neighbour when the
+       text is equal, nearest context first, so a moved block carries its repeated
+       lines. What is left is aligned in order, gap by gap, then by identical text.
     3. Split and merge: a leftover paragraph whose words reappear (>= GROUP_CONTAINMENT
        of each part's words) in a run of two or more adjacent leftover paragraphs of
        the other side, the run's words matching it at >= GROUP_MIN_SIMILARITY.
     4. Modified: candidate pairs from the same gap between anchors and from a rare-word
        index, scored by word-level difflib ratio (character-level under SHORT_WORDS
        words), assigned greedily best first at >= MODIFIED_MIN.
-    Blank paragraphs (no word characters) are matched only in step 1.
+    Blank paragraphs (no word characters) are matched only in step 2.
 """
 
 from __future__ import annotations
 
 import bisect
+import heapq
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -43,6 +48,7 @@ from typing import Protocol
 MODIFIED_MIN = 0.6  # word-level similarity from which two paragraphs are "the same, edited"
 GROUP_MIN_SIMILARITY = 0.8  # similarity of one paragraph with the concatenation of its parts
 GROUP_CONTAINMENT = 0.8  # share of a part's words found in the paragraph it came from
+MAX_GROUP_RUN = 8  # a split/merge has at most this many parts (longer runs are not tried)
 GROUP_MIN_WORDS = 6  # smaller paragraphs are never split/merge candidates
 SHORT_WORDS = 6  # under this many words (either side) similarity is character-level
 RARE_POSTINGS = 20  # a word in more leftover paragraphs than this does not nominate candidates
@@ -124,42 +130,11 @@ def _lis(pairs: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return out
 
 
-def _exact_pairs(a: Sequence[str], b: Sequence[str]) -> list[tuple[int, int]]:
-    """Fingerprint-equal pairs, increasing in both indexes: anchors, then gaps."""
-    pairs: list[tuple[int, int]] = []
-    stack = [(0, len(a), 0, len(b))]
-    while stack:
-        alo, ahi, blo, bhi = stack.pop()
-        while alo < ahi and blo < bhi and a[alo] == b[blo]:
-            pairs.append((alo, blo))
-            alo += 1
-            blo += 1
-        while alo < ahi and blo < bhi and a[ahi - 1] == b[bhi - 1]:
-            ahi -= 1
-            bhi -= 1
-            pairs.append((ahi, bhi))
-        if alo >= ahi or blo >= bhi:
-            continue
-        count_a = Counter(a[alo:ahi])
-        count_b = Counter(b[blo:bhi])
-        pos_b = {b[j]: j for j in range(blo, bhi) if count_b[b[j]] == 1}
-        anchors = [
-            (i, pos_b[a[i]]) for i in range(alo, ahi) if count_a[a[i]] == 1 and a[i] in pos_b
-        ]
-        if anchors:
-            chain = _lis(anchors)
-            pairs.extend(chain)
-            last_a, last_b = alo, blo
-            for i, j in chain:
-                stack.append((last_a, i, last_b, j))
-                last_a, last_b = i + 1, j + 1
-            stack.append((last_a, ahi, last_b, bhi))
-        elif (ahi - alo) * (bhi - blo) <= DIFFLIB_CELLS:
-            matcher = SequenceMatcher(None, a[alo:ahi], b[blo:bhi], autojunk=False)
-            for block in matcher.get_matching_blocks():
-                pairs.extend((alo + block.a + k, blo + block.b + k) for k in range(block.size))
-    pairs.sort()
-    return pairs
+def _unique_pairs(a: Sequence[str], b: Sequence[str]) -> list[tuple[int, int]]:
+    """Pairs of paragraphs whose fingerprint occurs exactly once on each side."""
+    count_a, count_b = Counter(a), Counter(b)
+    pos_b = {fp: j for j, fp in enumerate(b) if count_b[fp] == 1}
+    return [(i, pos_b[fp]) for i, fp in enumerate(a) if count_a[fp] == 1 and fp in pos_b]
 
 
 def _ratio(a: Sequence[str], b: Sequence[str], floor: float) -> float:
@@ -182,7 +157,7 @@ def _runs(sorted_indexes: list[int]) -> list[list[int]]:
 
 
 def _trim_run(run: list[int], target: list[str], many: list[list[str]]) -> list[int]:
-    """Drop end paragraphs of a run while that improves its match with ``target``."""
+    """Drop end paragraphs of a run (at most MAX_GROUP_RUN long) while that improves the match."""
     while len(run) > 2:
         full = _ratio(target, [w for m in run for w in many[m]], 0.0)
         head = _ratio(target, [w for m in run[1:] for w in many[m]], 0.0)
@@ -226,16 +201,97 @@ class _Aligner:
         return before < j < after
 
     def run(self) -> Alignment:
-        exact = _exact_pairs([p.fp for p in self.old], [p.fp for p in self.new])
-        for i, j in exact:
+        unique = _unique_pairs([p.fp for p in self.old], [p.fp for p in self.new])
+        chain = _lis(unique)
+        in_chain = set(chain)
+        self.base_old = [i for i, _ in chain]
+        self.base_new = [j for _, j in chain]
+        extras = [(i, j, False) for i, j in unique if (i, j) not in in_chain]
+        for i, j in unique:
             self.pair(i, j)
-        self.base_old = [i for i, _ in exact]
-        self.base_new = [j for _, j in exact]
-        extras = self.exact_leftovers()
+        extras += self.extend()
+        extras += self.fill_gaps()
+        extras += self.exact_leftovers()
         self.groups(split=True)
         self.groups(split=False)
         extras += self.fuzzy()
         return self.assemble(extras)
+
+    def extend(self) -> list[tuple[int, int, bool]]:
+        """Pair repeated and wordless paragraphs by context.
+
+        A paragraph next to an already paired one is paired with the partner's
+        neighbour on the same side when the two have the same text, so a moved block
+        carries its repeated lines (titles, separators, short replies) with it. Blocks
+        claim neighbours: those next to an anchor first, then next to what was paired from
+        an anchor, and so on (nearest context wins), the largest block first within a level.
+        """
+        run_len = [0] * len(self.old)  # length of the run of consecutive pairs each is in
+        i = 0
+        while i < len(self.old):
+            if self.match_old[i] < 0:
+                i += 1
+                continue
+            k = i
+            while k + 1 < len(self.old) and self.match_old[k + 1] == self.match_old[k] + 1:
+                k += 1
+            for t in range(i, k + 1):
+                run_len[t] = k - i + 1
+            i = k + 1
+        heap: list[tuple[int, int, int, int]] = []  # (depth, -weight, old, new)
+
+        def push(o: int, n: int, weight: int, depth: int) -> None:
+            for step in (-1, 1):
+                io, jn = o + step, n + step
+                if (
+                    0 <= io < len(self.old)
+                    and 0 <= jn < len(self.new)
+                    and self.match_old[io] < 0
+                    and self.match_new[jn] < 0
+                    and self.old[io].fp == self.new[jn].fp
+                ):
+                    heapq.heappush(heap, (depth, -weight, io, jn))
+
+        for o, n in enumerate(self.match_old):
+            if n >= 0:
+                push(o, n, run_len[o], 1)
+        out: list[tuple[int, int, bool]] = []
+        while heap:
+            depth, neg, io, jn = heapq.heappop(heap)
+            if self.match_old[io] >= 0 or self.match_new[jn] >= 0:
+                continue
+            self.pair(io, jn)
+            out.append((io, jn, False))
+            push(io, jn, -neg, depth + 1)
+        return out
+
+    def fill_gaps(self) -> list[tuple[int, int, bool]]:
+        """Pair what is left of identical text in order, gap by gap between anchors."""
+        slots_old: dict[int, list[int]] = defaultdict(list)
+        slots_new: dict[int, list[int]] = defaultdict(list)
+        for i in range(len(self.old)):
+            if self.match_old[i] < 0:
+                slots_old[bisect.bisect_left(self.base_old, i)].append(i)
+        for j in range(len(self.new)):
+            if self.match_new[j] < 0:
+                slots_new[bisect.bisect_left(self.base_new, j)].append(j)
+        out: list[tuple[int, int, bool]] = []
+        for slot, olds in slots_old.items():
+            news = slots_new.get(slot)
+            if not news or len(olds) * len(news) > DIFFLIB_CELLS:
+                continue
+            matcher = SequenceMatcher(
+                None,
+                [self.old[i].fp for i in olds],
+                [self.new[j].fp for j in news],
+                autojunk=False,
+            )
+            for block in matcher.get_matching_blocks():
+                for k in range(block.size):
+                    i, j = olds[block.a + k], news[block.b + k]
+                    self.pair(i, j)
+                    out.append((i, j, False))
+        return out
 
     def exact_leftovers(self) -> list[tuple[int, int, bool]]:
         """Identical text left over after step 1, as (old, new, is_modified=False)."""
@@ -296,6 +352,12 @@ class _Aligner:
                 and sum(w in vocab for w in many_words[m]) >= GROUP_CONTAINMENT * len(many_words[m])
             )
             for run in _runs(parts):
+                if len(run) < 2 or len(run) > MAX_GROUP_RUN:
+                    continue
+                # ratio >= GROUP_MIN_SIMILARITY needs the parts' words within [2/3, 3/2] of
+                # the paragraph's; a run with fewer words in all cannot reach it by trimming.
+                if sum(len(many_words[m]) for m in run) * 3 < 2 * len(one_words[o]):
+                    continue
                 run = _trim_run(run, one_words[o], many_words)
                 if len(run) < 2:
                     continue
