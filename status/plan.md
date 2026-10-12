@@ -126,7 +126,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T1 | `make_check_exit_code == 0` | 0 | `make check` | 50b04fb | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 | T2 | `operations_without_json_schema == 0` | 0 | `uv run pytest tests/test_registry.py (ops without schema counted by test)` | 5e72160 | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 | T3 | `untouched_parts_byte_identical_ratio == 1.0` | 1.0 | `uv run pytest tests/ooxml/test_zipio.py (ratio of untouched members byte-identical)` | 61db475 | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
-| T4 | `splice_roundtrip_mismatches == 0` | 0 | `uv run pytest tests/ooxml/test_splice.py` | 294bcf9 | local (Linux, CPython 3.13 via uv; requires-python >=3.11) | 2026-10-12 |
+| T4 | `splice_roundtrip_mismatches == 0` | 0 (400 generated documents) | `uv run pytest tests/ooxml/test_splice.py` | 41065c5 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 
 ### Dependency graph
 
