@@ -19,6 +19,7 @@ class ErrorCode(StrEnum):
     UNSUPPORTED_CONTENT = "UNSUPPORTED_CONTENT"
     BATCH_CONFLICT = "BATCH_CONFLICT"
     VERIFY_FAILED_RESTORED = "VERIFY_FAILED_RESTORED"
+    COMMENT_NOT_FOUND = "COMMENT_NOT_FOUND"
     STYLE_NOT_FOUND = "STYLE_NOT_FOUND"
     STYLE_CONFLICT = "STYLE_CONFLICT"
     RECIPE_INVALID = "RECIPE_INVALID"
@@ -42,6 +43,7 @@ HINTS: dict[ErrorCode, str] = {
     ),
     ErrorCode.BATCH_CONFLICT: "Split overlapping operations into separate batches.",
     ErrorCode.VERIFY_FAILED_RESTORED: "Nothing was changed; report the request that caused it.",
+    ErrorCode.COMMENT_NOT_FOUND: "List comments with comments.list and use an existing id.",
     ErrorCode.STYLE_NOT_FOUND: "List styles with styles.list and use an existing id.",
     ErrorCode.STYLE_CONFLICT: "Rename the style or merge it with style.merge.",
     ErrorCode.RECIPE_INVALID: "Fix the recipe so it only uses the documented keys.",

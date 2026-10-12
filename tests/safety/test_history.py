@@ -516,3 +516,28 @@ def test_undo_restores_a_format_apply_batch_exactly(tmp_path: Path) -> None:
     assert entry["request"][0]["align"] == "right"
     undo({"doc": str(path)})
     assert snapshot(path) == original  # pPr, rPr and the whole document.xml, byte for byte
+
+
+def test_comment_batch_is_logged_and_its_undo_is_refused(tmp_path: Path) -> None:
+    path = formatted_docx(tmp_path / "d.docx")
+    a = addresses(path)
+    result = run_batch(
+        path,
+        [
+            {"op": "comment.add", "at": a[1], "text": "Revisar esto"},
+            {"op": "text.replace", "at": a[3], "text": "otro"},
+        ],
+    )
+    assert result["op_id"] == "h-000001" and "comment_ids" in result
+    entry = read_log(tmp_path / ".doc-control" / "d.docx" / "log.jsonl").entries[0]
+    assert [r["op"] for r in entry["request"]] == ["comment.add", "text.replace"]
+    assert entry["parts"] and len(entry["changes"]) == 2  # the commented and the edited paragraph
+    assert history_search({"doc": str(path), "query": "Revisar"}).result["total"] >= 1
+    written = path.read_bytes()
+    with pytest.raises(DocControlError) as err:
+        undo({"doc": str(path)})
+    assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
+    assert "comments" in err.value.message and path.read_bytes() == written
+    # a later text-only batch is still undoable on its own
+    run_batch(path, [{"op": "text.replace", "at": addresses(path)[6], "text": "x"}])
+    assert undo({"doc": str(path)}).result["undid"] == "h-000002"

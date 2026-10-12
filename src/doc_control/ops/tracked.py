@@ -77,7 +77,7 @@ import itertools
 import re
 import unicodedata
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -110,6 +110,7 @@ from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 from doc_control.schema import validate
 
 __all__ = [
+    "REQUEST_NAMES",
     "ApplyFormat",
     "ApplyStyle",
     "DeleteParagraphs",
@@ -122,11 +123,14 @@ __all__ = [
     "apply_edits",
     "edit_from_dict",
     "edits_as_request",
+    "log_changes",
     "next_in_container",
     "prepare_edits",
 ]
 
 PREVIEW_LIMIT = 200
+# Rewrites a paragraph element in place without changing its text (comment anchors).
+Annotator = Callable[[ET.Element, Paragraph, RevisionContext], None]
 _ZWJ = "\N{ZERO WIDTH JOINER}"
 _INERT_LOCALS = frozenset(
     name.encode()
@@ -301,7 +305,7 @@ def edit_from_dict(raw: Mapping[str, Any]) -> Edit:
     if op == "para.delete":
         return DeleteParagraphs(raw["at"])
     if op == "style.apply":
-        _check_name(raw["style"], "style")
+        check_name(raw["style"], "style")
         return ApplyStyle(raw["at"], raw["style"])
     if op == "format.apply":
         props = {k: raw[k] for k in (*RUN_KEYS, *PARAGRAPH_KEYS) if k in raw}
@@ -312,7 +316,7 @@ def edit_from_dict(raw: Mapping[str, Any]) -> Edit:
                 expected=[*RUN_KEYS, *PARAGRAPH_KEYS],
             )
         if "font" in props:
-            _check_name(props["font"], "font")
+            check_name(props["font"], "font")
         return ApplyFormat(raw["at"], props)
     after, before = raw.get("after"), raw.get("before")
     if (after is None) == (before is None):
@@ -342,6 +346,8 @@ class TrackedResult:
     backup: Path | None = None
     warnings: list[str] = field(default_factory=list)
     op_id: str | None = None
+    parts: dict[str, list[str]] = field(default_factory=dict)  # other parts touched, with ids
+    comment_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -349,11 +355,13 @@ class TrackedResult:
             "dry_run": self.dry_run,
             "preview": self.preview,
             "address_map": self.address_map,
-            "footprint": {DOCUMENT_PART: self.footprint},
+            "footprint": {DOCUMENT_PART: self.footprint, **self.parts},
             "revision_ids": self.revision_ids,
             "author": self.author,
             "date": self.date,
         }
+        if self.comment_ids:
+            out["comment_ids"] = self.comment_ids
         if self.warnings:
             out["warnings"] = self.warnings
         if not self.dry_run:
@@ -393,7 +401,7 @@ def _check_boundary(para: Paragraph, offset: int, at: str) -> None:
         )
 
 
-def _check_text(text: str, what: str) -> None:
+def check_text(text: str, what: str) -> None:
     for ch in text:
         code = ord(ch)
         bad = (
@@ -408,10 +416,10 @@ def _check_text(text: str, what: str) -> None:
             )
 
 
-def _check_name(value: str, what: str) -> None:
+def check_name(value: str, what: str) -> None:
     if not value.strip():
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"{what} must not be empty")
-    _check_text(value, what)
+    check_text(value, what)
     if "\t" in value or "\n" in value:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"{what} must be one line")
 
@@ -637,7 +645,7 @@ class _Planner:
     # -- the four edits --
 
     def replace(self, i: int, edit: ReplaceText) -> None:
-        _check_text(edit.text, "text")
+        check_text(edit.text, "text")
         rng = self.index.resolve_range(edit.at)
         if rng.sentence is not None:
             raise DocControlError(
@@ -708,7 +716,7 @@ class _Planner:
         )
 
     def insert(self, i: int, edit: InsertParagraph) -> None:
-        _check_text(edit.text, "text")
+        check_text(edit.text, "text")
         where, anchor_at = (
             ("after", edit.after) if edit.after is not None else ("before", edit.before)
         )
@@ -952,7 +960,7 @@ def next_in_container(index: DocumentIndex, para: Paragraph) -> Paragraph | None
 
 def prepare_edits(
     pkg: Package,
-    edits: Sequence[Edit],
+    edits: Sequence[Any],
     *,
     author: str = DEFAULT_AUTHOR,
     tag: str | None = None,
@@ -960,6 +968,8 @@ def prepare_edits(
     dry_run: bool = False,
     layered: bool = False,
     index: DocumentIndex | None = None,
+    annotations: Mapping[int, Annotator] | None = None,
+    reserved_ids: Collection[int] = (),
 ) -> PreparedEdits:
     """Plan and build ``edits`` on ``pkg`` without writing: the part of :func:`apply_edits`
     that works on bytes, self-checked (see there).
@@ -968,12 +978,19 @@ def prepare_edits(
     keep the order of the edits), a paragraph may be edited and also be the anchor of an
     insertion after the end of its container, and the first paragraph of a range across
     paragraphs may carry other (non-overlapping) edits; used by ``compare``.
+
+    ``annotations`` maps paragraph numbers to functions that rewrite that paragraph's
+    element without changing its text (comment anchors); such a paragraph must not
+    also be edited (``BATCH_CONFLICT``). ``reserved_ids`` are ``w:id`` values already
+    taken for other markup, which no revision gets. ``edits`` may be empty when
+    annotations are given.
     """
-    if not edits:
+    annotations = annotations or {}
+    if not edits and not annotations:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
-    _check_name(author, "author")
+    check_name(author, "author")
     if tag is not None:
-        _check_name(tag, "tag")
+        check_name(tag, "tag")
     if index is None:
         index = DocumentIndex.from_package(pkg)
 
@@ -989,10 +1006,21 @@ def prepare_edits(
             planner.move(i, edit)
         elif isinstance(edit, ApplyStyle):
             planner.style(i, edit)
-        else:
+        elif isinstance(edit, ApplyFormat):
             planner.format(i, edit)
+        # anything else (a comment operation) is handled by the caller through ``annotations``
+    for number in sorted(annotations):
+        if number in planner.plans:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                f"a comment is placed on {index.paragraph(number).address}, which another "
+                "operation of the batch edits, deletes or moves: apply them in separate batches",
+                paragraph=str(index.paragraph(number).address),
+            )
 
-    ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
+    ctx = RevisionContext(
+        used_ids(pkg) | set(reserved_ids), format_author(author, tag), format_date(now)
+    )
     spans = index.spans
     scopes = _bookmark_scopes(pkg, index, planner, ctx)
     replacements: dict[int, bytes] = {}
@@ -1016,6 +1044,11 @@ def prepare_edits(
             editor.mark(plan.mark)
         if plan.ppr:
             editor.format_paragraph(plan.ppr)
+        replacements[para.span_index] = _serialize(spans, elem, para.span_index)
+    for number in sorted(annotations):
+        para = index.paragraph(number)
+        elem = spans.parse_paragraph(para.span_index)
+        annotations[number](elem, para, ctx)
         replacements[para.span_index] = _serialize(spans, elem, para.span_index)
 
     after: dict[int, list[bytes]] = {}
@@ -1085,7 +1118,8 @@ def prepare_edits(
         footprint=[
             f"p{number}"
             for number, (old, item) in enumerate(sequence, start=1)
-            if item is not None or (old is not None and old.number in planner.plans)
+            if item is not None
+            or (old is not None and (old.number in planner.plans or old.number in annotations))
         ],
         revision_ids=[int(r) for r in ctx.revision_ids],
         author=ctx.author,
@@ -1093,45 +1127,49 @@ def prepare_edits(
         before_sha256=pkg.sha256,
         warnings=_reference_warnings(pkg, scopes),
     )
-    changes = _log_changes(spans, planner, replacements, after, before)
+    changes = log_changes(spans, index, replacements, after, before)
     return PreparedEdits(pkg, new_data, footprint, result, changes)
 
 
-def _log_changes(
+def log_changes(
     spans: DocumentSpans,
-    planner: _Planner,
+    index: DocumentIndex,
     replacements: Mapping[int, bytes],
     after: Mapping[int, Sequence[bytes]],
     before: Mapping[int, Sequence[bytes]],
 ) -> list[dict[str, Any]]:
     """The undo-log records of an edit, in document order (see ``safety.history``)."""
-    texts = {plan.para.span_index: plan.para.text for plan in planner.plans.values()}
+    texts = {para.span_index: para.text for para in index.paragraphs}
     changes: list[dict[str, Any]] = []
-    for index in sorted(replacements):
+    for at in sorted(replacements):
         changes.append(
             {
                 "part": DOCUMENT_PART,
                 "kind": "replace",
-                "index": index,
-                "before": to_text(spans.paragraph_bytes(index)),
-                "after": to_text(replacements[index]),
-                "text_before": texts[index],
-                "deleted": not has_live_text(replacements[index]),
+                "index": at,
+                "before": to_text(spans.paragraph_bytes(at)),
+                "after": to_text(replacements[at]),
+                "text_before": texts[at],
+                "deleted": not has_live_text(replacements[at]),
             }
         )
     for slot, groups in (("before", before), ("after", after)):
-        for index in sorted(groups):
+        for at in sorted(groups):
             changes.extend(
                 {
                     "part": DOCUMENT_PART,
                     "kind": "insert",
                     "slot": slot,
-                    "index": index,
+                    "index": at,
                     "after": to_text(data),
                 }
-                for data in groups[index]
+                for data in groups[at]
             )
     return changes
+
+
+#: Request names of edit kinds defined in other modules (``ops.comments`` adds its own).
+REQUEST_NAMES: dict[type, str] = {}
 
 
 def edits_as_request(edits: Sequence[Edit]) -> list[dict[str, Any]]:
@@ -1143,6 +1181,7 @@ def edits_as_request(edits: Sequence[Edit]) -> list[dict[str, Any]]:
         MoveParagraphs: "para.move",
         ApplyStyle: "style.apply",
         ApplyFormat: "format.apply",
+        **REQUEST_NAMES,
     }
     out: list[dict[str, Any]] = []
     for edit in edits:
@@ -1184,9 +1223,9 @@ def apply_edits(
     """
     if not edits:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
-    _check_name(author, "author")
+    check_name(author, "author")
     if tag is not None:
-        _check_name(tag, "tag")
+        check_name(tag, "tag")
     if not doc_path.is_file():
         raise DocControlError(
             ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)

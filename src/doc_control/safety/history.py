@@ -249,7 +249,18 @@ def undo_entry(
     env: Mapping[str, str] | None = None,
     stage: Callable[[str], None] | None = None,
 ) -> UndoOutcome:
-    """Put every paragraph ``entry`` changed back as it was, in one verified write."""
+    """Put every paragraph ``entry`` changed back as it was, in one verified write.
+
+    Entries that also wrote other parts (comments) are refused: only paragraphs are logged.
+    """
+    if entry.get("parts"):
+        raise DocControlError(
+            ErrorCode.UNSUPPORTED_CONTENT,
+            f"{entry['op_id']} also changed {', '.join(entry['parts'])}, which the history "
+            "does not keep; resolve or edit its comments in Word instead of undoing it",
+            op_id=entry["op_id"],
+            parts=entry["parts"],
+        )
     if not doc_path.is_file():
         raise DocControlError(
             ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)
