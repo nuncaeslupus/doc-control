@@ -1,0 +1,18 @@
+{
+  "recipe": "trim-trailing-spaces",
+  "version": 1,
+  "description": "Spaces and tabs at the end of a line or paragraph",
+  "match": {
+    "find": {
+      "regex": "[    \\t]+(?=\\n|\\Z)",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    }
+  ]
+}

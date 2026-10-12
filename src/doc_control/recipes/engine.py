@@ -4,8 +4,10 @@ The engine reads nothing but the texts it is given and returns operation dicts f
 ``batch``; it writes nothing. Every address in the proposal refers to the document as
 read, so the result is a valid batch. With ``repeat_until_stable`` the recipe is run again
 on the text its own replacements would leave, until a pass changes nothing or
-``max_passes`` is reached. A paragraph that needed more than one pass is proposed as one
-``text.replace`` over the smallest range that differs between before and after.
+``max_passes`` is reached. Every ``text.replace`` is narrowed to the characters that change
+and the engine follows each character from the text as read to the final text, so a reviewer
+sees one small tracked change per edit (changes that touch are one change) however many
+passes it took.
 """
 
 from __future__ import annotations
@@ -66,6 +68,61 @@ def _smallest_edit(before: str, after: str) -> tuple[int, int, str]:
     return head, len(before) - tail, after[head : len(after) - tail]
 
 
+def _trim(text: str, lo: int, hi: int, new: str) -> tuple[int, int, str]:
+    """Narrow replacing ``text[lo:hi]`` by ``new`` to the characters that really change."""
+    old = text[lo:hi]
+    limit = min(len(old), len(new))
+    head = 0
+    while head < limit and old[head] == new[head]:
+        head += 1
+    while head and not (boundary_ok(text, lo + head) and boundary_ok(new, head)):
+        head -= 1
+    tail = 0
+    while tail < limit - head and old[-1 - tail] == new[-1 - tail]:
+        tail += 1
+    while tail and not (boundary_ok(text, hi - tail) and boundary_ok(new, len(new) - tail)):
+        tail -= 1
+    return lo + head, hi - tail, new[head : len(new) - tail]
+
+
+def _runs(original: str, final: str, origin: list[int]) -> list[tuple[int, int, str]]:
+    """The separate changes that turn ``original`` into ``final`` (each ``(start, end, new)``).
+
+    ``origin[k]`` is the offset in ``original`` of ``final[k]``, or -1 for a character a
+    replacement typed. The characters between two kept ones form one change, so changes that
+    touch are merged and none overlaps another. Falls back to the single smallest edit when a
+    change would split a character.
+    """
+    gaps: list[tuple[int, int, int, int, str]] = []  # (start, end, new start, new end, new)
+    prev = -1
+    pending = 0  # offset in ``final`` where the typed characters began
+    typed: list[str] = []
+    for k, (char, at) in enumerate(zip(final, origin, strict=True)):
+        if at < 0:
+            typed.append(char)
+            continue
+        new = "".join(typed)
+        if prev + 1 < at or new:
+            gaps.append((prev + 1, at, pending, k, new))
+        typed = []
+        prev = at
+        pending = k + 1
+    new = "".join(typed)
+    if prev + 1 < len(original) or new:
+        gaps.append((prev + 1, len(original), pending, len(final), new))
+    gaps = [g for g in gaps if original[g[0] : g[1]] != g[4]]
+    if all(
+        boundary_ok(original, s)
+        and boundary_ok(original, e)
+        and boundary_ok(final, j1)
+        and boundary_ok(final, j2)
+        for s, e, j1, j2, _ in gaps
+    ):
+        return [(s, e, new) for s, e, _, _, new in gaps]
+    edit = _smallest_edit(original, final)
+    return [] if edit == (0, 0, "") else [edit]
+
+
 def _scan(
     options: SearchOptions, matcher: Matcher, items: list[tuple[int, str]], deadline: float
 ) -> tuple[list[tuple[int, list[Match]]], int | None]:
@@ -106,10 +163,10 @@ def propose(
     work = {a.number: t for a, t in paragraphs}
     original = dict(work)
     address = {a.number: a for a, _ in paragraphs}
-    direct: dict[int, list[dict[str, Any]]] = {}  # pass-1 text edits, kept when no 2nd pass
+    origin: dict[int, list[int]] = {}  # per changed paragraph: original offset of each character
+    n_edits = 0
     others: list[dict[str, Any]] = []  # every other operation, from the original text only
     seen: set[tuple[str, str]] = set()
-    redone: set[int] = set()  # paragraphs whose text changed in a pass after the first
     deleted: set[int] = set()
     warnings: list[str] = []
     total = 0
@@ -144,9 +201,10 @@ def propose(
                         lo, hi = (0, len(text)) if step["at"] == "$para" else (start, end)
                         if text[lo:hi] == op["text"]:
                             continue  # already what the recipe wants
-                        edits.append((lo, hi, op["text"]))
-                        if passno == 1:
-                            direct.setdefault(number, []).append(op)
+                        lo, hi, replacement = _trim(text, lo, hi, op["text"])
+                        if edits and lo < edits[-1][1]:
+                            continue  # overlaps the edit before it (e.g. a repeated $para)
+                        edits.append((lo, hi, replacement))
                         continue
                     if kind == "para.delete":
                         deleted.add(number)
@@ -156,14 +214,15 @@ def propose(
             if number in deleted:
                 continue
             new = text
+            track = origin.setdefault(number, list(range(len(text))))
             for start, end, replacement in reversed(edits):
                 new = new[:start] + replacement + new[end:]
+                track[start:end] = [-1] * len(replacement)
+            n_edits += len(edits)
             if new != text:
                 changed.append(number)
                 work[number] = new
-                if passno > 1:
-                    redone.add(number)
-        if len(others) + sum(map(len, direct.values())) > MAX_OPS:
+        if len(others) + n_edits > MAX_OPS:
             warnings.append(f"OPS_CAP: more than {MAX_OPS} operations; narrow the recipe")
             capped = True
         if capped:
@@ -178,17 +237,13 @@ def propose(
         stable = False
 
     ops: list[dict[str, Any]] = []
-    for number in sorted(set(direct) | redone):
-        if number in deleted:
+    for number in sorted(origin):
+        if number in deleted or work[number] == original[number]:
             continue
-        if number in redone:
-            start, end, new = _smallest_edit(original[number], work[number])
-            if (start, end, new) != (0, 0, ""):
-                ops.append(
-                    {"op": "text.replace", "at": f"{address[number]}:{start}-{end}", "text": new}
-                )
-        else:
-            ops.extend(direct[number])
+        ops.extend(
+            {"op": "text.replace", "at": f"{address[number]}:{start}-{end}", "text": new}
+            for start, end, new in _runs(original[number], work[number], origin[number])
+        )
     ops.extend(others)
     return Proposal(ops, passes, stable, total, warnings)
 

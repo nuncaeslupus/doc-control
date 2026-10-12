@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 import re
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Literal
@@ -106,7 +108,8 @@ def test_user_recipe_with_unknown_key_is_rejected(tmp_path: Path) -> None:
         (tmp_path / "home" / "recipes" / "fake-centring.json").write_text(json.dumps(definition))
         listing = REGISTRY["recipe.list"].run({})
         assert isinstance(listing, dict)
-        assert listing["recipes"] == [] and len(listing["invalid"]) == 1
+        assert [r for r in listing["recipes"] if r["source"] == "user"] == []
+        assert len(listing["invalid"]) == 1
     assert set(PROPOSABLE) <= set(ALL_SCHEMAS)  # nothing but batch operation kinds
     assert through == 0  # user_recipe_capabilities_outside_batch == 0
 
@@ -149,7 +152,8 @@ def test_run_proposes_a_valid_batch_without_writing(tmp_path: Path) -> None:
         ("format.apply", "p1"),
         ("format.apply", "p3"),
     ]
-    assert batch["ops"][0]["text"] == "Chapter one"
+    # the edit is narrowed to what changes: the eight leading spaces go, the text stays put
+    assert batch["ops"][0]["text"] == "" and batch["ops"][0]["at"].endswith(":0-8")
 
     preview = REGISTRY["batch"].run({**batch, "dry_run": True})
     assert isinstance(preview, Reply) and doc.read_bytes() == before
@@ -231,7 +235,8 @@ def test_substitutions_and_other_operations(tmp_path: Path) -> None:
         },
     ]
     first = run(doc, definition=recipes[0]).result["batch"]["ops"]
-    assert first[0]["text"] == "$5 ($5 in Price: $5 today)"
+    assert first[0]["text"] == " ($5 in Price: $5 today)"  # "$5" itself is not rewritten
+    assert first[0]["at"].endswith(":9-9")
     dry(doc, first)
     note = run(doc, definition=recipes[1]).result["batch"]["ops"]
     assert note == [{"op": "comment.add", "at": note[0]["at"], "text": "check 5"}]
@@ -265,11 +270,13 @@ def test_user_store_lists_and_runs_by_name(tmp_path: Path) -> None:
     (home / "fake-centring.json").unlink()
     listing = REGISTRY["recipe.list"].run({})
     assert isinstance(listing, dict)
-    assert listing["recipes"] == []
+    assert [r for r in listing["recipes"] if r["source"] == "user"] == []
     (home / "fake-centring.json").write_text(json.dumps(CENTRING))
     listing = REGISTRY["recipe.list"].run({})
     assert isinstance(listing, dict)
-    assert [(r["name"], r["source"]) for r in listing["recipes"]] == [("fake-centring", "user")]
+    assert [(r["name"], r["source"]) for r in listing["recipes"] if r["source"] == "user"] == [
+        ("fake-centring", "user")
+    ]
     doc = make_docx(tmp_path / "a.docx", "        Centred")
     assert run(doc, recipe="fake-centring").result["matches"] == 1
     with pytest.raises(DocControlError) as caught:
@@ -423,3 +430,85 @@ def test_proposal_on_a_paragraph_with_a_field_and_hidden_run(tmp_path: Path) -> 
         assert err.code is ErrorCode.UNSUPPORTED_CONTENT
     else:
         assert isinstance(reply, Reply)
+
+
+def test_edits_are_narrowed_to_the_characters_that_change(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "see: a-b and c-d.")
+    one = rx("(a)-(b)", {"op": "text.replace", "at": "$match", "text": "$1+$2"})
+    ops = run(doc, definition=one).result["batch"]["ops"]
+    assert [(o["at"].split(":")[1], o["text"]) for o in ops] == [("6-7", "+")]
+
+
+def test_repeat_proposes_one_small_edit_per_change(tmp_path: Path) -> None:
+    line = "one -two- three -four- five -six- end"
+    doc = make_docx(tmp_path / "a.docx", line)
+    hyphens = rx(
+        "^(.*?)-",
+        {"op": "text.replace", "at": "$match", "text": "$1~"},
+        repeat_until_stable=True,
+        max_passes=10,
+    )
+    ops = run(doc, definition=hyphens).result["batch"]["ops"]
+    assert [o["text"] for o in ops] == ["~"] * 6
+    spans = [tuple(map(int, o["at"].split(":")[1].split("-"))) for o in ops]
+    assert all(end - start == 1 for start, end in spans)
+
+
+FUZZ_PATTERNS = ["(a)|(b)", "(a)|(b)|(x)", "(ab)|(b)", "(a)(b)?", "(x)|(\u00e9)", "(a)|(\\.)"]
+FUZZ_TEXTS = ["$1-$2", "$1$1", "-$1", "$2$1", "$match$match", "$$", "", "$1", "[$2]"]
+
+
+def test_touching_edits_become_one_change_and_the_batch_is_accepted(tmp_path: Path) -> None:
+    """Narrowing an edit to a bare insertion must not make it overlap its neighbour."""
+    doc = make_docx(tmp_path / "a.docx", "xaby")
+    recipe = rx("(a)|(b)", {"op": "text.replace", "at": "$match", "text": "$1-$2"})
+    ops = run(doc, definition=recipe).result["batch"]["ops"]
+    assert [o["at"].split(":")[1] for o in ops] == ["2-2"] and ops[0]["text"] == "--"
+    dry(doc, ops)
+
+
+def test_random_small_recipes_give_an_accepted_batch_with_the_plain_result(
+    tmp_path: Path,
+) -> None:
+    rng = random.Random(24)
+    for n in range(40):
+        pattern = rng.choice(FUZZ_PATTERNS)
+        template = rng.choice(FUZZ_TEXTS)
+        line = "".join(rng.choice("abx\u00e9. ") for _ in range(rng.randint(1, 12)))
+
+        def expand(m: re.Match[str], t: str = template) -> str:
+            return (
+                t.replace("$$", "\0")
+                .replace("$match", m.group(0))
+                .replace("$1", m.group(1) or "")
+                .replace("$2", (m.group(2) if m.re.groups > 1 else "") or "")
+                .replace("\0", "$")
+            )
+
+        expected = re.sub(pattern, expand, line)
+        doc = make_docx(tmp_path / f"f{n}.docx", line)
+        recipe = rx(pattern, {"op": "text.replace", "at": "$match", "text": template})
+        batch = run(doc, definition=recipe).result["batch"]
+        if not batch["ops"]:
+            assert expected == line, (pattern, template, line)
+            continue
+        dry(doc, batch["ops"])
+        assert isinstance(REGISTRY["batch"].run(batch), Reply)
+        got = [p.text for p in Document(str(doc)).index.paragraphs]
+        assert got == [expected], (pattern, template, line)
+
+
+@pytest.mark.bench
+def test_dense_long_paragraph_is_proposed_well_inside_the_budget() -> None:
+    from doc_control.model.address import parse_address
+    from doc_control.recipes.engine import TIME_BUDGET_SECONDS, propose
+    from doc_control.recipes.store import parse_recipe_file
+
+    recipe = parse_recipe_file(
+        Path(store.__file__).parent / "bundled" / "es-space-after-punctuation.json"
+    )
+    text = ("ab,cd,ef " * 600)[:4000]
+    started = time.monotonic()
+    proposal = propose(recipe, [(parse_address("p1#00000000"), text)])
+    assert time.monotonic() - started < TIME_BUDGET_SECONDS / 2
+    assert proposal.warnings == [] and len(proposal.ops) > 500

@@ -1,0 +1,18 @@
+{
+  "recipe": "es-dash-close-space",
+  "version": 1,
+  "description": "Space before a closing em dash (one followed by punctuation or the end of the paragraph)",
+  "match": {
+    "find": {
+      "regex": "(?<=\\S)[    ]+(?=—(?:[.,;:!?…»”’)\\]]|$))",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    }
+  ]
+}

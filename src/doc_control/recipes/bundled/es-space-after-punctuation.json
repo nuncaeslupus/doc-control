@@ -1,0 +1,20 @@
+{
+  "recipe": "es-space-after-punctuation",
+  "version": 1,
+  "description": "Comma, semicolon or colon glued to the word after it: add the space (not in links or addresses)",
+  "match": {
+    "find": {
+      "regex": "(?<!\\S)(?!www\\.|\\S*(?:://|@|mailto:|\\\\)|\\S*[\\w-]\\.[A-Za-z]{2,}/)(\\S*?[a-záéíóúñü»”)])([,;:])(?=[A-Za-zÁÉÍÓÚÑáéíóúñü])",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1$2 "
+    }
+  ],
+  "repeat_until_stable": true,
+  "max_passes": 10
+}

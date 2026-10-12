@@ -1,0 +1,20 @@
+{
+  "recipe": "typographic-apostrophe",
+  "version": 1,
+  "description": "Straight apostrophe between letters: use the typographic one (not in 5'6 or in links)",
+  "match": {
+    "find": {
+      "regex": "(?<!\\S)(?!www\\.|\\S*(?:://|@|mailto:|\\\\)|\\S*[\\w-]\\.[A-Za-z]{2,}/)(\\S*?)(?:(?<=[^\\W\\d])'(?=\\w)|(?<=\\d)'(?=[^\\W\\d]))",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1’"
+    }
+  ],
+  "repeat_until_stable": true,
+  "max_passes": 10
+}

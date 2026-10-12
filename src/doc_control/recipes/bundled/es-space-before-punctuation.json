@@ -1,0 +1,18 @@
+{
+  "recipe": "es-space-before-punctuation",
+  "version": 1,
+  "description": "Space before a closing punctuation mark",
+  "match": {
+    "find": {
+      "regex": "(?<=\\S)[    ]+(?=[.,;:!?…»”)\\]]|’(?!\\w))",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    }
+  ]
+}
