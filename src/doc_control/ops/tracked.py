@@ -765,9 +765,9 @@ def apply_edits(
 
     address_map: dict[str, str] = {}
     moved_to: dict[int, int] = {}  # old number of a moved paragraph -> number of its copy
-    for number, (_, item) in enumerate(sequence, start=1):
-        if item is not None and item.source is not None:
-            moved_to[item.source.number] = number
+    for number, (_, copy) in enumerate(sequence, start=1):
+        if copy is not None and copy.source is not None:
+            moved_to[copy.source.number] = number
     for number, (old, _) in enumerate(sequence, start=1):
         if old is None:
             continue
