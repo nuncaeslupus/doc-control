@@ -29,7 +29,7 @@ merge-policy = "after-ci-and-review"
 # not named here is enforced by nobody. `"none"` records that this repo has no
 # gate; empty means nobody has decided yet, and `/init` says so until someone does.
 #   host-gate = "make lint test evidence"
-host-gate = "bash scripts/hygiene.sh"
+host-gate = "make check"
 
 # The fast, change-scoped slice of the gate above: lint/typecheck the changed
 # files, run the tests the change selects. `open_task_pr.sh <task> --preflight`
@@ -40,7 +40,7 @@ host-gate = "bash scripts/hygiene.sh"
 # touches the repo's own files (a file count, a gate-coverage sweep): the
 # archive moves those out from under the real host gate.
 #   preflight-gate = 'make lint FILES="$ARSENAL_CHANGED_FILES" && make verify-gates'
-preflight-gate = ""
+preflight-gate = "make lint && bash scripts/hygiene.sh"
 
 # Shell command that installs this repo's dependencies, run once in a fresh
 # worktree before the first gate (claude-arsenal/bin/host_setup.sh). Empty = no
@@ -48,7 +48,7 @@ preflight-gate = ""
 # what an install produces, so without this the first gate a worker runs fails
 # on a missing tool and every worker works that out for itself.
 #   host-setup = "npm ci && uv sync"
-host-setup = ""
+host-setup = "uv sync --locked"
 
 # How hard the pre-PR adversarial review binds when a TASK PR is opened — a
 # reviewer with no history of the change reads it first

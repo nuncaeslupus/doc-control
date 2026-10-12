@@ -123,6 +123,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 
 | T# | Gate | Measured | Command | SHA | Env | Date |
 |----|------|----------|---------|-----|-----|------|
+| T1 | `make_check_exit_code == 0` | 0 | `make check` | 50b04fb | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 
 ### Dependency graph
 
