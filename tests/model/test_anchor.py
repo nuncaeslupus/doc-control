@@ -182,7 +182,7 @@ def test_op_roundtrip_and_error_details(tmp_path: Path) -> None:
     anchor = run("anchor.create", doc=str(doc), at=at)["anchor"]
     assert anchor["exact"] == "María cerró la puerta"
     found = run("anchor.resolve", doc=str(doc), anchor=anchor)
-    assert found == {"at": at, "score": 1.0}
+    assert found == {"at": at, "score": 1.0, "match": "exact"}
 
     other = make_docx(tmp_path / "b.docx", "Nada que ver con aquello.", "Otra historia.")
     with pytest.raises(DocControlError) as err:
