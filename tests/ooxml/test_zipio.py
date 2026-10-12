@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import stat
 import struct
 import sys
@@ -304,6 +305,9 @@ def test_zip64_returns_unsupported_content(tmp_path: Path) -> None:
     err = _not_a_docx(path)
     assert err.code is ErrorCode.UNSUPPORTED_CONTENT
     assert "ZIP64" in err.message
+    hint = err.to_dict()["hint"]
+    assert "encrypted" in hint
+    assert "ZIP64" in hint
 
 
 def test_duplicate_member_names_return_not_a_docx(tmp_path: Path) -> None:
@@ -315,3 +319,27 @@ def test_duplicate_member_names_return_not_a_docx(tmp_path: Path) -> None:
     err = _not_a_docx(path)
     assert err.code is ErrorCode.NOT_A_DOCX
     assert err.details["duplicates"] == ["word/document.xml"]
+
+
+def test_comment_containing_end_signature_is_not_zip64(tmp_path: Path) -> None:
+    """An archive comment that looks like a ZIP64 locator plus end record is just a comment."""
+    path = make_docx(tmp_path / "x.docx", "uno")
+    fake = b"PK\x06\x07" + b"\x00" * 16 + b"PK\x05\x06" + b"\xff" * 18
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.comment = fake
+    pkg = Package(path)
+    assert pkg.comment == fake
+    write_package(pkg, {"word/document.xml": b"<x/>"}, path)
+    assert Package(path).comment == fake
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_new_output_file_gets_default_mode(tmp_path: Path) -> None:
+    src = make_docx(tmp_path / "a.docx", "uno")
+    dest = tmp_path / "b.docx"
+    old = os.umask(0o022)
+    try:
+        write_package(Package(src), {}, dest)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o644

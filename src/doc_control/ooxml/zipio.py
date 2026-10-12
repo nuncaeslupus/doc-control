@@ -110,13 +110,18 @@ class Package:
 
     def _load(self, raw: bytes) -> None:
         path = str(self.path)
-        if not zipfile.is_zipfile(io.BytesIO(raw)):
+        end = _find_end(raw)
+        if end < 0:
             raise DocControlError(ErrorCode.NOT_A_DOCX, f"not a zip package: {path}", path=path)
-        if _has_zip64_end(raw):
+        if _has_zip64_end(raw, end):
             raise _unsupported(path, "ZIP64 archives are not supported")
-        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        # zipfile finds the end record with rfind, so an archive comment holding an end
+        # signature misleads it. Hand it the archive without the comment (member offsets
+        # do not move) and keep the comment ourselves.
+        self.comment = raw[end + _END.size :]
+        view = raw[:end] + _END.pack(*_END.unpack_from(raw, end)[:7], 0)
+        with zipfile.ZipFile(io.BytesIO(view)) as zf:
             self.infos: list[zipfile.ZipInfo] = zf.infolist()
-            self.comment = zf.comment
             dupes = sorted(n for n, c in Counter(i.filename for i in self.infos).items() if c > 1)
             if dupes:
                 raise DocControlError(
@@ -164,7 +169,7 @@ def write_package(pkg: Package, replacements: Mapping[str, bytes], dest: Path) -
         if not isinstance(data, bytes):
             raise TypeError(f"replacement for {name} must be bytes")
     payload = _build(pkg, replacements)
-    mode = stat.S_IMODE(dest.stat().st_mode) if dest.exists() else None
+    mode = stat.S_IMODE(dest.stat().st_mode) if dest.exists() else 0o666 & ~_umask()
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     tmp = Path(tmp_name)
     try:
@@ -172,8 +177,7 @@ def write_package(pkg: Package, replacements: Mapping[str, bytes], dest: Path) -
             fh.write(payload)
             fh.flush()
             os.fsync(fh.fileno())
-        if mode is not None:
-            tmp.chmod(mode)
+        tmp.chmod(mode)
         _replace(tmp, dest)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -318,14 +322,33 @@ def _is_zip64(info: zipfile.ZipInfo, local_extra: bytes) -> bool:
     return _ZIP64_EXTRA_ID in _extra_ids(info.extra) | _extra_ids(local_extra)
 
 
-def _has_zip64_end(raw: bytes) -> bool:
-    end = raw.rfind(_END_SIG)
-    if end < 0:
-        return False
+def _umask() -> int:
+    """The process umask (read by setting and restoring it; there is no getter)."""
+    mask = os.umask(0o022)
+    os.umask(mask)
+    return mask
+
+
+def _find_end(raw: bytes) -> int:
+    """Offset of the real end record: the last one whose comment runs exactly to EOF."""
+    pos = len(raw) - _END.size
+    floor = max(0, pos - _U16)
+    while pos >= floor:
+        pos = raw.rfind(_END_SIG, floor, pos + 4)
+        if pos < 0:
+            break
+        if _END.unpack_from(raw, pos)[7] == len(raw) - pos - _END.size:
+            return pos
+        pos -= 1
+    return -1
+
+
+def _has_zip64_end(raw: bytes, end: int) -> bool:
+    """Whether the end record at ``end`` is a ZIP64 one (locator just before it, or sentinels)."""
     if end >= 20 and raw[end - 20 : end - 16] == _ZIP64_LOCATOR_SIG:
         return True
-    fields = _END.unpack_from(raw, end) if end + _END.size <= len(raw) else None
-    return fields is not None and (_U16 in fields[1:5] or _U32 in fields[5:7])
+    fields = _END.unpack_from(raw, end)
+    return _U16 in fields[1:5] or _U32 in fields[5:7]
 
 
 def _unsupported(path: str, message: str) -> DocControlError:
