@@ -527,6 +527,8 @@ class _Planner:
         paras = list(self.index.paragraphs[first.number - 1 : last.number])
         self._require_adjacent(paras, edit.at)
         for para in paras:
+            if para is not last:
+                self._remove(para, i)
             plan = self._plan(para, i, exclusive=para is not last)
             if para is first:
                 self._add_interval(plan, _Interval(s, len(para.text), edit.text, i))

@@ -258,6 +258,15 @@ def test_ops_relative_to_a_moved_or_deleted_paragraph_conflict(doc: Path) -> Non
         [insert_3, delete],
         [delete, {"op": "para.move", "at": a[7], "after": a[3]}],
     ]
+    cross = {"op": "text.replace", "at": f"{a[2]}:5..{a[5]}:3", "text": "M"}
+    for other in (
+        {"op": "para.insert", "after": a[3], "text": "X"},
+        {"op": "para.insert", "before": a[4], "text": "X"},
+        {"op": "para.insert", "after": a[2], "text": "X"},
+        {"op": "para.move", "at": a[8], "after": a[3]},
+        {"op": "para.move", "at": a[8], "before": a[2]},
+    ):
+        cases += [[cross, other], [other, cross]]
     for ops in cases:
         with pytest.raises(DocControlError) as err:
             run(doc, ops, dry_run=True)
@@ -331,3 +340,56 @@ def test_stale_fuzz_duplicates_ranges_and_structure(tmp_path: Path) -> None:
     print(f"edits_applied_to_wrong_paragraph={wrong}")
     assert wrong == 0
     assert refused > 30 and applied > 30
+
+
+def test_stale_fuzz_with_moves_deletes_and_cross_paragraph_ranges(tmp_path: Path) -> None:
+    """Random structural batches: applied only when fresh, STALE only when something is stale."""
+    rng = random.Random(5)
+    base = [f"Párrafo único {i} del libro" for i in range(14)]
+    wrong = stale = applied = 0
+    for round_ in range(300):
+        path = make_docx(tmp_path / f"h{round_}.docx", *base)
+        read = addresses(path)
+        used: list[int] = []
+        ops: list[dict[str, Any]] = []
+        for _ in range(rng.randint(1, 4)):
+            kind = rng.choice(["move", "delete", "cross", "insert"])
+            i = rng.randrange(0, 11)
+            j = rng.randrange(0, 12)
+            if kind == "move":
+                ops.append({"op": "para.move", "at": read[i], "after": read[j]})
+                used += [i, j]
+            elif kind == "delete":
+                ops.append({"op": "para.delete", "at": f"{read[i]}..{read[i + 1]}"})
+                used += [i, i + 1]
+            elif kind == "cross":
+                at = f"{read[i]}:3..{read[i + 1]}:4"
+                ops.append({"op": "text.replace", "at": at, "text": "C"})
+                used += [i, i + 1]
+            else:
+                ops.append({"op": "para.insert", "before": read[j], "text": "NUEVO"})
+                used.append(j)
+        current = list(base)
+        for _ in range(rng.choice([0, 1, 2])):
+            if rng.random() < 0.5:
+                current.insert(rng.randrange(len(current) + 1), "Intrusa")
+            else:
+                del current[rng.randrange(len(current) - 1)]
+        make_docx(path, *current)
+        before = path.read_bytes()
+        now = set(addresses(path))
+        fresh = all(read[i] in now for i in used)
+        try:
+            run(path, ops)
+        except DocControlError as err:
+            if path.read_bytes() != before:
+                wrong += 1
+            if err.code is ErrorCode.STALE_ADDRESS:
+                stale += 1
+                wrong += fresh
+            continue
+        applied += 1
+        wrong += not fresh
+    print(f"edits_applied_to_wrong_paragraph={wrong}")
+    assert wrong == 0
+    assert stale > 30 and applied > 5
