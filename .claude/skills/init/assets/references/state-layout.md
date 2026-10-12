@@ -74,6 +74,7 @@ claude-arsenal/        ← upstream. /init refreshes what it ships and retires w
     arsenal_migrate.py ← one-time move from the old coordination-branch queue
     gate_evidence.py
     reader_check.py    ← which spec/plan lacks a current reader; exports left in Downloads
+    ideas_log.py       ← parses/checks status/ideas.md; the board's one `ideas:` line
 
 arsenal/               ← yours. Scaffolded once, then never written by an upgrade
   config.toml          ← merge-policy, host-gate, listing budget…

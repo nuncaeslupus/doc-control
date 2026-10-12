@@ -7,19 +7,22 @@ Auto-discovers spec source(s):
   3. auto (no flags): looks for arsenal/project/*/spec.md,
                       then falls back to status/specification.md
 
-Outputs are named for the input stem — `plan.md` writes plan-reader.html /
-plan-annotated.md, `spec.md` / `specification.md` write spec-*, and any other
-`<stem>.md` writes <stem>-reader.html / <stem>-annotated.md, so documents sharing a
-directory keep separate readers. (--output-dir,
-default: directory of the single input, or docs/spec-reader/ in workspace mode):
-  <doc>-reader.html     self-contained HTML reader with per-section note fields
-                        (notes auto-save in browser; Export button saves a Markdown file)
-  <doc>-annotated.md    same document as Markdown with a note slot per section
+Outputs are named `<repo>-<doc>-v<N>-<date>` so a downloaded reader says what it
+is: <repo> is the git toplevel's directory name, <doc> is `spec` / `plan` for the
+canonical documents and the input stem for any other (so documents sharing a
+directory keep separate readers), N is the document's `**Revision**:` header line
+(1 without one), and the date is today's. Written to --output-dir (default: the
+single input's directory, or docs/spec-reader/ in workspace mode):
+  <name>-reader.html    self-contained HTML reader, one note field after each section
+                        that has body text (none on a bare heading); notes auto-save
+                        in the browser and the Export button saves a Markdown file
+  <name>-annotated.md   same document as Markdown with the same note slots
+--output FILE names the HTML explicitly instead (the Markdown goes beside it).
+Earlier generated readers of the same document in that directory are removed, and
+so is an earlier annotated file whose slots are all still empty.
 
-The Export button names its download for the reader title, document kind and
-revision (`<project>-<doc>-notes-<date>-r<N>.md`, N read from the document's
-`**Revision**:` header line; no `-r<N>` when it has none) so it stays findable in
-a Downloads folder and says which revision it annotates.
+The Export button names its download the same way, with the export's date:
+`<repo>-<doc>-v<N>-<date>-notes.md`.
 A fenced ```drawspec block (a drawspec JSON document) is validated and rendered to
 inline SVG in the HTML; the annotated Markdown keeps the JSON source. The command is
 $ARSENAL_DRAWSPEC when set, else `drawspec` on PATH, else `uvx --from
@@ -400,6 +403,76 @@ def doc_kind(stem: str) -> tuple[str, str, str]:
     return DOC_KINDS.get(stem.lower().replace("_", "-"), DEFAULT_DOC_KIND)
 
 
+def doc_version(parts: list[tuple[str, dict]]) -> int:
+    """The `**Revision**` of a single document, else 1.
+
+    A workspace reader renders several documents, so it has no one revision.
+    """
+    revision = parts[0][1].get("revision") if len(parts) == 1 else None
+    return revision or 1
+
+
+def repo_name(cwd: Path) -> str:
+    """The repository's name for filenames: the git toplevel's directory, else cwd's."""
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    except OSError:
+        top = ""
+    return Path(top).name if top else cwd.resolve().name
+
+
+def output_stem(repo: str, doc: str, version: int, gen_date: str) -> str:
+    """`<repo>-<doc>-v<N>-<date>`: what a reader is, readable from a Downloads folder."""
+    return f"{slug(repo)}-{slug(doc)}-v{version}-{gen_date}"
+
+
+GENERATED_SUFFIXES = ("-reader.html", "-annotated.md")
+NOTE_SLOT_RE = re.compile(r"^> \*\*✎ Notes\*\*", re.MULTILINE)
+EMPTY_SLOT = "> _(your notes here — replace this line)_"
+
+
+def superseded(out_dir: Path, prefix: str, legacy: str, keep: set[Path]) -> list[Path]:
+    """Earlier readers of the same document in out_dir: other versions and dates, and
+    the undated `<legacy>-reader.html` / `-annotated.md` names used before."""
+    dated = re.compile(
+        rf"^{re.escape(prefix)}-v\d+-\d{{4}}-\d{{2}}-\d{{2}}-(?:reader\.html|annotated\.md)$"
+    )
+    found = {f for f in out_dir.glob(f"{prefix}-v*") if dated.match(f.name)}
+    found |= {
+        out_dir / f"{legacy}{s}" for s in GENERATED_SUFFIXES if (out_dir / f"{legacy}{s}").is_file()
+    }
+    kept = {k.resolve() for k in keep}
+    return sorted(f for f in found if f.is_file() and f.resolve() not in kept)
+
+
+def remove_superseded(paths: list[Path]) -> None:
+    """Delete earlier generated readers — but never an annotated file someone typed into.
+
+    The HTML is pure output (its notes live in the browser, keyed by a namespace
+    that does not change with the filename). An annotated Markdown file is where a
+    reviewer may have written notes by hand, so it goes only while every slot is
+    still the placeholder.
+    """
+    for f in paths:
+        if f.suffix == ".md":
+            text = f.read_text(encoding="utf-8", errors="replace")
+            slots = len(NOTE_SLOT_RE.findall(text))
+            if not slots or text.count(EMPTY_SLOT) != slots:
+                print(
+                    f"ℹ  kept {f}: notes were typed into it — move them, then delete it",
+                    file=sys.stderr,
+                )
+                continue
+        f.unlink()
+        print(f"ℹ  removed superseded {f}", file=sys.stderr)
+
+
 def collect_parts_single(spec_path: Path) -> list[tuple[str, dict]]:
     """Single-file mode: one part from the document at spec_path."""
     code, label, basename = doc_kind(spec_path.stem)
@@ -512,6 +585,18 @@ def read_notes(path: Path) -> dict:
 # ---------------------------------------------------------------- HTML build
 
 
+def has_note_field(it: dict, seed_notes: dict) -> bool:
+    """One note field per section with something to comment on — never on a bare heading.
+
+    Splitting on ## and ### gives each option its own slot, but a heading
+    followed straight by a subheading has no body of its own: a field there sat
+    under a title with nothing to annotate, and read as a field placed at
+    random. A seeded note keeps its field, so a note written against an earlier
+    revision is never dropped by a rebuild.
+    """
+    return bool(it["body_html"].strip()) or bool(seed_notes.get(it["domid"], "").strip())
+
+
 def esc(t: str) -> str:
     return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
@@ -524,9 +609,15 @@ def build_html(
     single_label: str = "Specification",
     doc_slug: str = "spec",
     ns_key: str | None = None,
+    export_stem: str | None = None,
 ) -> str:
+    """The self-contained HTML reader.
+
+    `export_stem` is `<repo>-<doc>-v<N>`, the part of the reader's own filename
+    before the date; the Export button appends the export's date and `-notes.md`.
+    """
     seed_notes = seed_notes or {}
-    total_sections = sum(len(p["items"]) for _, p in parts)
+    total_notes = sum(has_note_field(it, seed_notes) for _, p in parts for it in p["items"])
     # `ns_key` is the output stem when it is not the kind: two design docs in
     # one folder are two readers, and a namespace keyed on the kind alone let
     # one's notes surface under the other's headings.
@@ -559,27 +650,30 @@ def build_html(
         )
         for it in p["items"]:
             tag = "h3" if it["level"] == 2 else "h4"
-            body.append(f'<article class="sec" id="{it["domid"]}">')
+            noted = has_note_field(it, seed_notes)
+            cls = f"sec l{it['level']}" + ("" if noted else " bare")
+            body.append(f'<article class="{cls}" id="{it["domid"]}">')
             body.append(
                 f'<{tag} class="sec-h"><span class="chip">{esc(it["chip"])}</span>'
                 f'<span class="sec-title">{it["title_html"]}</span></{tag}>'
             )
-            # Splitting on ## and ### is what gives each option its own note
-            # slot, so a heading immediately followed by a subheading has no
-            # body of its own. Emitting the wrapper anyway leaves an empty div
-            # under the anchor, which reads as a generator fault.
+            # A heading with no body of its own gets neither a body wrapper nor
+            # a note field (see has_note_field): the field goes after the
+            # content it is about, once per section.
             if it["body_html"]:
                 body.append(f'<div class="sec-body">{it["body_html"]}</div>')
-            body.append(
-                f'<div class="note" data-for="{it["domid"]}">'
-                f'<div class="note-head"><span class="note-ico">✎</span>'
-                f'<span class="note-label">Your note</span>'
-                f'<span class="note-ref">{esc(it["key"])}</span></div>'
-                f'<textarea class="note-ta" data-key="{esc(it["domid"])}" '
-                f'data-label="{esc(it["label"])}" data-part="{part_head}" '
-                f'rows="1" placeholder="Tap to add a note for this point…"></textarea>'
-                f"</div>"
-            )
+            if noted:
+                body.append(
+                    f'<div class="note" data-for="{it["domid"]}">'
+                    f'<label class="note-head" for="n-{it["domid"]}">'
+                    f'<span class="note-ico" aria-hidden="true">✎</span>'
+                    f'<span class="note-label">Your note</span>'
+                    f'<span class="note-ref">{esc(it["key"])}</span></label>'
+                    f'<textarea class="note-ta" data-key="{esc(it["domid"])}" id="n-{it["domid"]}" '
+                    f'data-label="{esc(it["label"])}" data-part="{part_head}" '
+                    f'rows="1" placeholder="Add a note on this section…"></textarea>'
+                    f"</div>"
+                )
             body.append("</article>")
         body.append("</section>")
     body_html = "\n".join(body)
@@ -590,23 +684,20 @@ def build_html(
         "__SOURCE_SHA__", " ".join(p["source_sha256"] for _, p in parts if "source_sha256" in p)
     )
     page = page.replace("__GEN_DATE__", gen_date)
-    page = page.replace("__TOTAL__", str(total_sections))
+    page = page.replace("__TOTAL__", str(total_notes))
     page = page.replace("__TOC__", toc_html)
     page = page.replace("__BODY__", body_html)
     page = page.replace("__CSS__", CSS)
     page = page.replace("__DOC_LABEL__", esc(single_label))
     # The export lands in the reviewer's Downloads beside everything else they saved
-    # that week, so the filename carries the project as well as the document kind:
-    # `my-project-spec-notes-2026-08-24.md`, not a bare `spec-notes-…`.
-    file_slug = f"{slug(title)}-{doc_slug}"
-    # One document, one revision: a workspace reader renders several, so its
-    # export has no single revision to name.
-    revision = parts[0][1].get("revision") if len(parts) == 1 else None
+    # that week, so its name says what it annotates the way the reader's does:
+    # `yourproject-spec-v3-2026-10-12-notes.md`, not a bare `spec-notes-…`.
+    if export_stem is None:
+        export_stem = f"{slug(title)}-{doc_slug}-v{doc_version(parts)}"
     page = page.replace(
         "__JS__",
         JS.replace("__LS_NS__", ls_ns)
-        .replace("__DOC_SLUG__", file_slug)
-        .replace("__REV_SUFFIX__", f"-r{revision}" if revision else "")
+        .replace("__EXPORT_STEM__", export_stem)
         .replace("__DOC_LABEL__", single_label),
     )
     page = page.replace(
@@ -629,7 +720,8 @@ def build_markdown(
     """Render the annotated Markdown edition: the document, with a note slot per section.
 
     The counterpart to the HTML reader, for a reviewer who would rather annotate
-    in an editor than a browser. `seed_notes` re-seeds slots from a previous
+    in an editor than a browser. A heading with no body of its own gets no slot,
+    the same rule the HTML follows. `seed_notes` re-seeds slots from a previous
     export, keyed by DOM id, so a rebuilt reader does not discard the notes
     someone already wrote against an earlier revision.
     """
@@ -637,7 +729,7 @@ def build_markdown(
     out = [f"# {title} — {single_label} (annotated edition)", ""]
     out.append(
         f"> Generated {gen_date}. This is the document with a **note slot** after every "
-        "section. Read it in any Markdown app. To annotate, replace the `_(your notes…)_` "
+        "section that has text of its own. Read it in any Markdown app. To annotate, replace the `_(your notes…)_` "
         "placeholder under any section. When done, send the file back — notes are acted on."
     )
     out += ["", "---", ""]
@@ -653,6 +745,8 @@ def build_markdown(
             hashes = "##" if it["level"] == 2 else "###"
             out.append(f"{hashes} {it['label']}")
             out.append("")
+            if not has_note_field(it, seed_notes):
+                continue
             out.append(it["raw_body"])
             out.append("")
             # A section whose body ends in a blockquote would sit one blank line
@@ -677,53 +771,56 @@ def build_markdown(
 
 CSS = r"""
 :root{
-  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2da;
-  --card:#ffffff;--accent:#0f766e;--accent2:#b45309;--chip:#eef2f1;
-  --note:#fff8ec;--note-line:#f0cf94;--code:#f3f1ec;--link:#0f766e;
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
 }
 @media(prefers-color-scheme:dark){
   :root{
-    --bg:#16151a;--fg:#e9e7e2;--muted:#a09c95;--line:#2e2c33;
-    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#26313055;
-    --note:#251f10;--note-line:#6b531c;--code:#26242b;--link:#5eead4;
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
   }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;background:var(--bg);color:var(--fg);
-  font:17px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   padding-bottom:96px;
 }
-.wrap{max-width:760px;margin:0 auto;padding:0 16px}
-a{color:var(--link)}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
 code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
-pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto}
-pre code{background:none;padding:0}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
 .topbar{position:sticky;top:0;z-index:30;background:var(--bg);
   border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
 .topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
-.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
 .btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
   border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
 .btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 @media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
 .count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
 .savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
 .savestate.ok{color:var(--accent)}
-.savestate.warn{color:#b45309}
+.savestate.warn{color:#9a4a0b}
 @media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
 .statusbar{border-bottom:1px solid var(--line);background:var(--card)}
 .statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
 #warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
 #warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
 @media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
-.hero{padding:22px 0 6px}
-.hero h1{font-size:25px;line-height:1.2;margin:.1em 0 .3em}
-.hero p{color:var(--muted);margin:.3em 0}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
 .help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
 .help summary{cursor:pointer;font-weight:600;padding:10px 0}
 .help ul{margin:.2em 0 1em;padding-left:1.2em}
@@ -736,44 +833,57 @@ pre code{background:none;padding:0}
 .toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
 .toc-part a{text-decoration:none}
 .toc-part a:hover{text-decoration:underline}
-.part{margin:26px 0}
-.part-title{font-size:21px;line-height:1.25;border-bottom:2px solid var(--accent);
-  padding-bottom:8px;margin:18px 0 8px;position:sticky;top:54px;background:var(--bg);z-index:10}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
 .badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
   vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
 .badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
 .badge.workspace{background:var(--chip);color:var(--accent2)}
-.sec{padding:6px 0 2px;border-bottom:1px solid var(--line);scroll-margin-top:100px}
-.sec:last-child{border-bottom:none}
-.sec-h{margin:10px 0 6px;line-height:1.3;position:sticky;top:94px;background:var(--bg);z-index:5;padding-top:6px}
-h3.sec-h{font-size:18.5px}
-h4.sec-h{font-size:16.5px;color:var(--fg)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
 .chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
   color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
 .sec-title{vertical-align:middle}
 .sec-body{margin:.2em 0 .4em}
-.sec-body p{margin:.55em 0}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
 .sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
 .sec-body li{margin:.3em 0}
-.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent2);
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
   background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
 .sec-body blockquote p{margin:.3em 0}
 .sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
 .sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
-.sec-body table{border-collapse:collapse;width:100%;font-size:13.5px;margin:.6em 0;display:block;overflow-x:auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
 .sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
 .sec-body th{background:var(--chip);font-weight:700}
 .sec-body strong{font-weight:700}
-.note{background:var(--note);border:1px solid var(--note-line);border-radius:10px;
-  padding:8px 11px;margin:10px 0 16px}
-.note-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.note-ico{color:var(--accent2);font-weight:800}
-.note-label{font-size:12px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.05em}
-.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted)}
-.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:15.5px;
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
   resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
-.note-ta::placeholder{color:var(--muted);opacity:.8}
-.note.filled{box-shadow:0 0 0 2px var(--note-line) inset}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
 .fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .fab .btn{box-shadow:0 4px 14px #0003}
 .modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
@@ -789,6 +899,21 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
   padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
 .toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
 """
 
 JS = r"""
@@ -844,6 +969,8 @@ JS = r"""
   function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return '__EXPORT_STEM__-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
@@ -886,13 +1013,17 @@ JS = r"""
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='__DOC_SLUG__-notes-'+today()+'__REV_SUFFIX__.md';
-    var saved=download(name,r.text);openModal(r.text);
-    try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
                toast('Download blocked — copy the notes before leaving');return;}
-    dirty=false;setState('✓ Backup saved '+nowStamp(),'ok');
-    toast('Exported '+r.n+' note'+(r.n===1?'':'s'));
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
   });
   document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
 
@@ -900,7 +1031,8 @@ JS = r"""
     // Success is reported only once a copy actually happened: the legacy
     // execCommand returned true, or the clipboard promise fulfilled. Claiming it
     // before writeText settled told the reviewer a rejected copy had worked (#477).
-    function report(ok){toast(ok?'Copied to clipboard':'Select the text and copy');}
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
     modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
     if(legacy){report(true);return;}
     var p=null;
@@ -908,7 +1040,7 @@ JS = r"""
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('__DOC_SLUG__-notes-'+today()+'__REV_SUFFIX__.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 
@@ -1058,6 +1190,12 @@ def _main() -> int:
         "--output-dir", metavar="DIR", help="where to write the reader and annotated Markdown"
     )
     parser.add_argument(
+        "--output",
+        metavar="FILE",
+        help="explicit HTML reader path, overriding the generated name; the annotated "
+        "Markdown is written beside it as <stem>-annotated.md",
+    )
+    parser.add_argument(
         "--name", metavar="TEXT", help="project name for the reader title (default: git repo name)"
     )
     args = parser.parse_args()
@@ -1093,16 +1231,34 @@ def _main() -> int:
         mode, parts = auto_discover(cwd)
         default_out = (cwd / "docs" / "spec-reader") if mode == "workspace" else (cwd / "status")
 
-    out_dir = Path(args.output_dir) if args.output_dir else default_out
+    if args.output:
+        html_file = Path(args.output)
+        out_dir = html_file.parent
+    else:
+        out_dir = Path(args.output_dir) if args.output_dir else default_out
     out_dir.mkdir(parents=True, exist_ok=True)
 
     title = args.name or infer_title(cwd)
     gen_date = date.today().isoformat()
 
+    # `<repo>-<doc>-v<N>-<date>-reader.html`: a reader that says what it is from a
+    # Downloads folder or a chat attachment, and an export named the same way.
+    # The doc is the kind for the canonical spec/plan and the stem otherwise, so
+    # two design docs sharing a folder still get separate readers.
+    repo = repo_name(cwd)
+    doc = out_base or doc_slug
+    version = doc_version(parts)
+    stem = output_stem(repo, doc, version, gen_date)
+    export_stem = stem[: -len(gen_date) - 1]
+    if args.output:
+        base = html_file.name.removesuffix(".html").removesuffix("-reader")
+        md_file = out_dir / f"{base}-annotated.md"
+    else:
+        html_file = out_dir / f"{stem}-reader.html"
+        md_file = out_dir / f"{stem}-annotated.md"
+
     notes_path = Path(args.notes) if args.notes else out_dir / "notes.json"
     seed_notes: dict = {}
-    html_file = out_dir / f"{out_base or doc_slug}-reader.html"
-    md_file = out_dir / f"{out_base or doc_slug}-annotated.md"
 
     if notes_path.exists():
         try:
@@ -1130,16 +1286,27 @@ def _main() -> int:
         return 2
 
     html_out = build_html(
-        parts, title, gen_date, seed_notes, single_label, doc_slug, ns_key=out_base or None
+        parts,
+        title,
+        gen_date,
+        seed_notes,
+        single_label,
+        doc_slug,
+        ns_key=out_base or None,
+        export_stem=export_stem,
     )
     md_out = build_markdown(parts, title, gen_date, seed_notes, single_label)
 
     html_file.write_text(html_out, encoding="utf-8")
     md_file.write_text(md_out, encoding="utf-8")
+    if not args.output:
+        keep = {html_file, md_file, notes_path}
+        remove_superseded(superseded(out_dir, f"{slug(repo)}-{slug(doc)}", doc, keep))
 
     n_parts = len(parts)
     n_secs = sum(len(p["items"]) for _, p in parts)
-    print(f"✓ {n_parts} part(s), {n_secs} annotatable section(s)", file=sys.stderr)
+    n_notes = sum(has_note_field(it, seed_notes) for _, p in parts for it in p["items"])
+    print(f"✓ {n_parts} part(s), {n_secs} section(s), {n_notes} note field(s)", file=sys.stderr)
     print(f"  {html_file}", file=sys.stderr)
     print(f"  {md_file}", file=sys.stderr)
     return 0

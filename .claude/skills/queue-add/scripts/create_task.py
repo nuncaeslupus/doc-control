@@ -47,7 +47,11 @@ label: {label}
 priority: {priority}
 {extra}---
 
-{body}
+{body}{gate}"""
+
+# Appended only when --body brings no gate of its own (#501): a body that already
+# has one got this placeholder too, and the task carried two gate sections.
+PLACEHOLDER_GATE = """\
 ## Acceptance gate
 
 <!-- Replace this with a fenced bash block. A gate that is only prose runs
@@ -61,6 +65,29 @@ priority: {priority}
 false
 ```
 """
+
+# The same reading gate_run.sh applies: the first `## Acceptance gate` section,
+# up to the next `##` heading, and the first fenced bash/sh block inside it.
+GATE_SECTION_RE = re.compile(r"##\s+Acceptance gate\s*\n(.*?)(?=\n##\s|\Z)", re.S | re.I)
+GATE_FENCE_RE = re.compile(r"```(?:bash|sh)\s*\n(.*?)```", re.S)
+
+
+def body_gate(body: str) -> bool:
+    """True when `body` brings its own gate. Raises ValueError on a prose-only one.
+
+    A heading with no fenced block would leave the first gate section — the one
+    gate_run.sh reads — empty, with the placeholder in a second section nothing
+    runs, so it is refused rather than papered over.
+    """
+    m = GATE_SECTION_RE.search(body)
+    if not m:
+        return False
+    if not GATE_FENCE_RE.search(m.group(1)):
+        raise ValueError(
+            "--body has an '## Acceptance gate' section with no fenced ```bash block. "
+            "Add the block, or drop the heading to get the placeholder gate."
+        )
+    return True
 
 
 # The documented meaning of `priority`: task size, larger runs sooner. Kept here
@@ -157,6 +184,7 @@ def build(
 ) -> tuple[str, str]:
     """Return (task_id, file contents). Raises ValueError on a bad dep or title."""
     known = existing_ids(tasks_dir)
+    has_gate = body_gate(body)
 
     # The label is what a board shows beside the id, so it stays short: five
     # words at most. Left out, it is the first five words of the title.
@@ -223,7 +251,8 @@ def build(
         label=json.dumps(label),
         priority=priority,
         extra=extra,
-        body=(body.strip() + "\n\n") if body.strip() else "",
+        body=(body.strip() + ("\n" if has_gate else "\n\n")) if body.strip() else "",
+        gate="" if has_gate else PLACEHOLDER_GATE,
     )
     return task_id, text
 
@@ -250,7 +279,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tag", action="append", default=[], dest="tags")
     parser.add_argument("--workspace")
     parser.add_argument("--max-attempts", type=int, dest="max_attempts")
-    parser.add_argument("--body", default="", help="task detail placed above the gate")
+    parser.add_argument(
+        "--body",
+        default="",
+        help="task detail above the gate; its own ## Acceptance gate replaces the placeholder",
+    )
     parser.add_argument("--tasks-dir", type=Path, default=Path("arsenal/tasks"))
     args = parser.parse_args(argv)
 

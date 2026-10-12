@@ -18,6 +18,37 @@ being a changelog nobody reads.
 
 Format: `## [X.Y.Z] - YYYY-MM-DD`, newest first, plain bullets below.
 
+## [5.9.1] - 2026-10-13
+
+- `references/repo-housekeeping.md` now walks a package's **first publish** in
+  order — the pending trusted publisher the owner has to register, the release
+  workflow that must match it by filename and environment, the warning that
+  merging it publishes — with a workflow that releases on a version bump, and a
+  check that the built archive does not ship vendored tooling.
+
+## [5.9.0] - 2026-10-12
+
+- **`repo_health.py` checks packaging metadata.** For a package whose name is on PyPI it reports a `GAP` when `pyproject.toml`'s `[project]` lacks a description, readme, license, `requires-python`, or a `[project.urls]` entry pointing at the repository (without it the index page cannot link back). For an unpublished package the same list is appended to the `NOTE`, as what to add before a first publish.
+- **Choosing a license is a guided question.** A missing-license gap now points at the new `references/repo-housekeeping.md`: the three questions that decide between a permissive, patent-granting, copyleft or no-license choice, and a checklist for publishing a package (name check, metadata, back-links, version = tag = release, publishing from CI without a stored token).
+- **`branch_protection.py --repo OWNER/REPO` no longer reads the wrong workflows.** Run from a checkout of a *different* repository, it used that checkout's `pull_request` job names as the required checks when the target had no PR history, which would have blocked every PR there on checks that never run. It now requires a PR only in that case.
+
+## [5.8.0] - 2026-10-12
+
+- **`/init` lists the repository housekeeping that is missing.** The first deliberate run (the one that protects the default branch) now also runs the new read-only `claude-arsenal/scripts/repo_health.py` and prints one `repo_health: GAP …` line per missing item, each with the command that fixes it: no description, topics or license; a default branch not called `main`; an unprotected default branch; secret scanning or push protection off; a Pages site or PyPI package with no homepage link; a newest version tag with no release; a PyPI version with no tag. A `NOTE` line flags a `pyproject.toml` package that is not on PyPI, or a same-named PyPI project that does not link back to your repo. It changes nothing by itself and is skipped with `--no-branch-protection`. Run it by hand at any time; `--fail-on-gaps` exits 1 for use in CI.
+
+## [5.7.0] - 2026-10-12
+
+- **New settings are announced.** Session start (`init.py`, including `--silent`) prints `NEW SETTING <key> (since vX.Y.Z, default …): …` for each config key a release adds that your `arsenal/config.toml` neither sets nor acknowledges. Silence them by setting the key or `config-acknowledged = "X.Y.Z"`. Nothing is printed when nothing is pending (#496).
+- **`[review] reviewer-identity = "distinct-login" | "distinct-session"`** (default `distinct-session`). A reviewer posting with the PR author's login clears the head when its marker (`adversarial_review.sh marker --post <pr>`) names a session that is not one of the PR's `Claude-Session` trailers; the reviewer must run as its own session, not as a subagent (#495). A repo whose second reader is a human or a bot on another login can set `distinct-login`, under which a CLEAR from the author's own login never counts.
+- **The adversarial review counts as the review when no bot can.** `after-ci-and-review` (and `after-review`) accept a clearing adversarial-review marker for the head SHA when no bot or human review is available; `review_sources.py` reports rate-limited, capped or skipped bots as `unavailable` instead of `pending` (its JSON changes accordingly). New `bot-unavailable-notices` key adds your bot's own wording (#507).
+- **explore-idea keeps a durable ideas backlog.** `/explore-idea capture <text>` (or pasting a list of ideas) sorts them into `status/ideas.md` with stable `I-N` ids and proposed sub-projects. The `D-N` decision log is saved there and never re-asked in later sessions; `specify` cites the `I-N` ids it covers, and the board prints one `ideas:` line when the file exists (#504).
+- **`design` plans draw their dependency graph as a drawspec diagram** generated from the task table's Depends column (`sync_plan_graph.py --apply`). `validate_plan.py` fails on every edge a drawspec graph and the table disagree on, and **warns** (exit 0) on the old ASCII graph with the fix — run `sync_plan_graph.py --apply` once on an existing plan that still has one (#506).
+- **Annotatable readers** put one note field after each section with text and none on bare headings, read better (≈70-char lines, clearer headings, distinct note fields, dark mode, phone layout), and are named `<repo>-<doc>-v<N>-<date>-reader.html`, with exports `…-notes.md` to match (`--output FILE` overrides). A rebuild removes older readers of the same document (an annotated file with typed notes is kept), and a requested download no longer counts as a saved backup (#505).
+- **`open_task_pr.sh --branch <name>`** (or `ARSENAL_PR_BRANCH`) commits and pushes on a designated branch instead of creating `arsenal/<id>-<slug>`, with every check still run. With no PR tool available it prints the full PR body, including `Closes #N`, so you can open the PR yourself (#503).
+- **`claim_task.sh` manual hint** now names the branch to create and says to use your harness's GitHub tool (e.g. `create_branch`); a 403 from the shell token means "use the tool", not an error to stop on (#502).
+- **`create_task.py --body`** with its own `## Acceptance gate` fenced block no longer gets a second, placeholder gate appended; a body whose gate section has no fenced block is refused (#501).
+- **The skill-edit gate no longer blocks commands that only run a skill script**, including from a heredoc or `-c` program via `subprocess`, `sys.executable` or `os.system`. Writes into a skill folder are still blocked (#500).
+
 ## [5.6.0] - 2026-10-10
 
 - **`ship` now checks the README's hero image.** Step 1 asks whether a hero (banner) image still matches what ships, and points to a new on-demand reference, `ship/references/readme-hero.md`: when a change means redrawing it (a renamed or removed headline feature, a new lead feature), and how to make one render everywhere (1280 × 640, the GitHub social-preview size; a PNG, since GitHub's `<img>` view of an SVG loads no fonts; an absolute URL so PyPI and mirrors show it; no versions or counts on it, so releases do not stale it). It says nothing about how a hero should look. One line added to the `ship` body; the reference loads only when needed. No resident-context cost.

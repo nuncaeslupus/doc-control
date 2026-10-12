@@ -7,7 +7,7 @@ protocol; the skills point here.
 
 ## Contents
 
-- [The protocol](#the-protocol) — decide, run a round, record the verdict
+- [The protocol](#the-protocol) — decide, run a round, record the verdict, publish it
 - [Rounds](#rounds) — follow-ups, the cap, and the three ways out
 - [Tests during review](#tests-during-review)
 - [Handling BLOCK](#handling-block)
@@ -39,10 +39,12 @@ python3 claude-arsenal/scripts/review_sources.py --pr <N>
 It prints one line per source (CI, each configured bot) and a `decision` line —
 `local-review=none|diff|full  full-suite=skip|run  reason=…`. Follow that line:
 it applies the `verification` profile (`fast | balanced | strict`) to what CI and
-the bots actually did on this head. When a bot is `skipped` or silent, run it
-once with `--trigger`, which posts the bot's configured trigger comment a single
-time per head; a second silence is final and the decision falls back to a local
-round. The decision line goes in the PR body.
+the bots actually did on this head. A bot that said it will not review this
+head (rate limit, free-tier cap, "fewer than N stars", paused) is `unavailable`,
+never `pending`, and the decision falls through to a local round at once. When a
+bot is unavailable because it skipped, or is silent, run once with `--trigger`,
+which posts the bot's configured trigger comment a single time per head; a
+second silence is final. The decision line goes in the PR body.
 
 ### 2. Run a round
 
@@ -106,6 +108,29 @@ judged by the edited rubric; review such changes with that in mind.
 exits 0 for a CLEAR receipt on the current tree. A new round runs only when
 commits landed after the last reviewed tree (`check` exits 3) or none is on
 record.
+
+### 5. Publish the verdict on the PR
+
+A receipt lives in one checkout; a merge decided elsewhere cannot see it. When
+the verdict is about an open PR's head, publish it:
+
+```bash
+bash claude-arsenal/bin/adversarial_review.sh marker [--task <id>] --post <N>
+```
+
+It refuses unless the receipt is fresh and the reviewed tree is exactly the
+committed `HEAD` (exit 2 on uncommitted changes, 3 when stale), then posts
+`<!-- arsenal-review: verdict=… head=<sha> session=<id> -->` as a PR comment
+(exit 5 with the body and the call to make when there is no GitHub channel).
+`merge_ready.sh` reads it for the review half of `merge-policy`: under
+`after-review` and `after-ci-and-review`, a CLEAR for the head SHA **is the
+review** when no bot or human review is available on that head, and a BLOCK
+blocks it. A bot review that lands later is still handled — fix or answer its
+findings, in a follow-up PR if the change has merged. When the comment
+is posted with the PR author's login, `[review] reviewer-identity` decides
+whether a CLEAR counts: run this in the **reviewer's own session**, since a
+subagent reports its parent's session id —
+`references/github-automation.md` § A second reader that cannot approve.
 
 ## Rounds
 

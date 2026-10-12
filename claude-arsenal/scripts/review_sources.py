@@ -12,16 +12,21 @@ Usage:
 
 Output, one line per source, then the decision:
     ci              ok            3 checks green on 1a2b3c4
-    bot:coderabbitai skipped      "review skipped" (status CodeRabbit)
-    bot:gemini      absent        no activity 24 min after head push (bot-wait-min 20)
+    bot:reviewer-a  unavailable   skipped: "review skipped" (status reviewer-a)
+    bot:reviewer-b  absent        no activity 24 min after head push (bot-wait-min 20)
     decision        local-review=diff  full-suite=skip  reason=ci ok, no bot review ...
 
-States: CI ok | failing | pending | absent. Bot ok | pending | skipped |
-rate-limited | absent. A bot is `absent` once it has been silent on this head
-for bot-wait-min after the head push. With --trigger, a skipped or first-time
-absent bot gets its `bot-triggers` comment once per head (recorded under
-tmp/arsenal-review/pr-<N>/), and is pending for one more wait; silence after
-that is final.
+States: CI ok | failing | pending | absent. Bot ok | pending | unavailable |
+absent. `unavailable` is a bot that said it will not review this head — rate
+limit, plan or free-tier cap, a skip ("fewer than N stars", automatic reviews
+off), a pause — and is never `pending`: its own notice is the answer, so the
+decision falls through to the local review instead of waiting on it. Which of
+those it was is the detail's first word and `extra.reason` (rate-limited |
+skipped | paused). A bot is `absent` once it has been silent on this head for
+bot-wait-min after the head push. With --trigger, a skipped, paused or
+first-time absent bot gets its `bot-triggers` comment once per head (recorded
+under tmp/arsenal-review/pr-<N>/), and is pending for one more wait; silence
+after that is final. A rate-limited bot is never pinged.
 
 Head push time: GitHub does not expose it directly, so it is the earliest
 check run or status reported on the head SHA (CI starts on push), never earlier
@@ -29,7 +34,7 @@ than the head commit's committer date; with no checks at all, the committer
 date alone.
 
 Config (arsenal/config.toml): verification, bot-wait-min, bot-triggers,
-risk-paths, risk-lines, review-bots.
+risk-paths, risk-lines, review-bots, bot-unavailable-notices.
 
 --fixture DIR reads the gh JSON from files instead (pr.json, commit.json,
 check_runs.json, statuses.json, reviews.json, review_comments.json,
@@ -78,13 +83,30 @@ NOTICES: list[tuple[str, str, str | None]] = [
     ("rate-limited", r"next included review available", None),
     ("rate-limited", r"fair usage limit", None),
     ("rate-limited", r"(limit|quota)\s+(has been\s+|was\s+)?exceeded", None),
+    (
+        "rate-limited",
+        r"free[- ](tier|plan)\b[^.\n]{0,80}\b(limit|cap|quota|reached|exhausted)",
+        None,
+    ),
     ("paused", r"reviews?\s+paused", None),
     ("skipped", r"does not receive automatic reviews", None),
     ("skipped", r"reviews?\s+skipped", None),
     ("skipped", r"skipping review", None),
     ("skipped", r"auto(matic)?[- ]reviews?\s+(are|is)\s+(disabled|paused|turned off)", None),
+    ("skipped", r"fewer than\s+\d+\s+(github\s+)?stars", None),
 ]
 _NOTICE_RX = [(kind, re.compile(rx, re.IGNORECASE), bot) for kind, rx, bot in NOTICES]
+
+
+def extra_notices(patterns: list[str]) -> list[tuple[str, re.Pattern[str], str | None]]:
+    """`bot-unavailable-notices` rows: a host's own phrases, read as a skip.
+
+    The table above is a starting list, not a claim about every reviewer: a bot
+    that words its notice differently would otherwise read as silence and hold
+    the loop for bot-wait-min. Appended after the shipped rows, so an in-progress
+    notice still wins, and classified `skipped` — one trigger, then final.
+    """
+    return [("skipped", re.compile(rx, re.IGNORECASE), None) for rx in patterns]
 
 
 # --- per-bot quirks ------------------------------------------------------------
@@ -149,9 +171,11 @@ def now() -> datetime:
     return parse_ts(os.environ.get("REVIEW_SOURCES_NOW")) or datetime.now(UTC)
 
 
-def match_notice(text: str, login: str) -> tuple[str, str] | None:
+def match_notice(
+    text: str, login: str, extra: list[tuple[str, re.Pattern[str], str | None]] | None = None
+) -> tuple[str, str] | None:
     """(kind, matched phrase) for the first notice row that matches, else None."""
-    for kind, rx, bot in _NOTICE_RX:
+    for kind, rx, bot in [*_NOTICE_RX, *(extra or [])]:
         if bot is not None and norm(bot) != login:
             continue
         m = rx.search(text or "")
@@ -326,6 +350,7 @@ def classify_bot(
     at: datetime,
     wait_min: int,
     state_dir: Path,
+    extra: list[tuple[str, re.Pattern[str], str | None]] | None = None,
 ) -> Verdict:
     """One bot's state on this head. `login` is bare (no [bot])."""
     head = data["head"]
@@ -359,21 +384,21 @@ def classify_bot(
             text = f"{out.get('title') or ''}\n{out.get('summary') or ''}"
             own_checks.append({"kind": "check", "description": text.strip(), **c})
     for oc in own_checks:
-        hit = match_notice(oc.get("description") or "", login)
+        hit = match_notice(oc.get("description") or "", login, extra)
         if hit:
             ts = parse_ts(oc.get("created_at") or oc.get("started_at")) or pushed
             notices.append((ts, hit[0], hit[1], f"{oc['kind']} {oc.get('name', '')}"))
     for c in data["issue_comments"]:
         if norm((c.get("user") or {}).get("login")) != login:
             continue
-        hit = match_notice(c.get("body") or "", login)
+        hit = match_notice(c.get("body") or "", login, extra)
         if hit:
             ts = parse_ts(c.get("updated_at") or c.get("created_at")) or pushed
             notices.append((ts, hit[0], hit[1], f"comment {c.get('id', '?')}"))
     for r in data["reviews"]:
         if norm((r.get("user") or r.get("author") or {}).get("login")) != login:
             continue
-        hit = match_notice(r.get("body") or "", login)
+        hit = match_notice(r.get("body") or "", login, extra)
         if hit:
             ts = parse_ts(r.get("submitted_at")) or pushed
             notices.append((ts, hit[0], hit[1], f"review {r.get('id', '?')}"))
@@ -401,15 +426,15 @@ def classify_bot(
     if notices:
         ts, kind, phrase, where = max(notices, key=lambda n: n[0])
         if triggered is None or ts > triggered:
-            state = "rate-limited" if kind == "rate-limited" else "skipped"
-            note = " (paused)" if kind == "paused" else ""
+            # Never `pending`: the bot said it will not review this head, so
+            # waiting on it is waiting for nothing (#507).
             return Verdict(
-                state,
-                f'"{phrase}"{note} ({where})',
+                "unavailable",
+                f'{kind}: "{phrase}" ({where})',
                 login,
-                final=state == "rate-limited",
+                final=kind == "rate-limited",
                 triggered_at=triggered_s,
-                extra={"paused": kind == "paused"},
+                extra={"reason": kind, "paused": kind == "paused"},
             )
 
     # 3. The bot's own check finished on this head with no notice: it reviewed.
@@ -529,14 +554,15 @@ def post_triggers(
 ) -> list[str]:
     """Send each eligible bot its trigger, once per head. Returns logins pinged.
 
-    Eligible: skipped, or absent with no trigger sent on this head yet. A
-    rate-limited bot is not pinged — its notice is the answer until the window
-    passes. The state file is written before posting, so a failed post is not
-    retried every tick.
+    Eligible: unavailable because skipped or paused, or absent, with no trigger
+    sent on this head yet. A rate-limited bot is not pinged — its notice is the
+    answer until the window passes. The state file is written before posting,
+    so a failed post is not retried every tick.
     """
     posted: list[str] = []
     for v in verdicts:
-        if v.state not in ("skipped", "absent") or v.login not in triggers:
+        skipped = v.state == "unavailable" and v.extra.get("reason") in ("skipped", "paused")
+        if not (skipped or v.state == "absent") or v.login not in triggers:
             continue
         marker = _trigger_file(state_dir, v.login, head)
         if marker.exists():
@@ -608,7 +634,8 @@ def run(
     at = now()
     pushed = head_pushed_at(data)
     ci = classify_ci(data, [*bots, *BOTS])  # a known bot's own check is never CI
-    verdicts = [classify_bot(b, data, pushed, at, wait_min, state_dir) for b in bots]
+    extra = extra_notices(cfg["bot-unavailable-notices"])
+    verdicts = [classify_bot(b, data, pushed, at, wait_min, state_dir, extra) for b in bots]
     posted: list[str] = []
     if trigger:
         posted = post_triggers(

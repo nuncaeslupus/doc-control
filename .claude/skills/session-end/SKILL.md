@@ -26,8 +26,10 @@ Mid-job is too early: the retrospective needs a complete arc to scan.
 First, if this session adopted or locked an architecture decision, make sure the
 spec and plan say so (`arsenal/project/<WORKSPACE>/spec.md` + `plan.md`, or
 `status/specification.md` + `status/plan.md`), or seed a queue task for it. A
-blocking spec divergence found this session becomes a queue task too. The handoff
-is a snapshot the next session overwrites; the spec, plan and queue are the ledger.
+blocking spec divergence found this session becomes a queue task too. An idea or
+decision raised this session but missing from `status/ideas.md` is a handover item.
+The handoff is a snapshot the next session overwrites; the spec, plan and queue are
+the ledger.
 
 Then read the host repo's `CLAUDE.md` for the marker:
 
