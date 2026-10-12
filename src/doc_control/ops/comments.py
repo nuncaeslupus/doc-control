@@ -43,13 +43,16 @@ from doc_control.ooxml.revisions import (
 )
 from doc_control.ooxml.zipio import Package
 from doc_control.ops.tracked import (
+    REQUEST_NAMES,
     Annotator,
     TrackedResult,
     boundary_ok,
     check_name,
     check_text,
+    edits_as_request,
     prepare_edits,
 )
+from doc_control.safety.history import record
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, write_verified
 from doc_control.schema import validate
@@ -78,6 +81,9 @@ class ResolveComment:
 
 
 CommentEdit = AddComment | ReplyComment | ResolveComment
+REQUEST_NAMES.update(
+    {AddComment: "comment.add", ReplyComment: "comment.reply", ResolveComment: "comment.resolve"}
+)
 
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 COMMENT_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -396,9 +402,32 @@ def apply_batch(
     if not replacements:
         return replace(result, after_sha256=pkg.sha256, backup=None)
     written = write_verified(doc_path, replacements, footprint, pkg.sha256, now=now, env=env)
+    warnings = list(result.warnings)
+    op_id: str | None = None
+    try:
+        op_id = record(
+            doc_path,
+            "batch",
+            before_sha256=written.before_sha256,
+            after_sha256=written.after_sha256,
+            backup=written.backup,
+            changes=prepared.changes,
+            request=edits_as_request(edits),
+            author=result.author,
+            tag=tag,
+            footprint={DOCUMENT_PART: result.footprint, **result.parts},
+            # Comment parts are not logged, so `undo` refuses this entry (see safety.history).
+            extra={"parts": sorted(part_bytes)},
+            now=now,
+            env=env,
+        )
+    except (DocControlError, OSError) as exc:
+        warnings.append(f"HISTORY_NOT_RECORDED: the write succeeded but could not be logged: {exc}")
     return replace(
         result,
         before_sha256=written.before_sha256,
         after_sha256=written.after_sha256,
         backup=written.backup,
+        warnings=warnings,
+        op_id=op_id,
     )
