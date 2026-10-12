@@ -40,9 +40,14 @@ FakeSoffice = Callable[[str | None], None]
 @pytest.fixture
 def fake_soffice(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeSoffice:
     """Point the validator at a stub soffice that writes ``output`` for every input."""
-    script = tmp_path / "fake-soffice"
-    script.write_text(f"#!{sys.executable}\n{FAKE_SOFFICE}", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    if os.name == "nt":  # no shebangs: a .cmd wrapper runs the stub with this Python
+        (tmp_path / "fake_soffice.py").write_text(FAKE_SOFFICE, encoding="utf-8")
+        script = tmp_path / "fake-soffice.cmd"
+        script.write_text(f'@"{sys.executable}" "%~dp0fake_soffice.py" %*\r\n', encoding="utf-8")
+    else:
+        script = tmp_path / "fake-soffice"
+        script.write_text(f"#!{sys.executable}\n{FAKE_SOFFICE}", encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setattr(validator, "soffice_path", lambda: str(script))
     monkeypatch.delenv(validator.REQUIRE_ENV, raising=False)
 
