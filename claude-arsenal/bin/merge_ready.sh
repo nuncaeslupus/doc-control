@@ -98,12 +98,17 @@ tools, assemble one JSON array of the record below, and pipe it in:
   GET /repos/${slug}/pulls/${PR}
   GET /repos/${slug}/commits/<head-sha>/check-runs
   GET /repos/${slug}/pulls/${PR}/reviews
+  GET /repos/${slug}/issues/${PR}/comments   (reviewer markers)
+  GET /repos/${slug}/pulls/${PR}/commits     (Claude-Session trailers)
   (thread resolution is GraphQL-only; omit \`threads\` if you cannot read it)
 
   [{"number": ${PR}, "title": …, "draft": …, "mergeable": …, "created_at": …,
-    "head": {"sha": …, "ref": …},
+    "head": {"sha": …, "ref": …}, "user": {"login": …},
     "checks": [{"name": …, "status": …, "conclusion": …, "head_sha": …}],
     "reviews": [{"state": …, "commit_id": …}],
+    "comments": [{"id": …, "body": …, "author_association": …,
+                  "user": {"login": …, "type": …}}],
+    "commits": [{"message": …}],
     "threads": [{"id": …, "resolved": …}]}]
 
   python3 claude-arsenal/scripts/pr_audit.py --pr ${PR} --require-ready --prs -
@@ -119,6 +124,13 @@ head_sha="$(printf '%s' "${pr_json}" | python3 -c \
 
 checks_json="$(api "/repos/${slug}/commits/${head_sha}/check-runs")" || checks_json=""
 reviews_json="$(api "/repos/${slug}/pulls/${PR}/reviews")" || reviews_json=""
+# The second reader that cannot leave a GitHub review — it posts with the PR
+# author's credential — leaves a marker comment instead, and the commits'
+# Claude-Session trailers are what `reviewer-identity = "distinct-session"`
+# compares its session against. A failed fetch leaves the key ABSENT, which
+# pr_audit reads as "could not be read" and never as "nothing there".
+comments_json="$(api "/repos/${slug}/issues/${PR}/comments?per_page=100")" || comments_json=""
+commits_json="$(api "/repos/${slug}/pulls/${PR}/commits?per_page=100")" || commits_json=""
 
 # Thread resolution is not in the REST API at all, so it is fetched only where
 # GraphQL is reachable. `threads` is then ABSENT rather than empty, and pr_audit
@@ -137,7 +149,8 @@ if [[ "$(bash "${CHANNEL}" --detect 2>/dev/null)" == "gh" ]]; then
 fi
 
 payload="$(PR_JSON="${pr_json}" CHECKS_JSON="${checks_json}" REVIEWS_JSON="${reviews_json}" \
-    THREADS_JSON="${threads_json}" python3 - <<'PY'
+    THREADS_JSON="${threads_json}" COMMENTS_JSON="${comments_json}" \
+    COMMITS_JSON="${commits_json}" python3 - <<'PY'
 import json, os, sys
 
 def load(name, default):
@@ -161,6 +174,7 @@ record = {
     "created_at": pr.get("created_at"),
     "updated_at": pr.get("updated_at"),
     "head": {"sha": (pr.get("head") or {}).get("sha"), "ref": (pr.get("head") or {}).get("ref")},
+    "user": {"login": (pr.get("user") or {}).get("login")},
     "checks": [
         {"name": r.get("name"), "status": r.get("status"),
          "conclusion": r.get("conclusion"), "head_sha": r.get("head_sha")}
@@ -172,6 +186,21 @@ record = {
         for r in (reviews if isinstance(reviews, list) else []) if isinstance(r, dict)
     ],
 }
+comments = load("COMMENTS_JSON", None)
+if isinstance(comments, list):
+    record["comments"] = [
+        {"id": c.get("id"), "body": c.get("body") or "",
+         "author_association": c.get("author_association"),
+         "user": {"login": (c.get("user") or {}).get("login"),
+                  "type": (c.get("user") or {}).get("type")}}
+        for c in comments if isinstance(c, dict)
+    ]
+commits = load("COMMITS_JSON", None)
+if isinstance(commits, list):
+    record["commits"] = [
+        {"message": (c.get("commit") or {}).get("message") or ""}
+        for c in commits if isinstance(c, dict)
+    ]
 # Only set `threads` when it was actually read. See the note above.
 if threads_raw:
     try:

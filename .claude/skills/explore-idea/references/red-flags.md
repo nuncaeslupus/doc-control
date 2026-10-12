@@ -18,3 +18,5 @@ the rationalisation and what to do instead.
 | "They said 'sounds good' — that's approval." | Approval is an explicit yes to the summarised direction, not agreement with one point. Ask. |
 | "I have enough to write the spec myself." | This skill writes no spec. Hand the log to the `specify` skill, which owns the spec and its annotated review. |
 | "Another plugin's brainstorming skill already covers this." | It does not carry the log into the spec or stop at the annotated review; route idea work here and spec work to `specify`. |
+| "Better confirm that decision again before building on it." | A decision recorded in `status/ideas.md` is settled. Build on it; reopen it only when the owner does, as a new row that supersedes the old one. |
+| "The ideas are only notes — no need to write the file." | Ideas left in chat are lost at the session's end. Capture writes `status/ideas.md` with stable `I-N` ids before asking anything. |

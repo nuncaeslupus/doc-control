@@ -98,7 +98,7 @@ it answers are failures:
 | `always` | The PR is open and `open_task_pr.sh`'s gates passed. Nothing further to wait for. |
 | `after-ci` | Every required check on the head commit has **reported**, and is green. |
 | `after-review` | A review has landed **and** every comment it raised is fixed or answered. CI is not consulted — this is the value for a repo with no CI, or whose CI is unavailable rather than failing. |
-| `after-ci-and-review` | Both rows above: green checks **and** a review whose comments are all addressed. |
+| `after-ci-and-review` | Both rows above: green checks on the head **and** either a bot/human review whose comments are all addressed, or — when none is available on the head — a clearing adversarial-review verdict recorded for the head SHA. |
 | `never` | Never, by an agent. Report the PR as ready and stop; the human merges. |
 
 On a private repo with metered Actions minutes, or no CI, `after-ci` waits
@@ -113,9 +113,32 @@ requiring only checks that reported on recent PRs, so both agree on "required".
 **What counts as a review.** Whatever GitHub reports on the PR: a review from a
 human collaborator or from any review bot installed on the repo. Read the PR's
 reviews rather than matching a name, because a named reviewer goes stale when the
-repo changes bots. A PR with no reviews does not satisfy `after-review`. "Fixed or
+repo changes bots. **When no bot or human review is available** — the bot is
+rate-limited, over a free-tier cap, skipped the repo ("fewer than N stars"), or
+silent past `bot-wait-min` — the pre-PR adversarial review is the review: a
+CLEAR published for the head SHA (§ A second reader that cannot approve)
+satisfies `after-review` and `after-ci-and-review`. A PR with neither does not. "Fixed or
 answered" means a fix paired with a reply, or a reply explaining the
 disagreement; an unresolved thread is an unmet policy.
+
+**A second reader that cannot approve.** GitHub refuses an approval from the PR's
+author, so a reviewer posting with the author's credential (every session in a
+one-account fleet) records its verdict as a marker comment instead:
+`adversarial_review.sh marker --post <pr>`, run in the reviewer's own checkout of
+the head after its `verdict`. It writes
+`<!-- arsenal-review: verdict=CLEAR head=<sha> session=<id> -->` for the
+committed head. Only markers from an OWNER/MEMBER/COLLABORATOR commenter or an App
+are read; a BLOCK on the head blocks. Whether a CLEAR from the author's own login
+counts is `[review] reviewer-identity`:
+
+| Value | A CLEAR from the PR author's login |
+|---|---|
+| `distinct-login` | never counts — the marker must come from another login |
+| `distinct-session` (default) | counts when its `session=` is none of the `Claude-Session:` trailers on the PR's commits; no session, a match, or no trailer to compare against is `unresolvable`, never clear, and the reason says the head was cleared via distinct-session |
+
+Known gap: a subagent reports its parent's session id, so a reviewer spawned as a
+subagent of the implementing session is refused. Run the reviewer as its own
+session (claim the head with `claim_review.sh`).
 
 **Who fixes, and who merges.** The findings are the session's work: verify each
 against the code, fix the real ones, and reply with what changed and what was
@@ -153,10 +176,12 @@ review, take the reader reports, fix the findings, then resolve the conflict, th
 run the gate and re-read once on the final head.
 
 **A rate-limited review bot is the same shape on the review side**: an external
-quota, not a defect in the PR. The `github` skill's review loop
-(`references/pr-review-loop.md` § When no bot will review this head) says what
-replaces the bot. Neither quota is a reason to weaken the policy; wait, requeue,
-and keep working the PRs that already cleared the bar.
+quota, not a defect in the PR. `review_sources.py --pr <N>` reports such a bot as
+`unavailable`, never `pending`, so the decision goes straight to the local
+review; that review's published CLEAR is the review for the merge
+(`references/pre-pr-review.md` § 5). Neither quota is a reason to weaken the
+policy. **A bot review that arrives after the merge still counts as findings**:
+fix or answer each one in a follow-up PR, as you would have before merging.
 
 ---
 

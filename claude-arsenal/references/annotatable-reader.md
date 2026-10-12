@@ -43,10 +43,13 @@ raw file — does not satisfy this. The reader exists so notes attach to the
 section they are about; a substitute that drops that property is not a
 substitute.
 
-A document not named `spec.md`, `specification.md` or `plan.md` gets readers
-named for it (`0007-thing.md` → `0007-thing-reader.html` / `0007-thing-annotated.md`),
-so design docs sharing a directory never overwrite each other's readers. Do not
-rename the output — `reader_check.py` looks for exactly that name.
+A reader is named for what it is — `<repo>-<doc>-v<N>-<date>-reader.html`, with
+`…-annotated.md` beside it (`yourproject-spec-v1-2026-10-12-reader.html`): the git
+repo's name, `spec` / `plan` (or the stem of any other document, so design docs
+sharing a directory never overwrite each other's readers), the `**Revision**`
+(1 without one) and the day it was built. A rebuild removes the earlier readers
+of that document. Do not rename the output — `reader_check.py` looks for that
+name; `--output FILE` is the explicit override when a name is required.
 
 ## Work that consumes the document waits for the annotations
 
@@ -62,10 +65,10 @@ it is their call to make, not an assumption to act on while waiting.
 
 ## The returned export is review history
 
-The export is named `<project>-<spec|plan>-notes-<date>-r<N>.md`, N being the
-document's `**Revision**` header line. When one arrives — a path in
-`~/Downloads`, an upload, a paste — move it into the document's directory beside
-the reader. Applying it makes the next revision: bump `**Revision**`, add a
+The export is named like the reader, `<repo>-<doc>-v<N>-<date>-notes.md`, N being
+the document's `**Revision**` header line and the date the export's. When one
+arrives — a path in `~/Downloads`, an upload, a paste — move it into the
+document's directory beside the reader. Applying it makes the next revision: bump `**Revision**`, add a
 `**Revision log**` line naming the export, regenerate the reader, and commit the
 export **in the same commit** as that revision. Left in Downloads it is gone by
 the next session; `query_status.py` names any export of this project's still

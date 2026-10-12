@@ -13,8 +13,8 @@ header lines it reads, above the document's first `## ` section:
     **Status**: approved (2026-09-29, revision 3) — without annotations
     **Revision log**:
     - r1 — first draft
-    - r2 — applied `yourproject-spec-notes-2026-09-20-r1.md`
-    - r3 — applied `yourproject-spec-notes-2026-09-25-r2.md`
+    - r2 — applied `yourproject-spec-v1-2026-09-20-notes.md`
+    - r3 — applied `yourproject-spec-v2-2026-09-25-notes.md`
 
 A notes file is named by its basename and lives beside the document. Naming one
 that is not in the repository is a problem: the revision it drove then cites
@@ -27,7 +27,9 @@ import re
 import subprocess
 from pathlib import Path
 
-NOTES_RE = re.compile(r"[\w.-]+-(?:spec|plan)-notes-[\w.-]+\.md")
+# `<project>-<spec|plan>-notes-<date>-r<N>.md` (older readers) or
+# `<repo>-<doc>-v<N>-<date>-notes.md` (the reader's own naming).
+NOTES_RE = re.compile(r"[\w.-]+-(?:(?:spec|plan)-notes-[\w.-]+|v\d+-\d{4}-\d{2}-\d{2}-notes)\.md")
 REVISION_RE = re.compile(r"^\*\*Revision\*\*:\s*r?(\d+)\b", re.MULTILINE)
 STATUS_RE = re.compile(r"^\*\*Status\*\*:\s*(.+)$", re.MULTILINE)
 APPROVED_RE = re.compile(r"^approved\b[^()]*\(([^)]*)\)(.*)$", re.IGNORECASE)
