@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="04fef945af607b7a6a30d00bfbe341214778090f005278d833d1abdc49cb924d">
+<meta name="arsenal-source-sha256" content="213eaf50f0c7c35188af0ad5e1c77201bd96dd42a0e25e28c34ca9654412fc06">
 <title>Word Control — Plan (annotatable)</title>
 <style>
 :root{
@@ -169,13 +169,14 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <article class="sec" id="s-plan-intro">
 <h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-12
-<strong>Specification</strong>: <code>status/specification.md</code> (approved, revision 5)
+<strong>Specification</strong>: <code>status/specification.md</code> (approved, revision 6)
 <strong>Author</strong>: Claude
-<strong>Revision</strong>: 2
-<strong>Status</strong>: approved (2026-10-12, revision 2) — without annotations
+<strong>Revision</strong>: 3
+<strong>Status</strong>: approved (2026-10-12, revision 3) — without annotations
 <strong>Revision log</strong>:
 - r1 — first draft
-- r2 — owner decision D-18 (2026-10-12): tasks T31–T36 for literary-critic indexing support; T29 also depends on them</p></div>
+- r2 — owner decision D-18 (2026-10-12): tasks T31–T36 for literary-critic indexing support; T29 also depends on them
+- r3 — owner decision D-19 (2026-10-12): T37 <code>compare</code> (redline document from two versions); T29 depends on it</p></div>
 <div class="note" data-for="s-plan-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN · intro</span></div><textarea class="note-ta" data-key="s-plan-intro" data-label="Preamble &amp; scope" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-plan-technical-solution">
@@ -572,7 +573,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 <td>Coverage and documentation: README usage, error-code reference, generated operation reference from schemas</td>
 <td>repo</td>
 <td>M</td>
-<td>T7, T13, T17, T19, T20, T22, T24, T25, T26, T27, T28, T31, T32, T33, T34, T35, T36</td>
+<td>T7, T13, T17, T19, T20, T22, T24, T25, T26, T27, T28, T31, T32, T33, T34, T35, T36, T37</td>
 <td><code>line_coverage &gt;= 0.90</code></td>
 <td><code>test_docs_list_every_error_code</code> in <code>tests/test_docs.py</code> — every error code in <code>errors.py</code> appears in the reference</td>
 </tr>
@@ -639,10 +640,19 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 <td><code>locators_not_unique == 0</code></td>
 <td><code>test_locator_phrase_is_unique_in_document</code> in <code>tests/ops/test_locate.py</code> — every returned phrase matches exactly one place in the document</td>
 </tr>
+<tr>
+<td>T37</td>
+<td><code>compare</code>: write a new redline <code>.docx</code> from two versions, every difference as a tracked change (paragraph alignment from <code>diff</code>, word-level changes inside modified paragraphs)</td>
+<td>ops</td>
+<td>M</td>
+<td>T11, T35</td>
+<td><code>compare_redline_text_mismatches == 0</code></td>
+<td><code>test_compare_accept_all_equals_new_reject_all_equals_old</code> in <code>tests/ops/test_compare.py</code> — accepting all revisions in the redline yields the new text and rejecting all yields the old text</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Status legend</strong>: ☐ not started · ◐ in progress · ☑ merged</p>
-<p><strong>Merge order</strong>: T1 → T2, T3 → T4, T5, T9 → T6, T10 → T7, T8, T11, T18, T20 → T12 → T13–T17, T21, T23, T19 → T22, T24–T28, T31–T36 → T29; T30 when a Windows machine is available.
+<p><strong>Merge order</strong>: T1 → T2, T3 → T4, T5, T9 → T6, T10 → T7, T8, T11, T18, T20 → T12 → T13–T17, T21, T23, T19 → T22, T24–T28, T31–T37 → T29; T30 when a Windows machine is available.
 <strong>Branch pattern</strong>: <code>doc-control-T&lt;N&gt;-&lt;description&gt;</code> from the default branch</p></div>
 <div class="note" data-for="s-plan-implementation-tasks"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Implementation tasks</span></div><textarea class="note-ta" data-key="s-plan-implementation-tasks" data-label="Implementation tasks" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
@@ -683,7 +693,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
             └─&gt; T9 ─&gt; T10 ──┴─&gt; T11 ─&gt; T12 ─┬─&gt; T13, T14, T15, T16, T21 ─&gt; T22
                                             └─&gt; T23 ─&gt; T24, T25, T26
 T5, T10 ─&gt; T27     T12, T15, T18 ─&gt; T28     all tasks except T30 (through T29's Depends list) ─&gt; T29     T15, T16 ─&gt; T30
-T7 ─&gt; T31   T6 ─&gt; T32, T35   T18 ─&gt; T33   T19 ─&gt; T34   T8, T20, T33 ─&gt; T36
+T7 ─&gt; T31   T6 ─&gt; T32, T35   T18 ─&gt; T33   T19 ─&gt; T34   T8, T20, T33 ─&gt; T36   T11, T35 ─&gt; T37
 </code></pre></div>
 <div class="note" data-for="s-plan-dependency-graph"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Dependency graph</span></div><textarea class="note-ta" data-key="s-plan-dependency-graph" data-label="Dependency graph" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
@@ -817,7 +827,7 @@ T7 ─&gt; T31   T6 ─&gt; T32, T35   T18 ─&gt; T33   T19 ─&gt; T34   T8, T
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-plan-notes-'+today()+'-r2.md';
+    var name='word-control-plan-notes-'+today()+'-r3.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -839,7 +849,7 @@ T7 ─&gt; T31   T6 ─&gt; T32, T35   T18 ─&gt; T33   T19 ─&gt; T34   T8, T
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-plan-notes-'+today()+'-r2.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-plan-notes-'+today()+'-r3.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

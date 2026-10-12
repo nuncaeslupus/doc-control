@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="604ef88e5e6d25b2313c28df5beb4917f35ed48200b17b0c5362f70b9b41da18">
+<meta name="arsenal-source-sha256" content="7115407aa05a6268b4226e7bc80f92208b9ddedf461cdedd949095fd87dcb2a4">
 <title>Word Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -174,14 +174,15 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-12
 <strong>Ticket / PR</strong>: nuncaeslupus/word-control#2
 <strong>Author</strong>: Claude (with the owner, via <code>explore-idea</code>)
-<strong>Revision</strong>: 5
-<strong>Status</strong>: approved (2026-10-12, revision 5) — without annotations
+<strong>Revision</strong>: 6
+<strong>Status</strong>: approved (2026-10-12, revision 6) — without annotations
 <strong>Revision log</strong>:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and <code>docs/research/01-tooling-and-risks.md</code>, <code>docs/research/02-docx-fixer-inventory.md</code>
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 - r3 — applied <code>word-control-spec-notes-2026-10-12-r2.md</code> and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; <code>move</code> primitive so marker-driven edits (writer notes in the text) can be applied with primitives
 - r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (<code>docs/research/03-literary-critic-indexer.md</code>)
-- r5 — CodeRabbit review on PR #2: 32-bit address fingerprints (D-9 format, longer hash), batch response inside the standard envelope, next action updated, stale design note removed</p></div>
+- r5 — CodeRabbit review on PR #2: 32-bit address fingerprints (D-9 format, longer hash), batch response inside the standard envelope, next action updated, stale design note removed
+- r6 — owner decision D-19 (2026-10-12, in conversation): generic document primitives belong in doc-control; adds <code>compare</code> (redline document from two versions)</p></div>
 <div class="note" data-for="s-spec-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></div><textarea class="note-ta" data-key="s-spec-intro" data-label="Preamble &amp; scope" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-1">
@@ -248,6 +249,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 - [ ] Structure detection returns stable chapter and scene ids, the signal behind each detection, accepts fingerprint-keyed overrides and per-profile settings such as minimum chapter words (<code>structure_override_failures == 0</code>).
 - [ ] <code>anchor.resolve</code> with <code>mode: "exact"</code> never returns a fuzzy match and every response names its match kind (<code>exact_mode_fuzzy_matches == 0</code>).
 - [ ] <code>diff</code> aligns two versions of a document paragraph by paragraph (unchanged, modified, moved, split, merged) and returns a cross-version address map (<code>diff_alignment_errors == 0</code> on corpus pairs with known edits).
+- [ ] <code>compare</code> writes a new redline document from two versions, with every difference as a tracked change, so that accepting all yields the new text and rejecting all yields the old text (<code>compare_redline_text_mismatches == 0</code>).
 - [ ] <code>locate</code> returns, per paragraph, chapter, scene, estimated page and the shortest unique first-and-last-words phrase (<code>locators_not_unique == 0</code>).</p>
 <p>Parity and coverage
 - [ ] docx-fixer parity (D-17): every generally useful docx-fixer rule ships as a bundled recipe and its round-trip cases pass (<code>docx_fixer_general_cases_failing == 0</code>); every owner-specific rule (house style ids, house template, the owner's author-note patterns) is expressible as a declarative user recipe or user style set, shown by tests on synthetic documents (<code>owner_rules_not_expressible == 0</code>). The owner's actual user recipes and style sets live on the owner's side, never in the repo.
@@ -585,6 +587,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <td>agreed</td>
 <td>2026-10-12</td>
 </tr>
+<tr>
+<td>D-19</td>
+<td>doc-control owns every generic primitive useful to control document files (e.g. comparing two documents, diffs, redlines), so literary-critic and other tools build on it; literary- or domain-specific logic stays in the consumers; more features can be added later</td>
+<td>agreed</td>
+<td>2026-10-12</td>
+</tr>
 </tbody>
 </table></div>
 <div class="note" data-for="s-spec-4"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></div><textarea class="note-ta" data-key="s-spec-4" data-label="§4 Recommendation" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
@@ -627,7 +635,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 </code></pre>
 <p><code>anchor.resolve</code> returns <code>{"at": "p151#9d0e9d0e:4-25", "score": 0.97}</code> or <code>ANCHOR_AMBIGUOUS</code> (with up to 5 candidates and scores) or <code>ANCHOR_NOT_FOUND</code>. Matching is exact first, then fuzzy within candidate paragraphs found by fingerprint and word overlap; score = 0.5·quote + 0.2·prefix + 0.2·suffix + 0.1·position; minimum accepted score 0.80; ties within 0.02 are ambiguous.</p>
 <h4>Operations (v1)</h4>
-<p>Read: <code>capabilities</code>, <code>help</code>, <code>info</code>, <code>outline</code>, <code>stats</code>, <code>para.get</code> (includes <code>empty</code>, <code>blank_before</code>, <code>heading_level</code>, <code>style</code>, <code>centred</code>, <code>page_break_before</code>), <code>find</code>, <code>styles.list</code>, <code>style.get</code>, <code>comments.list</code>, <code>revisions.list</code>, <code>page.estimate</code> (always <code>"estimated": true</code>), <code>segment</code> (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, <code>overrides</code> and <code>profile</code> parameters), <code>text.normalized</code> (with <code>offset_map</code>), <code>diff</code> (two documents → alignment and cross-version <code>address_map</code>), <code>locate</code> (chapter, scene, estimated page, unique phrase), <code>anchor.create</code>, <code>anchor.resolve</code> (<code>mode</code>: <code>best</code> default or <code>exact</code>; response includes <code>match</code>: <code>exact</code> or <code>fuzzy</code>), <code>history.list</code>, <code>history.search</code>, <code>recipe.list</code>, <code>styleset.export</code>.</p>
+<p>Read: <code>capabilities</code>, <code>help</code>, <code>info</code>, <code>outline</code>, <code>stats</code>, <code>para.get</code> (includes <code>empty</code>, <code>blank_before</code>, <code>heading_level</code>, <code>style</code>, <code>centred</code>, <code>page_break_before</code>), <code>find</code>, <code>styles.list</code>, <code>style.get</code>, <code>comments.list</code>, <code>revisions.list</code>, <code>page.estimate</code> (always <code>"estimated": true</code>), <code>segment</code> (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, <code>overrides</code> and <code>profile</code> parameters), <code>text.normalized</code> (with <code>offset_map</code>), <code>diff</code> (two documents → alignment and cross-version <code>address_map</code>), <code>compare</code> (two documents → new redline <code>.docx</code> with tracked changes; never modifies either input), <code>locate</code> (chapter, scene, estimated page, unique phrase), <code>anchor.create</code>, <code>anchor.resolve</code> (<code>mode</code>: <code>best</code> default or <code>exact</code>; response includes <code>match</code>: <code>exact</code> or <code>fuzzy</code>), <code>history.list</code>, <code>history.search</code>, <code>recipe.list</code>, <code>styleset.export</code>.</p>
 <p>Write (each runs as a batch): <code>batch</code>, <code>restore</code>, <code>undo</code>, <code>history.purge</code>, <code>recipe.run</code> (returns a proposal batch; applying it is a separate <code>batch</code> call), <code>styleset.install</code>, <code>styleset.import-dotx</code>, <code>styleset.export-dotx</code> (writes a new <code>.dotx</code>, never touches the document).</p>
 <p>Batch operations: <code>text.replace</code>, <code>para.insert</code>, <code>para.delete</code>, <code>para.move</code>, <code>style.apply</code>, <code>format.apply</code> (run: bold, italic, underline, small caps, font, size; paragraph: alignment, indents, spacing), <code>comment.add</code>, <code>comment.reply</code>, <code>comment.resolve</code>, <code>revision.accept</code>, <code>revision.reject</code>, <code>term.rename</code> (expands into <code>text.replace</code> operations; options: whole word, case-sensitive, preserve case, inflection list), <code>style.create</code>, <code>style.update</code>, <code>style.rename</code>, <code>style.merge</code>.</p>
 <p>Batch request and response:</p>
@@ -953,7 +961,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-spec-notes-'+today()+'-r5.md';
+    var name='word-control-spec-notes-'+today()+'-r6.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -975,7 +983,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r5.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r6.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

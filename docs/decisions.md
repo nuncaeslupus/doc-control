@@ -20,6 +20,7 @@
 | D-16 | Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with `.dotx` export/import; style application tracked, definition changes covered by dry run + backup + undo log | agreed | 2026-10-12 |
 | D-17 | docx-fixer frozen now (owner is its only user); archived at parity: general rules bundled with passing round-trip cases, owner-specific rules re-created as user recipes / style sets on the owner's side; other common recipes bundled too; Word review replaces its review page | agreed | 2026-10-12 |
 | D-18 | v1 serves literary-critic's indexing needs: layout facts in `para.get`/`outline`, normalised-text view with two-way offset map, structure detection with stable ids, signals and overrides, exact-only anchor mode with match kind, paragraph diff between document versions, unique-phrase locators | agreed | 2026-10-12 |
+| D-19 | doc-control owns every generic primitive useful to control document files (e.g. comparing two documents, diffs, redlines), so literary-critic and other tools build on it; literary- or domain-specific logic stays in the consumers; more features can be added later | agreed | 2026-10-12 |
 
 Clarification of D-13/D-15 (spec r2): retention prunes full backups only; undo history is removed only by an explicit `history purge`; orphaned app-data history is listed, never auto-deleted.
 

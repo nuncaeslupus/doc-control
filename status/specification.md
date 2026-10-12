@@ -3,14 +3,15 @@
 **Date**: 2026-10-12
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
-**Revision**: 5
-**Status**: approved (2026-10-12, revision 5) — without annotations
+**Revision**: 6
+**Status**: approved (2026-10-12, revision 6) — without annotations
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 - r3 — applied `word-control-spec-notes-2026-10-12-r2.md` and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; `move` primitive so marker-driven edits (writer notes in the text) can be applied with primitives
 - r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (`docs/research/03-literary-critic-indexer.md`)
 - r5 — CodeRabbit review on PR #2: 32-bit address fingerprints (D-9 format, longer hash), batch response inside the standard envelope, next action updated, stale design note removed
+- r6 — owner decision D-19 (2026-10-12, in conversation): generic document primitives belong in doc-control; adds `compare` (redline document from two versions)
 
 ---
 
@@ -67,6 +68,7 @@ literary-critic indexing support (D-18)
 - [ ] Structure detection returns stable chapter and scene ids, the signal behind each detection, accepts fingerprint-keyed overrides and per-profile settings such as minimum chapter words (`structure_override_failures == 0`).
 - [ ] `anchor.resolve` with `mode: "exact"` never returns a fuzzy match and every response names its match kind (`exact_mode_fuzzy_matches == 0`).
 - [ ] `diff` aligns two versions of a document paragraph by paragraph (unchanged, modified, moved, split, merged) and returns a cross-version address map (`diff_alignment_errors == 0` on corpus pairs with known edits).
+- [ ] `compare` writes a new redline document from two versions, with every difference as a tracked change, so that accepting all yields the new text and rejecting all yields the old text (`compare_redline_text_mismatches == 0`).
 - [ ] `locate` returns, per paragraph, chapter, scene, estimated page and the shortest unique first-and-last-words phrase (`locators_not_unique == 0`).
 
 Parity and coverage
@@ -183,6 +185,7 @@ Parity and coverage
 | D-16 | Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with `.dotx` export/import; style application tracked, definition changes covered by dry run + backup + undo log | agreed | 2026-10-12 |
 | D-17 | docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
 | D-18 | v1 serves literary-critic's indexing needs: layout facts in `para.get`/`outline`, normalised-text view with two-way offset map, structure detection with stable ids, signals and overrides, exact-only anchor mode with match kind, paragraph diff between document versions, unique-phrase locators | agreed | 2026-10-12 |
+| D-19 | doc-control owns every generic primitive useful to control document files (e.g. comparing two documents, diffs, redlines), so literary-critic and other tools build on it; literary- or domain-specific logic stays in the consumers; more features can be added later | agreed | 2026-10-12 |
 
 
 ## 5. Contracts
@@ -228,7 +231,7 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
 
 #### Operations (v1)
 
-Read: `capabilities`, `help`, `info`, `outline`, `stats`, `para.get` (includes `empty`, `blank_before`, `heading_level`, `style`, `centred`, `page_break_before`), `find`, `styles.list`, `style.get`, `comments.list`, `revisions.list`, `page.estimate` (always `"estimated": true`), `segment` (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, `overrides` and `profile` parameters), `text.normalized` (with `offset_map`), `diff` (two documents → alignment and cross-version `address_map`), `locate` (chapter, scene, estimated page, unique phrase), `anchor.create`, `anchor.resolve` (`mode`: `best` default or `exact`; response includes `match`: `exact` or `fuzzy`), `history.list`, `history.search`, `recipe.list`, `styleset.export`.
+Read: `capabilities`, `help`, `info`, `outline`, `stats`, `para.get` (includes `empty`, `blank_before`, `heading_level`, `style`, `centred`, `page_break_before`), `find`, `styles.list`, `style.get`, `comments.list`, `revisions.list`, `page.estimate` (always `"estimated": true`), `segment` (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, `overrides` and `profile` parameters), `text.normalized` (with `offset_map`), `diff` (two documents → alignment and cross-version `address_map`), `compare` (two documents → new redline `.docx` with tracked changes; never modifies either input), `locate` (chapter, scene, estimated page, unique phrase), `anchor.create`, `anchor.resolve` (`mode`: `best` default or `exact`; response includes `match`: `exact` or `fuzzy`), `history.list`, `history.search`, `recipe.list`, `styleset.export`.
 
 Write (each runs as a batch): `batch`, `restore`, `undo`, `history.purge`, `recipe.run` (returns a proposal batch; applying it is a separate `batch` call), `styleset.install`, `styleset.import-dotx`, `styleset.export-dotx` (writes a new `.dotx`, never touches the document).
 
