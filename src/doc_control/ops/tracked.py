@@ -34,7 +34,7 @@ The six edits
     is dropped; rejecting the move removes them, so REF/PAGEREF fields, TOC entries and
     links aimed at them are reported in ``warnings``); a bookmark reaching outside
     them, and comment anchors, are refused. Moving to after the last paragraph of a container
-    is refused (use ``before`` its successor or insert text).
+    uses Word's own form, as ``para.insert`` does (the target's mark becomes the inserted one).
 
     ``style.apply`` gives whole paragraphs (``p3#fp`` or ``p3#fp..p5#fp``) a paragraph
     style, or a range of text a character style, by id or name. Paragraph properties are
@@ -758,19 +758,20 @@ class _Planner:
         self._anchor(target, i)
         slot, native = self._slot_for(target, where, i)
         if native:
-            raise DocControlError(
-                ErrorCode.UNSUPPORTED_CONTENT,
-                f"cannot move after {target.address}, the last paragraph of its container: "
-                "move before the paragraph that follows it, or insert the text",
-                address=target_at,
-            )
+            # After the end of a container (the body's last paragraph): Word's own form. The
+            # target's mark becomes the inserted one and the last copy keeps the original mark
+            # (and the target's properties), so rejecting gives the target back untouched.
+            self._plan(target, i, exclusive=not self.layered).mark = "ins"
         for para in paras:
             self._remove(para, i)
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
             plan.moved_by = i
-            self.new.append(_NewParagraph(i, slot, para, None, para, False, para.text))
+            last = native and para is paras[-1]
+            self.new.append(
+                _NewParagraph(i, slot, target if last else para, None, para, last, para.text)
+            )
         self.previews.append(
             {
                 "op": i,
@@ -1061,7 +1062,8 @@ def prepare_edits(
         p, props = new_paragraph(ref_elem, ctx, inserted_mark=not native)
         content: ET.Element | None
         if item.source is not None:
-            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
+            source_elem = spans.parse_paragraph(item.source.span_index)
+            runs = ParagraphEditor(source_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
             content = inserted_content(ctx, runs=runs)
         else:
             content = inserted_content(ctx, text=item.text, run_props=props)
