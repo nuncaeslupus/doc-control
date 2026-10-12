@@ -580,3 +580,23 @@ def test_concurrent_creator_is_never_overwritten(
     assert path.name.endswith("-1.docx")
     _assert_real_copy(path, doc)
     assert not [p for p in store.backups_dir.iterdir() if p.name.endswith(".tmp")]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX fallback path")
+def test_filesystem_without_hard_links_still_backs_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    squatter = _squatter_name(store, doc)
+    squatter.write_bytes(b"written by another process")
+
+    def no_link(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_link)
+    path = backup(doc, now=NOW)
+    assert squatter.read_bytes() == b"written by another process"
+    assert path.name.endswith("-1.docx")
+    _assert_real_copy(path, doc)
+    assert not [p for p in store.backups_dir.iterdir() if p.name.endswith(".tmp")]

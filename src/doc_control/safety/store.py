@@ -305,11 +305,25 @@ def _claim_name(tmp_path: Path, dest: Path) -> None:
     except FileExistsError:
         raise
     except (OSError, NotImplementedError):
-        if os.name != "nt":
-            raise
-        tmp_path.rename(dest)  # no hard links here; Windows rename never clobbers
-        return
+        if os.name == "nt":
+            tmp_path.rename(dest)  # no hard links here; Windows rename never clobbers
+            return
+        _copy_exclusive(tmp_path, dest)  # e.g. FAT/exFAT or CIFS: no hard links
     tmp_path.unlink()
+
+
+def _copy_exclusive(src: Path, dest: Path) -> None:
+    """Copy ``src`` to a new file ``dest``; ``FileExistsError`` if it exists."""
+    fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o666)
+    try:
+        with os.fdopen(fd, "wb") as out, src.open("rb") as inp:
+            while chunk := inp.read(1 << 20):
+                out.write(chunk)
+            out.flush()
+            os.fsync(out.fileno())
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
 
 
 def _create_backup(
