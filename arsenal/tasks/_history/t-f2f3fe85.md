@@ -4,6 +4,7 @@ title: "T21: Style write operations (`style.create`, `style.update`, `style.rena
 label: "style write operations style"
 priority: 5
 deps: [t-7af47039]
+status: merged
 ---
 
 # T21: Style write operations (`style.create`, `style.update`, `style.rename`, `style.merge`) and JSON style sets (`styleset.export`, `styleset.install`)
