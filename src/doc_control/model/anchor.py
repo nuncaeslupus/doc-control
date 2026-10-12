@@ -432,8 +432,9 @@ def _exact_spans(text: str, quote: str) -> list[tuple[int, int]]:
 def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -> Resolution:
     """Find ``anchor`` in ``index``.
 
-    With ``exact_only`` the fuzzy search is skipped: only verbatim occurrences of the
-    quote are candidates (the extension point for ``anchor.resolve`` ``mode: "exact"``).
+    With ``exact_only`` (``anchor.resolve`` ``mode: "exact"``) the fuzzy search is skipped
+    and every verbatim occurrence of the quote is accepted whatever its context score: the
+    score only breaks ties, and several occurrences about equally good are ambiguous.
     """
     quote = anchor.exact
     found: list[Candidate] = []
@@ -449,6 +450,8 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
     def accepted_of(pool: list[Candidate]) -> list[Candidate]:
         # A short quote has too little text to prove a match: it needs the stricter bar
         # even where it came from.
+        if exact_only:
+            return list(pool)
         return [c for c in pool if c.score + _FLOOR >= (SHORT_MIN_SCORE if short else c.threshold)]
 
     accepted = accepted_of(found)
@@ -471,7 +474,8 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
     tied = [
         c
         for c in sorted(found, key=key)
-        if c.score + _FLOOR >= MIN_SCORE and best.score - c.score <= TIE_MARGIN + _FLOOR
+        if (exact_only or c.score + _FLOOR >= MIN_SCORE)
+        and best.score - c.score <= TIE_MARGIN + _FLOOR
     ]
     if len(tied) > 1:
         # The one paragraph that still has the anchor's own fingerprint is where it came from.

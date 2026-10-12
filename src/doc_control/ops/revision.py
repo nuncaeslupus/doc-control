@@ -70,6 +70,7 @@ _TABLE_REVISION = re.compile(
     rb"|<(?:[\w.-]+:)?trPr[\s>](?:(?!</(?:[\w.-]+:)?trPr>).)*?<(?:[\w.-]+:)?(?:ins|del)[\s/>]",
     re.DOTALL,
 )
+_MOVE_RANGE = re.compile(rb"<(?:[\w.-]+:)?move(?:From|To)Range(?:Start|End)[\s/>]")
 _FIELD_CHAR = re.compile(rb"fldCharType\s*=\s*[\"'](begin|end)[\"']")
 _MARK_KINDS = frozenset({"mark_insert", "mark_delete", "mark_move_from", "mark_move_to"})
 _TEXT_NEUTRAL = frozenset(
@@ -335,8 +336,27 @@ def prepare_resolutions(
             removed_marks.add(p.para.number)
         touched[p.para.number] = p
 
-    # Join paragraphs whose mark went away with the one after them.
     elems: dict[int, ET.Element] = {n: p.elem for n, p in touched.items()}
+
+    # Move range markers whose side has no revision left mean nothing: drop them.
+    left = {
+        "from" if r.kind.endswith("move_from") else "to"
+        for p in parsed
+        for k, r in enumerate(p.revs)
+        if r.kind.endswith(("move_from", "move_to")) and (p.para.number, k) not in chosen
+    }
+    cleared = {"from", "to"} - left
+    if cleared:
+        for para in index.paragraphs:
+            raw = spans.paragraph_bytes(para.span_index)
+            if _MOVE_RANGE.search(raw):
+                elem = elems.get(para.number)
+                if elem is None:
+                    elem = spans.parse_paragraph(para.span_index)
+                if xml.drop_move_markers(elem, cleared):
+                    elems[para.number] = elem
+
+    # Join paragraphs whose mark went away with the one after them.
     carry: dict[int, list[ET.Element]] = {}
     gone: set[int] = set()  # paragraph numbers merged into the next
     for number in sorted(removed_marks):

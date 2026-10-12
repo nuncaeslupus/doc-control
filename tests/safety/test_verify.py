@@ -158,6 +158,7 @@ def test_verifier_rejects_unlisted_part_changes_and_new_members(tmp_path: Path) 
     assert _verify(tmp_path, new, ok, **parts) == []
 
 
+@pytest.mark.writes_invalid_docs
 def test_verifier_rejects_unparseable_parts(tmp_path: Path) -> None:
     fp = Footprint(replaced=frozenset({1}), parts=frozenset({"word/styles.xml"}))
     bad_part = _verify(tmp_path, _spliced(tmp_path), fp, **{"word/styles.xml": b"<t>"})
@@ -408,8 +409,13 @@ def _foreign_copies(tmp_path: Path) -> list[Path]:
 
 @pytest.mark.parametrize("fault", FAULTS, ids=lambda f: f.name)
 def test_every_fault_leaves_a_whole_document_and_the_right_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Fault
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: Fault,
+    request: pytest.FixtureRequest,
 ) -> None:
+    if fault.name in {"verify_document_not_xml", "foreign_truncation_after_replace"}:
+        request.node.add_marker(pytest.mark.writes_invalid_docs)  # the fault itself is the output
     err, original = _inject(tmp_path, monkeypatch, fault)
     assert err.code == fault.code
     assert not _partial_write(tmp_path, original, fault)
@@ -624,6 +630,7 @@ def test_backup_that_does_not_match_is_deleted(
     assert path.read_bytes() == original
 
 
+@pytest.mark.writes_invalid_docs
 def test_file_being_rewritten_by_another_program_is_not_replaced(tmp_path: Path) -> None:
     path = _doc(tmp_path)
     original = path.read_bytes()

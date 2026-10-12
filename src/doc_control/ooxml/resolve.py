@@ -236,3 +236,34 @@ def _survivors(elem: ET.Element) -> list[ET.Element]:
         elif tag.startswith(W) and tag != RPR:
             out.extend(_survivors(c))
     return out
+
+
+MOVE_RANGE_TAGS = {
+    "from": (W + "moveFromRangeStart", W + "moveFromRangeEnd"),
+    "to": (W + "moveToRangeStart", W + "moveToRangeEnd"),
+}
+
+
+def drop_move_markers(p: ET.Element, sides: set[str]) -> bool:
+    """Remove the move range markers of ``sides`` (``"from"``, ``"to"``) from ``p``.
+
+    Called once no revision of that side is left in the document, so the markers
+    (matched by their ``w:id``, start and end alike) mark nothing any more. Returns
+    True if anything was removed.
+    """
+    tags = {t for side in sides for t in MOVE_RANGE_TAGS[side]}
+    changed = False
+
+    def walk(node: ET.Element) -> None:
+        nonlocal changed
+        for child in list(node):
+            if not isinstance(child.tag, str) or child.tag == _TEXT_BOX:
+                continue
+            if child.tag in tags:
+                node.remove(child)
+                changed = True
+            else:
+                walk(child)
+
+    walk(p)
+    return changed

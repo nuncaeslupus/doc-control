@@ -195,17 +195,23 @@ def test_deleted_mark_merges_and_move_pair(tmp_path: Path) -> None:
         f"<w:p><w:pPr><w:rPr><w:del {A.format(1)}/></w:rPr></w:pPr>"
         "<w:r><w:t>head </w:t></w:r></w:p>"
         '<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>'
-        f"<w:p><w:moveFrom {A.format(2)}><w:r><w:delText>moved</w:delText></w:r></w:moveFrom></w:p>"
-        f"<w:p><w:moveTo {A.format(3)}><w:r><w:t>moved</w:t></w:r></w:moveTo></w:p>"
+        '<w:p><w:moveFromRangeStart w:id="8" w:name="m"/>'
+        f"<w:moveFrom {A.format(2)}><w:r><w:delText>moved</w:delText></w:r></w:moveFrom>"
+        '<w:moveFromRangeEnd w:id="8"/></w:p>'
+        '<w:p><w:moveToRangeStart w:id="9" w:name="m"/>'
+        f"<w:moveTo {A.format(3)}><w:r><w:t>moved</w:t></w:r></w:moveTo>"
+        '<w:moveToRangeEnd w:id="9"/></w:p>'
     )
     path = revsim.make_doc(tmp_path / "d.docx", body)
     out = resolve_doc(path, "accept", all=True)
     assert out["merged_paragraphs"] == 1
     assert texts(path) == ["head tail", "", "moved"]
     assert b'w:jc w:val="right"' in xml_of(path)
+    assert b"moveFromRange" not in xml_of(path) and b"moveToRange" not in xml_of(path)
     path = revsim.make_doc(tmp_path / "e.docx", body)
     resolve_doc(path, "reject", all=True)
     assert texts(path) == ["head ", "tail", "moved", ""]
+    assert b"Range" not in xml_of(path)
 
 
 def test_format_changes(tmp_path: Path) -> None:
@@ -277,3 +283,15 @@ def test_batch_kinds_and_mixing_refused(tmp_path: Path) -> None:
     assert err.value.code is ErrorCode.SCHEMA_INVALID
     out = batch({"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
     assert isinstance(out, object) and pending(path) == []
+
+
+def test_deleted_mark_at_cell_end_does_not_join_across_the_table(tmp_path: Path) -> None:
+    body = (
+        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p>"
+        f"<w:p><w:pPr><w:rPr><w:del {A.format(1)}/></w:rPr></w:pPr><w:r><w:t>last</w:t></w:r></w:p>"
+        "</w:tc></w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>"
+    )
+    path = revsim.make_doc(tmp_path / "d.docx", body)
+    out = resolve_doc(path, "accept", all=True)
+    assert texts(path) == ["cell", "last", "after"] and out["merged_paragraphs"] == 0
+    assert out["warnings"] and pending(path) == []
