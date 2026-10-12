@@ -133,6 +133,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T7 | `default_response_tokens_p95 <= 2000` | 1993 (bytes/4 over every default and followed page of 8 read ops on the 100k-word document with 80 extra annotated sections) | `uv run pytest -s tests/ops/test_read.py::test_read_ops_large_doc_responses_stay_under_budget` | e6399f6 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T18 | `boundary_f1 >= 0.98` | 0.9973 (gold set: 667 sentences, 368 internal boundaries; es + generic; own and public-domain text) | `uv run pytest -q -s tests/model/test_segment.py` (micro F1 of internal sentence boundaries) | 8c64351 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | b4704e6 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
+| T20 | `page_estimates_without_estimated_flag == 0` | 0 (of 44 responses: 10 corpus kinds and a rendered-marks document, each by paragraph, by page, single paragraph and limited) | `uv run pytest -s tests/ops/test_page.py::test_page_estimate_is_flagged_estimated` (prints `page_estimates_without_estimated_flag=<n>`) | be9c8c4 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 
 ### Dependency graph
 
