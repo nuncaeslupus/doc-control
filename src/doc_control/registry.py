@@ -6,9 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from doc_control.envelope import Reply
 from doc_control.schema import check_schema, validate
 
-Handler = Callable[[dict[str, Any]], dict[str, Any]]
+# A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
+Handler = Callable[[dict[str, Any]], dict[str, Any] | Reply]
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class Operation:
     schema: dict[str, Any]
     handler: Handler
 
-    def run(self, request: dict[str, Any]) -> dict[str, Any]:
+    def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         validate(request, self.schema)
         return self.handler(request)
 

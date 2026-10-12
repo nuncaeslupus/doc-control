@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from doc_control.cli import main
+from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex, build_index
 from doc_control.model.search import Matcher, SearchOptions
@@ -25,7 +26,14 @@ from tests.helpers import make_docx
 
 def run(doc: Path, query: str, **options: Any) -> dict[str, Any]:
     request = {"doc": str(doc), "query": query, **options}
-    return REGISTRY["find"].run(request)
+    reply = REGISTRY["find"].run(request)
+    assert isinstance(reply, Reply)
+    return {
+        **reply.result,
+        "doc": reply.doc,
+        "warnings": reply.warnings,
+        "next": reply.next_cursor,
+    }
 
 
 def spans(query: str, text: str, **options: Any) -> list[tuple[int, int]]:
@@ -72,7 +80,7 @@ def test_offsets_map_back_through_decomposition() -> None:
     # ñ is n + tilde: accent folding treats it as n, accent-sensitive does not
     assert spans("n", "ñ", ignore_accents=True) == [(0, 1)]
     assert spans("n", "ñ") == []
-    assert spans("ñ", "an\u0303o", ignore_accents=False) == []  # no normalisation without folding
+    assert spans("ñ", "an\u0303o", ignore_accents=False) == [(1, 3)]  # same letter under NFC
     assert spans("ñ", "an\u0303o", ignore_accents=True) == [(1, 3)]
 
 
@@ -86,7 +94,10 @@ def test_offsets_are_code_points_with_astral_characters() -> None:
 
 def test_case_folding_that_changes_length_maps_back() -> None:
     assert spans("strasse", "Die Straße ist lang", ignore_case=True) == [(4, 10)]
-    assert spans("s", "ß", ignore_case=True) == [(0, 1)]  # whole original character
+    assert spans("s", "ß", ignore_case=True) == []  # half of an expansion is not a match
+    assert spans("ss", "ß", ignore_case=True) == [(0, 1)]
+    assert spans("fi", "ﬁn", ignore_case=True) == [(0, 1)]
+    assert spans("f", "ﬁn", ignore_case=True) == []
     assert spans("i", "İstanbul", ignore_case=True, ignore_accents=True)[0] == (0, 1)
 
 

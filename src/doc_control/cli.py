@@ -14,7 +14,7 @@ import json
 import sys
 from typing import Any
 
-from doc_control.envelope import failure, success
+from doc_control.envelope import Reply, failure, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.registry import load_operations
 
@@ -37,15 +37,13 @@ def main(argv: list[str] | None = None) -> int:
             request = _read_request(rest)
         if op not in registry:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
-        result = registry[op].run(request)
-        # Envelope-level fields a handler may return next to its result.
-        envelope = success(
-            op,
-            result,
-            doc=result.pop("doc", None),
-            warnings=result.pop("warnings", None),
-            next_cursor=result.pop("next", None),
-        )
+        out = registry[op].run(request)
+        if isinstance(out, Reply):
+            envelope = success(
+                op, out.result, doc=out.doc, warnings=out.warnings, next_cursor=out.next_cursor
+            )
+        else:
+            envelope = success(op, out)
         code = 0
     except DocControlError as err:
         envelope = failure(op, err)

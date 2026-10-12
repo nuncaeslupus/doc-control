@@ -4,15 +4,20 @@ A :class:`Matcher` finds non-empty matches of a literal or a regular expression 
 reports them as ``(start, end)`` code-point offsets into the *original* visible text,
 end exclusive, whatever folding was used to find them.
 
-Folding
-    ``ignore_case`` compares case-folded text (``ß`` equals ``ss``); ``ignore_accents``
-    drops the combining marks left after canonical decomposition (``á`` equals ``a``,
-    ``ñ`` equals ``n``, and ``a`` followed by U+0301 equals ``á``). Folding works one
-    original character at a time, so each folded character knows the original
-    character it came from. A match is mapped back to whole original characters: it
-    starts at the character that produced its first folded character and ends after
-    the character that produced its last one, plus any combining marks that folded
-    away right behind it (so a range never splits a letter from its mark).
+Units and folding
+    The text is cut into *units*: a base character plus the combining marks that follow
+    it (a lone run of marks at the very start is a unit of its own). Each unit is folded
+    on its own and the folded pieces are concatenated; the search runs on that folded
+    text. Folding is always canonical composition (NFC), so ``é`` and ``e`` + U+0301
+    are the same thing to a search. ``ignore_case`` also case-folds (``ß`` becomes
+    ``ss``); ``ignore_accents`` also drops the combining marks left after decomposition
+    (``á`` becomes ``a``, ``ñ`` becomes ``n``).
+
+    A match is kept only if it starts and ends on a unit boundary of the folded text:
+    it never begins on a mark, never ends between a letter and its marks (so ``e`` does
+    not match inside ``é`` unless accents are ignored), and never covers only part of
+    what one character folds to (``s`` does not match ``ß``; ``ss`` does). Kept matches
+    are mapped back to the whole original units they cover.
 
 Regular expressions
     Python ``re`` syntax, run per paragraph (a match never crosses a paragraph). With
@@ -20,10 +25,10 @@ Regular expressions
     write it without accents. ``ignore_case`` uses ``re.IGNORECASE``. ``whole_word``
     requires a non-word character (combining marks count as word characters) on both
     sides, and wraps the pattern in a group, so inline flags such as ``(?i)`` are not
-    allowed with it. Python's engine cannot be interrupted, so patterns shaped like the
-    classic catastrophic ones (an unbounded repeat whose body is itself an unbounded
-    repeat, ``(a+)+``) and patterns over 1000 characters are refused up front; callers
-    add a wall-clock budget between paragraphs.
+    allowed with it. Python's engine cannot be interrupted, so :class:`IsolatedScan`
+    runs it in a child process that is killed at a hard deadline; patterns over 1000
+    characters and the textbook ``(a+)+`` shape are still refused up front, as a cheap
+    first line of defence.
 """
 
 from __future__ import annotations
@@ -31,18 +36,30 @@ from __future__ import annotations
 import bisect
 import importlib
 import itertools
+import multiprocessing
 import re
+import time
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 
 MAX_QUERY_LENGTH = 1000
-# Combining marks, for word boundaries: a letter and its mark are one word character.
-_MARKS = "\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f"
+Span = tuple[int, int]
+# Combining marks, for units and word boundaries: a letter and its marks go together.
+_MARK_RANGES = (
+    (0x0300, 0x036F),
+    (0x1AB0, 0x1AFF),
+    (0x1DC0, 0x1DFF),
+    (0x20D0, 0x20FF),
+    (0xFE20, 0xFE2F),
+)
+_MARKS = "".join(f"{chr(a)}-{chr(b)}" for a, b in _MARK_RANGES)
 _WORD = rf"[\w{_MARKS}]"
+_HAS_MARK = re.compile(f"[{_MARKS}]")
+_UNIT = re.compile(rf"(?s:[^{_MARKS}][{_MARKS}]*|[{_MARKS}]+)")
 _UNBOUNDED = 65535  # re's MAXREPEAT is far above this; bounded repeats stay below
 
 
@@ -55,26 +72,46 @@ class SearchOptions:
     whole_word: bool = False
 
 
-class _Folder(dict[str, str]):
-    """Character -> folded text, computed once per distinct character."""
+def _invalid(message: str) -> DocControlError:
+    return DocControlError(ErrorCode.SCHEMA_INVALID, message, path="$.query")
+
+
+class _Folder:
+    """Folds text unit by unit, remembering where each unit ends."""
 
     def __init__(self, accents: bool, case: bool) -> None:
-        super().__init__()
         self.accents = accents
         self.case = case
+        self._cache: dict[str, str] = {}
 
-    def __missing__(self, ch: str) -> str:
-        out = ch
-        if self.case:
-            out = unicodedata.normalize("NFD", out.casefold())
-        if self.accents:
-            decomposed = unicodedata.normalize("NFD", out)
-            out = "".join(c for c in decomposed if not unicodedata.combining(c))
-        self[ch] = out
+    def unit(self, unit: str) -> str:
+        out = self._cache.get(unit)
+        if out is None:
+            out = unit
+            if self.case:
+                out = out.casefold()
+            if self.accents:
+                decomposed = unicodedata.normalize("NFD", out)
+                out = "".join(c for c in decomposed if not unicodedata.combining(c))
+            out = unicodedata.normalize("NFC", out)
+            self._cache[unit] = out
         return out
 
-    def fold(self, text: str) -> str:
-        return "".join(map(self.__getitem__, text))
+    def fold(self, text: str) -> tuple[str, list[str] | None, list[int] | None]:
+        """``(folded, per-unit folds, original offset of each unit)``.
+
+        Both lists are ``None`` when folding keeps one character per character at the
+        same offsets (ASCII text), so offsets need no mapping.
+        """
+        if text.isascii():
+            return (text.casefold() if self.case else text), None, None
+        if _HAS_MARK.search(text):
+            units = _UNIT.findall(text)
+            bounds = list(itertools.accumulate(map(len, units), initial=0))
+        else:
+            units, bounds = list(text), None
+        pieces = [self.unit(u) for u in units]
+        return "".join(pieces), pieces, bounds
 
 
 _FOLDERS: dict[tuple[bool, bool], _Folder] = {}
@@ -85,10 +122,6 @@ def _folder(accents: bool, case: bool) -> _Folder:
     if key not in _FOLDERS:
         _FOLDERS[key] = _Folder(accents, case)
     return _FOLDERS[key]
-
-
-def _invalid(message: str) -> DocControlError:
-    return DocControlError(ErrorCode.SCHEMA_INVALID, message, path="$.query")
 
 
 class Matcher:
@@ -110,48 +143,38 @@ class Matcher:
         else:
             # Literals are compared on folded text, so ß matches ss and İ matches i.
             fold_case = options.ignore_case
-            pattern = re.escape(_folder(options.ignore_accents, fold_case).fold(query))
-            if not pattern:
+            folded = _folder(options.ignore_accents, fold_case).fold(query)[0]
+            if not folded:
                 raise _invalid("query has no characters left after folding")
+            pattern = re.escape(folded)
         if options.whole_word:
             pattern = f"(?<!{_WORD})(?:{pattern})(?!{_WORD})"
         try:
             self._pattern = re.compile(pattern, flags)
         except (re.error, RecursionError, OverflowError) as exc:
             raise _invalid(f"invalid regular expression: {exc}") from exc
-        self._folder = (
-            _folder(options.ignore_accents, fold_case)
-            if options.ignore_accents or fold_case
-            else None
-        )
+        self._folder = _folder(options.ignore_accents, fold_case)
 
-    def spans(self, text: str) -> Iterator[tuple[int, int]]:
+    def spans(self, text: str) -> Iterator[Span]:
         """Non-empty matches of ``text`` as ``(start, end)`` offsets into ``text``."""
-        if self._folder is None:
-            for m in self._pattern.finditer(text):
-                if m.end() > m.start():
-                    yield m.start(), m.end()
-            return
-        folded = self._folder.fold(text)
+        folded, pieces, bounds = self._folder.fold(text)
         found = [
             (m.start(), m.end()) for m in self._pattern.finditer(folded) if m.end() > m.start()
         ]
-        if not found:
-            return
-        lens = [len(self._folder[c]) for c in text]
-        if lens.count(1) == len(text):
+        if pieces is None:
             yield from found
             return
-        starts = list(itertools.accumulate(lens, initial=0))
-        done = 0  # a character that folds to several (ß -> ss) is reported once
+        starts = list(itertools.accumulate(map(len, pieces), initial=0))
+        boundaries = set(starts)
         for fs, fe in found:
+            if fs not in boundaries or fe not in boundaries:
+                continue  # inside a unit, or inside what one character folds to
             first = bisect.bisect_right(starts, fs) - 1
-            end = bisect.bisect_right(starts, fe - 1)  # one past the char holding fe - 1
-            while end < len(text) and lens[end] == 0:
-                end += 1
-            if first >= done:
-                done = end
+            end = bisect.bisect_left(starts, fe)
+            if bounds is None:
                 yield first, end
+            else:
+                yield bounds[first], bounds[end]
 
 
 def _check_regex(pattern: str) -> None:
@@ -206,3 +229,111 @@ def _catastrophic(parsed: Any) -> bool:
         return False
 
     return walk(parsed)
+
+
+# -- scanning many paragraphs -------------------------------------------------------------
+
+Item = tuple[int, str]  # (paragraph number, visible text)
+
+
+class LocalScan:
+    """Search paragraphs in this process, checking the deadline between paragraphs.
+
+    Iterating yields ``(number, spans)`` for each paragraph that has matches, in order.
+    ``stopped_at`` is the first paragraph left unsearched when the deadline passed
+    (at least one paragraph is always searched), else ``None``.
+    """
+
+    def __init__(self, matcher: Matcher, items: Sequence[Item], deadline: float) -> None:
+        self._matcher = matcher
+        self._items = items
+        self._deadline = deadline
+        self.stopped_at: int | None = None
+
+    def __iter__(self) -> Generator[tuple[int, list[Span]], None, None]:
+        for done, (number, text) in enumerate(self._items):
+            if done and time.monotonic() > self._deadline:
+                self.stopped_at = number
+                return
+            found = list(self._matcher.spans(text)) if text else []
+            if found:
+                yield number, found
+
+
+def _worker(options: SearchOptions, items: Sequence[Item], progress: Any, conn: Any) -> None:
+    """Child process body: stream matches back, publishing the paragraph being searched."""
+    try:
+        matcher = Matcher(options)
+        for number, text in items:
+            progress.value = number
+            found = list(matcher.spans(text)) if text else []
+            if found:
+                conn.send((number, found))
+        conn.send(None)
+    except BaseException as exc:  # reported to the parent, which raises INTERNAL
+        conn.send(("error", f"{type(exc).__name__}: {exc}"))
+    finally:
+        conn.close()
+
+
+class IsolatedScan:
+    """Like :class:`LocalScan`, but in a child process killed at the deadline.
+
+    Python's regex engine cannot be interrupted, so a pathological pattern on a short
+    paragraph would otherwise hang the caller. The child (``spawn`` context, so it
+    behaves the same on Windows) publishes the paragraph it is in through shared
+    memory; on timeout it is terminated, matches it already sent are kept, and
+    ``stopped_at`` is the paragraph it was stuck in. Close the generator to stop early.
+    """
+
+    def __init__(self, options: SearchOptions, items: Sequence[Item], deadline: float) -> None:
+        self._options = options
+        self._items = list(items)
+        self._deadline = deadline
+        self.stopped_at: int | None = None
+
+    def __iter__(self) -> Generator[tuple[int, list[Span]], None, None]:
+        if not self._items:
+            return
+        ctx = multiprocessing.get_context("spawn")
+        progress = ctx.Value("q", self._items[0][0], lock=False)
+        recv, send = ctx.Pipe(duplex=False)
+        proc = ctx.Process(
+            target=_worker, args=(self._options, self._items, progress, send), daemon=True
+        )
+        proc.start()
+        send.close()
+        try:
+            while True:
+                remaining = self._deadline - time.monotonic()
+                if remaining <= 0 or not recv.poll(remaining):
+                    break
+                try:
+                    message = recv.recv()
+                except (EOFError, OSError) as exc:
+                    raise DocControlError(ErrorCode.INTERNAL, "regex worker ended early") from exc
+                if message is None:
+                    return
+                if message[0] == "error":
+                    raise DocControlError(ErrorCode.INTERNAL, f"regex worker failed: {message[1]}")
+                yield message
+            proc.terminate()
+            proc.join(5)
+            self.stopped_at = int(progress.value)
+            while True:  # matches the child sent before it was killed
+                try:
+                    if not recv.poll(0):
+                        break
+                    message = recv.recv()
+                except (EOFError, OSError):
+                    break
+                if message is not None and message[0] != "error" and message[0] < self.stopped_at:
+                    yield message
+        finally:
+            if proc.is_alive():
+                proc.terminate()
+                proc.join(5)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join()
+            recv.close()
