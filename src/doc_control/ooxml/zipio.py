@@ -160,6 +160,14 @@ class Package:
         return name in self._data
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_package(pkg: Package, replacements: Mapping[str, bytes], dest: Path) -> str:
     """Write ``pkg`` with ``replacements`` applied to ``dest``; return its sha256.
 
