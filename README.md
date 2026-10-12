@@ -20,8 +20,8 @@ repo for the first release.
   - *File engine*: edits a closed `.docx` with the Python standard library only,
     rewriting only the parts it touches.
   - *Live engine*: controls the open Word (Windows/COM first, Mac later).
-- **Two front doors**: a CLI with JSON in/out, and an MCP server for Claude
-  Desktop / Cowork.
+- **Two front doors**: a CLI with JSON in/out, and an MCP server
+  (`doc-control mcp`, stdio) for Claude Desktop / Cowork and other MCP clients.
 - **Safety first**: lock-file and on-disk change detection, backup before every
   write, verification, automatic restore, operation log with undo, and
   `unintended_changes == 0` as a gate.
@@ -29,6 +29,20 @@ repo for the first release.
 
 It will replace `docx-fixer`, whose rules become packs built on this tool, and
 serve `literary-critic` as its first downstream consumer.
+
+## MCP server
+
+`doc-control mcp` serves every operation as an MCP tool over stdio, one tool per
+operation (`para.move` becomes `para_move`), with the same JSON Schemas and the
+same response envelope as the CLI. It needs nothing beyond the package itself:
+
+```json
+{
+  "mcpServers": {
+    "doc-control": { "command": "uvx", "args": ["doc-control", "mcp"] }
+  }
+}
+```
 
 ## Documents
 

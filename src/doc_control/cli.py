@@ -1,7 +1,8 @@
 """Command-line front door: `doc-control <op> [--json '<request>' | --json - < request.json]`.
 
 `doc-control help <op>` is shorthand for `doc-control help --json '{"op": "<op>"}'`, and
-`--help` / `-h` are aliases of `help`.
+`--help` / `-h` are aliases of `help`. `doc-control mcp` serves the same operations as an
+MCP server on stdio (see `doc_control.mcp`).
 
 Never prompts and never reads stdin unless asked with `--json -`, so an agent whose
 stdin is an open pipe cannot hang it. Prints exactly one JSON envelope on stdout. Exit codes:
@@ -16,7 +17,7 @@ from typing import Any
 
 from doc_control.envelope import Reply, failure, success
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.registry import load_operations
+from doc_control.registry import Operation, load_operations
 
 _USAGE_CODES = {ErrorCode.SCHEMA_INVALID}
 
@@ -25,34 +26,46 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     registry = load_operations()
     op = args[0] if args else "help"
+    if op == "mcp":
+        from doc_control.mcp import serve
+
+        return serve()
     if op in ("--version", "version"):
         op = "capabilities"
     elif op in ("--help", "-h"):
         op = "help"
+    rest = args[1:]
     try:
-        rest = args[1:]
         if op == "help" and len(rest) == 1 and not rest[0].startswith("-"):
             request: dict[str, Any] = {"op": rest[0]}
         else:
             request = _read_request(rest)
+    except DocControlError as err:
+        envelope, code = failure(op, err), 2
+    else:
+        envelope, code = execute(registry, op, request)
+    print(json.dumps(envelope, ensure_ascii=False))
+    return code
+
+
+def execute(
+    registry: dict[str, Operation], op: str, request: dict[str, Any]
+) -> tuple[dict[str, Any], int]:
+    """Run one operation; return its envelope and the CLI exit code. Never raises."""
+    try:
         if op not in registry:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
         out = registry[op].run(request)
         if isinstance(out, Reply):
-            envelope = success(
+            return success(
                 op, out.result, doc=out.doc, warnings=out.warnings, next_cursor=out.next_cursor
-            )
-        else:
-            envelope = success(op, out)
-        code = 0
+            ), 0
+        return success(op, out), 0
     except DocControlError as err:
-        envelope = failure(op, err)
-        code = 2 if err.code in _USAGE_CODES else 1
+        return failure(op, err), 2 if err.code in _USAGE_CODES else 1
     except Exception as err:  # never leak a traceback instead of an envelope
-        envelope = failure(op, DocControlError(ErrorCode.INTERNAL, f"{type(err).__name__}: {err}"))
-        code = 1
-    print(json.dumps(envelope, ensure_ascii=False))
-    return code
+        internal = DocControlError(ErrorCode.INTERNAL, f"{type(err).__name__}: {err}")
+        return failure(op, internal), 1
 
 
 def _read_request(rest: list[str]) -> dict[str, Any]:
