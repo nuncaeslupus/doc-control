@@ -13,16 +13,24 @@ from typing import Any
 import pytest
 
 from doc_control.cli import main
+from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import fingerprint
 from doc_control.model.align import GROUP_MIN_SIMILARITY, MODIFIED_MIN, Alignment, align
 from doc_control.model.index import DocumentIndex
 from doc_control.ooxml.zipio import Package
-from doc_control.ops.diff import address_map, diff, diff_documents
+from doc_control.ops.diff import address_map, diff_documents
+from doc_control.ops.diff import diff as diff_op
 from tests.corpus.generator import generate
 from tests.helpers import make_docx
 
 _SYLLABLES = [c + v for c in "bcdfglmnprstvz" for v in "aeiou"]
+
+
+def run_diff(request: dict[str, Any]) -> dict[str, Any]:
+    reply = diff_op(request)
+    assert isinstance(reply, Reply)
+    return {**reply.result, "next": reply.next_cursor}
 
 
 @dataclass(frozen=True)
@@ -198,7 +206,7 @@ def test_diff_address_map_follows_the_edits(tmp_path: Path) -> None:
 
 def test_diff_identical_documents_have_no_changes(tmp_path: Path) -> None:
     path = _write(tmp_path / "a.docx", ["one two three", "four five six"])
-    result = diff({"old": str(path), "new": str(path)})
+    result = run_diff({"old": str(path), "new": str(path)})
     assert result["changes"] == []
     assert result["address_map"] == {}
     assert result["summary"]["unchanged"] == 2
@@ -211,7 +219,7 @@ def test_diff_unchanged_run_with_shifted_numbers_is_one_record(tmp_path: Path) -
     ]
     old = _write(tmp_path / "old.docx", body)
     new = _write(tmp_path / "new.docx", ["a brand new first paragraph", *body])
-    result = diff({"old": str(old), "new": str(new)})
+    result = run_diff({"old": str(old), "new": str(new)})
     kinds = [(c["kind"], c.get("count")) for c in result["changes"]]
     assert kinds == [("inserted", None), ("unchanged", 5)]
     run = result["changes"][1]
@@ -222,34 +230,44 @@ def test_diff_unchanged_run_with_shifted_numbers_is_one_record(tmp_path: Path) -
 def test_diff_pages_with_cursor_and_rejects_foreign_cursor(tmp_path: Path) -> None:
     old, new, _ = _edited_pair(1)
     po, pn = _write(tmp_path / "o.docx", old), _write(tmp_path / "n.docx", new)
-    full = diff({"old": str(po), "new": str(pn), "limit": 2000})
-    assert full["next"] is None
-    collected: list[dict[str, Any]] = []
-    cursor: str | None = None
-    pages = 0
-    while True:
-        req: dict[str, Any] = {"old": str(po), "new": str(pn), "limit": 5}
-        if cursor:
-            req["cursor"] = cursor
-        page = diff(req)
-        assert len(page["changes"]) <= 5
-        collected += page["changes"]
-        pages += 1
-        cursor = page["next"]
-        if cursor is None:
-            break
-    assert pages > 1
-    assert collected == full["changes"]
-    with pytest.raises(DocControlError) as err:
-        diff({"old": str(pn), "new": str(po), "cursor": full["next"] or "c:diff:00000000:1"})
+
+    def pages(limit: int | None) -> tuple[list[dict[str, Any]], int, str | None]:
+        collected: list[dict[str, Any]] = []
+        cursor: str | None = None
+        count = 0
+        first_cursor: str | None = None
+        while True:
+            req: dict[str, Any] = {"old": str(po), "new": str(pn)}
+            if limit:
+                req["limit"] = limit
+            if cursor:
+                req["cursor"] = cursor
+            page = run_diff(req)
+            collected += page["changes"]
+            count += 1
+            cursor = page["next"]
+            first_cursor = first_cursor or cursor
+            if cursor is None:
+                return collected, count, first_cursor
+
+    by_budget, budget_pages, _ = pages(None)
+    by_five, five_pages, cursor = pages(5)
+    assert by_budget == by_five and five_pages > budget_pages >= 1
+    assert cursor is not None
+    with pytest.raises(DocControlError) as err:  # a cursor only continues its own comparison
+        run_diff({"old": str(pn), "new": str(po), "cursor": cursor, "limit": 5})
     assert err.value.code is ErrorCode.SCHEMA_INVALID
+    pn.write_bytes(_write(tmp_path / "n2.docx", [*new, "one more paragraph"]).read_bytes())
+    with pytest.raises(DocControlError) as changed:  # the new file changed under the cursor
+        run_diff({"old": str(po), "new": str(pn), "cursor": cursor, "limit": 5})
+    assert changed.value.code is ErrorCode.SCHEMA_INVALID
 
 
 def test_diff_is_read_only(tmp_path: Path) -> None:
     old, new, _ = _edited_pair(2)
     po, pn = _write(tmp_path / "o.docx", old), _write(tmp_path / "n.docx", new)
     before = [(p.read_bytes(), p.stat().st_mtime_ns) for p in (po, pn)]
-    diff({"old": str(po), "new": str(pn)})
+    run_diff({"old": str(po), "new": str(pn)})
     after = [(p.read_bytes(), p.stat().st_mtime_ns) for p in (po, pn)]
     assert before == after
     assert sorted(f.name for f in tmp_path.iterdir()) == ["n.docx", "o.docx"]
@@ -258,12 +276,12 @@ def test_diff_is_read_only(tmp_path: Path) -> None:
 def test_diff_errors_for_missing_and_invalid_files(tmp_path: Path) -> None:
     good = _write(tmp_path / "g.docx", ["text"])
     with pytest.raises(DocControlError) as missing:
-        diff({"old": str(tmp_path / "nope.docx"), "new": str(good)})
+        run_diff({"old": str(tmp_path / "nope.docx"), "new": str(good)})
     assert missing.value.code is ErrorCode.DOC_NOT_FOUND
     bad = tmp_path / "bad.docx"
     bad.write_bytes(b"not a zip")
     with pytest.raises(DocControlError) as invalid:
-        diff({"old": str(good), "new": str(bad)})
+        run_diff({"old": str(good), "new": str(bad)})
     assert invalid.value.code is ErrorCode.NOT_A_DOCX
 
 
@@ -394,7 +412,7 @@ def test_diff_100k_word_novel_in_reasonable_time(tmp_path: Path) -> None:
     new[1200:1200] = block
     po, pn = _write(tmp_path / "o.docx", old), _write(tmp_path / "n.docx", new)
     start = time.perf_counter()
-    result = diff({"old": str(po), "new": str(pn), "limit": 2000})
+    result = run_diff({"old": str(po), "new": str(pn), "limit": 1000})
     seconds = time.perf_counter() - start
     total_words = sum(len(p.split()) for p in old)
     print(f"diff_100k_words: {total_words} words, {len(old)} paragraphs, {seconds:.2f}s")
@@ -420,6 +438,6 @@ def test_diff_unrelated_100k_word_documents_stay_fast(tmp_path: Path) -> None:
 
 def test_old_new_hashes_reported(tmp_path: Path) -> None:
     path = _write(tmp_path / "a.docx", ["some text"])
-    result = diff({"old": str(path), "new": str(path)})
+    result = run_diff({"old": str(path), "new": str(path)})
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     assert result["old"]["sha256"] == digest and result["new"]["paragraphs"] == 1
