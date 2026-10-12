@@ -256,14 +256,73 @@ class _Aligner:
             if n >= 0:
                 push(o, n, run_len[o], 1)
         out: list[tuple[int, int, bool]] = []
-        while heap:
-            depth, neg, io, jn = heapq.heappop(heap)
-            if self.match_old[io] >= 0 or self.match_new[jn] >= 0:
-                continue
+        votes: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # fp -> [with next, with prev]
+        deferred: list[int] = []
+
+        def candidates(io: int) -> list[tuple[int, int]]:
+            """(new index, side) for line ``io``; side 0 = with its next paragraph, 1 = prev."""
+            found: list[tuple[int, int]] = []
+            for side, step in ((0, 1), (1, -1)):
+                nb = io + step
+                if 0 <= nb < len(self.old) and self.match_old[nb] >= 0:
+                    jn = self.match_old[nb] - step
+                    if (
+                        0 <= jn < len(self.new)
+                        and self.match_new[jn] < 0
+                        and self.new[jn].fp == self.old[io].fp
+                    ):
+                        found.append((jn, side))
+            return found
+
+        def accept(io: int, jn: int, weight: int, depth: int) -> None:
             self.pair(io, jn)
             out.append((io, jn, False))
-            push(io, jn, -neg, depth + 1)
-        return out
+            push(io, jn, weight, depth + 1)
+
+        while True:
+            while heap:
+                depth, neg, io, jn = heapq.heappop(heap)
+                if self.match_old[io] >= 0 or self.match_new[jn] >= 0:
+                    continue
+                found = candidates(io)
+                if len({j for j, _ in found}) > 1:  # the neighbours disagree: decide later
+                    deferred.append(io)
+                    continue
+                if len(found) == 1 and self.decisive(io, 1 - found[0][1]):
+                    votes[self.old[io].fp][found[0][1]] += 1
+                accept(io, jn, -neg, depth)
+            # Ambiguous lines (a heading between the end of one block and the start of the
+            # next): a line goes with the side its text usually goes with, headings with
+            # the paragraph after them and closing lines with the one before; undecided
+            # ones go with the next paragraph.
+            progressed = False
+            for io in deferred:
+                if self.match_old[io] >= 0:
+                    continue
+                found = candidates(io)
+                if len({j for j, _ in found}) < 2:
+                    if found:
+                        accept(io, found[0][0], 1, 1)
+                        progressed = True
+                    continue
+                with_next, with_prev = votes[self.old[io].fp]
+                want = 1 if with_prev > with_next else 0
+                jn = next(j for j, side in found if side == want)
+                accept(io, jn, 1, 1)
+                progressed = True
+                break  # its neighbours may now settle other lines: drain the heap first
+            if not progressed:
+                return out
+            deferred = [i for i in deferred if self.match_old[i] < 0]
+
+    def decisive(self, io: int, side: int) -> bool:
+        """Does the neighbour on ``side`` (0 next, 1 prev) of old line ``io`` tell something?
+
+        It does when it is paired (so its refusal to host the line counts) or when the
+        document ends there; an unpaired neighbour (edited, split) says nothing.
+        """
+        nb = io + (1 if side == 0 else -1)
+        return not 0 <= nb < len(self.old) or self.match_old[nb] >= 0
 
     def fill_gaps(self) -> list[tuple[int, int, bool]]:
         """Pair what is left of identical text in order, gap by gap between anchors."""

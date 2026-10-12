@@ -557,3 +557,65 @@ def test_long_candidate_runs_with_enough_words_stay_fast() -> None:
     seconds = time.perf_counter() - start
     print(f"adversarial_long_runs_seconds={seconds:.2f}")
     assert seconds < 3
+
+
+def _layout_chapters(rng: random.Random, vocab: list[str], count: int) -> list[list[str]]:
+    """Chapters of ["Capítulo", paragraph, paragraph]: they end on a normal paragraph."""
+    return [["Capítulo", *_sentences(rng, vocab, 2)] for _ in range(count)]
+
+
+def _check_chapter_order(chapters: list[list[str]], order: list[int]) -> None:
+    old = [P(t) for c in chapters for t in c]
+    new = [P(t) for n in order for t in chapters[n]]
+    size = len(chapters[0])
+    expected = {
+        (c * size + k,): (order.index(c) * size + k,)
+        for c in range(len(chapters))
+        for k in range(size)
+    }
+    result = align(old, new)
+    assert {c.old: c.new for c in result.changes} == expected
+    assert result.counts()["deleted"] == result.counts()["inserted"] == 0
+
+
+@pytest.mark.parametrize(
+    "order",
+    [[0, 2, 1], [1, 2, 0], [2, 0, 1], [2, 1, 0], [0, 3, 2, 1], [3, 2, 1, 0], [0, 2, 3, 1]],
+    ids=[
+        "swap",
+        "rotate-left",
+        "rotate-right",
+        "reverse",
+        "swap-in-four",
+        "reverse-four",
+        "adjacent",
+    ],
+)
+def test_chapter_reorderings_keep_headings_with_their_chapter(order: list[int]) -> None:
+    rng = random.Random(11)
+    chapters = _layout_chapters(rng, _vocabulary(rng), max(order) + 1)
+    _check_chapter_order(chapters, order)
+
+
+def test_thin_chapters_of_repeated_lines_around_unique_text() -> None:
+    rng = random.Random(12)
+    vocab = _vocabulary(rng)
+    chapters = [["Capítulo", s, "***"] for s in _sentences(rng, vocab, 4)]
+    for order in ([0, 2, 1, 3], [3, 2, 1, 0], [1, 2, 3, 0]):
+        _check_chapter_order(chapters, order)
+
+
+def test_random_chapter_permutations_keep_headings() -> None:
+    rng = random.Random(21)
+    vocab = _vocabulary(rng)
+    failures = 0
+    for _ in range(60):
+        chapters = _layout_chapters(rng, vocab, 5)
+        order = list(range(5))
+        rng.shuffle(order)
+        try:
+            _check_chapter_order(chapters, order)
+        except AssertionError:
+            failures += 1
+    print(f"permutation_failures={failures}")
+    assert failures == 0
