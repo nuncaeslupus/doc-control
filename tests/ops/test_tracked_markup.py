@@ -1020,8 +1020,11 @@ def test_public_names() -> None:
         "Edit",
         "InsertParagraph",
         "MoveParagraphs",
+        "PreparedEdits",
         "ReplaceText",
         "TrackedResult",
         "apply_edits",
         "edit_from_dict",
+        "next_in_container",
+        "prepare_edits",
     }
