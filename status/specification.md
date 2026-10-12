@@ -213,7 +213,7 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
              "hint": "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
              "details": {"at": "p142#a7b2a7b2", "found": "p142#c01dc01d"}}}
   ```
-- **Errors** (stable codes, each with a one-line hint): `DOC_NOT_FOUND`, `NOT_A_DOCX`, `DOC_LOCKED` (Word `~$` lock file present), `DOC_CHANGED_ON_DISK` (sha256 differs from `expect.sha256`), `SCHEMA_INVALID`, `ADDRESS_INVALID`, `STALE_ADDRESS`, `ANCHOR_NOT_FOUND`, `ANCHOR_AMBIGUOUS`, `UNSUPPORTED_CONTENT` (range crosses a field, hyperlink, content control or other structure v1 does not edit), `BATCH_CONFLICT` (overlapping operations), `VERIFY_FAILED_RESTORED` (verification failed; original restored), `STYLE_NOT_FOUND`, `STYLE_CONFLICT`, `RECIPE_INVALID`, `HISTORY_NOT_FOUND`, `INTERNAL`.
+- **Errors** (stable codes, each with a one-line hint): `DOC_NOT_FOUND`, `NOT_A_DOCX`, `DOC_LOCKED` (Word `~$` lock file present), `DOC_CHANGED_ON_DISK` (sha256 differs from `expect.sha256`, or the document changed during the write: the foreign version was kept and copied to the store), `SCHEMA_INVALID`, `ADDRESS_INVALID`, `STALE_ADDRESS`, `ANCHOR_NOT_FOUND`, `ANCHOR_AMBIGUOUS`, `UNSUPPORTED_CONTENT` (range crosses a field, hyperlink, content control or other structure v1 does not edit), `BATCH_CONFLICT` (overlapping operations), `VERIFY_FAILED_RESTORED` (verification failed; original restored), `STYLE_NOT_FOUND`, `STYLE_CONFLICT`, `RECIPE_INVALID`, `HISTORY_NOT_FOUND`, `INTERNAL`.
 - **Backwards compatible**: n/a (first version).
 
 #### Addresses and ranges

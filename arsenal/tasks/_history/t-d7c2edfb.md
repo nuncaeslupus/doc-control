@@ -4,6 +4,7 @@ title: "T10: Footprint verifier, auto-restore, fault injection at every write st
 label: "footprint verifier auto restore"
 priority: 5
 deps: [t-e5d218b7, t-d9e2aeb3]
+status: merged
 ---
 
 # T10: Footprint verifier, auto-restore, fault injection at every write stage
