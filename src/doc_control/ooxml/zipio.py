@@ -25,7 +25,7 @@ import time
 import zipfile
 import zlib
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from doc_control.errors import DocControlError, ErrorCode
@@ -159,6 +159,21 @@ class Package:
     def __contains__(self, name: object) -> bool:
         return name in self._data
 
+    def fingerprint(self, name: str) -> tuple[object, ...]:
+        """Everything a verbatim copy of member ``name`` keeps: raw bytes and header fields."""
+        info = self._members[name].info
+        return (
+            self._members[name].data,
+            info.compress_type,
+            info.flag_bits,
+            info.CRC,
+            info.date_time,
+            info.extra,
+            self._members[name].local_extra,
+            info.comment,
+            info.external_attr,
+        )
+
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -168,29 +183,53 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_package(pkg: Package, replacements: Mapping[str, bytes], dest: Path) -> str:
+def write_package(
+    pkg: Package,
+    replacements: Mapping[str, bytes],
+    dest: Path,
+    stage: Callable[[str], None] | None = None,
+) -> str:
     """Write ``pkg`` with ``replacements`` applied to ``dest``; return its sha256.
 
-    Names not in the package are appended as new deflated members.
+    Names not in the package are appended as new deflated members. ``stage``, if
+    given, is called with ``temp_write``, ``fsync`` and ``replace`` just before
+    each step (the seam fault injection uses); whatever it raises propagates
+    after the temp file is removed, with ``dest`` untouched.
     """
     for name, data in replacements.items():
         if not isinstance(data, bytes):
             raise TypeError(f"replacement for {name} must be bytes")
     payload = _build(pkg, replacements)
+    _commit(payload, dest, stage)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def restore_file(src: Path, dest: Path) -> None:
+    """Put the bytes of ``src`` at ``dest`` with the same atomic replace a write uses."""
+    _commit(src.read_bytes(), dest, None)
+
+
+def _commit(payload: bytes, dest: Path, stage: Callable[[str], None] | None) -> None:
+    def at(name: str) -> None:
+        if stage is not None:
+            stage(name)
+
     mode = stat.S_IMODE(dest.stat().st_mode) if dest.exists() else 0o666 & ~_umask()
     fd, tmp_name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
     tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as fh:
+            at("temp_write")
             fh.write(payload)
             fh.flush()
+            at("fsync")
             os.fsync(fh.fileno())
         tmp.chmod(mode)
+        at("replace")
         _replace(tmp, dest)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
-    return hashlib.sha256(payload).hexdigest()
 
 
 def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
