@@ -1,7 +1,7 @@
 .PHONY: sync build lint format test check bench clean
 
 sync:
-	uv sync
+	uv sync --locked
 
 build:
 	uv build
@@ -18,11 +18,12 @@ format:
 test:
 	uv run pytest -q
 
+# CI (.github/workflows/ci.yml) spells out these same steps; keep both in sync.
 check: lint test
 	bash scripts/hygiene.sh
 
-bench:
-	uv run pytest -q -m bench
+bench:  # exit 5 = no benchmarks collected yet, which is not a failure
+	uv run pytest -q -m bench || [ $$? -eq 5 ]
 
 clean:
 	rm -rf dist build .mypy_cache .pytest_cache .ruff_cache .coverage

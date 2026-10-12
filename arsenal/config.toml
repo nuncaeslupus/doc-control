@@ -48,7 +48,7 @@ preflight-gate = "make lint && bash scripts/hygiene.sh"
 # what an install produces, so without this the first gate a worker runs fails
 # on a missing tool and every worker works that out for itself.
 #   host-setup = "npm ci && uv sync"
-host-setup = "uv sync"
+host-setup = "uv sync --locked"
 
 # How hard the pre-PR adversarial review binds when a TASK PR is opened — a
 # reviewer with no history of the change reads it first
