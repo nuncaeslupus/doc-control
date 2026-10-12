@@ -233,22 +233,34 @@ def test_format_changes(tmp_path: Path) -> None:
     assert b"Change" not in xml_of(path) and b'w:val="center"' in xml_of(path)
 
 
-def test_nesting_and_comment_anchors_survive(tmp_path: Path) -> None:
+def test_nesting_resolves_top_down(tmp_path: Path) -> None:
     body = (
         f"<w:p><w:ins {A.format(1)}><w:r><w:t>a</w:t></w:r><w:del {A.format(2)}>"
-        "<w:r><w:delText>b</w:delText></w:r></w:del></w:ins>"
-        f'<w:del {A.format(3)}><w:commentRangeStart w:id="7"/><w:r><w:delText>c</w:delText></w:r>'
-        '<w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:del></w:p>'
+        "<w:r><w:delText>b</w:delText></w:r></w:del></w:ins></w:p>"
     )
     path = revsim.make_doc(tmp_path / "d.docx", body)
     resolve_doc(path, "accept", ids=["1"])  # the nested deletion stays pending
-    assert pending(path) == ["2", "3"]
+    assert pending(path) == ["2"]
     resolve_doc(path, "accept", all=True)
-    data = xml_of(path)
-    assert texts(path) == ["a"] and b"commentRangeStart" in data and b"commentReference" in data
+    assert texts(path) == ["a"]
     path = revsim.make_doc(tmp_path / "e.docx", body)
     resolve_doc(path, "reject", ids=["1"])
-    assert texts(path) == [""] and pending(path) == ["3"]
+    assert texts(path) == [""] and pending(path) == []
+
+
+def test_comment_anchors_survive_removed_content() -> None:
+    """On the bare element: the fixture needs no comments part, so no package is written."""
+    xml = (
+        f'<w:p xmlns:w="{revsim.W_NS}"><w:del w:id="3" w:author="Ana">'
+        '<w:commentRangeStart w:id="7"/><w:r><w:delText>c</w:delText></w:r>'
+        '<w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:del></w:p>'
+    )
+    p = ET.fromstring(xml)
+    (rev,) = resolve.scan(p)
+    resolve.resolve_paragraph(p, {id(rev.elem): "accept"})
+    tags = [c.tag.removeprefix(W) for c in p]
+    assert tags == ["commentRangeStart", "commentRangeEnd", "r"]
+    assert p.find(f"{W}r/{W}commentReference") is not None and p.find(f".//{W}delText") is None
 
 
 def test_conflict_dry_run_and_nothing_to_do(tmp_path: Path) -> None:
