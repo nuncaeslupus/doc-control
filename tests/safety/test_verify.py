@@ -126,6 +126,17 @@ def test_verifier_accepts_replace_delete_and_insert(tmp_path: Path) -> None:
     assert _verify(tmp_path, new, fp) == []
 
 
+def test_verifier_accepts_insertion_before_a_paragraph_and_rejects_it_undeclared(
+    tmp_path: Path,
+) -> None:
+    spans = scan(Package(_doc(tmp_path)).read(DOCUMENT_PART))
+    new = spans.splice(insert_before={0: [NEW_P], 2: [NEW_P]})
+    assert _verify(tmp_path, new, Footprint(inserted_before=frozenset({0, 2}))) == []
+    undeclared = _verify(tmp_path, new, Footprint(inserted_before=frozenset({0})))
+    assert undeclared == [f"{DOCUMENT_PART} changed outside the declared paragraphs"]
+    assert _verify(tmp_path, new, Footprint(inserted_before=frozenset({0, 9})))
+
+
 def test_verifier_rejects_change_outside_declared_paragraphs(tmp_path: Path) -> None:
     new = _spliced(tmp_path)
     problems = _verify(tmp_path, new, Footprint(replaced=frozenset({0})))
