@@ -1,0 +1,22 @@
+{
+  "recipe": "scene-break",
+  "version": 1,
+  "description": "Rows of asterisks, hashes, dashes or similar become a centred '* * *'",
+  "match": {
+    "find": {
+      "regex": "^[  ]*(?:[*#~=_•·–—-][  ]?){3,40}$"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$para",
+      "text": "* * *"
+    },
+    {
+      "op": "format.apply",
+      "at": "$para",
+      "align": "center"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "recipe": "quotes-en-single",
+  "version": 1,
+  "description": "Straight single quotes in pairs become English curly single quotes (apostrophes between letters stay inside the quotation); 'n' (rock 'n' roll) is left alone",
+  "match": {
+    "find": {
+      "regex": "(?<!\\w)'(?!n')((?:[^']|(?<=\\w)'(?=\\w))+)'(?!\\w)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "‘$1’"
+    }
+  ]
+}

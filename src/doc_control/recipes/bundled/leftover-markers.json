@@ -1,0 +1,17 @@
+{
+  "recipe": "leftover-markers",
+  "version": 1,
+  "description": "Comment on TODO/FIXME words and bracketed [TODO ...], [TBD], [TK] notes left in the text",
+  "match": {
+    "find": {
+      "regex": "\\[(?:TODO|FIXME|XXX|TK|TBD)\\b[^\\]]{0,200}\\]|\\b(?:TODO|FIXME)\\b"
+    }
+  },
+  "propose": [
+    {
+      "op": "comment.add",
+      "at": "$match",
+      "text": "Leftover marker: $match"
+    }
+  ]
+}

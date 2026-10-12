@@ -16,6 +16,8 @@ from typing import Any
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
+from doc_control.model.layout import centred
+from doc_control.ops.tracked import apply_edits, edit_from_dict
 from doc_control.recipes.engine import propose
 from doc_control.recipes.schema import validate_recipe
 from doc_control.recipes.store import MAX_RECIPE_BYTES, catalogue
@@ -64,6 +66,54 @@ def recipe_list(_: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _prune(
+    doc: Document, path: Path, ops: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Drop proposed operations that cannot or need not be applied; report each as skipped.
+
+    A ``format.apply`` that only centres a paragraph that is already centred changes
+    nothing. A ``para.delete`` the engine refuses for structural reasons (the last
+    paragraph of a cell, section or body, ...) would fail the whole all-or-nothing
+    batch, so it is tried on its own in a dry run and left out when refused.
+    """
+    skipped: list[dict[str, str]] = []
+    kept: list[dict[str, Any]] = []
+    for op in ops:
+        keys = set(op) - {"op", "at"}
+        if op["op"] == "format.apply" and keys == {"align"} and op["align"] == "center":
+            try:
+                already = centred(doc, doc.index.resolve_address(op["at"]))
+            except DocControlError:
+                already = False
+            if already:
+                continue  # nothing to do: not worth reporting
+        kept.append(op)
+    deletes = [op for op in kept if op["op"] == "para.delete"]
+    if deletes and _refusal(path, deletes) is not None:
+        # Each delete may pass alone yet fail with the others (emptying a cell), so
+        # the set is grown one op at a time and every op it refuses is left out.
+        accepted: list[dict[str, Any]] = []
+        for op in deletes:
+            reason = _refusal(path, [*accepted, op])
+            if reason is None:
+                accepted.append(op)
+            else:
+                kept.remove(op)
+                skipped.append({"op": op["op"], "at": op["at"], "reason": reason})
+    return kept, skipped
+
+
+def _refusal(path: Path, ops: list[dict[str, Any]]) -> str | None:
+    """The engine's structural refusal of ``ops`` in a dry run, or None when they apply."""
+    try:
+        apply_edits(path, [edit_from_dict(op) for op in ops], dry_run=True)
+    except DocControlError as err:
+        if err.code is not ErrorCode.UNSUPPORTED_CONTENT:
+            raise
+        return err.message
+    return None
+
+
 @operation(
     "recipe.run",
     "write",
@@ -93,16 +143,19 @@ def recipe_run(request: dict[str, Any]) -> Reply:
     doc = Document(Path(request["doc"]).as_posix())
     paragraphs = [(p.address, p.text) for p in doc.index.paragraphs if p.text]
     proposal = propose(recipe, paragraphs)
+    ops, skipped = _prune(doc, Path(request["doc"]), proposal.ops)
+    warnings = [*proposal.warnings, *(f"SKIPPED: {s['at']} {s['reason']}" for s in skipped)]
     result: dict[str, Any] = {
         "recipe": recipe["recipe"],
         "applied": False,
         "matches": proposal.matches,
         "passes": proposal.passes,
         "stable": proposal.stable,
+        "skipped": skipped,
         "batch": {
             "doc": request["doc"],
-            "ops": proposal.ops,
+            "ops": ops,
             "expect": {"sha256": doc.sha256},
         },
     }
-    return Reply(result, doc=doc.envelope_doc(), warnings=proposal.warnings)
+    return Reply(result, doc=doc.envelope_doc(), warnings=warnings)
