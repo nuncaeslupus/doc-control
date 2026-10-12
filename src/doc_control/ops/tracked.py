@@ -28,8 +28,10 @@ The four edits
 
     ``para.move`` moves a run of paragraphs ``after`` or ``before`` another one
     as a tracked deletion of the originals plus a tracked insertion of copies
-    (spec: v1 has no ``w:moveFrom``/``w:moveTo``). Bookmarks and comment anchors
-    stay with the originals. Moving to after the last paragraph of a container
+    (spec: v1 has no ``w:moveFrom``/``w:moveTo``). Bookmarks that start and end
+    inside the moved paragraphs go with the text (same name, new id; ``_GoBack``
+    is dropped); a bookmark reaching outside them, and comment anchors, are
+    refused. Moving to after the last paragraph of a container
     is refused (use ``before`` its successor or insert text).
 
 Offsets
@@ -67,6 +69,7 @@ from doc_control.model.address import parse_address
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
+    BookmarkScope,
     ParagraphEditor,
     RevisionContext,
     format_author,
@@ -77,7 +80,7 @@ from doc_control.ooxml.revisions import (
     reject_revisions,
     used_ids,
 )
-from doc_control.ooxml.splice import DocumentSpans
+from doc_control.ooxml.splice import W_NS, DocumentSpans
 from doc_control.ooxml.zipio import Package
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
@@ -369,6 +372,7 @@ class _ParaPlan:
     mark: str | None = None
     touchers: set[int] = field(default_factory=set)
     exclusive: bool = False
+    moved_by: int | None = None  # the move edit that carries this paragraph away
 
 
 @dataclass
@@ -590,6 +594,7 @@ class _Planner:
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
+            plan.moved_by = i
             self.new.append(_NewParagraph(i, slot, para, None, para, False, para.text))
         self.previews.append(
             {
@@ -679,6 +684,7 @@ def apply_edits(
 
     ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
     spans = index.spans
+    scopes = _bookmark_scopes(pkg, index, planner, ctx)
     replacements: dict[int, bytes] = {}
     for number in sorted(planner.plans):
         plan = planner.plans[number]
@@ -686,6 +692,8 @@ def apply_edits(
         elem = spans.parse_paragraph(para.span_index)
         editor = ParagraphEditor(elem, para, ctx)
         if plan.delete_all:
+            if plan.moved_by is not None:
+                editor.detach_bookmarks(scopes[plan.moved_by])
             editor.delete_content()
             _require_no_live_text(elem, para)
         for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
@@ -701,7 +709,7 @@ def apply_edits(
         p, props = new_paragraph(ref_elem, ctx, inserted_mark=not item.native)
         content: ET.Element | None
         if item.source is not None:
-            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs()
+            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
             content = inserted_content(ctx, runs=runs)
         else:
             content = inserted_content(ctx, text=item.text, run_props=props)
@@ -770,6 +778,37 @@ def apply_edits(
         after_sha256=written.after_sha256,
         backup=written.backup,
     )
+
+
+def _bookmark_scopes(
+    pkg: Package, index: DocumentIndex, planner: _Planner, ctx: RevisionContext
+) -> dict[int, BookmarkScope]:
+    """For each move edit, the checked bookmarks of the paragraphs it moves."""
+    sources: dict[int, list[Paragraph]] = {}
+    for item in planner.new:
+        if item.source is not None:
+            sources.setdefault(item.edit, []).append(item.source)
+    names: dict[str, str] | None = None
+
+    def name_of(bid: str) -> str | None:
+        nonlocal names
+        if names is None:
+            root = ET.fromstring(pkg.read(DOCUMENT_PART))
+            tag = f"{{{W_NS}}}bookmarkStart"
+            names = {
+                e.get(f"{{{W_NS}}}id", ""): e.get(f"{{{W_NS}}}name", "") for e in root.iter(tag)
+            }
+        return names.get(bid)
+
+    return {
+        edit: BookmarkScope(
+            [index.spans.parse_paragraph(p.span_index) for p in paras],
+            [str(p.address) for p in paras],
+            ctx,
+            name_of,
+        )
+        for edit, paras in sources.items()
+    }
 
 
 def _require_no_live_text(elem: ET.Element, para: Paragraph) -> None:

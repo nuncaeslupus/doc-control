@@ -684,7 +684,6 @@ def test_hidden_comment_reference_blocks_delete_and_move(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     "marker",
     [
-        '<w:bookmarkStart w:id="3" w:name="m"/>',
         '<w:commentRangeStart w:id="4"/>',
         '<w:r><w:commentReference w:id="4"/></w:r>',
     ],
@@ -693,6 +692,159 @@ def test_move_refuses_paragraphs_with_anchors(tmp_path: Path, marker: str) -> No
     path = make(tmp_path, para(run("mov"), marker), para(run("b")), para(run("c")))
     err = refused(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
     assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+
+
+def bookmarks(path: Path) -> list[tuple[str, str, str]]:
+    """``(tag, id, name)`` of every bookmark marker in the document, in order."""
+    root = ET.fromstring(revsim.document_xml(path.read_bytes()))
+    return [
+        (e.tag.removeprefix(W), e.get(W + "id", ""), e.get(W + "name", ""))
+        for e in root.iter()
+        if e.tag in (W + "bookmarkStart", W + "bookmarkEnd")
+    ]
+
+
+def assert_balanced(markers: list[tuple[str, str, str]]) -> None:
+    starts = [(i, n) for tag, i, n in markers if tag == "bookmarkStart"]
+    ends = [i for tag, i, _ in markers if tag == "bookmarkEnd"]
+    assert sorted(i for i, _ in starts) == sorted(ends)
+    assert len({i for i, _ in starts}) == len(starts)
+    assert len({n for _, n in starts}) == len(starts)
+
+
+def test_move_carries_a_heading_bookmark_with_its_text(tmp_path: Path) -> None:
+    toc = '<w:bookmarkStart w:id="3" w:name="_Toc123"/>'
+    path = make(
+        tmp_path,
+        para(run("one")),
+        para(toc, run("Head"), '<w:bookmarkEnd w:id="3"/>'),
+        para(run("three")),
+        para(run("four")),
+    )
+    original = revsim.document_xml(path.read_bytes())
+    edit(path, MoveParagraphs(at(path, 2), after=at(path, 3)))
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["one", "three", "Head", "four"]
+    assert revsim.resolved(new, "Claude", "reject") == revsim.resolved(original, None, "current")
+    marks = bookmarks(path)
+    assert_balanced(marks)
+    assert [(t, n) for t, _, n in marks if n] == [("bookmarkStart", "_Toc123")]
+    assert all(i != "3" for _, i, _ in marks)  # fresh id
+    paras = body(path).split("</w:p>")
+    assert "bookmark" not in paras[1]  # the deleted original lost its markers
+    assert "<w:ins " in paras[3] and paras[3].index("<w:ins ") < paras[3].index("<w:bookmarkStart")
+
+
+def test_move_keeps_relative_positions_and_zero_width_bookmarks(tmp_path: Path) -> None:
+    path = make(
+        tmp_path,
+        para(
+            '<w:bookmarkStart w:id="1" w:name="a"/><w:bookmarkEnd w:id="1"/>',
+            run("ab"),
+            '<w:bookmarkStart w:id="2" w:name="b"/>',
+            run("cd"),
+            '<w:bookmarkEnd w:id="2"/>',
+        ),
+        para(run("x")),
+        para(run("y")),
+    )
+    edit(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
+    marks = bookmarks(path)
+    assert_balanced(marks)
+    assert [(t, n) for t, _, n in marks if n] == [("bookmarkStart", "a"), ("bookmarkStart", "b")]
+    assert [t for t, _, _ in marks] == [
+        "bookmarkStart",
+        "bookmarkEnd",
+        "bookmarkStart",
+        "bookmarkEnd",
+    ]
+    ins = body(path).split("</w:p>")[2]
+    assert ins.index('w:name="a"') < ins.index("ab") < ins.index('w:name="b"') < ins.index("cd")
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["x", "abcd", "y"]
+    assert revsim.resolved(new, "Claude", "reject") == ["abcd", "x", "y"]
+
+
+def test_move_drops_goback_and_keeps_the_rest_of_the_text(tmp_path: Path) -> None:
+    path = make(
+        tmp_path,
+        para(run("mov"), '<w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkEnd w:id="0"/>'),
+        para(run("b")),
+        para(run("c")),
+    )
+    edit(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
+    assert bookmarks(path) == []
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["b", "mov", "c"]
+    assert revsim.resolved(new, "Claude", "reject") == ["mov", "b", "c"]
+
+
+def test_move_carries_a_bookmark_spanning_the_moved_run(tmp_path: Path) -> None:
+    path = make(
+        tmp_path,
+        para('<w:bookmarkStart w:id="5" w:name="span"/>', run("a")),
+        para(run("b"), '<w:bookmarkEnd w:id="5"/>'),
+        para(run("c")),
+        para(run("d")),
+    )
+    edit(path, MoveParagraphs(f"{at(path, 1)}..{at(path, 2)}", after=at(path, 3)))
+    marks = bookmarks(path)
+    assert_balanced(marks)
+    assert len(marks) == 2
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["c", "a", "b", "d"]
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "name"),
+    [
+        ('<w:bookmarkStart w:id="3" w:name="open"/>', "", "open"),  # ends outside
+        ("", '<w:bookmarkEnd w:id="3"/>', "open"),  # starts outside
+    ],
+)
+def test_move_refuses_a_bookmark_reaching_outside_the_range(
+    tmp_path: Path, first: str, second: str, name: str
+) -> None:
+    # The bookmark starts in p1 and ends in p2 (or the reverse); only p1 or p2 moves.
+    start = '<w:bookmarkStart w:id="3" w:name="open"/>'
+    end = '<w:bookmarkEnd w:id="3"/>'
+    path = make(
+        tmp_path, para(run("a"), start), para(run("b"), end), para(run("c")), para(run("d"))
+    )
+    moved = 1 if first else 2
+    err = refused(path, MoveParagraphs(at(path, moved), after=at(path, 3)))
+    assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+    assert err.details["bookmark"] == name
+
+
+def test_delete_leaves_balanced_bookmarks_and_accept_reject_texts(tmp_path: Path) -> None:
+    path = make(
+        tmp_path,
+        para(run("keep")),
+        para(
+            '<w:bookmarkStart w:id="3" w:name="_Toc9"/>', run("gone"), '<w:bookmarkEnd w:id="3"/>'
+        ),
+        para(run("tail")),
+    )
+    original = revsim.document_xml(path.read_bytes())
+    edit(path, DeleteParagraphs(at(path, 2)))
+    assert_balanced(bookmarks(path))
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["keep", "tail"]
+    assert revsim.resolved(new, "Claude", "reject") == revsim.resolved(original, None, "current")
+
+
+def test_cross_paragraph_replace_keeps_bookmarks_balanced(tmp_path: Path) -> None:
+    path = make(
+        tmp_path,
+        para(run("first")),
+        para('<w:bookmarkStart w:id="3" w:name="mid"/>', run("m"), '<w:bookmarkEnd w:id="3"/>'),
+        para(run("last")),
+    )
+    edit(path, ReplaceText(f"{at(path, 1)}:2..{at(path, 3)}:2", "-"))
+    assert_balanced(bookmarks(path))
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["fi-st"]
 
 
 def test_insert_after_a_last_paragraph_whose_mark_is_someone_elses_insertion(

@@ -25,6 +25,14 @@ What a range may cover
     ``UNSUPPORTED_CONTENT`` (spec §Risks). Bookmark and comment-range markers,
     proof marks and existing deletions between the ends stay where they are.
 
+Bookmarks in a move
+    A moved range carries the bookmarks that start and end inside it (zero
+    width ones included): the markers leave the deleted originals and are
+    recreated, same name and a fresh id, inside the inserted copy. Accepting
+    leaves one live bookmark at the new place; rejecting removes the copy, and
+    with it the bookmark. ``_GoBack`` is dropped (Word recreates it). A bookmark
+    that starts or ends outside the range, and any comment anchor, is refused.
+
 Ids
     :class:`RevisionContext` hands out ``w:id`` values above every ``w:id`` in
     the document, comments, footnotes, endnotes, headers and footers, so a new
@@ -36,6 +44,7 @@ from __future__ import annotations
 import copy
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -77,6 +86,8 @@ _INERT_ELEMENTS = frozenset(
         "moveToRangeEnd",
     )
 )
+BOOKMARK_START, BOOKMARK_END = W + "bookmarkStart", W + "bookmarkEnd"
+GOBACK = "_GoBack"
 _MARK_TAGS = frozenset({INS, DEL, W + "moveFrom", W + "moveTo", W + "rPrChange"})
 _PAGE_BREAKS = frozenset({"page", "column"})
 _VANISH_OFF = frozenset({"0", "false", "off"})
@@ -232,6 +243,73 @@ def _flat(p: ET.Element) -> list[tuple[ET.Element, ET.Element]]:
         else:
             items.append((p, child))
     return items
+
+
+class BookmarkScope:
+    """The bookmarks of a moved range of paragraphs, checked and given their new ids.
+
+    ``paragraphs`` are the range's (unedited) elements, ``addresses`` their
+    addresses for messages, ``name_of`` finds the name of a bookmark by id when
+    only its end is in the range. A bookmark must start and end inside the range
+    (a zero width one does) or the move is refused; ``_GoBack`` is dropped.
+    """
+
+    def __init__(
+        self,
+        paragraphs: Sequence[ET.Element],
+        addresses: Sequence[str],
+        ctx: RevisionContext,
+        name_of: Callable[[str], str | None],
+    ) -> None:
+        self.ctx = ctx
+        self.dropped: set[str] = set()
+        self.carried: dict[str, str] = {}  # old id -> new id, allocated on first use
+        open_: dict[str, str] = {}
+        for p, address in zip(paragraphs, addresses, strict=True):
+            reachable = {id(node) for _, node in _flat(p)}
+            for elem in p.iter():
+                if elem.tag not in (BOOKMARK_START, BOOKMARK_END):
+                    continue
+                bid = elem.get(ID, "")
+                if id(elem) not in reachable:
+                    name = elem.get(W + "name") or name_of(bid) or f"id {bid}"
+                    raise unsupported(
+                        f"bookmark {name!r} sits inside a deletion or other structure, "
+                        "which a move cannot carry",
+                        paragraph=address,
+                        bookmark=name,
+                    )
+                if elem.tag == BOOKMARK_START:
+                    open_[bid] = elem.get(W + "name", "")
+                    continue
+                if bid not in open_:
+                    name = name_of(bid) or f"id {bid}"
+                    raise unsupported(
+                        f"bookmark {name!r} starts outside the moved paragraphs, "
+                        "which a move cannot carry",
+                        paragraph=address,
+                        bookmark=name,
+                    )
+                if open_.pop(bid) == GOBACK:
+                    self.dropped.add(bid)
+                else:
+                    self.carried[bid] = ""
+        if open_:
+            name = next(iter(open_.values()))
+            raise unsupported(
+                f"bookmark {name!r} ends outside the moved paragraphs, which a move cannot carry",
+                paragraph=addresses[-1],
+                bookmark=name,
+            )
+
+    def owns(self, marker: ET.Element) -> bool:
+        bid = marker.get(ID, "")
+        return bid in self.dropped or bid in self.carried
+
+    def new_id(self, old: str) -> str:
+        if not self.carried[old]:
+            self.carried[old] = self.ctx.continuation_id()
+        return self.carried[old]
 
 
 def _clone_rpr(rpr: ET.Element, ctx: RevisionContext, *, keep_changes: bool) -> ET.Element:
@@ -673,19 +751,38 @@ class ParagraphEditor:
                 broken = True
         self._wrap(groups)
 
-    def copy_runs(self) -> list[ET.Element]:
+    def detach_bookmarks(self, scope: BookmarkScope) -> None:
+        """Remove the markers a move carries away (or drops) from this deleted original."""
+        for parent, node in _flat(self.p):
+            if node.tag in (BOOKMARK_START, BOOKMARK_END) and scope.owns(node):
+                parent.remove(node)
+
+    def copy_runs(self, scope: BookmarkScope | None = None) -> list[ET.Element]:
         """Copies of the paragraph's runs (for a move), made before it is edited.
 
-        A paragraph with a comment reference, a bookmark or a comment range
-        marker is refused: copying them would duplicate their ids, and leaving
-        them behind would orphan the new text.
+        Bookmark markers come along (same name, fresh id) when ``scope`` says
+        the move carries them. A paragraph with a comment reference or a comment
+        range marker is refused: copying them would duplicate their ids, and
+        leaving them behind would orphan the new text.
         """
         self._require_plain()
         out: list[ET.Element] = []
         for _, node in _flat(self.p):
+            if node.tag in (BOOKMARK_START, BOOKMARK_END):
+                if scope is None or not scope.owns(node):
+                    raise unsupported(
+                        "the paragraph holds a bookmark, which this move cannot carry",
+                        **self._where(node.get(W + "name") or "bookmark"),
+                    )
+                bid = node.get(ID, "")
+                if bid not in scope.dropped:
+                    clone = copy.deepcopy(node)
+                    clone.set(ID, scope.new_id(bid))
+                    out.append(clone)
+                continue
             if node.tag in _INERT_ELEMENTS and node.tag != W + "proofErr":
                 raise unsupported(
-                    "the paragraph holds a bookmark or comment anchor, which a move cannot carry",
+                    "the paragraph holds a comment anchor, which a move cannot carry",
                     **self._where(node.tag.removeprefix(W)),
                 )
             if node.tag != R:
