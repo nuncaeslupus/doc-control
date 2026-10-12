@@ -28,8 +28,11 @@ The four edits
 
     ``para.move`` moves a run of paragraphs ``after`` or ``before`` another one
     as a tracked deletion of the originals plus a tracked insertion of copies
-    (spec: v1 has no ``w:moveFrom``/``w:moveTo``). Bookmarks and comment anchors
-    stay with the originals. Moving to after the last paragraph of a container
+    (spec: v1 has no ``w:moveFrom``/``w:moveTo``). Bookmarks that start and end
+    inside the moved paragraphs go with the text (same name, new id; ``_GoBack``
+    is dropped; rejecting the move removes them, so REF/PAGEREF fields, TOC entries and
+    links aimed at them are reported in ``warnings``); a bookmark reaching outside
+    them, and comment anchors, are refused. Moving to after the last paragraph of a container
     is refused (use ``before`` its successor or insert text).
 
 Offsets
@@ -67,6 +70,7 @@ from doc_control.model.address import parse_address
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
+    BookmarkScope,
     ParagraphEditor,
     RevisionContext,
     format_author,
@@ -74,10 +78,11 @@ from doc_control.ooxml.revisions import (
     inserted_content,
     mark_state,
     new_paragraph,
+    referenced_bookmarks,
     reject_revisions,
     used_ids,
 )
-from doc_control.ooxml.splice import DocumentSpans
+from doc_control.ooxml.splice import W_NS, DocumentSpans
 from doc_control.ooxml.zipio import Package
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
@@ -232,6 +237,7 @@ class TrackedResult:
     before_sha256: str
     after_sha256: str | None = None
     backup: Path | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -244,6 +250,8 @@ class TrackedResult:
             "author": self.author,
             "date": self.date,
         }
+        if self.warnings:
+            out["warnings"] = self.warnings
         if not self.dry_run:
             out["sha256"] = self.after_sha256
             out["backup"] = str(self.backup) if self.backup else None
@@ -369,6 +377,7 @@ class _ParaPlan:
     mark: str | None = None
     touchers: set[int] = field(default_factory=set)
     exclusive: bool = False
+    moved_by: int | None = None  # the move edit that carries this paragraph away
 
 
 @dataclass
@@ -621,6 +630,7 @@ class _Planner:
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
+            plan.moved_by = i
             self.new.append(_NewParagraph(i, slot, para, None, para, False, para.text))
         self.previews.append(
             {
@@ -710,6 +720,7 @@ def apply_edits(
 
     ctx = RevisionContext(used_ids(pkg), format_author(author, tag), format_date(now))
     spans = index.spans
+    scopes = _bookmark_scopes(pkg, index, planner, ctx)
     replacements: dict[int, bytes] = {}
     for number in sorted(planner.plans):
         plan = planner.plans[number]
@@ -717,6 +728,8 @@ def apply_edits(
         elem = spans.parse_paragraph(para.span_index)
         editor = ParagraphEditor(elem, para, ctx)
         if plan.delete_all:
+            if plan.moved_by is not None:
+                editor.detach_bookmarks(scopes[plan.moved_by])
             editor.delete_content()
             _require_no_live_text(elem, para)
         for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
@@ -732,7 +745,7 @@ def apply_edits(
         p, props = new_paragraph(ref_elem, ctx, inserted_mark=not item.native)
         content: ET.Element | None
         if item.source is not None:
-            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs()
+            runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
             content = inserted_content(ctx, runs=runs)
         else:
             content = inserted_content(ctx, text=item.text, run_props=props)
@@ -790,6 +803,7 @@ def apply_edits(
         author=ctx.author,
         date=ctx.date,
         before_sha256=pkg.sha256,
+        warnings=_reference_warnings(pkg, scopes),
     )
     if dry_run:
         return result
@@ -808,6 +822,52 @@ def apply_edits(
         after_sha256=written.after_sha256,
         backup=written.backup,
     )
+
+
+def _bookmark_scopes(
+    pkg: Package, index: DocumentIndex, planner: _Planner, ctx: RevisionContext
+) -> dict[int, BookmarkScope]:
+    """For each move edit, the checked bookmarks of the paragraphs it moves."""
+    sources: dict[int, list[Paragraph]] = {}
+    for item in planner.new:
+        if item.source is not None:
+            sources.setdefault(item.edit, []).append(item.source)
+    names: dict[str, str] | None = None
+
+    def name_of(bid: str) -> str | None:
+        nonlocal names
+        if names is None:
+            root = ET.fromstring(pkg.read(DOCUMENT_PART))
+            tag = f"{{{W_NS}}}bookmarkStart"
+            names = {
+                e.get(f"{{{W_NS}}}id", ""): e.get(f"{{{W_NS}}}name", "") for e in root.iter(tag)
+            }
+        return names.get(bid)
+
+    return {
+        edit: BookmarkScope(
+            [index.spans.parse_paragraph(p.span_index) for p in paras],
+            [str(p.address) for p in paras],
+            ctx,
+            name_of,
+        )
+        for edit, paras in sources.items()
+    }
+
+
+def _reference_warnings(pkg: Package, scopes: Mapping[int, BookmarkScope]) -> list[str]:
+    """A warning naming moved bookmarks that fields or links refer to (rejecting breaks them)."""
+    carried = sorted({name for scope in scopes.values() for name in scope.names})
+    if not carried:
+        return []
+    hit = [name for name in carried if name in referenced_bookmarks(pkg)]
+    if not hit:
+        return []
+    return [
+        "moved bookmarks are referenced by fields or links: "
+        + ", ".join(hit)
+        + "; rejecting the move removes them and leaves those references broken"
+    ]
 
 
 def _require_no_live_text(elem: ET.Element, para: Paragraph) -> None:
