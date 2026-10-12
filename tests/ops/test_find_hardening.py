@@ -93,3 +93,30 @@ def test_cursor_past_the_last_paragraph_is_refused(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
         run(doc, "x", cursor=f"c:find:{token}:3:0")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
+
+
+SHIN = "\N{HEBREW LETTER SHIN}"
+SHIN_DOT = "\N{HEBREW POINT SHIN DOT}"
+QAMATS = "\N{HEBREW POINT QAMATS}"
+KA = "\N{DEVANAGARI LETTER KA}"
+VOWEL_I = "\N{DEVANAGARI VOWEL SIGN I}"
+HARAKA = "\N{ARABIC FATHA}"
+BA = "\N{ARABIC LETTER BEH}"
+
+
+def test_marks_of_other_scripts_stay_with_their_base_letter() -> None:
+    hebrew = SHIN + SHIN_DOT + QAMATS + "lom"
+    assert spans(SHIN, hebrew) == []
+    assert spans(SHIN, hebrew, ignore_case=True) == []
+    assert spans(SHIN + SHIN_DOT + QAMATS, hebrew) == [(0, 3)]
+    assert spans(KA, KA + VOWEL_I) == []
+    assert spans(KA, KA + VOWEL_I, ignore_case=True) == []
+    assert spans(KA + VOWEL_I, "x" + KA + VOWEL_I) == [(1, 3)]
+    assert spans(BA, BA + HARAKA) == []
+    assert spans(BA, BA + HARAKA, ignore_accents=True) == [(0, 2)]
+    assert spans(SHIN, hebrew, ignore_accents=True) == [(0, 3)]
+    assert spans("x", "x" + HARAKA, whole_word=True) == []
+
+
+def test_literal_search_with_no_match_builds_no_offset_tables() -> None:
+    assert spans("zzz", "Dijo María, y se fue." * 50, ignore_case=True) == []

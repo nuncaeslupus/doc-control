@@ -19,6 +19,11 @@ Units and folding
     what one character folds to (``s`` does not match ``ß``; ``ss`` does). Kept matches
     are mapped back to the whole original units they cover.
 
+    Marks are every character of Unicode category M (Latin and Greek accents, Hebrew
+    points, Arabic harakat, Indic vowel signs). Units are not full graphemes: ZWJ
+    sequences and flag pairs may be split, and Hangul conjoining jamo are separate units, so
+    they are not unified with precomposed syllables.
+
 Regular expressions
     Python ``re`` syntax, run per paragraph (a match never crosses a paragraph). With
     ``ignore_accents`` the pattern is matched against the text with accents removed, so
@@ -48,15 +53,26 @@ from doc_control.errors import DocControlError, ErrorCode
 
 MAX_QUERY_LENGTH = 1000
 Span = tuple[int, int]
-# Combining marks, for units and word boundaries: a letter and its marks go together.
-_MARK_RANGES = (
-    (0x0300, 0x036F),
-    (0x1AB0, 0x1AFF),
-    (0x1DC0, 0x1DFF),
-    (0x20D0, 0x20FF),
-    (0xFE20, 0xFE2F),
-)
-_MARKS = "".join(f"{chr(a)}-{chr(b)}" for a, b in _MARK_RANGES)
+
+
+def _mark_class() -> str:
+    """Regex class body of every mark (general category M*) in the planes that have any."""
+    out: list[str] = []
+    start = prev = -2
+    for cp in (*range(0x30000), *range(0xE0000, 0xE0200)):
+        if unicodedata.category(chr(cp)).startswith("M"):
+            if cp != prev + 1:
+                if start >= 0:
+                    out.append(f"{chr(start)}-{chr(prev)}")
+                start = cp
+            prev = cp
+    out.append(f"{chr(start)}-{chr(prev)}")
+    return "".join(out)
+
+
+# Marks (Latin and Greek accents, Hebrew points, Arabic harakat, Indic vowel signs, ...) for
+# units and word boundaries: a letter and its marks go together.
+_MARKS = _mark_class()
 _WORD = rf"[\w{_MARKS}]"
 _HAS_MARK = re.compile(f"[{_MARKS}]")
 _UNIT = re.compile(rf"(?s:[^{_MARKS}][{_MARKS}]*|[{_MARKS}]+)")
@@ -97,21 +113,14 @@ class _Folder:
             self._cache[unit] = out
         return out
 
-    def fold(self, text: str) -> tuple[str, list[str] | None, list[int] | None]:
-        """``(folded, per-unit folds, original offset of each unit)``.
-
-        Both lists are ``None`` when folding keeps one character per character at the
-        same offsets (ASCII text), so offsets need no mapping.
-        """
+    def fold(self, text: str) -> tuple[str, list[str] | None]:
+        """``(folded, units)``; ``units`` is ``None`` when each character is its own unit."""
         if text.isascii():
-            return (text.casefold() if self.case else text), None, None
+            return (text.casefold() if self.case else text), None
         if _HAS_MARK.search(text):
             units = _UNIT.findall(text)
-            bounds = list(itertools.accumulate(map(len, units), initial=0))
-        else:
-            units, bounds = list(text), None
-        pieces = [self.unit(u) for u in units]
-        return "".join(pieces), pieces, bounds
+            return "".join(map(self.unit, units)), units
+        return "".join(map(self.unit, text)), None
 
 
 _FOLDERS: dict[tuple[bool, bool], _Folder] = {}
@@ -157,13 +166,18 @@ class Matcher:
 
     def spans(self, text: str) -> Iterator[Span]:
         """Non-empty matches of ``text`` as ``(start, end)`` offsets into ``text``."""
-        folded, pieces, bounds = self._folder.fold(text)
+        folded, units = self._folder.fold(text)
         found = [
             (m.start(), m.end()) for m in self._pattern.finditer(folded) if m.end() > m.start()
         ]
-        if pieces is None:
+        if not found:
+            return
+        if text.isascii():
             yield from found
             return
+        parts = units if units is not None else text
+        pieces = [self._folder.unit(u) for u in parts]
+        bounds = list(itertools.accumulate(map(len, units), initial=0)) if units else None
         starts = list(itertools.accumulate(map(len, pieces), initial=0))
         boundaries = set(starts)
         for fs, fe in found:
@@ -284,6 +298,8 @@ class IsolatedScan:
     behaves the same on Windows) publishes the paragraph it is in through shared
     memory; on timeout it is terminated, matches it already sent are kept, and
     ``stopped_at`` is the paragraph it was stuck in. Close the generator to stop early.
+    A script that calls this (through ``find``) must guard its entry point with
+    ``if __name__ == "__main__":``, as ``spawn`` re-imports the main module.
     """
 
     def __init__(self, options: SearchOptions, items: Sequence[Item], deadline: float) -> None:
@@ -301,9 +317,10 @@ class IsolatedScan:
         proc = ctx.Process(
             target=_worker, args=(self._options, self._items, progress, send), daemon=True
         )
-        proc.start()
-        send.close()
         try:
+            proc.start()
+            send.close()
+            last = 0  # number of the last paragraph yielded
             while True:
                 remaining = self._deadline - time.monotonic()
                 if remaining <= 0 or not recv.poll(remaining):
@@ -316,19 +333,26 @@ class IsolatedScan:
                     return
                 if message[0] == "error":
                     raise DocControlError(ErrorCode.INTERNAL, f"regex worker failed: {message[1]}")
+                last = message[0]
                 yield message
             proc.terminate()
             proc.join(5)
-            self.stopped_at = int(progress.value)
-            while True:  # matches the child sent before it was killed
+            late: list[Any] = []  # what the child sent before it was killed
+            finished = False
+            while True:
                 try:
                     if not recv.poll(0):
                         break
                     message = recv.recv()
                 except (EOFError, OSError):
                     break
-                if message is not None and message[0] != "error" and message[0] < self.stopped_at:
-                    yield message
+                if message is None:
+                    finished = True
+                elif message[0] != "error":
+                    late.append(message)
+            if not finished:
+                self.stopped_at = max([int(progress.value), last + 1, *(m[0] + 1 for m in late)])
+            yield from late
         finally:
             if proc.is_alive():
                 proc.terminate()
@@ -336,4 +360,5 @@ class IsolatedScan:
                 if proc.is_alive():
                     proc.kill()
                     proc.join()
+            send.close()
             recv.close()
