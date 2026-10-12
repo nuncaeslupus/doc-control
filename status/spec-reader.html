@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="cfe7e631981516bf5bd167b45a388d211c2e5c462dbf677487f49b2140f23c10">
-<title>Doc Control — Specification (annotatable)</title>
+<meta name="arsenal-source-sha256" content="604ef88e5e6d25b2313c28df5beb4917f35ed48200b17b0c5362f70b9b41da18">
+<title>Word Control — Specification (annotatable)</title>
 <style>
 :root{
   --bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2da;
@@ -125,7 +125,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <body>
 <div class="topbar">
   <div class="wrap">
-    <div class="brand">Doc Control — Specification<small>annotatable reader · 2026-10-12</small></div>
+    <div class="brand">Word Control — Specification<small>annotatable reader · 2026-10-12</small></div>
     <span class="savestate ok" id="savestate">✓ Auto-saving</span>
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
@@ -135,7 +135,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 
 <div class="wrap">
   <div class="hero">
-    <h1>Doc Control — Specification</h1>
+    <h1>Word Control — Specification</h1>
     <p>Read at your own pace and leave a note on any point you want to discuss.</p>
   </div>
   <details class="help">
@@ -174,13 +174,14 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-12
 <strong>Ticket / PR</strong>: nuncaeslupus/word-control#2
 <strong>Author</strong>: Claude (with the owner, via <code>explore-idea</code>)
-<strong>Revision</strong>: 4
-<strong>Status</strong>: approved (2026-10-12, revision 4) — without annotations
+<strong>Revision</strong>: 5
+<strong>Status</strong>: approved (2026-10-12, revision 5) — without annotations
 <strong>Revision log</strong>:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and <code>docs/research/01-tooling-and-risks.md</code>, <code>docs/research/02-docx-fixer-inventory.md</code>
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 - r3 — applied <code>word-control-spec-notes-2026-10-12-r2.md</code> and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; <code>move</code> primitive so marker-driven edits (writer notes in the text) can be applied with primitives
-- r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (<code>docs/research/03-literary-critic-indexer.md</code>)</p></div>
+- r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (<code>docs/research/03-literary-critic-indexer.md</code>)
+- r5 — CodeRabbit review on PR #2: 32-bit address fingerprints (D-9 format, longer hash), batch response inside the standard envelope, next action updated, stale design note removed</p></div>
 <div class="note" data-for="s-spec-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></div><textarea class="note-ta" data-key="s-spec-intro" data-label="Preamble &amp; scope" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-1">
@@ -451,14 +452,14 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <p><strong>Scope of v1 (from the decisions log)</strong>
 - Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote; for literary-critic (D-18): layout facts, normalised-text view with offset map, structure detection with ids/signals/overrides, exact-only anchors, paragraph diff between versions, unique-phrase locators.
 - Write primitives: replace a range's text, insert/delete paragraphs, move a range of paragraphs (written as a tracked deletion plus a tracked insertion in v1), apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, <code>restore</code> from the undo log.
-- Addresses <code>p142#a7b2</code> with <code>stale</code> errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
+- Addresses <code>p142#a7b2a7b2</code> with <code>stale</code> errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
 - Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, <code>.doc-control/</code> next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit <code>history purge</code> (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by <code>history orphans</code> so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; <code>.dotx</code> export/import; style sets stored on the user's side.
 - Recipes: bundled (Python allowed, tested here; only generally useful recipes, including the general docx-fixer rules and other common fixes; owner-specific rules become user recipes, D-17) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
 - CLI with JSON I/O, <code>help --json</code>, <code>capabilities</code>, API version in every response, stable error codes with hints.
 - Out of scope (later specs): live engine (Windows first, then Mac), MCP server and <code>.mcpb</code>/plugin packaging, Skill packaging for the chat sandbox, Google Docs/<code>.odt</code>, contract test suite (after literary-critic integrates), visual review page.</p>
-<p><strong>Immediate next action</strong>: owner reviews this spec through the annotated reader; on approval, run <code>design</code> to write contracts (operation schemas, error codes, address and anchor formats, <code>.doc-control/</code> layout), the risk register and the task split, starting with the splice writer and its fuzz tests, since every other gate depends on it.</p>
+<p><strong>Immediate next action</strong>: execute <code>status/plan.md</code> (approved) through the claude-arsenal queue, starting with T1 (bootstrap) and then the splice writer and its fuzz tests, since every other gate depends on them.</p>
 <p><strong>Open questions</strong>:
 - [x] Test corpus: both synthetic and real documents; real ones stay outside the repo and are never named in it (answered 2026-10-12).
 - [x] Real-Word verification: left <code>unmeasured</code> for the first release; done when a Windows machine is available (answered 2026-10-12).
@@ -585,10 +586,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <td>2026-10-12</td>
 </tr>
 </tbody>
-</table>
-<blockquote>
-<p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
-</blockquote></div>
+</table></div>
 <div class="note" data-for="s-spec-4"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></div><textarea class="note-ta" data-key="s-spec-4" data-label="§4 Recommendation" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-5">
@@ -606,28 +604,28 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   <code>json
   {"api": "1.0", "ok": true, "op": "find",
    "doc": {"path": "Novela.docx", "sha256": "9f2c…", "paragraphs": 4120},
-   "result": {"matches": [{"at": "p142#a7b2:10-15", "text": "María", "context": "…dijo María, y…"}]},
+   "result": {"matches": [{"at": "p142#a7b2a7b2:10-15", "text": "María", "context": "…dijo María, y…"}]},
    "warnings": [], "next": "c:find:2f1e"}</code></li>
 <li><strong>Response envelope (error)</strong>: exit code 1 (2 for usage errors), same envelope with <code>ok: false</code>:
   <code>json
   {"api": "1.0", "ok": false, "op": "batch",
-   "error": {"code": "STALE_ADDRESS", "message": "p142#a7b2 no longer matches the document",
+   "error": {"code": "STALE_ADDRESS", "message": "p142#a7b2a7b2 no longer matches the document",
              "hint": "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
-             "details": {"at": "p142#a7b2", "found": "p142#c01d"}}}</code></li>
+             "details": {"at": "p142#a7b2a7b2", "found": "p142#c01dc01d"}}}</code></li>
 <li><strong>Errors</strong> (stable codes, each with a one-line hint): <code>DOC_NOT_FOUND</code>, <code>NOT_A_DOCX</code>, <code>DOC_LOCKED</code> (Word <code>~$</code> lock file present), <code>DOC_CHANGED_ON_DISK</code> (sha256 differs from <code>expect.sha256</code>), <code>SCHEMA_INVALID</code>, <code>ADDRESS_INVALID</code>, <code>STALE_ADDRESS</code>, <code>ANCHOR_NOT_FOUND</code>, <code>ANCHOR_AMBIGUOUS</code>, <code>UNSUPPORTED_CONTENT</code> (range crosses a field, hyperlink, content control or other structure v1 does not edit), <code>BATCH_CONFLICT</code> (overlapping operations), <code>VERIFY_FAILED_RESTORED</code> (verification failed; original restored), <code>STYLE_NOT_FOUND</code>, <code>STYLE_CONFLICT</code>, <code>RECIPE_INVALID</code>, <code>HISTORY_NOT_FOUND</code>, <code>INTERNAL</code>.</li>
 <li><strong>Backwards compatible</strong>: n/a (first version).</li>
 </ul>
 <h4>Addresses and ranges</h4>
 <ul>
-<li>Paragraph: <code>p&lt;n&gt;#&lt;fp&gt;</code> — <code>n</code> is the 1-based index over the main story's paragraphs in document order (table-cell paragraphs included); <code>fp</code> is the first 4 hex digits of BLAKE2s over the paragraph's visible text (inserted text included, deleted text excluded), NFC-normalised.</li>
-<li>Range inside a paragraph: <code>p142#a7b2:10-15</code> (character offsets, end exclusive). Range across paragraphs: <code>p142#a7b2:10..p144#0c9e:3</code>. Sentence: <code>p142#a7b2.s3</code>.</li>
+<li>Paragraph: <code>p&lt;n&gt;#&lt;fp&gt;</code> — <code>n</code> is the 1-based index over the main story's paragraphs in document order (table-cell paragraphs included); <code>fp</code> is the first 8 hex digits (32 bits) of BLAKE2s over the paragraph's visible text (inserted text included, deleted text excluded), NFC-normalised. A stale address is detected unless a changed paragraph at the same index collides on 32 bits (about 1 in 4.3 billion); writes that also pass <code>expect.sha256</code> are exact regardless, because any change to the file changes the hash. Full fingerprints are not used in addresses to keep responses small.</li>
+<li>Range inside a paragraph: <code>p142#a7b2a7b2:10-15</code> (character offsets, end exclusive). Range across paragraphs: <code>p142#a7b2a7b2:10..p144#0c9e0c9e:3</code>. Sentence: <code>p142#a7b2a7b2.s3</code>.</li>
 <li>Every write re-computes <code>fp</code> for each address it touches; any mismatch fails the whole batch with <code>STALE_ADDRESS</code>. Structural edits return <code>address_map</code> (old → new) for every paragraph whose index changed.</li>
 <li>Headers, footers, footnotes and endnotes are listed read-only in v1 (<code>h1:p3</code>, <code>fn12:p1</code> style addresses reserved).</li>
 </ul>
 <h4>Anchors</h4>
 <pre><code class="language-json">{&quot;exact&quot;: &quot;María cerró la puerta&quot;, &quot;prefix&quot;: &quot;Al final, &quot;, &quot;suffix&quot;: &quot; sin mirar atrás.&quot;, &quot;hint&quot;: &quot;p142&quot;}
 </code></pre>
-<p><code>anchor.resolve</code> returns <code>{"at": "p151#9d0e:4-25", "score": 0.97}</code> or <code>ANCHOR_AMBIGUOUS</code> (with up to 5 candidates and scores) or <code>ANCHOR_NOT_FOUND</code>. Matching is exact first, then fuzzy within candidate paragraphs found by fingerprint and word overlap; score = 0.5·quote + 0.2·prefix + 0.2·suffix + 0.1·position; minimum accepted score 0.80; ties within 0.02 are ambiguous.</p>
+<p><code>anchor.resolve</code> returns <code>{"at": "p151#9d0e9d0e:4-25", "score": 0.97}</code> or <code>ANCHOR_AMBIGUOUS</code> (with up to 5 candidates and scores) or <code>ANCHOR_NOT_FOUND</code>. Matching is exact first, then fuzzy within candidate paragraphs found by fingerprint and word overlap; score = 0.5·quote + 0.2·prefix + 0.2·suffix + 0.1·position; minimum accepted score 0.80; ties within 0.02 are ambiguous.</p>
 <h4>Operations (v1)</h4>
 <p>Read: <code>capabilities</code>, <code>help</code>, <code>info</code>, <code>outline</code>, <code>stats</code>, <code>para.get</code> (includes <code>empty</code>, <code>blank_before</code>, <code>heading_level</code>, <code>style</code>, <code>centred</code>, <code>page_break_before</code>), <code>find</code>, <code>styles.list</code>, <code>style.get</code>, <code>comments.list</code>, <code>revisions.list</code>, <code>page.estimate</code> (always <code>"estimated": true</code>), <code>segment</code> (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, <code>overrides</code> and <code>profile</code> parameters), <code>text.normalized</code> (with <code>offset_map</code>), <code>diff</code> (two documents → alignment and cross-version <code>address_map</code>), <code>locate</code> (chapter, scene, estimated page, unique phrase), <code>anchor.create</code>, <code>anchor.resolve</code> (<code>mode</code>: <code>best</code> default or <code>exact</code>; response includes <code>match</code>: <code>exact</code> or <code>fuzzy</code>), <code>history.list</code>, <code>history.search</code>, <code>recipe.list</code>, <code>styleset.export</code>.</p>
 <p>Write (each runs as a batch): <code>batch</code>, <code>restore</code>, <code>undo</code>, <code>history.purge</code>, <code>recipe.run</code> (returns a proposal batch; applying it is a separate <code>batch</code> call), <code>styleset.install</code>, <code>styleset.import-dotx</code>, <code>styleset.export-dotx</code> (writes a new <code>.dotx</code>, never touches the document).</p>
@@ -635,16 +633,19 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <p>Batch request and response:</p>
 <pre><code class="language-json">{&quot;doc&quot;: &quot;Novela.docx&quot;, &quot;expect&quot;: {&quot;sha256&quot;: &quot;9f2c…&quot;}, &quot;dry_run&quot;: true,
  &quot;tracked&quot;: true, &quot;author&quot;: &quot;Claude&quot;, &quot;tag&quot;: &quot;literary-critic&quot;,
- &quot;ops&quot;: [{&quot;op&quot;: &quot;para.move&quot;, &quot;at&quot;: &quot;p88#1e2f..p91#7a00&quot;, &quot;after&quot;: &quot;p240#55aa&quot;},
-         {&quot;op&quot;: &quot;para.delete&quot;, &quot;at&quot;: &quot;p87#e9c1&quot;},
-         {&quot;op&quot;: &quot;comment.add&quot;, &quot;at&quot;: &quot;p88#1e2f&quot;, &quot;text&quot;: &quot;Movido según tu nota.&quot;}]}
+ &quot;ops&quot;: [{&quot;op&quot;: &quot;para.move&quot;, &quot;at&quot;: &quot;p88#1e2f1e2f..p91#7a007a00&quot;, &quot;after&quot;: &quot;p240#55aa55aa&quot;},
+         {&quot;op&quot;: &quot;para.delete&quot;, &quot;at&quot;: &quot;p87#e9c1e9c1&quot;},
+         {&quot;op&quot;: &quot;comment.add&quot;, &quot;at&quot;: &quot;p88#1e2f1e2f&quot;, &quot;text&quot;: &quot;Movido según tu nota.&quot;}]}
 </code></pre>
-<pre><code class="language-json">{&quot;applied&quot;: 3, &quot;dry_run&quot;: true,
- &quot;preview&quot;: [{&quot;op&quot;: 0, &quot;at&quot;: &quot;p88#1e2f&quot;, &quot;before&quot;: &quot;…&quot;, &quot;after&quot;: &quot;(moved after p240)&quot;}],
- &quot;address_map&quot;: {&quot;p89#b0b0&quot;: &quot;p88#b0b0&quot;},
- &quot;footprint&quot;: {&quot;word/document.xml&quot;: [&quot;p87&quot;, &quot;p88&quot;, &quot;p89&quot;, &quot;p90&quot;, &quot;p91&quot;, &quot;p240&quot;], &quot;word/comments.xml&quot;: [&quot;c17&quot;]}}
+<pre><code class="language-json">{&quot;api&quot;: &quot;1.0&quot;, &quot;ok&quot;: true, &quot;op&quot;: &quot;batch&quot;,
+ &quot;doc&quot;: {&quot;path&quot;: &quot;Novela.docx&quot;, &quot;sha256&quot;: &quot;9f2c…&quot;},
+ &quot;result&quot;: {&quot;applied&quot;: 3, &quot;dry_run&quot;: true,
+  &quot;preview&quot;: [{&quot;op&quot;: 0, &quot;at&quot;: &quot;p88#1e2f1e2f&quot;, &quot;before&quot;: &quot;…&quot;, &quot;after&quot;: &quot;(moved after p240)&quot;}],
+  &quot;address_map&quot;: {&quot;p89#b0b0b0b0&quot;: &quot;p88#b0b0b0b0&quot;},
+  &quot;footprint&quot;: {&quot;word/document.xml&quot;: [&quot;p87&quot;, &quot;p88&quot;, &quot;p89&quot;, &quot;p90&quot;, &quot;p91&quot;, &quot;p240&quot;], &quot;word/comments.xml&quot;: [&quot;c17&quot;]}},
+ &quot;warnings&quot;: [], &quot;next&quot;: null}
 </code></pre>
-<p>A non-dry-run response adds <code>"op_id": "h-000123"</code>, <code>"backup": ".doc-control/Novela/backups/20261012T114500Z-9f2c.docx"</code> and the new <code>doc.sha256</code>.</p>
+<p>A non-dry-run response adds to <code>result</code> <code>"op_id": "h-000123"</code>, <code>"backup": ".doc-control/Novela/backups/20261012T114500Z-9f2c.docx"</code> and the new <code>doc.sha256</code>.</p>
 <h4>Declarative user recipe (JSON, user side)</h4>
 <pre><code class="language-json">{&quot;recipe&quot;: &quot;fake-centring&quot;, &quot;version&quot;: 1, &quot;description&quot;: &quot;Leading spaces that fake a centred line&quot;,
  &quot;match&quot;: {&quot;find&quot;: {&quot;regex&quot;: &quot;^ {8,}(\\S.*)$&quot;, &quot;scope&quot;: &quot;paragraph&quot;}},
@@ -859,7 +860,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <script>var SPEC_SEED_NOTES={};</script>
 <script>
 (function(){
-  var NS = 'doc-control-spec-v1:';
+  var NS = 'word-control-spec-v1:';
   var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
 
   function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
@@ -952,7 +953,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='doc-control-spec-notes-'+today()+'-r4.md';
+    var name='word-control-spec-notes-'+today()+'-r5.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -974,7 +975,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('doc-control-spec-notes-'+today()+'-r4.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r5.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

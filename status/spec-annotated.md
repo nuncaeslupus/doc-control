@@ -1,4 +1,4 @@
-# Doc Control — Specification (annotated edition)
+# Word Control — Specification (annotated edition)
 
 > Generated 2026-10-12. This is the document with a **note slot** after every section. Read it in any Markdown app. To annotate, replace the `_(your notes…)_` placeholder under any section. When done, send the file back — notes are acted on.
 
@@ -11,13 +11,14 @@
 **Date**: 2026-10-12
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
-**Revision**: 4
-**Status**: approved (2026-10-12, revision 4) — without annotations
+**Revision**: 5
+**Status**: approved (2026-10-12, revision 5) — without annotations
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 - r3 — applied `word-control-spec-notes-2026-10-12-r2.md` and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; `move` primitive so marker-driven edits (writer notes in the text) can be applied with primitives
 - r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (`docs/research/03-literary-critic-indexer.md`)
+- r5 — CodeRabbit review on PR #2: 32-bit address fingerprints (D-9 format, longer hash), batch response inside the standard envelope, next action updated, stale design note removed
 
 <!-- -->
 
@@ -190,7 +191,7 @@ Parity and coverage
 **Scope of v1 (from the decisions log)**
 - Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote; for literary-critic (D-18): layout facts, normalised-text view with offset map, structure detection with ids/signals/overrides, exact-only anchors, paragraph diff between versions, unique-phrase locators.
 - Write primitives: replace a range's text, insert/delete paragraphs, move a range of paragraphs (written as a tracked deletion plus a tracked insertion in v1), apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, `restore` from the undo log.
-- Addresses `p142#a7b2` with `stale` errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
+- Addresses `p142#a7b2a7b2` with `stale` errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
 - Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, `.doc-control/` next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit `history purge` (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by `history orphans` so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; `.dotx` export/import; style sets stored on the user's side.
@@ -198,7 +199,7 @@ Parity and coverage
 - CLI with JSON I/O, `help --json`, `capabilities`, API version in every response, stable error codes with hints.
 - Out of scope (later specs): live engine (Windows first, then Mac), MCP server and `.mcpb`/plugin packaging, Skill packaging for the chat sandbox, Google Docs/`.odt`, contract test suite (after literary-critic integrates), visual review page.
 
-**Immediate next action**: owner reviews this spec through the annotated reader; on approval, run `design` to write contracts (operation schemas, error codes, address and anchor formats, `.doc-control/` layout), the risk register and the task split, starting with the splice writer and its fuzz tests, since every other gate depends on it.
+**Immediate next action**: execute `status/plan.md` (approved) through the claude-arsenal queue, starting with T1 (bootstrap) and then the splice writer and its fuzz tests, since every other gate depends on them.
 
 **Open questions**:
 - [x] Test corpus: both synthetic and real documents; real ones stay outside the repo and are never named in it (answered 2026-10-12).
@@ -231,9 +232,6 @@ Parity and coverage
 | D-17 | docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
 | D-18 | v1 serves literary-critic's indexing needs: layout facts in `para.get`/`outline`, normalised-text view with two-way offset map, structure detection with stable ids, signals and overrides, exact-only anchor mode with match kind, paragraph diff between document versions, unique-phrase locators | agreed | 2026-10-12 |
 
-
-> Sections 5–6 (contracts, risks) are appended by `design`.
-
 <!-- -->
 
 > **✎ Notes** · `SPEC §4`
@@ -258,23 +256,23 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
   ```json
   {"api": "1.0", "ok": true, "op": "find",
    "doc": {"path": "Novela.docx", "sha256": "9f2c…", "paragraphs": 4120},
-   "result": {"matches": [{"at": "p142#a7b2:10-15", "text": "María", "context": "…dijo María, y…"}]},
+   "result": {"matches": [{"at": "p142#a7b2a7b2:10-15", "text": "María", "context": "…dijo María, y…"}]},
    "warnings": [], "next": "c:find:2f1e"}
   ```
 - **Response envelope (error)**: exit code 1 (2 for usage errors), same envelope with `ok: false`:
   ```json
   {"api": "1.0", "ok": false, "op": "batch",
-   "error": {"code": "STALE_ADDRESS", "message": "p142#a7b2 no longer matches the document",
+   "error": {"code": "STALE_ADDRESS", "message": "p142#a7b2a7b2 no longer matches the document",
              "hint": "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
-             "details": {"at": "p142#a7b2", "found": "p142#c01d"}}}
+             "details": {"at": "p142#a7b2a7b2", "found": "p142#c01dc01d"}}}
   ```
 - **Errors** (stable codes, each with a one-line hint): `DOC_NOT_FOUND`, `NOT_A_DOCX`, `DOC_LOCKED` (Word `~$` lock file present), `DOC_CHANGED_ON_DISK` (sha256 differs from `expect.sha256`), `SCHEMA_INVALID`, `ADDRESS_INVALID`, `STALE_ADDRESS`, `ANCHOR_NOT_FOUND`, `ANCHOR_AMBIGUOUS`, `UNSUPPORTED_CONTENT` (range crosses a field, hyperlink, content control or other structure v1 does not edit), `BATCH_CONFLICT` (overlapping operations), `VERIFY_FAILED_RESTORED` (verification failed; original restored), `STYLE_NOT_FOUND`, `STYLE_CONFLICT`, `RECIPE_INVALID`, `HISTORY_NOT_FOUND`, `INTERNAL`.
 - **Backwards compatible**: n/a (first version).
 
 #### Addresses and ranges
 
-- Paragraph: `p<n>#<fp>` — `n` is the 1-based index over the main story's paragraphs in document order (table-cell paragraphs included); `fp` is the first 4 hex digits of BLAKE2s over the paragraph's visible text (inserted text included, deleted text excluded), NFC-normalised.
-- Range inside a paragraph: `p142#a7b2:10-15` (character offsets, end exclusive). Range across paragraphs: `p142#a7b2:10..p144#0c9e:3`. Sentence: `p142#a7b2.s3`.
+- Paragraph: `p<n>#<fp>` — `n` is the 1-based index over the main story's paragraphs in document order (table-cell paragraphs included); `fp` is the first 8 hex digits (32 bits) of BLAKE2s over the paragraph's visible text (inserted text included, deleted text excluded), NFC-normalised. A stale address is detected unless a changed paragraph at the same index collides on 32 bits (about 1 in 4.3 billion); writes that also pass `expect.sha256` are exact regardless, because any change to the file changes the hash. Full fingerprints are not used in addresses to keep responses small.
+- Range inside a paragraph: `p142#a7b2a7b2:10-15` (character offsets, end exclusive). Range across paragraphs: `p142#a7b2a7b2:10..p144#0c9e0c9e:3`. Sentence: `p142#a7b2a7b2.s3`.
 - Every write re-computes `fp` for each address it touches; any mismatch fails the whole batch with `STALE_ADDRESS`. Structural edits return `address_map` (old → new) for every paragraph whose index changed.
 - Headers, footers, footnotes and endnotes are listed read-only in v1 (`h1:p3`, `fn12:p1` style addresses reserved).
 
@@ -283,7 +281,7 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
 ```json
 {"exact": "María cerró la puerta", "prefix": "Al final, ", "suffix": " sin mirar atrás.", "hint": "p142"}
 ```
-`anchor.resolve` returns `{"at": "p151#9d0e:4-25", "score": 0.97}` or `ANCHOR_AMBIGUOUS` (with up to 5 candidates and scores) or `ANCHOR_NOT_FOUND`. Matching is exact first, then fuzzy within candidate paragraphs found by fingerprint and word overlap; score = 0.5·quote + 0.2·prefix + 0.2·suffix + 0.1·position; minimum accepted score 0.80; ties within 0.02 are ambiguous.
+`anchor.resolve` returns `{"at": "p151#9d0e9d0e:4-25", "score": 0.97}` or `ANCHOR_AMBIGUOUS` (with up to 5 candidates and scores) or `ANCHOR_NOT_FOUND`. Matching is exact first, then fuzzy within candidate paragraphs found by fingerprint and word overlap; score = 0.5·quote + 0.2·prefix + 0.2·suffix + 0.1·position; minimum accepted score 0.80; ties within 0.02 are ambiguous.
 
 #### Operations (v1)
 
@@ -297,17 +295,20 @@ Batch request and response:
 ```json
 {"doc": "Novela.docx", "expect": {"sha256": "9f2c…"}, "dry_run": true,
  "tracked": true, "author": "Claude", "tag": "literary-critic",
- "ops": [{"op": "para.move", "at": "p88#1e2f..p91#7a00", "after": "p240#55aa"},
-         {"op": "para.delete", "at": "p87#e9c1"},
-         {"op": "comment.add", "at": "p88#1e2f", "text": "Movido según tu nota."}]}
+ "ops": [{"op": "para.move", "at": "p88#1e2f1e2f..p91#7a007a00", "after": "p240#55aa55aa"},
+         {"op": "para.delete", "at": "p87#e9c1e9c1"},
+         {"op": "comment.add", "at": "p88#1e2f1e2f", "text": "Movido según tu nota."}]}
 ```
 ```json
-{"applied": 3, "dry_run": true,
- "preview": [{"op": 0, "at": "p88#1e2f", "before": "…", "after": "(moved after p240)"}],
- "address_map": {"p89#b0b0": "p88#b0b0"},
- "footprint": {"word/document.xml": ["p87", "p88", "p89", "p90", "p91", "p240"], "word/comments.xml": ["c17"]}}
+{"api": "1.0", "ok": true, "op": "batch",
+ "doc": {"path": "Novela.docx", "sha256": "9f2c…"},
+ "result": {"applied": 3, "dry_run": true,
+  "preview": [{"op": 0, "at": "p88#1e2f1e2f", "before": "…", "after": "(moved after p240)"}],
+  "address_map": {"p89#b0b0b0b0": "p88#b0b0b0b0"},
+  "footprint": {"word/document.xml": ["p87", "p88", "p89", "p90", "p91", "p240"], "word/comments.xml": ["c17"]}},
+ "warnings": [], "next": null}
 ```
-A non-dry-run response adds `"op_id": "h-000123"`, `"backup": ".doc-control/Novela/backups/20261012T114500Z-9f2c.docx"` and the new `doc.sha256`.
+A non-dry-run response adds to `result` `"op_id": "h-000123"`, `"backup": ".doc-control/Novela/backups/20261012T114500Z-9f2c.docx"` and the new `doc.sha256`.
 
 #### Declarative user recipe (JSON, user side)
 

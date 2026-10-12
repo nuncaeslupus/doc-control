@@ -1,7 +1,7 @@
 # Plan: doc-control — core and file engine (v1)
 
 **Date**: 2026-10-12
-**Specification**: `status/specification.md` (approved, revision 3)
+**Specification**: `status/specification.md` (approved, revision 5)
 **Author**: Claude
 **Revision**: 2
 **Status**: approved (2026-10-12, revision 2) — without annotations
@@ -131,7 +131,7 @@ T1 ─┬─> T2 ──────────────┬─> T7
             ├─> T5 ─┘       ├─> T20  │
             └─> T9 ─> T10 ──┴─> T11 ─> T12 ─┬─> T13, T14, T15, T16, T21 ─> T22
                                             └─> T23 ─> T24, T25, T26
-T5, T10 ─> T27     T12, T15, T18 ─> T28     everything ─> T29     T15, T16 ─> T30
+T5, T10 ─> T27     T12, T15, T18 ─> T28     all tasks except T30 (through T29's Depends list) ─> T29     T15, T16 ─> T30
 T7 ─> T31   T6 ─> T32, T35   T18 ─> T33   T19 ─> T34   T8, T20, T33 ─> T36
 ```
 
