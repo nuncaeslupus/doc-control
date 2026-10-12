@@ -132,6 +132,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T6 | `address_resolution_errors == 0` | 0 (440 generated documents, 12679 paragraphs) | `uv run pytest tests/model/test_address.py` | 284e850 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T18 | `boundary_f1 >= 0.98` | 0.9973 (gold set: 667 sentences, 368 internal boundaries; es + generic; own and public-domain text) | `uv run pytest -q -s tests/model/test_segment.py` (micro F1 of internal sentence boundaries) | 8c64351 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | b4704e6 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
+| T32 | `offset_map_roundtrip_mismatches == 0` | 0 (of 16864 offsets over 3000 generated strings) | `uv run pytest -q -s tests/model/test_normalized.py` (prints `offset_map_roundtrip_mismatches=<n>`: every normalised offset with an original counterpart maps to the visible text and back unchanged) | 0a98dc5 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 
 ### Dependency graph
 
