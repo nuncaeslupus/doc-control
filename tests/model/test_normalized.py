@@ -180,5 +180,5 @@ def test_text_normalized_is_registered_read_only_with_schema(
     env = json.loads(capsys.readouterr().out)
     described = env["result"]["operations"]["text.normalized"]
     assert described["kind"] == "read"
-    assert described["schema"]["required"] == ["text"]
+    assert set(described["schema"]["properties"]) >= {"doc", "text", "at"}
     assert main(["text.normalized", "--json", "{}"]) == 2
