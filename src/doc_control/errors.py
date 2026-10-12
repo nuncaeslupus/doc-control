@@ -36,7 +36,10 @@ HINTS: dict[ErrorCode, str] = {
     ErrorCode.STALE_ADDRESS: "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
     ErrorCode.ANCHOR_NOT_FOUND: "Widen the quote or its context, or search with find.",
     ErrorCode.ANCHOR_AMBIGUOUS: "Pick one of the candidates, or add prefix/suffix context.",
-    ErrorCode.UNSUPPORTED_CONTENT: "Edit around the field, hyperlink or control, not across it.",
+    ErrorCode.UNSUPPORTED_CONTENT: (
+        "Edit around fields, hyperlinks or controls; encrypted or ZIP64 packages are not"
+        " supported: save a normal copy in Word."
+    ),
     ErrorCode.BATCH_CONFLICT: "Split overlapping operations into separate batches.",
     ErrorCode.VERIFY_FAILED_RESTORED: "Nothing was changed; report the request that caused it.",
     ErrorCode.STYLE_NOT_FOUND: "List styles with styles.list and use an existing id.",

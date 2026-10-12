@@ -17,6 +17,10 @@ ENV_VAR = "DOC_CONTROL_PRIVATE_CORPUS"
 ID_LENGTH = 12
 
 
+class PrivateCorpusError(Exception):
+    """A private-corpus problem, described without any path or file name."""
+
+
 def corpus_dir() -> Path | None:
     value = os.environ.get(ENV_VAR)
     return Path(value) if value else None
@@ -36,9 +40,16 @@ def private_documents() -> Iterator[tuple[str, bytes]]:
     if root is None or not root.is_dir():
         return
     docs = {}
+    unreadable = 0
     for path in root.rglob("*.docx"):
         if path.name.startswith("~$") or not path.is_file():
             continue
-        data = path.read_bytes()
+        try:
+            data = path.read_bytes()
+        except OSError:
+            unreadable += 1  # the OSError message carries the path: never surface it
+            continue
         docs[short_id(data)] = data
+    if unreadable:
+        raise PrivateCorpusError(f"{unreadable} private corpus file(s) could not be read")
     yield from sorted(docs.items())

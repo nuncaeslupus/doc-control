@@ -186,6 +186,7 @@ Parity and coverage
 | D-17 | docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
 | D-18 | v1 serves literary-critic's indexing needs: layout facts in `para.get`/`outline`, normalised-text view with two-way offset map, structure detection with stable ids, signals and overrides, exact-only anchor mode with match kind, paragraph diff between document versions, unique-phrase locators | agreed | 2026-10-12 |
 | D-19 | doc-control owns every generic primitive useful to control document files (e.g. comparing two documents, diffs, redlines), so literary-critic and other tools build on it; literary- or domain-specific logic stays in the consumers; more features can be added later | agreed | 2026-10-12 |
+| D-20 | The CLI reads a request from stdin only with `--json -` (never by default), so an agent's open stdin pipe cannot hang it; a plain `< request.json` is not read | agreed | 2026-10-12 |
 
 
 ## 5. Contracts

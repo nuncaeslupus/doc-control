@@ -39,9 +39,8 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# OOXML namespace URIs and content types are long literals; splitting them hurts reading.
+# The test helpers hold OOXML namespace URIs and content types as long literals.
 "tests/helpers.py" = ["E501"]
-"src/doc_control/ooxml/*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

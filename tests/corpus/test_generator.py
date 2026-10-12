@@ -12,7 +12,7 @@ import pytest
 
 from tests.conftest import CorpusWriter
 from tests.corpus.generator import KINDS, generate, generate_parts
-from tests.corpus.private import ENV_VAR, private_documents, short_id
+from tests.corpus.private import ENV_VAR, PrivateCorpusError, private_documents, short_id
 from tests.corpus.structural import validate_structure
 from tests.corpus.validator import require_soffice, validate_documents, validator_name
 
@@ -229,3 +229,24 @@ def test_private_corpus_ids_are_short_hashes(
 def test_private_corpus_unset_yields_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(ENV_VAR, raising=False)
     assert list(private_documents()) == []
+
+
+def test_unreadable_private_document_error_names_no_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "Secret Manuscript Title"
+    secret.mkdir()
+    (secret / "Chapter One Draft.docx").write_bytes(generate("plain", 0))
+    real_read = Path.read_bytes
+
+    def denied(self: Path) -> bytes:
+        if self.suffix == ".docx":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    monkeypatch.setenv(ENV_VAR, str(secret))
+    with pytest.raises(PrivateCorpusError) as exc:
+        list(private_documents())
+    assert "Secret" not in str(exc.value) and "Chapter" not in str(exc.value)
+    assert exc.value.__context__ is None or "Secret" not in repr(exc.value.args)
