@@ -125,6 +125,10 @@ context-window = 0
 # lands inside the table instead of at the top level.
 queue-automation = true
 
+branch-protection = "existing"
+
+bot-triggers = ["coderabbitai[bot]=@coderabbitai review"]
+
 [models]
 orchestrator = ""
 workers = "sonnet"
