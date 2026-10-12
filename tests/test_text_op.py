@@ -185,6 +185,7 @@ def test_registered_read_only_with_schema() -> None:
         op.run({"doc": "a.docx", "limit": 0})
 
 
+@pytest.mark.bench
 def test_a_page_of_a_novel_is_built_in_under_a_fifth_of_a_second(tmp_path: Path) -> None:
     path = tmp_path / "novel.docx"
     path.write_bytes(generate_docx("novel", 1))

@@ -646,7 +646,8 @@ def _comment_id(syntax: _Syntax, pid: str, durable: str) -> str:
 
 def _extensible(syntax: _Syntax, durable: str, date: str) -> str:
     p, decl = syntax.prefix("w16cex")
-    return f'<{p}:commentExtensible{decl} {p}:durableId="{durable}" {p}:dateUtc={quoteattr(date)}/>'
+    when = f" {p}:dateUtc={quoteattr(date)}" if date else ""
+    return f'<{p}:commentExtensible{decl} {p}:durableId="{durable}"{when}/>'
 
 
 def _durable_map(ids_text: str) -> dict[str, str]:

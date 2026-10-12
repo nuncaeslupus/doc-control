@@ -309,7 +309,7 @@ def test_legacy_comments_part_without_extensions_gains_them(tmp_path: Path) -> N
     w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     legacy = (
         f'<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="{w}">'
-        '<w:comment w:id="0" w:author="Vieja" w:date="2020-01-01T00:00:00Z" w:initials="V">'
+        '<w:comment w:id="0" w:author="Vieja" w:initials="V">'
         "<w:p><w:r><w:t>Antigua</w:t></w:r></w:p></w:comment></w:comments>"
     ).encode()
     rels = (
@@ -344,6 +344,9 @@ def test_legacy_comments_part_without_extensions_gains_them(tmp_path: Path) -> N
     assert [(c.id, c.reply_to, c.resolved) for c in got] == [("0", None, True), ("1", "0", True)]
     for name in PART_NAMES:
         assert name in members(path)
+    extensible = members(path)["word/commentsExtensible.xml"]
+    assert b'dateUtc=""' not in extensible
+    ET.fromstring(extensible)
 
 
 # -- refusals ---------------------------------------------------------------------------------
@@ -393,3 +396,25 @@ def test_comment_ops_are_batch_kinds_only() -> None:
     for kind in ("comment.add", "comment.reply", "comment.resolve"):
         assert kind not in registry
         assert kind in registry["batch"].schema["properties"]["ops"]["description"]
+
+
+def test_comments_mix_with_format_ops(tmp_path: Path) -> None:
+    path = plain_doc(tmp_path)
+    a = addresses(path)
+    with pytest.raises(DocControlError) as err:
+        run(
+            path,
+            [
+                {"op": "format.apply", "at": f"{a[1]}:0-7", "bold": True},
+                {"op": "comment.add", "at": a[1], "text": "x"},
+            ],
+        )
+    assert err.value.code is ErrorCode.BATCH_CONFLICT
+    run(
+        path,
+        [
+            {"op": "format.apply", "at": f"{a[1]}:0-7", "bold": True},
+            {"op": "comment.add", "at": a[0], "text": "Otra parte."},
+        ],
+    )
+    assert [c.text for c in comments(path)] == ["Otra parte."]

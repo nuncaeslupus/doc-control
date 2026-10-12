@@ -2,6 +2,7 @@
 id: t-333cfaa3
 title: "T14: Formatting operations: `style.apply`, `format.apply` as tracked `w:pPrChange`/`w:rPrChange`"
 label: "formatting operations"
+status: merged
 priority: 5
 deps: [t-7af47039]
 ---
