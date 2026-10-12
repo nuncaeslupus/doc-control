@@ -20,14 +20,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Any
 
-from doc_control.envelope import Reply
+from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex, Paragraph
 from doc_control.model.normalized import NormalizedText, encode_runs, normalize
-from doc_control.ops.paging import PAGING_PROPERTIES, paged
+from doc_control.ops.paging import (
+    MAX_LIMIT,
+    PAGING_PROPERTIES,
+    RESPONSE_BUDGET,
+    make_cursor,
+    read_cursor,
+    size,
+)
 from doc_control.registry import operation
 
 
@@ -91,6 +99,45 @@ def _entries(text: str, start: int, at: str | None) -> list[dict[str, Any]]:
     return _window(result, start, at, 0, len(result.text), True)
 
 
+#: A cursor offset is ``paragraph * _STRIDE + entry``: the paragraph (row) to resume at and
+#: which of its entries comes first, so a page builds only the paragraphs it shows.
+_STRIDE = 1_000_000
+
+Row = tuple[str, int, str | None]  # text, start, address
+
+
+def _page(op: str, doc: Document, request: dict[str, Any], rows: Sequence[Row]) -> Reply:
+    """Like :func:`doc_control.ops.paging.paged`, but builds entries only as the page needs."""
+    row, skip = divmod(read_cursor(op, doc, request), _STRIDE)
+    if row > len(rows) or (row == len(rows) and rows):
+        raise _invalid("cursor is past the end", path="$.cursor")
+    limit = request.get("limit", MAX_LIMIT)
+    head: dict[str, Any] = {"total": len(rows), "paragraphs": []}
+    placeholder = make_cursor(op, doc, request, 10**12)
+    room = RESPONSE_BUDGET - size(
+        success(op, head, doc=doc.envelope_doc(), next_cursor=placeholder)
+    )
+    taken: list[dict[str, Any]] = []
+    used = 0
+    resume: int | None = None
+    while row < len(rows) and resume is None:
+        entries = _entries(*rows[row])
+        for k in range(skip, len(entries)):
+            cost = len(json.dumps(entries[k], ensure_ascii=False).encode("utf-8")) + 2
+            if taken and (used + cost > room or len(taken) >= limit):
+                resume = row * _STRIDE + k
+                break
+            taken.append(entries[k])
+            used += cost
+        row, skip = row + 1, 0
+    head["paragraphs"] = taken
+    return Reply(
+        head,
+        doc=doc.envelope_doc(),
+        next_cursor=None if resume is None else make_cursor(op, doc, request, resume),
+    )
+
+
 class _TextSource(Document):
     """Stands in for a document so a `text` request pages and takes cursors the same way."""
 
@@ -120,8 +167,11 @@ _RESULT = (
 )
 
 
+OP = "text.normalized"
+
+
 @operation(
-    "text.normalized",
+    OP,
     "read",
     "Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace "
     "collapsed) with a two-way offset map to the original code points, for a document "
@@ -146,15 +196,12 @@ def text_normalized(request: dict[str, Any]) -> dict[str, Any] | Reply:
     if has_doc == has_text:
         raise _invalid("give exactly one of `doc` and `text`")
     if has_text:
-        extra = sorted(k for k in ("at",) if k in request)
-        if extra:
+        if "at" in request:
             raise _invalid("`at` needs `doc`")
-        source = _TextSource(request["text"])
-        return paged(
-            "text.normalized", source, request, "paragraphs", _entries(request["text"], 0, None)
-        )
+        return _page(OP, _TextSource(request["text"]), request, [(request["text"], 0, None)])
     doc = Document(request["doc"])
-    items: list[dict[str, Any]] = []
-    for para, start, end in _selection(doc.index, request.get("at")):
-        items += _entries(para.text[start:end], start, str(para.address))
-    return paged("text.normalized", doc, request, "paragraphs", items)
+    rows = [
+        (para.text[start:end], start, str(para.address))
+        for para, start, end in _selection(doc.index, request.get("at"))
+    ]
+    return _page(OP, doc, request, rows)

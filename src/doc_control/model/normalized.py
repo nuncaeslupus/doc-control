@@ -10,7 +10,9 @@ end of a range is exclusive. :func:`normalize` applies, in this order:
    space U+00A0, U+2028...) into one space. Nothing is trimmed.
 
 Zero-width characters go even where they hold a sequence together: U+200D (ZWJ) is
-removed from an emoji sequence, which then reads as its separate emoji.
+removed from an emoji sequence, which then reads as its separate emoji. NFC is applied to
+clusters of at most 32 code points, so a longer run of marks (not found in real text) is
+normalised in pieces.
 
 Every normalised character covers a half-open range of original characters (if nothing
 is left, the only boundary maps to 0). A removed
@@ -35,6 +37,10 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+#: Longest run of code points normalised together. Real clusters are a few characters;
+#: Unicode's stream-safe text format allows 31 combining marks after a base. A longer run
+#: (U+0F73 repeated, say) is cut here, where NFC of the whole would cost quadratic time.
+MAX_CLUSTER = 32
 IGNORABLE = frozenset("\u00ad\u200b\u200c\u200d\u2060\ufeff")
 
 
@@ -96,7 +102,7 @@ def _chunks(original: str, kept: list[int]) -> list[list[int]]:
     the chunk plus the character differs from NFC of the chunk followed by the
     character (a base letter and its accent, or Hangul L+V+T, which compose step by
     step). Whitespace stands alone: nothing composes with it, and a collapsed space
-    must stay whole.
+    must stay whole. A chunk stops growing at :data:`MAX_CLUSTER` code points.
     """
     chunks: list[list[int]] = []
     text = ""  # the current chunk's characters
@@ -104,11 +110,15 @@ def _chunks(original: str, kept: list[int]) -> list[list[int]]:
         ch = original[i]
         if (
             chunks
+            and len(text) < MAX_CLUSTER
             and not text[-1].isspace()
             and (
                 unicodedata.combining(ch) != 0
-                or unicodedata.normalize("NFC", text + ch)
-                != unicodedata.normalize("NFC", text) + unicodedata.normalize("NFC", ch)
+                or (
+                    not (ch.isascii() and text.isascii())
+                    and unicodedata.normalize("NFC", text + ch)
+                    != unicodedata.normalize("NFC", text) + unicodedata.normalize("NFC", ch)
+                )
             )
         ):
             chunks[-1].append(i)

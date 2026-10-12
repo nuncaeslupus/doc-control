@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 import unicodedata
 
 import pytest
@@ -229,3 +230,15 @@ def test_text_normalized_is_registered_read_only_with_schema(
     assert described["kind"] == "read"
     assert set(described["schema"]["properties"]) >= {"doc", "text", "at"}
     assert main(["text.normalized", "--json", "{}"]) == 2
+
+
+def test_runs_that_never_stabilise_under_nfc_stay_linear() -> None:
+    """U+0F73 decomposes into marks that reorder across the whole run: NFC of it is quadratic."""
+    started = time.perf_counter()
+    result = normalize("\u0f73" * 20000)
+    assert time.perf_counter() - started < 1.0
+    assert len(result.to_original) == len(result.text) + 1
+    assert result.to_original[-1] == 20000
+    started = time.perf_counter()
+    normalize("\u0f71\u0f72" * 20000)
+    assert time.perf_counter() - started < 1.0
