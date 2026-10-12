@@ -1,10 +1,17 @@
 """The per-document store: id, backups with retention, config and log path.
 
-Adjacent mode (default) keeps ``.doc-control/<doc-stem>/`` next to the
-document. With ``DOC_CONTROL_STORE=appdata`` the store lives under the user
-store (``DOC_CONTROL_HOME`` or the platform default) at
-``stores/<doc-stem>-<hash of the absolute path>/``, so same-named documents in
-different folders never share one.
+Adjacent mode (default) keeps ``.doc-control/<file name>/`` next to the
+document; the full name (``Novela.docx``, not ``Novela``) keeps same-stem files
+such as ``Novela.docx`` and ``Novela.dotx`` from sharing a store. With
+``DOC_CONTROL_STORE=appdata`` the store lives under the user store
+(``DOC_CONTROL_HOME`` or the platform default) at
+``stores/<file name>-<hash of the resolved path>/``, so same-named documents in
+different folders never share one, while ``x/../Novela.docx``, a symlink to it
+and (on Windows) a different drive-letter case all map to the same store.
+
+``config.json`` is validated on load, and a bad one is ``SCHEMA_INVALID``
+before anything is copied or pruned. A corrupt ``id`` is an error and is never
+overwritten, since a fresh id would orphan the document's history.
 
 Retention prunes full backups only; ``log.jsonl`` is never touched here.
 """
@@ -16,7 +23,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 import uuid
@@ -26,12 +32,27 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from doc_control.ooxml.zipio import sha256_file
+from doc_control.errors import DocControlError, ErrorCode
+from doc_control.schema import validate
 
 STORE_DIRNAME = ".doc-control"
 APP_NAME = "doc-control"
 TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 DEFAULT_CONFIG: dict[str, Any] = {"backups": {"keep": 20, "min_days": 30}}
+CONFIG_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "backups": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "keep": {"type": "integer", "minimum": 0},
+                "min_days": {"type": "number", "minimum": 0},
+            },
+        },
+    },
+}
 _BACKUP_RE = re.compile(r"^(?P<ts>\d{8}T\d{6}Z)-(?P<sha>[0-9a-f]{8})\.docx$")
 
 
@@ -53,11 +74,12 @@ def user_home(env: Mapping[str, str] | None = None, platform: str | None = None)
 def store_dir(doc_path: Path, env: Mapping[str, str] | None = None) -> Path:
     """Where the store for ``doc_path`` lives under the configured mode."""
     env = os.environ if env is None else env
-    doc_path = doc_path.absolute()
+    doc_path = doc_path.resolve()
     if env.get("DOC_CONTROL_STORE", "adjacent").strip().lower() == "appdata":
-        key = hashlib.sha256(str(doc_path).encode("utf-8")).hexdigest()[:12]
-        return user_home(env) / "stores" / f"{doc_path.stem}-{key}"
-    return doc_path.parent / STORE_DIRNAME / doc_path.stem
+        canonical = os.path.normcase(str(doc_path))
+        key = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+        return user_home(env) / "stores" / f"{doc_path.name}-{key}"
+    return doc_path.parent / STORE_DIRNAME / doc_path.name
 
 
 def _merge(defaults: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -118,33 +140,55 @@ class DocStore:
 
     @classmethod
     def open(cls, doc_path: Path, env: Mapping[str, str] | None = None) -> DocStore:
-        """Open (creating if needed) the store for ``doc_path``."""
+        """Open (creating if needed) the store for ``doc_path``.
+
+        Raises ``SCHEMA_INVALID`` for a bad ``config.json`` and ``INTERNAL``
+        for a corrupt ``id``, before any backup is taken.
+        """
         store = cls(store_dir(doc_path, env))
         store.backups_dir.mkdir(parents=True, exist_ok=True)
-        store.doc_id = store._load_or_create_id()
         store.config = store._load_or_create_config()
+        store.doc_id = store._load_or_create_id()
         return store
 
     def _load_or_create_id(self) -> str:
-        if self.id_path.is_file():
-            text = self.id_path.read_text(encoding="utf-8").strip()
+        if self.id_path.exists():
             try:
-                return str(uuid.UUID(text))
-            except ValueError:
-                pass  # unreadable id: fall through and mint a fresh one
+                return str(uuid.UUID(self.id_path.read_text(encoding="utf-8").strip()))
+            except ValueError as exc:
+                # Never mint a replacement: a new id would orphan the history
+                # logged under the old one, so a human has to look at it.
+                raise DocControlError(
+                    ErrorCode.INTERNAL,
+                    f"document store id is corrupt: {self.id_path}",
+                    path=str(self.id_path),
+                ) from exc
         doc_id = str(uuid.uuid4())
         _write_text_atomic(self.id_path, doc_id + "\n")
         return doc_id
 
     def _load_or_create_config(self) -> dict[str, Any]:
-        if not self.config_path.is_file():
+        if not self.config_path.exists():
             _write_text_atomic(self.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
             return copy.deepcopy(DEFAULT_CONFIG)
         try:
             loaded = json.loads(self.config_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            loaded = {}
-        return _merge(DEFAULT_CONFIG, loaded if isinstance(loaded, dict) else {})
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                f"{self.config_path} is not valid JSON: {exc}",
+                path=str(self.config_path),
+            ) from exc
+        try:
+            validate(loaded, CONFIG_SCHEMA)
+        except DocControlError as exc:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                f"{self.config_path}: {exc.message}",
+                path=str(self.config_path),
+                field=exc.details.get("path"),
+            ) from exc
+        return _merge(DEFAULT_CONFIG, loaded)
 
     def backups(self) -> list[tuple[datetime, Path]]:
         """Backups in this store, oldest first; files not named like a backup are ignored."""
@@ -164,41 +208,69 @@ def _now(now: datetime | None) -> datetime:
     return now if now.tzinfo else now.replace(tzinfo=UTC)
 
 
-def create_backup(store: DocStore, doc_path: Path, now: datetime | None = None) -> Path:
-    """Copy ``doc_path`` into ``store`` as ``<UTC timestamp>-<sha8>.docx``, flushed to disk."""
+def create_backup(
+    store: DocStore,
+    doc_path: Path,
+    now: datetime | None = None,
+    expect_sha256: str | None = None,
+) -> Path:
+    """Copy ``doc_path`` into ``store`` as ``<UTC timestamp>-<sha8>.docx``, flushed to disk.
+
+    The bytes are hashed as they are copied, so the name always matches the
+    content. If ``expect_sha256`` is given and the copied bytes differ, the
+    partial backup is removed and ``DOC_CHANGED_ON_DISK`` is raised.
+    """
     stamp = _now(now).astimezone(UTC).strftime(TIMESTAMP_FORMAT)
-    dest = store.backups_dir / f"{stamp}-{sha256_file(doc_path)[:8]}.docx"
-    if dest.exists():
-        return dest  # same content in the same second: already backed up
+    digest = hashlib.sha256()
     fd, tmp = tempfile.mkstemp(dir=store.backups_dir, prefix=".backup.", suffix=".tmp")
+    tmp_path = Path(tmp)
     try:
         with os.fdopen(fd, "wb") as out, doc_path.open("rb") as src:
-            shutil.copyfileobj(src, out, 1 << 20)
+            while chunk := src.read(1 << 20):
+                digest.update(chunk)
+                out.write(chunk)
             out.flush()
             os.fsync(out.fileno())
-        Path(tmp).replace(dest)
+        actual = digest.hexdigest()
+        if expect_sha256 is not None and actual != expect_sha256.strip().lower():
+            raise DocControlError(
+                ErrorCode.DOC_CHANGED_ON_DISK,
+                f"{doc_path.name} changed on disk since it was read",
+                path=str(doc_path),
+                expected_sha256=expect_sha256,
+                actual_sha256=actual,
+            )
+        dest = store.backups_dir / f"{stamp}-{actual[:8]}.docx"
+        if dest.exists():
+            tmp_path.unlink()
+            return dest  # same content in the same second: already backed up
+        tmp_path.replace(dest)
     except BaseException:
-        Path(tmp).unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise
     _fsync_dir(store.backups_dir)
     return dest
 
 
-def prune_backups(store: DocStore, now: datetime | None = None) -> list[Path]:
+def prune_backups(
+    store: DocStore, now: datetime | None = None, protect: Path | None = None
+) -> list[Path]:
     """Delete backups beyond retention; return what was removed, oldest first.
 
-    A backup is kept if it is among the newest ``backups.keep`` or younger than
-    ``backups.min_days`` — whichever keeps more. The log is never deleted.
+    A backup is kept if it is among the newest ``backups.keep`` (at least 1) or
+    younger than ``backups.min_days``, whichever keeps more. ``protect`` (the
+    backup just taken) is never removed: timestamps are truncated to the
+    second, so it need not sort last. The log is never deleted.
     """
     settings = store.config.get("backups", {})
-    keep = max(0, int(settings.get("keep", DEFAULT_CONFIG["backups"]["keep"])))
+    keep = max(1, int(settings.get("keep", DEFAULT_CONFIG["backups"]["keep"])))
     min_days = max(0, float(settings.get("min_days", DEFAULT_CONFIG["backups"]["min_days"])))
     cutoff = _now(now) - timedelta(days=min_days)
     entries = store.backups()
-    newest = {path for _, path in entries[len(entries) - keep :]} if keep else set()
+    newest = {path for _, path in entries[-keep:]}
     removed: list[Path] = []
     for when, path in entries:
-        if path in newest or when > cutoff:
+        if path in newest or path == protect or when > cutoff:
             continue
         path.unlink(missing_ok=True)
         removed.append(path)
@@ -206,10 +278,16 @@ def prune_backups(store: DocStore, now: datetime | None = None) -> list[Path]:
 
 
 def backup(
-    doc_path: Path, now: datetime | None = None, env: Mapping[str, str] | None = None
+    doc_path: Path,
+    now: datetime | None = None,
+    env: Mapping[str, str] | None = None,
+    expect_sha256: str | None = None,
 ) -> Path:
-    """Back up ``doc_path`` into its store, apply retention, return the backup path."""
+    """Back up ``doc_path`` into its store, apply retention, return the backup path.
+
+    The store's config and id are validated before anything is copied or pruned.
+    """
     store = DocStore.open(doc_path, env)
-    path = create_backup(store, doc_path, now)
-    prune_backups(store, now)
+    path = create_backup(store, doc_path, now, expect_sha256)
+    prune_backups(store, now, protect=path)
     return path

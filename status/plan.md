@@ -49,8 +49,8 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | Service | Database | Change | Description |
 |---------|----------|--------|-------------|
 | Document | the `.docx` | UPDATE | Only through verified batches; tracked by default |
-| Document store | `.doc-control/<stem>/backups/` | CREATE/DELETE | Backup on open-for-write and before every write; pruned to 20 or 30 days, whichever keeps more |
-| Document store | `.doc-control/<stem>/log.jsonl` | CREATE (append) | One line per applied batch; removed only by `history.purge` (tombstone line) |
+| Document store | `.doc-control/<file name>/backups/` | CREATE/DELETE | Backup on open-for-write and before every write; pruned to 20 or 30 days, whichever keeps more. Keyed by the full file name, not the stem, to avoid same-stem collisions (`Novela.docx` / `Novela.dotx`) |
+| Document store | `.doc-control/<file name>/log.jsonl` | CREATE (append) | One line per applied batch; removed only by `history.purge` (tombstone line) |
 | User store | `recipes/`, `stylesets/` | CREATE/UPDATE | Written only when the agent saves a user recipe or style set |
 
 ### Technology choices

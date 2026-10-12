@@ -81,5 +81,5 @@ def test_guard_write_on_missing_document_returns_doc_not_found(tmp_path: Path) -
 def test_guard_write_backs_up_and_returns_path(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     backup = guard_write(doc, sha256_file(doc))
-    assert backup.parent == tmp_path / ".doc-control" / "Novela" / "backups"
+    assert backup.parent == tmp_path / ".doc-control" / "Novela.docx" / "backups"
     assert backup.read_bytes() == doc.read_bytes()

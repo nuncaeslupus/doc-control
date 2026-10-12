@@ -9,12 +9,17 @@ from pathlib import Path
 
 import pytest
 
+import doc_control.safety as safety_mod
+import doc_control.safety.store as store_mod
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.zipio import sha256_file
 from doc_control.safety import guard_write
+from doc_control.safety.lock import check_changed as real_check_changed
 from doc_control.safety.store import (
     DEFAULT_CONFIG,
     DocStore,
     backup,
+    create_backup,
     prune_backups,
     store_dir,
     user_home,
@@ -33,7 +38,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_adjacent_store_layout(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     store = DocStore.open(doc)
-    root = tmp_path / ".doc-control" / "Novela"
+    root = tmp_path / ".doc-control" / "Novela.docx"
     assert store.root == root
     assert store.id_path == root / "id"
     assert store.backups_dir == root / "backups"
@@ -50,13 +55,13 @@ def test_document_id_is_a_uuid_and_persists(tmp_path: Path) -> None:
     first = DocStore.open(doc).doc_id
     assert str(uuid.UUID(first)) == first
     assert DocStore.open(doc).doc_id == first
-    assert (tmp_path / ".doc-control" / "Novela" / "id").read_text().strip() == first
+    assert (tmp_path / ".doc-control" / "Novela.docx" / "id").read_text().strip() == first
 
 
 def test_config_overrides_are_read_and_defaults_fill_gaps(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     store = DocStore.open(doc)
-    store.config_path.write_text(json.dumps({"backups": {"keep": 3}, "other": 1}))
+    store.config_path.write_text(json.dumps({"backups": {"keep": 3}}))
     assert DocStore.open(doc).config["backups"] == {"keep": 3, "min_days": 30}
 
 
@@ -65,7 +70,7 @@ def test_backup_copies_document_with_timestamp_and_sha8(tmp_path: Path) -> None:
     sha = sha256_file(doc)
     path = backup(doc, now=NOW)
     assert path.name == f"20261012T114500Z-{sha[:8]}.docx"
-    assert path.parent == tmp_path / ".doc-control" / "Novela" / "backups"
+    assert path.parent == tmp_path / ".doc-control" / "Novela.docx" / "backups"
     assert path.read_bytes() == doc.read_bytes()
 
 
@@ -108,12 +113,12 @@ def test_retention_keeps_all_younger_than_min_days(tmp_path: Path) -> None:
 
 def test_retention_ignores_foreign_files(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
-    store = _with_retention(doc, keep=0, min_days=0)
+    store = _with_retention(doc, keep=1, min_days=0)
     foreign = store.backups_dir / "notes.txt"
     foreign.write_text("keep me")
-    _seed(store, [100])
+    paths = _seed(store, [100, 90])
     prune_backups(store, now=NOW)
-    assert list(store.backups_dir.iterdir()) == [foreign]
+    assert sorted(store.backups_dir.iterdir()) == sorted([foreign, paths[1]])
 
 
 def test_backup_prunes_with_default_retention(tmp_path: Path) -> None:
@@ -140,7 +145,7 @@ def test_appdata_mode_uses_doc_control_home(
     assert path.is_relative_to(home / "stores")
     root = store_dir(doc)
     assert root.parent == home / "stores"
-    assert root.name.startswith("Novela-")
+    assert root.name.startswith("Novela.docx-")
     # Same-named documents in different folders get different stores.
     other = tmp_path / "other"
     other.mkdir()
@@ -150,7 +155,7 @@ def test_appdata_mode_uses_doc_control_home(
 def test_adjacent_mode_explicit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DOC_CONTROL_STORE", "adjacent")
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
-    assert store_dir(doc) == tmp_path / ".doc-control" / "Novela"
+    assert store_dir(doc) == tmp_path / ".doc-control" / "Novela.docx"
 
 
 @pytest.mark.parametrize(
@@ -165,3 +170,165 @@ def test_adjacent_mode_explicit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 )
 def test_user_home_platform_defaults(platform: str, env: dict[str, str], expected: str) -> None:
     assert user_home(env=env, platform=platform) == Path(expected).expanduser()
+
+
+# --- review fixes ------------------------------------------------------------
+
+
+def test_just_created_backup_is_never_pruned(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    _with_retention(doc, keep=0, min_days=0)
+    path = guard_write(doc, None, now=NOW)
+    assert path.is_file()
+    assert path.read_bytes() == doc.read_bytes()
+
+
+def test_just_created_backup_survives_same_second_sibling(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = _with_retention(doc, keep=1, min_days=0)
+    sibling = store.backups_dir / f"{NOW.strftime('%Y%m%dT%H%M%SZ')}-ffffffff.docx"
+    sibling.write_bytes(b"b")
+    path = guard_write(doc, None, now=NOW)
+    assert path.is_file()
+
+
+def test_keep_is_clamped_to_at_least_one(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = _with_retention(doc, keep=0, min_days=0)
+    paths = _seed(store, [100, 90])
+    removed = prune_backups(store, now=NOW)
+    assert removed == [paths[0]]
+    assert list(store.backups_dir.iterdir()) == [paths[1]]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"backups": 5}',
+        '{"backups": {"keep": "abc"}}',
+        '{"backups": {"keep": true}}',
+        '{"backups": {"keep": -1}}',
+        '{"backups": {"min_days": "x"}}',
+        '{"backups": {"kep": 5}}',
+        '{"backup": {"keep": 50}}',
+        "null",
+        "[]",
+        '{"backups": {"keep": 50,}',
+        "",
+    ],
+)
+def test_bad_config_fails_before_any_backup(tmp_path: Path, text: str) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    existing = _seed(store, [400 + i for i in range(25)])
+    store.config_path.write_text(text)
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.SCHEMA_INVALID
+    assert exc.value.details["path"] == str(store.config_path)
+    assert sorted(store.backups_dir.iterdir()) == sorted(existing)
+    assert store.config_path.read_text() == text
+
+
+def test_missing_config_gets_defaults(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.config_path.unlink()
+    assert DocStore.open(doc).config == DEFAULT_CONFIG
+    assert json.loads(store.config_path.read_text()) == DEFAULT_CONFIG
+
+
+@pytest.mark.parametrize("text", ["not-a-uuid\n", "", "\n"])
+def test_corrupt_id_is_an_error_and_never_overwritten(tmp_path: Path, text: str) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.id_path.write_text(text)
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert "corrupt" in exc.value.message
+    assert exc.value.details["path"] == str(store.id_path)
+    assert store.id_path.read_text() == text
+    assert list(store.backups_dir.iterdir()) == []
+
+
+def _appdata(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    monkeypatch.setenv("DOC_CONTROL_STORE", "appdata")
+    monkeypatch.setenv("DOC_CONTROL_HOME", str(home))
+    return home
+
+
+def test_appdata_key_resolves_dotdot_symlinks_and_relative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _appdata(monkeypatch, tmp_path)
+    docs = tmp_path / "docs"
+    (docs / "x").mkdir(parents=True)
+    doc = make_docx(docs / "Novela.docx", "Hola")
+    root = store_dir(doc)
+    assert store_dir(docs / "x" / ".." / "Novela.docx") == root
+    link = tmp_path / "link.docx"
+    link.symlink_to(doc)
+    assert store_dir(link) == root
+    monkeypatch.chdir(docs)
+    assert store_dir(Path("Novela.docx")) == root
+
+
+def test_appdata_key_is_case_normalised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _appdata(monkeypatch, tmp_path)
+    monkeypatch.setattr(store_mod.os.path, "normcase", str.lower)
+    upper = store_dir(tmp_path / "DOCS" / "NOVELA.docx")
+    lower = store_dir(tmp_path / "docs" / "novela.docx")
+    # Same hash key; the folder names differ only in case, which the
+    # case-insensitive file systems where normcase lowers treat as one.
+    assert upper.parent == lower.parent
+    assert upper.name.lower() == lower.name.lower()
+
+
+def test_same_stem_documents_get_separate_stores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docx = make_docx(tmp_path / "Novela.docx", "Hola")
+    dotx = make_docx(tmp_path / "Novela.dotx", "Plantilla")
+    assert store_dir(dotx) == tmp_path / ".doc-control" / "Novela.dotx"
+    assert store_dir(docx) != store_dir(dotx)
+    _appdata(monkeypatch, tmp_path)
+    assert store_dir(docx) != store_dir(dotx)
+    assert store_dir(dotx).name.startswith("Novela.dotx-")
+
+
+def test_backup_name_matches_its_content(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    path = backup(doc, now=NOW)
+    assert path.name.split("-")[1][:8] == sha256_file(path)[:8]
+
+
+def test_change_between_check_and_backup_fails_without_a_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    sha = sha256_file(doc)
+    store = DocStore.open(doc)
+
+    def racing_check(path: Path, expect: str | None) -> str:
+        actual = real_check_changed(path, expect)
+        make_docx(path, "Changed by Word")  # lands after the check, before the copy
+        return actual
+
+    monkeypatch.setattr(safety_mod, "check_changed", racing_check)
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, sha, now=NOW)
+    assert exc.value.code is ErrorCode.DOC_CHANGED_ON_DISK
+    assert list(store.backups_dir.iterdir()) == []
+
+
+def test_create_backup_rejects_mismatch_and_leaves_nothing(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    with pytest.raises(DocControlError) as exc:
+        create_backup(store, doc, NOW, expect_sha256="0" * 64)
+    assert exc.value.code is ErrorCode.DOC_CHANGED_ON_DISK
+    assert list(store.backups_dir.iterdir()) == []
+    ok = create_backup(store, doc, NOW, expect_sha256=sha256_file(doc).upper())
+    assert ok.read_bytes() == doc.read_bytes()
