@@ -92,11 +92,37 @@ def styleset_export(request: dict[str, Any]) -> Reply:
     }
     result: dict[str, Any] = {"styleset": styleset, "count": len(entries)}
     if "out" in request:
-        Path(request["out"]).write_text(
-            json.dumps(styleset, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        _write_new(Path(request["out"]), Path(request["doc"]), styleset)
         result["path"] = request["out"]
     return Reply(result, doc=doc.envelope_doc())
+
+
+def _write_new(out: Path, doc: Path, styleset: dict[str, Any]) -> None:
+    """Write the set to a file that does not exist yet; never the document itself."""
+    same = out.exists() and doc.exists() and out.samefile(doc)
+    if same or out.resolve() == doc.resolve():
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, f"out is the document: {out}", path=str(out)
+        )
+    if out.exists():
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"out already exists, nothing was written: {out}",
+            path=str(out),
+        )
+    try:
+        with out.open("x", encoding="utf-8") as fh:
+            fh.write(json.dumps(styleset, ensure_ascii=False, indent=2) + "\n")
+    except FileExistsError as exc:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, f"out already exists: {out}", path=str(out)
+        ) from exc
+    except OSError as exc:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"cannot write out: {type(exc).__name__}",
+            path=str(out),
+        ) from exc
 
 
 def _validated(styleset: Any) -> list[dict[str, Any]]:

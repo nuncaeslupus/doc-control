@@ -293,7 +293,8 @@ def _merge(s: StyleSession, spec: dict[str, Any]) -> dict[str, Any]:
     ):
         raise invalid("from must be a style id/name or a non-empty list of them")
     target = s.resolve(_need(spec, "into"))
-    merged = []
+    merged: list[str] = []
+    before = s.records()
     for key in sources:
         src = s.resolve(key)
         if src.id == target.id:
@@ -314,10 +315,13 @@ def _merge(s: StyleSession, spec: dict[str, Any]) -> dict[str, Any]:
         s.remap_ref(src.id, target.id)
         s.touched.discard(src.id)
         merged.append(src.id)
-    el = s.styles.element(target.id)
-    based = el.find(W + "basedOn")
-    if based is not None and based.get(W + "val") == target.id:
-        el.remove(based)  # it was based on a merged style: now it would be based on itself
+    base = before[target.id].based_on
+    if base in merged:
+        # Based on a merged-away style: inherit from that style's own parent instead.
+        while base in merged:
+            base = before[base].based_on
+        el = s.styles.element(target.id)
+        set_child(el, "basedOn", None if base == target.id else base)
         s.styles.put(el)
     s.touched.add(target.id)
     return {"op": "style.merge", "style": target.id, "merged": merged}

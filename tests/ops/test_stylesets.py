@@ -301,7 +301,7 @@ def test_merge_into_the_style_it_was_based_on_and_links(doc: Path) -> None:
     ops(doc, {"op": "style.merge", "from": "Body", "into": "Old"})
     styles = defs(doc)
     assert "Body" not in styles
-    assert styles["Old"][2] is None  # was based on Body: no self-reference
+    assert styles["Old"][2] == "Normal"  # re-based on the merged style's own parent
     assert styles["Old"][3] == "Old"
     assert styles["BodyChar"][4] is None  # its link partner is gone
 
@@ -427,3 +427,18 @@ def test_styleset_install_validates_the_set(doc: Path) -> None:
             styleset_install({"doc": str(doc), "styleset": bad})
     with pytest.raises(DocControlError):
         styleset_install({"doc": str(doc)})
+
+
+def test_export_out_never_overwrites(doc: Path, tmp_path: Path) -> None:
+    before = doc.read_bytes()
+    with pytest.raises(DocControlError) as err:
+        styleset_export({"doc": str(doc), "out": str(doc)})
+    assert err.value.code is ErrorCode.SCHEMA_INVALID
+    assert doc.read_bytes() == before
+    existing = tmp_path / "keep.json"
+    existing.write_text("mine", encoding="utf-8")
+    with pytest.raises(DocControlError):
+        styleset_export({"doc": str(doc), "out": str(existing)})
+    assert existing.read_text(encoding="utf-8") == "mine"
+    with pytest.raises(DocControlError):
+        styleset_export({"doc": str(doc), "out": str(tmp_path / "nodir" / "x.json")})
