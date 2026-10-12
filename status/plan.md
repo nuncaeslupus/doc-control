@@ -132,6 +132,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T6 | `address_resolution_errors == 0` | 0 (440 generated documents, 12679 paragraphs) | `uv run pytest tests/model/test_address.py` | 284e850 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T18 | `boundary_f1 >= 0.98` | 0.9973 (gold set: 667 sentences, 368 internal boundaries; es + generic; own and public-domain text) | `uv run pytest -q -s tests/model/test_segment.py` (micro F1 of internal sentence boundaries) | 8c64351 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | b4704e6 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
+| T35 | `diff_alignment_errors == 0` | 0 (20 document pairs, 7 change kinds incl. moved block, split, merge; 100k-word novel diffed in 0.27 s, 100k unrelated words in 2.0 s) | `uv run pytest -q -s tests/ops/test_diff.py` (prints `diff_alignment_errors=<n>`: symmetric difference between expected and found (kind, old, new) changes) | 89bc8a8 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 
 ### Dependency graph
 
