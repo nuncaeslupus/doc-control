@@ -36,7 +36,8 @@ class Style:
 class StyleTable:
     """Every ``w:style`` of the document, in file order."""
 
-    def __init__(self, styles: list[Style]) -> None:
+    def __init__(self, styles: list[Style], defaults_ppr: dict[str, Any] | None = None) -> None:
+        self.defaults_ppr: dict[str, Any] = defaults_ppr or {}
         self.styles = tuple(styles)
         self._by_id = {s.id: s for s in styles}
         self._by_name = {s.name.lower(): s for s in reversed(styles)}
@@ -104,8 +105,9 @@ def load_styles(pkg: Package) -> StyleTable:
     name = related_part(pkg, OFFICE_REL + "styles", STYLES_PART)
     if name is None:
         return StyleTable([])
+    root = parse_part(pkg, name)
     out: list[Style] = []
-    for elem in parse_part(pkg, name).findall(W + "style"):
+    for elem in root.findall(W + "style"):
         style_id = elem.get(W + "styleId")
         if not style_id:
             continue
@@ -128,4 +130,5 @@ def load_styles(pkg: Package) -> StyleTable:
                 rpr=run_format(elem.find(W + "rPr")),
             )
         )
-    return StyleTable(out)
+    defaults = root.find(f"{W}docDefaults/{W}pPrDefault/{W}pPr")
+    return StyleTable(out, para_format(defaults))
