@@ -159,6 +159,16 @@ def test_import_dotx_on_conflict_and_dry_run(tmp_path: Path) -> None:
         styleset_import_dotx({"doc": str(target), "path": str(tmp_path / "missing.dotx")})
 
 
+def test_import_dotx_without_styles_is_refused_and_writes_nothing(tmp_path: Path) -> None:
+    empty = make_docx(tmp_path / "empty.dotx", "x")
+    target = make_docx(tmp_path / "target.docx", "y", extra={"word/styles.xml": STYLES.encode()})
+    before = target.read_bytes()
+    with pytest.raises(DocControlError):
+        styleset_import_dotx({"doc": str(target), "path": str(empty)})
+    assert target.read_bytes() == before
+    assert not (tmp_path / ".doc-control").exists()
+
+
 def test_import_dotx_matches_json_install(tmp_path: Path) -> None:
     data = generate("headings", 3)
     src, out = _export(data, tmp_path, "t")

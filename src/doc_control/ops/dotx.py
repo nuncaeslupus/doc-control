@@ -192,7 +192,10 @@ def styleset_import_dotx(request: dict[str, Any]) -> Reply:
     source, target = Path(request["path"]), Path(request["doc"])
     if source.exists() and target.exists() and source.samefile(target):
         raise invalid("path is the document itself")
-    entries = _validated({"version": 1, "styles": read_dotx(source)})
+    styles = read_dotx(source)
+    if not styles:
+        raise invalid(f"no styles to import in {source.name}")
+    entries = _validated({"version": 1, "styles": styles})
     mode = request.get("on_conflict", "replace")
     result = commit_styles(
         target,
