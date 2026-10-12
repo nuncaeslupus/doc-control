@@ -130,6 +130,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T5 | `synthetic_docs_failing_validator == 0` | 0 (of 28) | `DOC_CONTROL_REQUIRE_SOFFICE=1 uv run pytest tests/corpus` (validator: structural lint + LibreOffice 24.2.7.2 headless round trip; 40 passed, 1 skipped: private corpus unset) | 645979c | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
 | T4 | `splice_roundtrip_mismatches == 0` | 0 (400 generated documents) | `uv run pytest tests/ooxml/test_splice.py` | 41065c5 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 | T6 | `address_resolution_errors == 0` | 0 (440 generated documents, 12679 paragraphs) | `uv run pytest tests/model/test_address.py` | 284e850 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
+| T8 | `find_100k_words_p95_ms <= 1000` | 144 (24 timed finds over the 100k-word novel: literal whole word, folded, regex, no match) | `uv run pytest -q -m bench tests/ops/test_find.py -s` | e55bda9 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
 
 ### Dependency graph
 
