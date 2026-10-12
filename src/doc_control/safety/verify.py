@@ -64,7 +64,8 @@ class Footprint:
 
     ``replaced`` are the indices (in the original ``word/document.xml``) of
     paragraphs that are rewritten or deleted, ``inserted_after`` those after
-    which new paragraphs land (``-1``: at the start of the body). ``parts`` are
+    which new paragraphs land (``-1``: at the start of the body), ``inserted_before``
+    those before which new paragraphs land. ``parts`` are
     the other zip members that may change or be created; every member not
     listed is checked byte for byte, header fields included.
     """
@@ -72,6 +73,7 @@ class Footprint:
     replaced: frozenset[int] = frozenset()
     inserted_after: frozenset[int] = frozenset()
     parts: frozenset[str] = frozenset()
+    inserted_before: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,10 @@ def _document_problems(original: Package, result: Package, footprint: Footprint)
             cuts.append((spans.paragraphs[i].end, spans.paragraphs[i].end))
         else:
             return [f"footprint inserts after paragraph {i}, which does not exist"]
+    for i in footprint.inserted_before:
+        if not 0 <= i < len(spans.paragraphs):
+            return [f"footprint inserts before paragraph {i}, which does not exist"]
+        cuts.append((spans.paragraphs[i].start, spans.paragraphs[i].start))
     # Everything between the touched spans must reappear, in order, in the result.
     gaps: list[bytes] = []
     pos = 0

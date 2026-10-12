@@ -124,6 +124,14 @@ def test_nested_fields_hide_text_inside_an_inner_instruction() -> None:
     assert _texts(para) == ["result kept"]
 
 
+def test_pieces_in_a_field_result_are_marked_even_when_the_field_began_earlier() -> None:
+    first = _p(_r(_t("a")), _fld("begin"), _r("<w:instrText> TOC </w:instrText>"))
+    second = _p(_fld("separate"), _r(_t("entry")), _fld("end"), _r(_t("after")))
+    index = build_index(_doc(first, second))
+    assert [(p.start, p.in_field) for p in index.paragraphs[0].pieces] == [(0, False)]
+    assert [(p.start, p.in_field) for p in index.paragraphs[1].pieces] == [(0, True), (5, False)]
+
+
 def test_field_spanning_paragraphs_keeps_its_state() -> None:
     first = _p(_r(_t("a")), _fld("begin"), _r("<w:instrText> TOC </w:instrText>"))
     second = _p(_r(_t("still instruction")), _fld("separate"), _r(_t("entry")))

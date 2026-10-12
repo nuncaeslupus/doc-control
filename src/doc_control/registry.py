@@ -50,6 +50,15 @@ def operation(
 
 def load_operations() -> dict[str, Operation]:
     """Import every operation module so their decorators run."""
-    from doc_control.ops import find, layout, meta, read, text  # noqa: F401
+    from doc_control.ops import (  # noqa: F401
+        diff,
+        find,
+        layout,
+        meta,
+        page,
+        read,
+        segment,
+        text,
+    )
 
     return REGISTRY
