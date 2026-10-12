@@ -32,7 +32,7 @@ def collect(
         code, env = run(capsys, **request)
         assert code == 0, env
         out += env["result"]["paragraphs"]
-        cursor = env["result"]["next"]
+        cursor = env["next"]
         if cursor is None:
             break
         request["cursor"] = cursor
@@ -81,7 +81,7 @@ def test_cap_and_cursor_cover_every_paragraph_once(
         )
         <= 8000
     )
-    cursor = env["result"]["next"]
+    cursor = env["next"]
     assert cursor is not None
     assert cursor.startswith("c:text.normalized:") and cursor.count(":") == 4
     assert len(collect(capsys, doc=str(path))) == 120
@@ -91,7 +91,7 @@ def test_limit_and_stale_cursor(tmp_path: Path, capsys: pytest.CaptureFixture[st
     path = make_docx(tmp_path / "a.docx", "one", "two", "three")
     code, env = run(capsys, doc=str(path), limit=2)
     assert code == 0 and len(env["result"]["paragraphs"]) == 2
-    cursor = env["result"]["next"]
+    cursor = env["next"]
     make_docx(path, "one", "two", "changed")
     code, env = run(capsys, doc=str(path), cursor=cursor)
     assert code == 1 and env["error"]["code"] == ErrorCode.DOC_CHANGED_ON_DISK

@@ -27,6 +27,7 @@ from doc_control.model.normalized import NormalizedText, normalize
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
 
+
 def _map(result: NormalizedText) -> dict[str, list[int]]:
     return {
         "to_original": list(result.to_original),
