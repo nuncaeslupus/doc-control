@@ -1,0 +1,215 @@
+"""The per-document store: id, backups with retention, config and log path.
+
+Adjacent mode (default) keeps ``.doc-control/<doc-stem>/`` next to the
+document. With ``DOC_CONTROL_STORE=appdata`` the store lives under the user
+store (``DOC_CONTROL_HOME`` or the platform default) at
+``stores/<doc-stem>-<hash of the absolute path>/``, so same-named documents in
+different folders never share one.
+
+Retention prunes full backups only; ``log.jsonl`` is never touched here.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from doc_control.ooxml.zipio import sha256_file
+
+STORE_DIRNAME = ".doc-control"
+APP_NAME = "doc-control"
+TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+DEFAULT_CONFIG: dict[str, Any] = {"backups": {"keep": 20, "min_days": 30}}
+_BACKUP_RE = re.compile(r"^(?P<ts>\d{8}T\d{6}Z)-(?P<sha>[0-9a-f]{8})\.docx$")
+
+
+def user_home(env: Mapping[str, str] | None = None, platform: str | None = None) -> Path:
+    """The user store: ``DOC_CONTROL_HOME`` or the platform default."""
+    env = os.environ if env is None else env
+    platform = sys.platform if platform is None else platform
+    if env.get("DOC_CONTROL_HOME"):
+        return Path(env["DOC_CONTROL_HOME"]).expanduser()
+    if platform.startswith("win"):
+        base = env.get("APPDATA")
+        return (Path(base) if base else Path("~/AppData/Roaming").expanduser()) / APP_NAME
+    if platform == "darwin":
+        return Path("~/Library/Application Support").expanduser() / APP_NAME
+    xdg = env.get("XDG_CONFIG_HOME")
+    return (Path(xdg) if xdg else Path("~/.config").expanduser()) / APP_NAME
+
+
+def store_dir(doc_path: Path, env: Mapping[str, str] | None = None) -> Path:
+    """Where the store for ``doc_path`` lives under the configured mode."""
+    env = os.environ if env is None else env
+    doc_path = doc_path.absolute()
+    if env.get("DOC_CONTROL_STORE", "adjacent").strip().lower() == "appdata":
+        key = hashlib.sha256(str(doc_path).encode("utf-8")).hexdigest()[:12]
+        return user_home(env) / "stores" / f"{doc_path.stem}-{key}"
+    return doc_path.parent / STORE_DIRNAME / doc_path.stem
+
+
+def _merge(defaults: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    out = copy.deepcopy(defaults)
+    for key, value in override.items():
+        if isinstance(value, Mapping) and isinstance(out.get(key), dict):
+            out[key] = _merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _fsync_dir(path: Path) -> None:
+    """Flush a directory entry where the platform allows it (not on Windows)."""
+    if os.name != "posix":
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        Path(tmp).replace(path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+@dataclass
+class DocStore:
+    root: Path
+    doc_id: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def id_path(self) -> Path:
+        return self.root / "id"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.root / "backups"
+
+    @property
+    def config_path(self) -> Path:
+        return self.root / "config.json"
+
+    @property
+    def log_path(self) -> Path:
+        return self.root / "log.jsonl"
+
+    @classmethod
+    def open(cls, doc_path: Path, env: Mapping[str, str] | None = None) -> DocStore:
+        """Open (creating if needed) the store for ``doc_path``."""
+        store = cls(store_dir(doc_path, env))
+        store.backups_dir.mkdir(parents=True, exist_ok=True)
+        store.doc_id = store._load_or_create_id()
+        store.config = store._load_or_create_config()
+        return store
+
+    def _load_or_create_id(self) -> str:
+        if self.id_path.is_file():
+            text = self.id_path.read_text(encoding="utf-8").strip()
+            try:
+                return str(uuid.UUID(text))
+            except ValueError:
+                pass  # unreadable id: fall through and mint a fresh one
+        doc_id = str(uuid.uuid4())
+        _write_text_atomic(self.id_path, doc_id + "\n")
+        return doc_id
+
+    def _load_or_create_config(self) -> dict[str, Any]:
+        if not self.config_path.is_file():
+            _write_text_atomic(self.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
+            return copy.deepcopy(DEFAULT_CONFIG)
+        try:
+            loaded = json.loads(self.config_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = {}
+        return _merge(DEFAULT_CONFIG, loaded if isinstance(loaded, dict) else {})
+
+    def backups(self) -> list[tuple[datetime, Path]]:
+        """Backups in this store, oldest first; files not named like a backup are ignored."""
+        found: list[tuple[datetime, Path]] = []
+        for path in self.backups_dir.iterdir():
+            match = _BACKUP_RE.match(path.name)
+            if match and path.is_file():
+                when = datetime.strptime(match["ts"], TIMESTAMP_FORMAT).replace(tzinfo=UTC)
+                found.append((when, path))
+        found.sort()
+        return found
+
+
+def _now(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(UTC)
+    return now if now.tzinfo else now.replace(tzinfo=UTC)
+
+
+def create_backup(store: DocStore, doc_path: Path, now: datetime | None = None) -> Path:
+    """Copy ``doc_path`` into ``store`` as ``<UTC timestamp>-<sha8>.docx``, flushed to disk."""
+    stamp = _now(now).astimezone(UTC).strftime(TIMESTAMP_FORMAT)
+    dest = store.backups_dir / f"{stamp}-{sha256_file(doc_path)[:8]}.docx"
+    if dest.exists():
+        return dest  # same content in the same second: already backed up
+    fd, tmp = tempfile.mkstemp(dir=store.backups_dir, prefix=".backup.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as out, doc_path.open("rb") as src:
+            shutil.copyfileobj(src, out, 1 << 20)
+            out.flush()
+            os.fsync(out.fileno())
+        Path(tmp).replace(dest)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    _fsync_dir(store.backups_dir)
+    return dest
+
+
+def prune_backups(store: DocStore, now: datetime | None = None) -> list[Path]:
+    """Delete backups beyond retention; return what was removed, oldest first.
+
+    A backup is kept if it is among the newest ``backups.keep`` or younger than
+    ``backups.min_days`` — whichever keeps more. The log is never deleted.
+    """
+    settings = store.config.get("backups", {})
+    keep = max(0, int(settings.get("keep", DEFAULT_CONFIG["backups"]["keep"])))
+    min_days = max(0, float(settings.get("min_days", DEFAULT_CONFIG["backups"]["min_days"])))
+    cutoff = _now(now) - timedelta(days=min_days)
+    entries = store.backups()
+    newest = {path for _, path in entries[len(entries) - keep :]} if keep else set()
+    removed: list[Path] = []
+    for when, path in entries:
+        if path in newest or when > cutoff:
+            continue
+        path.unlink(missing_ok=True)
+        removed.append(path)
+    return removed
+
+
+def backup(
+    doc_path: Path, now: datetime | None = None, env: Mapping[str, str] | None = None
+) -> Path:
+    """Back up ``doc_path`` into its store, apply retention, return the backup path."""
+    store = DocStore.open(doc_path, env)
+    path = create_backup(store, doc_path, now)
+    prune_backups(store, now)
+    return path
