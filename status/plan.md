@@ -129,7 +129,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T9 | `writes_with_word_lock_present == 0` | 0 | `uv run pytest tests/safety` | bffa774 | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 | T5 | `synthetic_docs_failing_validator == 0` | 0 (of 28) | `DOC_CONTROL_REQUIRE_SOFFICE=1 uv run pytest tests/corpus` (validator: structural lint + LibreOffice 24.2.7.2 headless round trip; 40 passed, 1 skipped: private corpus unset) | 645979c | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
 | T4 | `splice_roundtrip_mismatches == 0` | 0 (400 generated documents) | `uv run pytest tests/ooxml/test_splice.py` | 41065c5 | local (Linux, CPython 3.13.16 via uv; requires-python >=3.11) | 2026-10-12 |
-| T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | 0ebe059 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
+| T10 | `partial_writes_on_failure == 0` | 0 (of 22 injected faults) | `uv run pytest -s tests/safety/test_verify.py` (prints `partial_writes_on_failure=<n>`: document byte-identical, no stray temp file, restorable backup after every fault) | b4704e6 | local (Linux, CPython 3.13.16 via uv) | 2026-10-12 |
 
 ### Dependency graph
 
