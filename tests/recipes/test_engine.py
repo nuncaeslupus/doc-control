@@ -475,17 +475,17 @@ def test_random_small_recipes_give_an_accepted_batch_with_the_plain_result(
         pattern = rng.choice(FUZZ_PATTERNS)
         template = rng.choice(FUZZ_TEXTS)
         line = "".join(rng.choice("abx\u00e9. ") for _ in range(rng.randint(1, 12)))
-        expected = re.sub(
-            pattern,
-            lambda m, t=template: (
+
+        def expand(m: re.Match[str], t: str = template) -> str:
+            return (
                 t.replace("$$", "\0")
                 .replace("$match", m.group(0))
                 .replace("$1", m.group(1) or "")
                 .replace("$2", (m.group(2) if m.re.groups > 1 else "") or "")
                 .replace("\0", "$")
-            ),
-            line,
-        )
+            )
+
+        expected = re.sub(pattern, expand, line)
         doc = make_docx(tmp_path / f"f{n}.docx", line)
         recipe = rx(pattern, {"op": "text.replace", "at": "$match", "text": template})
         batch = run(doc, definition=recipe).result["batch"]
