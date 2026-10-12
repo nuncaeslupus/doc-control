@@ -10,7 +10,7 @@ from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
-from doc_control.model.pages import CONSTANTS, PageEstimate, estimate_pages
+from doc_control.model.pages import CONSTANTS, NOTES, PageEstimate, estimate_pages
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
 
@@ -24,7 +24,15 @@ def _page_rows(est: PageEstimate) -> list[dict[str, Any]]:
             last["to"] = row.number
             last["paragraphs"] += 1
         else:
-            rows.append({"page": row.page, "from": row.number, "to": row.number, "paragraphs": 1})
+            rows.append(
+                {
+                    "page": row.page,
+                    "page_label": row.label,
+                    "from": row.number,
+                    "to": row.number,
+                    "paragraphs": 1,
+                }
+            )
     return rows
 
 
@@ -61,14 +69,23 @@ def page_estimate(request: dict[str, Any]) -> Reply:
         "page_count": est.pages,
         "basis": est.basis,
         "words_per_page": est.words_per_page,
+        "rendered_marks": est.marks,
         "model": CONSTANTS,
+        "notes": list(NOTES),
     }
     if "at" in request:
         para = doc.index.resolve_address(request["at"])
         row = est.rows[para.number - 1]
-        result = {**head, "at": str(para.address), "page": row.page, "source": row.source}
+        result = {
+            **head,
+            "at": str(para.address),
+            "page": row.page,
+            "page_label": row.label,
+            "source": row.source,
+        }
         if row.end_page != row.page:
             result["end_page"] = row.end_page
+            result["end_page_label"] = row.end_label
         return Reply(result, doc=doc.envelope_doc())
     if request.get("by") == "page":
         return paged("page.estimate", doc, request, "pages", _page_rows(est), head)
@@ -77,9 +94,11 @@ def page_estimate(request: dict[str, Any]) -> Reply:
         item: dict[str, Any] = {
             "at": str(doc.index.paragraph(row.number).address),
             "page": row.page,
+            "page_label": row.label,
             "source": row.source,
         }
         if row.end_page != row.page:
             item["end_page"] = row.end_page
+            item["end_page_label"] = row.end_label
         items.append(item)
     return paged("page.estimate", doc, request, "paragraphs", items, head)

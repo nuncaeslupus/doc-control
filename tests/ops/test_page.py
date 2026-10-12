@@ -190,9 +190,11 @@ def test_rendered_page_marks_are_preferred_and_flagged(run: Run, tmp_path: Path)
     # Two short paragraphs the model keeps on one page; Word's marks say otherwise.
     body = para("one") + para("two", before=MARK) + para("three") + para("four", before=MARK)
     result = estimate(run, build(tmp_path, body))
-    assert result["basis"] == "rendered"
+    assert result["basis"] == "rendered+model"
+    assert result["rendered_marks"] == 2
     assert [r["page"] for r in result["paragraphs"]] == [1, 2, 2, 3]
-    assert {r["source"] for r in result["paragraphs"]} == {"rendered"}
+    # Only the paragraphs a mark falls in are `rendered`; the others are the model's.
+    assert [r["source"] for r in result["paragraphs"]] == ["model", "rendered", "model", "rendered"]
     assert result["page_count"] == 3
 
 
@@ -282,8 +284,8 @@ def test_at_returns_one_paragraph_and_by_page_groups(run: Run, tmp_path: Path) -
     assert "paragraphs" not in one
     grouped = estimate(run, path, by="page")
     assert grouped["pages"] == [
-        {"page": 1, "from": 1, "to": 2, "paragraphs": 2},
-        {"page": 2, "from": 3, "to": 3, "paragraphs": 1},
+        {"page": 1, "page_label": 1, "from": 1, "to": 2, "paragraphs": 2},
+        {"page": 2, "page_label": 2, "from": 3, "to": 3, "paragraphs": 1},
     ]
 
 
@@ -309,3 +311,71 @@ def test_page_estimate_cursor_is_tied_to_the_request(run: Run, tmp_path: Path) -
     assert code == 0 and env["next"]
     code, env2, _ = run("page.estimate", doc=str(path), by="page", cursor=env["next"])
     assert code != 0 and env2["error"]["code"] == "SCHEMA_INVALID"
+
+
+def test_one_rendered_mark_does_not_switch_off_the_model(run: Run, tmp_path: Path) -> None:
+    body = para(words(100)) + para(words(100), before=MARK)
+    body += "".join(para(words(100)) for _ in range(400))
+    path = build(tmp_path, body)
+    result = estimate(run, path)
+    assert result["basis"] == "rendered+model"
+    assert 45 <= result["page_count"] <= 55  # 402 paragraphs, 8 to a page
+    rows, _ = follow(run, path)
+    assert rows[1]["source"] == "rendered" and rows[1]["page"] == 2
+    assert {r["source"] for r in rows[2:]} == {"model"}  # everything after the last mark
+    assert rows[-1]["page"] > 45
+
+
+def test_marks_resync_the_model_when_text_was_added_since_layout(run: Run, tmp_path: Path) -> None:
+    # Six pages as Word laid them out (8 paragraphs each, a mark on each page's first),
+    # then three paragraphs typed in at the top without a new layout.
+    added = "".join(para(words(100)) for _ in range(3))
+    pages = ""
+    for n in range(6):
+        pages += "".join(para(words(100), before=MARK if n and k == 0 else "") for k in range(8))
+    result = estimate(run, build(tmp_path, added + pages))
+    rows = result["paragraphs"]
+    marked = [r for r in rows if r["source"] == "rendered"]
+    assert len(marked) == 5
+    # The model pushes the first marked paragraph to page 3; each mark then restarts a page.
+    assert [r["page"] for r in marked] == [3, 4, 5, 6, 7]
+    assert result["page_count"] == 7
+    assert [r["page"] for r in rows] == sorted(r["page"] for r in rows)
+
+
+def test_page_labels_follow_pgnumtype_start_per_section(run: Run, tmp_path: Path) -> None:
+    def start(n: int) -> str:
+        return f'<w:pgNumType w:start="{n}"/>'
+
+    body = para("a") + para("b", sect(extra=start(5))) + para("c") + para("d", sect())
+    body += para("e") + para("f", sect(extra=start(1)))
+    path = build(tmp_path, body, final=sect())
+    rows = estimate(run, path)["paragraphs"]
+    assert [r["page"] for r in rows] == [1, 1, 2, 2, 3, 3]
+    # 5 in the first section, numbering continues in the second, restarts at 1 in the third.
+    assert [r["page_label"] for r in rows] == [5, 5, 6, 6, 1, 1]
+    one = estimate(run, path, at=rows[0]["at"])
+    assert (one["page"], one["page_label"]) == (1, 5)
+
+
+def test_table_row_is_as_tall_as_its_tallest_cell(run: Run, tmp_path: Path) -> None:
+    # Four cells of 117 pt: the 100-word one takes 26 lines (299 pt), the empty ones one line.
+    row = (
+        "<w:tbl><w:tr><w:tc>"
+        + para(words(100))
+        + "</w:tc>"
+        + "".join(f"<w:tc>{para()}</w:tc>" for _ in range(3))
+        + "</w:tr></w:tbl>"
+    )
+    after = "".join(para(words(100)) for _ in range(5))  # 80.5 pt each
+    rows = estimate(run, build(tmp_path, row + after))["paragraphs"]
+    assert {r["page"] for r in rows[:4]} == {1}  # the row is one block
+    # 299 + 4 * 80.5 = 621 of 648 pt: the last paragraph starts on page 1 and runs over. A row
+    # taken as full-width paragraphs (115 pt) would leave it comfortably on page 1.
+    assert (rows[-1]["page"], rows[-1]["end_page"]) == (1, 2)
+
+
+def test_response_notes_say_run_level_sizes_are_ignored(run: Run, tmp_path: Path) -> None:
+    result = estimate(run, build(tmp_path, para("a")))
+    assert any("Run-level font sizes are ignored" in n for n in result["notes"])
+    assert any("page_label" in n for n in result["notes"])

@@ -1,23 +1,33 @@
 """Estimated page of every paragraph. Always an estimate: only Word's layout engine knows.
 
-Three sources, strongest first:
+The word-count model always runs; the marks and breaks correct it:
 
-* ``rendered``: the document holds ``w:lastRenderedPageBreak`` marks, written by Word each
-  time it laid the document out. They are taken as the page starts (a stale file can
-  disagree with its text). An explicit break next to a mark is not counted twice.
-* ``break``: an explicit page start: ``w:br w:type="page"``, ``pageBreakBefore`` (direct or
-  from the style chain) or a section break that starts a new page (``nextPage``,
-  ``oddPage``, ``evenPage``; ``continuous`` does not).
-* ``model``: where there is no mark, pages are filled by a word-count model. A paragraph
-  of *w* words takes ``ceil(w / words_per_line)`` lines (at least one), where a line holds
-  ``width / (font_pt * CHAR_EM) / WORD_CHARS`` words, and each line is ``font_pt *
-  LINE_FACTOR`` points high (scaled or fixed by ``w:spacing``), plus space before and
-  after. A page holds its height minus the top and bottom margins; the width is the page
-  width minus the left (with gutter) and right margins and the paragraph's indents. Font
-  size, spacing and indents come from the paragraph, its style chain and
-  ``w:docDefaults``; the page from the paragraph's section (``w:sectPr``). Not modelled:
-  run-level sizes, tables as columns, floating objects, widow control, keep-with-next,
-  headers and footers.
+* ``w:lastRenderedPageBreak`` marks, written by Word each time it laid the document out,
+  are resync points: a mark starts a new page and resets the filled height, so the model
+  restarts from Word's own page start. Text added since the last layout carries no marks and
+  is paged by the model alone, like everything after the last mark. A mark that lands on a
+  page the model (or an explicit break) just started is not counted twice.
+* Explicit page starts: ``w:br w:type="page"``, ``pageBreakBefore`` (direct or from the style
+  chain) and section breaks that start a new page (``nextPage``, ``oddPage``, ``evenPage``;
+  ``continuous`` does not).
+* The model: a paragraph of *w* words takes ``ceil(w / words_per_line)`` lines (at least
+  one), where a line holds ``width / (font_pt * CHAR_EM) / WORD_CHARS`` words, and each line
+  is ``font_pt * LINE_FACTOR`` points high (scaled or fixed by ``w:spacing``), plus space
+  before and after. A page holds its height minus the top and bottom margins; the width is
+  the page width minus the left (with gutter) and right margins and the paragraph's indents.
+  Font size, spacing and indents come from the paragraph, its style chain and
+  ``w:docDefaults``; the page from the paragraph's section (``w:sectPr``). A table row is as
+  tall as its tallest cell, a cell being the text width divided by the row's cell count (and
+  again for a nested table). Not modelled: run-level font sizes, cell margins, merged cells,
+  rows split across pages, floating objects, widow control, keep-with-next, headers, footers.
+
+Each paragraph's ``source`` says what fixed its start page: ``break`` when it is the first on
+a page an explicit break started, else ``rendered`` when a rendered mark falls in it (at its
+start or inside it), else ``model``.
+
+``page`` is the physical page counted from 1. ``page_label`` is the number Word would print:
+the physical page shifted by ``w:pgNumType w:start`` of the section (applied at the section's
+first page; ignored for a continuous section; the number format is not modelled).
 
 A paragraph is placed on the page where it starts; ``end_page`` differs when it runs over.
 """
@@ -25,6 +35,7 @@ A paragraph is placed on the page where it starts; ``end_page`` differs when it 
 from __future__ import annotations
 
 import math
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any
@@ -40,6 +51,14 @@ CHAR_EM = 0.5  # average character width as a fraction of the font size
 WORD_CHARS = 6  # characters per word, space included
 LINE_FACTOR = 1.15  # single line height as a multiple of the font size
 
+NOTES = (
+    "Run-level font sizes are ignored: only paragraph, style and document defaults count.",
+    "A table row is as tall as its tallest cell; cell width is the text width divided by the "
+    "row's cells (cell margins, merged cells and rows split across pages are ignored).",
+    "page is the physical page from 1; page_label follows w:pgNumType w:start per section "
+    "(numeric only).",
+)
+
 CONSTANTS: dict[str, Any] = {
     "char_em": CHAR_EM,
     "word_chars": WORD_CHARS,
@@ -53,15 +72,18 @@ _SKIP = frozenset(W + n for n in ("pPr", "del", "moveFrom", "txbxContent", "draw
 @dataclass(frozen=True)
 class ParaPage:
     number: int  # 1-based paragraph number
-    page: int  # page the paragraph starts on
+    page: int  # physical page the paragraph starts on
     end_page: int
     source: str  # rendered | break | model
+    label: int  # printed number of ``page``
+    end_label: int
 
 
 @dataclass(frozen=True)
 class PageEstimate:
     pages: int
-    basis: str  # rendered | model
+    basis: str  # "rendered+model" when the file holds rendered marks, else "model"
+    marks: int  # rendered page marks in the document
     words_per_page: int  # the model's figure for the first section, in the default style
     rows: tuple[ParaPage, ...]
 
@@ -80,6 +102,7 @@ class _Facts:
     ppr: dict[str, Any]
     font_pt: float
     sect: ET.Element | None
+    start: int  # byte offset of the paragraph in word/document.xml
 
 
 @dataclass(frozen=True)
@@ -159,6 +182,7 @@ def _facts(doc: Document) -> tuple[list[_Facts], float]:
                 ppr={**base_ppr, **s_ppr, **para_format(ppr_elem)},
                 font_pt=float(rpr.get("size_pt", DEFAULT_FONT_PT)),
                 sect=ppr_elem.find(W + "sectPr") if ppr_elem is not None else None,
+                start=doc.index.spans.paragraphs[para.span_index].start,
             )
         )
     return out, float(normal_rpr.get("size_pt", DEFAULT_FONT_PT))
@@ -186,15 +210,63 @@ def _words_per_line(width_pt: float, font_pt: float) -> float:
     return max(width_pt / (font_pt * CHAR_EM) / WORD_CHARS, 1.0)
 
 
-def _height(f: _Facts, geo: _Geometry) -> tuple[float, float]:
-    """(height of the paragraph, height of one of its lines) in points."""
+def _height(f: _Facts, width_pt: float) -> tuple[float, float]:
+    """(height of the paragraph, height of one of its lines) in a column of ``width_pt``."""
     indent = f.ppr.get("indent", {})
-    width = max(geo.width_pt - (indent.get("left", 0) + indent.get("right", 0)) / 20, 20.0)
+    width = max(width_pt - (indent.get("left", 0) + indent.get("right", 0)) / 20, 20.0)
     lines = max(1, math.ceil(f.words / _words_per_line(width, f.font_pt)))
     line_h = _line_height(f.font_pt, f.ppr)
     spacing = f.ppr.get("spacing", {})
     gap = (spacing.get("before", 0) + spacing.get("after", 0)) / 20
     return lines * line_h + gap, line_h
+
+
+_TABLE_TAG = re.compile(rb"<(/?)(?:[\w.-]+:)?(tbl|tr|tc)(?=[\s/>])")
+
+
+def _table_cells(doc: Document, facts: list[_Facts]) -> list[tuple[int, int, float] | None]:
+    """Per paragraph, ``(row id, cell id, share of the text width)`` of its table cell, else None.
+
+    Rows and cells are found from the markup around each paragraph (nested tables give
+    the cell of the inner table); a cell's share is 1 / cells in its row, times the share
+    of the cell that holds its table.
+    """
+    data = doc.index.spans.data
+    tokens = [(m.start(), m.group(1) == b"/", m.group(2)) for m in _TABLE_TAG.finditer(data)]
+    kinds: list[bytes] = []
+    outer: list[int | None] = []  # cell: the cell around its table
+    row_of: list[int | None] = []  # cell: its row
+    cells: dict[int, int] = {}
+    stack: list[int] = []
+    at = 0
+    found: list[tuple[int, int] | None] = []
+    for f in facts:
+        while at < len(tokens) and tokens[at][0] < f.start:
+            _, closing, kind = tokens[at]
+            at += 1
+            if closing:
+                if stack:
+                    stack.pop()
+                continue
+            node = len(kinds)
+            kinds.append(kind)
+            outer.append(None)
+            row_of.append(None)
+            if kind == b"tc" and stack:
+                row_of[node] = stack[-1]
+                cells[stack[-1]] = cells.get(stack[-1], 0) + 1
+                outer[node] = next((n for n in reversed(stack) if kinds[n] == b"tc"), None)
+            stack.append(node)
+        cell = next((n for n in reversed(stack) if kinds[n] == b"tc"), None)
+        row = row_of[cell] if cell is not None else None
+        found.append((row, cell) if row is not None and cell is not None else None)
+    share: dict[int, float] = {}
+    for node, kind in enumerate(kinds):  # outer cells come before the cells inside them
+        row = row_of[node]
+        if kind == b"tc" and row is not None:
+            parent = outer[node]
+            share[node] = (share[parent] if parent is not None else 1.0) / max(cells[row], 1)
+    return [(pos[0], pos[1], share[pos[1]]) if pos is not None else None for pos in found]
 
 
 class _Sim:
@@ -217,14 +289,13 @@ class _Sim:
             self.page += 1
 
     def event(self, ev: _Event) -> None:
-        if ev.kind == "lrpb" and self.pending:
-            self.pending = False
+        if ev.kind == "lrpb" and (self.pending or self.empty):
+            self.pending = False  # this page already started here
         else:
             self.new_page(explicit=ev.kind == "br")
 
-    def place(self, f: _Facts, geo: _Geometry) -> int:
-        """Fill pages with the paragraph; returns the page it starts on."""
-        height, line_h = _height(f, geo)
+    def place(self, height: float, line_h: float, geo: _Geometry) -> int:
+        """Fill pages with a block of ``height``; returns the page it starts on."""
         room = geo.height_pt - self.used
         if not self.empty and room < line_h:
             self.new_page()
@@ -240,21 +311,48 @@ class _Sim:
         return start
 
 
+def _page_start(sect: ET.Element | None) -> int | None:
+    num = sect.find(W + "pgNumType") if sect is not None else None
+    raw = num.get(W + "start") if num is not None else None
+    return int(raw) if raw is not None and raw.lstrip("-").isdigit() else None
+
+
+def _row_height(
+    group: list[int], facts: list[_Facts], shares: dict[int, tuple[int, float]], width: float
+) -> float:
+    """Tallest cell of a row: the heights of the paragraphs in each cell added up."""
+    per_cell: dict[int, float] = {}
+    for i in group:
+        cell, share = shares[i]
+        per_cell[cell] = per_cell.get(cell, 0.0) + _height(facts[i], width * share)[0]
+    return max(per_cell.values())
+
+
 def estimate_pages(doc: Document) -> PageEstimate:
     facts, normal_pt = _facts(doc)
-    rendered = any(e.kind == "lrpb" for f in facts for e in f.events)
+    marks = sum(1 for f in facts for e in f.events if e.kind == "lrpb")
     body = parse_part(doc.pkg, DOCUMENT_PART).find(W + "body")
     final = body.find(W + "sectPr") if body is not None else None
     # Section k is closed by the k-th paragraph-level sectPr; the last one by the body's.
     closing = [f.sect for f in facts if f.sect is not None] + [final]
+    where = _table_cells(doc, facts)
+    members: dict[int, list[int]] = {}
+    shares: dict[int, tuple[int, float]] = {}  # paragraph -> (cell, share)
+    for i, pos in enumerate(where):
+        if pos is not None:
+            members.setdefault(pos[0], []).append(i)
+            shares[i] = (pos[1], pos[2])
+    placed: dict[int, tuple[int, int]] = {}  # row id -> (start page, end page)
 
     sim = _Sim()
     rows: list[ParaPage] = []
     section = 0
     opens_section = False
+    offset = 0  # printed page number minus physical page
     for number, f in enumerate(facts, start=1):
         sect = closing[section]
         geo = _Geometry.of(sect)
+        starts_section = number == 1 or opens_section
         if opens_section and _section_type(sect) != "continuous":
             sim.new_page(explicit=True)
             sim.parity(_section_type(sect))
@@ -265,24 +363,41 @@ def estimate_pages(doc: Document) -> PageEstimate:
         for ev, is_early in zip(f.events, early, strict=True):
             if is_early:
                 sim.event(ev)
+        first_label = _page_start(sect)
+        new_numbering = number == 1 or (starts_section and _section_type(sect) != "continuous")
+        if first_label is not None and new_numbering:
+            offset = first_label - sim.page
         broke = sim.empty and sim.broke  # first on a page that an explicit break started
-        start = sim.page if rendered else sim.place(f, geo)
+        pos = where[number - 1]
+        if pos is not None and pos[0] in placed:
+            start = placed[pos[0]][0]
+        elif pos is not None:
+            height = _row_height(members[pos[0]], facts, shares, geo.width_pt)
+            start = sim.place(height, _line_height(f.font_pt, f.ppr), geo)
+        else:
+            height, line_h = _height(f, geo.width_pt)
+            start = sim.place(height, line_h, geo)
         sim.empty = False
         for ev, is_early in zip(f.events, early, strict=True):
             if is_early:
                 continue
             sim.event(ev)
             left = (f.chars - ev.before) / f.chars if f.chars else 0.0
-            sim.used = _height(f, geo)[0] * left
+            sim.used = _height(f, geo.width_pt)[0] * left
             sim.empty = left == 0.0
         if f.chars:
             sim.pending = False
-        source = "rendered" if rendered else "break" if broke else "model"
-        rows.append(ParaPage(number, start, sim.page, source))
+        if pos is not None and pos[0] not in placed:
+            placed[pos[0]] = (start, sim.page)
+        end = placed[pos[0]][1] if pos is not None else sim.page
+        has_mark = any(e.kind == "lrpb" for e in f.events)
+        source = "break" if broke else "rendered" if has_mark else "model"
+        rows.append(ParaPage(number, start, end, source, start + offset, end + offset))
         opens_section = f.sect is not None
         if opens_section:
             section += 1
     first = _Geometry.of(closing[0])
     line_h = normal_pt * LINE_FACTOR
     words_per_page = int(first.height_pt / line_h * _words_per_line(first.width_pt, normal_pt))
-    return PageEstimate(sim.page, "rendered" if rendered else "model", words_per_page, tuple(rows))
+    basis = "rendered+model" if marks else "model"
+    return PageEstimate(sim.page, basis, marks, words_per_page, tuple(rows))
