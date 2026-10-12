@@ -42,7 +42,13 @@ jobs:
           python-version: ${{ matrix.python }}
       - if: steps.detect.outputs.has_pyproject == 'true'
         shell: bash
-        run: make check
+        # Same steps as `make check`, spelled out so Windows runners need no make.
+        run: |
+          uv sync
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest -q
       - if: steps.detect.outputs.has_pyproject != 'true'
         shell: bash
         run: echo "No pyproject.toml yet; Python checks skipped."
