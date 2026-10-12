@@ -1,0 +1,9 @@
+# Vendored claude-arsenal files are reviewed upstream; keep them out of reviews.
+reviews:
+  path_filters:
+    - "!.claude/skills/**"
+    - "!claude-arsenal/**"
+    - "!.github/workflows/arsenal-queue.yml"
+  auto_review:
+    base_branches:
+      - main
