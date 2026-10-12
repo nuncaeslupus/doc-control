@@ -52,3 +52,86 @@ jobs:
       - if: steps.detect.outputs.has_pyproject != 'true'
         shell: bash
         run: echo "No pyproject.toml yet; Python checks skipped."
+
+  validate:
+    # OOXML structural lint of the generated corpus plus every package the tool's own
+    # tests commit (judged on errors introduced, not errors already in the input).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked
+      - name: Run tests, keeping every package the tool wrote
+        run: DOC_CONTROL_KEEP_DOCS="$RUNNER_TEMP/kept-docs" uv run pytest -q
+      - name: Structural lint of corpus and kept packages
+        run: uv run python scripts/ci_validate_docs.py "$RUNNER_TEMP/kept-docs"
+
+  libreoffice:
+    # LibreOffice headless round trip. REQUIRE_SOFFICE makes a missing soffice a failure,
+    # never a silent skip.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOC_CONTROL_REQUIRE_SOFFICE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked
+      - name: Install LibreOffice Writer (headless)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui
+          soffice --version
+      - name: Corpus round trip
+        run: uv run pytest -q tests/corpus
+      - name: Round trip of packages the tool wrote
+        run: |
+          DOC_CONTROL_KEEP_DOCS="$RUNNER_TEMP/kept-docs" uv run pytest -q tests/safety tests/ops
+          uv run python scripts/ci_validate_docs.py --roundtrip "$RUNNER_TEMP/kept-docs"
+
+  smoke-no-network:
+    # The file engine runs in a Python 3.11 sandbox with no network: install the built
+    # wheel into a clean venv and run the CLI with the network off.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.11"
+      - run: uv build --wheel
+      - run: bash scripts/smoke_no_network.sh
+
+  bench:
+    # Wall-clock budgets (`make bench`). Reported, not merge-blocking: shared runners are noisy.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked
+      - name: Run benchmarks
+        shell: bash
+        run: make bench 2>&1 | tee bench-results.txt
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-results
+          path: bench-results.txt
+          if-no-files-found: ignore
