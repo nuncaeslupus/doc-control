@@ -81,7 +81,8 @@ def anchor_create(request: dict[str, Any]) -> Reply:
 @operation(
     "anchor.resolve",
     "read",
-    "Find an anchor's passage now: its range and score, or the ambiguous candidates.",
+    "Find an anchor's passage now: its range, score and match kind (exact or fuzzy), or the"
+    " ambiguous candidates. mode exact never returns a fuzzy match.",
     {
         "type": "object",
         "properties": {
@@ -89,6 +90,13 @@ def anchor_create(request: dict[str, Any]) -> Reply:
             "anchor": {
                 **ANCHOR_SCHEMA,
                 "description": "An anchor from anchor.create, or just {exact, prefix, suffix}.",
+            },
+            "mode": {
+                "enum": ["best", "exact"],
+                "default": "best",
+                "description": "best: verbatim matches first, then fuzzy ones (match says which)."
+                " exact: only places holding the quote verbatim; anything else is"
+                " ANCHOR_NOT_FOUND.",
             },
         },
         "required": ["doc", "anchor"],
@@ -98,23 +106,30 @@ def anchor_create(request: dict[str, Any]) -> Reply:
 def anchor_resolve(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
     anchor = Anchor.from_dict(request["anchor"])
-    outcome = resolve(doc.index, anchor)
+    exact_only = request.get("mode", "best") == "exact"
+    outcome = resolve(doc.index, anchor, exact_only=exact_only)
     best = outcome.best
     if outcome.status == "ambiguous":
         raise DocControlError(
             ErrorCode.ANCHOR_AMBIGUOUS,
             f"{len(outcome.candidates)} places match the anchor about equally well",
-            candidates=[c.to_dict() for c in outcome.candidates],
+            candidates=[{**c.to_dict(), "match": c.kind} for c in outcome.candidates],
+            mode="exact" if exact_only else "best",
         )
     if best is None or outcome.status == "not_found":
         raise DocControlError(
             ErrorCode.ANCHOR_NOT_FOUND,
-            f"no place scores {MIN_SCORE:.2f} or more against the anchor",
+            (
+                "no verbatim occurrence of the quote"
+                if exact_only
+                else f"no place scores {MIN_SCORE:.2f} or more against the anchor"
+            ),
             min_score=MIN_SCORE,
+            mode="exact" if exact_only else "best",
             best_score=round(best.score, 4) if best is not None else 0.0,
             **({"best_at": best.at} if best is not None else {}),
         )
-    result: dict[str, Any] = {"at": best.at, "score": round(best.score, 4)}
+    result: dict[str, Any] = {"at": best.at, "score": round(best.score, 4), "match": best.kind}
     if anchor.sentence is not None:
         result["sentence"] = sentence_of(doc.index, best)
     return Reply(result, doc=doc.envelope_doc())
