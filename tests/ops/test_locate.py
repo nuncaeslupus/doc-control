@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import time
-import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,7 @@ import pytest
 
 from doc_control.cli import main
 from doc_control.model.document import Document
-from doc_control.ops.locate import SEPARATOR, LocatorIndex
+from doc_control.ops.locate import SEPARATOR, FindIndex, LocatorIndex
 from doc_control.ops.paging import RESPONSE_BUDGET
 from tests.corpus.generator import KINDS
 from tests.helpers import make_docx
@@ -33,8 +32,8 @@ def run(capsys: pytest.CaptureFixture[str]) -> Run:
 
 
 def fold(word: str) -> str:
-    text = unicodedata.normalize("NFD", word.casefold())
-    return unicodedata.normalize("NFC", "".join(c for c in text if not unicodedata.combining(c)))
+    """Word's Find folding: case-insensitive, accent-sensitive, characters untouched."""
+    return word.casefold()
 
 
 def folded(texts: list[str]) -> list[list[str]]:
@@ -56,6 +55,22 @@ def occurrences(docs: list[list[str]], row: dict[str, Any]) -> int:
         for words in docs
         if len(words) >= need and words[: len(first)] == first and words[-len(last) :] == last
     )
+
+
+def find_count(texts: list[str], phrase: str) -> int:
+    """Occurrences (overlaps included) of ``phrase`` in the paragraphs joined by paragraph marks."""
+    joined = "\r".join(t.casefold() for t in texts)
+    needle = phrase.casefold()
+    count = 0
+    at = joined.find(needle)
+    while at >= 0:
+        count += 1
+        at = joined.find(needle, at + 1)
+    return count
+
+
+def find_failures(texts: list[str], phrases: list[str | None]) -> int:
+    return sum(1 for p in phrases if p is not None and find_count(texts, p) != 1)
 
 
 def all_rows(run: Run, path: Path, **request: Any) -> list[dict[str, Any]]:
@@ -85,8 +100,15 @@ def test_locator_phrase_is_unique_in_document(
     paths = [corpus_doc(kind, 1) for kind in KINDS if kind != "novel"]
     not_unique = 0
     total = 0
+    find_bad = 0
+    find_total = 0
     for path in paths:
         rows = all_rows(run, path)
+        texts = [p.text for p in Document(str(path)).index.paragraphs]
+        found = [r["find_phrase"] for r in rows]
+        find_total += sum(1 for f in found if f is not None)
+        find_bad += find_failures(texts, found)
+        assert all(r["find_phrase_unique"] == (r["find_phrase"] is not None) for r in rows)
         total += sum(1 for r in rows if r["phrase"] is not None)
         not_unique += uniqueness_failures(path, rows)
     # The 100,000-word novel again, straight through the index (no paging round trips).
@@ -100,10 +122,20 @@ def test_locator_phrase_is_unique_in_document(
         row: dict[str, Any] = {"phrase": loc.phrase, "complete": loc.complete}
         total += 1
         not_unique += occurrences(docs, row) != 1
+    started = time.perf_counter()
+    finds = FindIndex(index).found
+    elapsed = time.perf_counter() - started
+    found = [f.text for f in finds]
+    find_total += sum(1 for f in found if f is not None)
+    find_bad += find_failures(novel, found)
     with capsys.disabled():
         print(f"\nlocators_not_unique={not_unique} (of {total} phrases)")
+        print(f"find_phrases_not_unique={find_bad} (of {find_total} phrases)")
+        print(f"find phrases of a {len(novel)}-paragraph novel: {elapsed:.2f}s")
     assert total > 1000
+    assert find_total > 1000
     assert not_unique == 0
+    assert find_bad == 0
 
 
 def test_shortest_phrase_and_fields(run: Run, tmp_path: Path) -> None:
@@ -239,3 +271,74 @@ def test_whole_novel_is_fast(
         )
     assert first_page < 20
     assert full < 20
+
+
+def test_find_phrase_keeps_document_characters_and_case_rules(run: Run, tmp_path: Path) -> None:
+    path = make_docx(
+        tmp_path / "d.docx",
+        "caf\u00e9 noir",
+        "cafe noir",
+        "Hello there",
+        "hello there",
+        "a\u00a0b c",
+        "a b c",
+    )
+    rows = all_rows(run, path)
+    by = {r["at"].split("#")[0]: r for r in rows}
+    assert by["p1"]["find_phrase"] == "caf\u00e9"  # accent-sensitive
+    assert by["p2"]["find_phrase"] == "cafe"
+    assert by["p3"]["find_phrase"] is None  # case-insensitive twins
+    assert by["p3"]["find_phrase_reason"] == "duplicate"
+    assert by["p5"]["find_phrase"] == "a\u00a0b"  # no-break space stays
+    assert by["p6"]["find_phrase"] == "a b"
+    assert by["p5"]["reason"] == "duplicate"  # same words; the find phrase tells them apart
+
+
+def test_find_phrase_never_crosses_a_line_break(run: Run, tmp_path: Path) -> None:
+    # "bb cc" (across the break) is the only unique window of paragraph 1: not allowed.
+    path = make_docx(
+        tmp_path / "d.docx", "aa bb</w:t><w:br/><w:t>cc dd", "aa bb zz", "yy cc dd", "bb ee"
+    )
+    rows = all_rows(run, path)
+    texts = [p.text for p in Document(str(path)).index.paragraphs]
+    assert texts[0] == "aa bb\ncc dd"
+    assert rows[0]["find_phrase"] is None
+    assert rows[0]["find_phrase_reason"] == "none_within_25_words"
+    assert find_failures(texts, [r["find_phrase"] for r in rows]) == 0
+
+
+def test_find_phrase_counts_overlaps_and_substrings(run: Run, tmp_path: Path) -> None:
+    # "he went" is inside "she went": counting whole words only would call it unique.
+    path = make_docx(tmp_path / "d.docx", "he went", "she went", "ha ha ha")
+    rows = all_rows(run, path)
+    assert rows[0]["find_phrase"] is None
+    assert rows[1]["find_phrase"] == "she"
+    texts = [p.text for p in Document(str(path)).index.paragraphs]
+    assert find_failures(texts, [r["find_phrase"] for r in rows]) == 0
+    assert rows[2]["find_phrase"] == "ha ha ha"  # "ha ha" occurs twice, overlapping
+
+
+def test_find_phrase_limit_and_context_for_duplicates(run: Run, tmp_path: Path) -> None:
+    long = " ".join(f"w{i}" for i in range(30))
+    path = make_docx(
+        tmp_path / "d.docx",
+        "A unique opening paragraph",
+        "\u2014S\u00ed.",
+        "\u2014S\u00ed.",
+        long,
+        long + " extra",
+    )
+    rows = all_rows(run, path)
+    assert rows[1]["find_phrase"] is None
+    assert rows[1]["find_phrase_unique"] is False
+    assert rows[1]["context"] == {
+        "after": rows[0]["find_phrase"],
+        "at": rows[0]["at"],
+        "paragraphs_after": 1,
+    }
+    assert rows[2]["context"]["paragraphs_after"] == 2
+    assert rows[3]["find_phrase"] is None
+    assert rows[3]["find_phrase_reason"] == "none_within_25_words"
+    assert rows[3]["context"]["paragraphs_after"] == 3
+    assert rows[4]["find_phrase"] is not None
+    assert "context" not in rows[0]

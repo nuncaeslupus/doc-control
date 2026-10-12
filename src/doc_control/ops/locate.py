@@ -11,16 +11,30 @@ For each paragraph the result carries
 
 Locator phrase
     Words are the paragraph text split on whitespace (punctuation stays on the word). Two
-    words are the same when they fold the same under case- and accent-insensitive search
-    (:func:`doc_control.model.search.fold_text`), so the phrase stays unique under the loosest
-    `find` options. A paragraph *matches* ``(head, tail)`` when it has at least N + M words,
+    words are the same when they are equal ignoring case (accents count, as in Word). The
+    phrase keeps the document's own characters (no-break spaces stay). It is a citation for a
+    report, not a search string: each half usually occurs elsewhere (use ``find_phrase``).
+    A paragraph *matches* ``(head, tail)`` when it has at least N + M words,
     starts with the head words and ends with the tail words. The search tries N + M = 2, 3, ...
     (N and M at least 1, at most :data:`MAX_SIDE` each, larger N first among equals) and takes
     the first pair only this paragraph matches. When N + M reaches the paragraph's word count the
     phrase is the whole text (``complete: true``) and matches by equality. The phrase is
     ``null`` with a ``reason``: ``empty`` (no words), ``duplicate`` (another paragraph has the
-    same words) or ``not_unique_within_limit`` (long, and every head/tail of up to
-    :data:`MAX_SIDE` words is shared). In the phrase, runs of whitespace are single spaces.
+    same words, ignoring case) or ``not_unique_within_limit`` (long, and every head/tail of up to
+    :data:`MAX_SIDE` words is shared).
+
+Find phrase
+    ``find_phrase`` is what to type in Word's Find: the shortest run of consecutive words (at
+    most :data:`MAX_FIND_WORDS`; a run starting at the paragraph's first word wins over one
+    inside it) whose exact text occurs once in the whole document under Word's Find rules:
+    case-insensitive, accent-sensitive, the document's own characters (no-break spaces stay,
+    whitespace is not collapsed), occurrences counted in the joined text (paragraph marks
+    included, overlaps counted). A line break inside a paragraph ends a phrase. Text outside
+    the main story (footnotes, headers) is not searched. When none is unique
+    ``find_phrase_unique`` is false with ``find_phrase_reason`` (``empty``, ``duplicate`` or
+    ``none_within_25_words``), and a non-empty paragraph gets ``context``: the find phrase of
+    the nearest earlier paragraph that has one, the paragraph it is in, and how many
+    paragraphs after it this one comes.
 
 Cost: the indexes (prefix and suffix word tuples, up to ``MAX_SIDE`` long), the structure and
 the page estimates are built once per call, then each paragraph is a handful of set
@@ -29,6 +43,8 @@ lookups. Whole-document mode is paged and each response builds only its own rows
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, overload
@@ -36,7 +52,6 @@ from typing import Any, overload
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
-from doc_control.model.search import fold_text
 from doc_control.model.structure import detect, paragraphs_of
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.ops.segment import (
@@ -50,6 +65,9 @@ from doc_control.registry import operation
 MAX_SIDE = 12
 SEPARATOR = " … "
 _TITLE = 160
+MAX_FIND_WORDS = 25
+_WORD = re.compile(r"\S+")
+_BREAK = re.compile(r"[\n\r\x0b\x0c]")
 
 
 @dataclass(frozen=True)
@@ -61,12 +79,20 @@ class Locator:
     reason: str | None = None
 
 
+def word_spans(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of each whitespace-separated word of ``text``, characters untouched."""
+    return [(m.start(), m.end()) for m in _WORD.finditer(text)]
+
+
 class LocatorIndex:
     """Word prefixes and suffixes of every paragraph, to answer 'who else starts/ends so?'."""
 
-    def __init__(self, texts: list[str]) -> None:
-        self.words = [t.split() for t in texts]
-        self.keys = [tuple(fold_text(w) for w in ws) for ws in self.words]
+    def __init__(self, texts: list[str], spans: list[list[tuple[int, int]]] | None = None) -> None:
+        self.texts = texts
+        self.spans = spans if spans is not None else [word_spans(t) for t in texts]
+        self.keys = [
+            tuple(t[s:e].casefold() for s, e in sp) for t, sp in zip(texts, self.spans, strict=True)
+        ]
         self.prefixes: dict[tuple[str, ...], set[int]] = {}
         self.suffixes: dict[tuple[str, ...], set[int]] = {}
         self.whole: dict[tuple[str, ...], int] = {}
@@ -94,18 +120,127 @@ class LocatorIndex:
             return Locator(None, reason="empty")
         if self.whole[key] > 1:
             return Locator(None, reason="duplicate")
-        words = self.words[i]
+        text, spans = self.texts[i], self.spans[i]
         for total in range(2, min(count, 2 * MAX_SIDE + 1)):
             for head in range(min(total - 1, MAX_SIDE), 0, -1):
                 tail = total - head
                 if tail > MAX_SIDE:
                     break
                 if self.matches(i, head, tail) == 1:
-                    phrase = " ".join(words[:head]) + SEPARATOR + " ".join(words[-tail:])
-                    return Locator(phrase, head, tail)
+                    first = text[spans[0][0] : spans[head - 1][1]]
+                    last = text[spans[-tail][0] : spans[-1][1]]
+                    return Locator(first + SEPARATOR + last, head, tail)
         if count <= 2 * MAX_SIDE:
-            return Locator(" ".join(words), count, 0, complete=True)
+            return Locator(text[spans[0][0] : spans[-1][1]], count, 0, complete=True)
         return Locator(None, reason="not_unique_within_limit")
+
+
+@dataclass(frozen=True)
+class FindPhrase:
+    """A run of words that occurs once in the document (``text`` None when none does)."""
+
+    text: str | None
+    words: int = 0
+    start: int = 0  # character offset in the paragraph
+    reason: str | None = None
+
+
+class FindIndex:
+    """Shortest words that Word's Find would meet exactly once in the whole document.
+
+    Find semantics: case-insensitive (``casefold``), accent-sensitive, on the document's own
+    characters (a no-break space stays one; whitespace is not collapsed); paragraph marks are
+    ``\\r`` in the searched text, and a line break inside a paragraph (or any ``\\n``, ``\\r``,
+    vertical tab, form feed) ends a phrase. Occurrences may overlap.
+
+    A word-aligned window that occurs twice cannot be unique, so counting windows of each
+    length (one pass per length over integer tokens, dropped afterwards) rules candidates
+    out cheaply; the survivors are confirmed with a substring search in the joined text.
+    """
+
+    def __init__(self, index: LocatorIndex) -> None:
+        self.texts = index.texts
+        self.spans = index.spans
+        self.haystack = "\r".join(t.casefold() for t in self.texts)
+        self._tokens = self._tokenise()
+        self._runs = [self._run_ends(t, sp) for t, sp in zip(self.texts, self.spans, strict=True)]
+        self._windows = sum(len(r) for r in index.spans)
+        self._copies = Counter(t.casefold() for t in self.texts)
+        self._keys = index.keys
+        self.found: list[FindPhrase] = []
+        self._solve()
+
+    def _tokenise(self) -> list[list[int]]:
+        """Per paragraph ``word, gap, word, ...`` as ints (words folded, gaps as written)."""
+        ids: dict[str, int] = {}
+        out: list[list[int]] = []
+        for text, spans in zip(self.texts, self.spans, strict=True):
+            toks: list[int] = []
+            for k, (begin, end) in enumerate(spans):
+                if k:
+                    toks.append(ids.setdefault(text[spans[k - 1][1] : begin], len(ids)))
+                toks.append(ids.setdefault(text[begin:end].casefold(), len(ids)))
+            out.append(toks)
+        return out
+
+    @staticmethod
+    def _run_ends(text: str, spans: list[tuple[int, int]]) -> list[int]:
+        """Per word, the last word reachable from it without crossing a line or paragraph break."""
+        ends = [0] * len(spans)
+        for k in range(len(spans) - 1, -1, -1):
+            joined = k + 1 < len(spans) and not _BREAK.search(text, spans[k][1], spans[k + 1][0])
+            ends[k] = ends[k + 1] if joined else k
+        return ends
+
+    def _solve(self) -> None:
+        count = len(self.texts)
+        self.found = [FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")] * count
+        open_: list[int] = []
+        for i, key in enumerate(self._keys):
+            if not key:
+                self.found[i] = FindPhrase(None, reason="empty")
+            elif self._copies[self.texts[i].casefold()] > 1:
+                # Every window of a repeated paragraph occurs in its twin as well.
+                self.found[i] = FindPhrase(None, reason="duplicate")
+            else:
+                open_.append(i)
+        for length in range(1, MAX_FIND_WORDS + 1):
+            if not open_:
+                break
+            seen: Counter[tuple[int, ...]] | None = None
+            # A substring search costs about 300 window counts: with few paragraphs left,
+            # skip the counting pass and confirm their windows directly.
+            if sum(max(len(self._runs[i]) - length + 1, 0) for i in open_) * 300 > self._windows:
+                seen = Counter()
+                for toks, runs in zip(self._tokens, self._runs, strict=True):
+                    for s in range(len(runs) - length + 1):
+                        if runs[s] >= s + length - 1:
+                            seen[tuple(toks[2 * s : 2 * (s + length) - 1])] += 1
+            still: list[int] = []
+            for i in open_:
+                hit = self._pick(i, length, seen)
+                if hit is None:
+                    still.append(i)
+                else:
+                    self.found[i] = hit
+            open_ = still
+
+    def _pick(
+        self, i: int, length: int, seen: Counter[tuple[int, ...]] | None
+    ) -> FindPhrase | None:
+        text, spans, runs = self.texts[i], self.spans[i], self._runs[i]
+        starts = range(len(spans) - length + 1)  # the paragraph's start comes first
+        for s in starts:
+            if runs[s] < s + length - 1:
+                continue
+            begin, end = spans[s][0], spans[s + length - 1][1]
+            if seen is not None and seen[tuple(self._tokens[i][2 * s : 2 * (s + length) - 1])] != 1:
+                continue
+            key = text[begin:end].casefold()
+            first = self.haystack.find(key)
+            if first >= 0 and self.haystack.find(key, first + 1) < 0:
+                return FindPhrase(text[begin:end], length, begin)
+        return None
 
 
 class _Rows(Sequence[dict[str, Any]]):
@@ -132,7 +267,8 @@ class _Rows(Sequence[dict[str, Any]]):
     "locate",
     "read",
     "Chapter, scene, estimated page and the shortest unique first-and-last-words phrase of "
-    "each paragraph (one, a range, or the whole document, paged).",
+    "each paragraph, plus a phrase Word's Find meets once (one, a range, or the whole "
+    "document, paged).",
     {
         "type": "object",
         "properties": {
@@ -159,6 +295,7 @@ def locate(request: dict[str, Any]) -> Reply:
     found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
     pages = estimate_pages(doc)
     locators = LocatorIndex(texts)
+    finds = FindIndex(locators).found
 
     chapter_at = [0] * (count + 2)  # 1-based paragraph -> 1-based chapter, 0 for none
     for k, chapter in enumerate(found.chapters, 1):
@@ -200,6 +337,20 @@ def locate(request: dict[str, Any]) -> Reply:
             "page_label": page.label,
             "phrase": loc.phrase,
         }
+        find = finds[n - 1]
+        out["find_phrase"] = find.text
+        out["find_phrase_unique"] = find.text is not None
+        if find.text is not None:
+            out["find_phrase_words"] = find.words
+        else:
+            out["find_phrase_reason"] = find.reason
+            earlier = next((j for j in range(n - 2, -1, -1) if finds[j].text is not None), None)
+            if earlier is not None and find.reason != "empty":
+                out["context"] = {
+                    "after": finds[earlier].text,
+                    "at": str(index.paragraph(earlier + 1).address),
+                    "paragraphs_after": n - 1 - earlier,
+                }
         if loc.phrase is None:
             out["reason"] = loc.reason
         else:
