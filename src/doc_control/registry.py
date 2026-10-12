@@ -53,6 +53,7 @@ def load_operations() -> dict[str, Operation]:
     from doc_control.ops import (  # noqa: F401
         anchor,
         batch,
+        comments,
         compare,
         diff,
         find,
