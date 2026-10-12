@@ -12,7 +12,11 @@ address of every paragraph whose index changed) and, with the envelope's ``doc``
 new sha256.
 
 The four operation kinds are batch operations only; they are not registered as
-standalone writes.
+standalone writes. The style kinds (``style.create``, ``style.update``, ``style.rename``,
+``style.merge``, see :mod:`doc_control.ops.stylewrite`) are batch kinds too, but a batch
+holds either text kinds or style kinds, never both: style definition changes are not
+tracked changes, so a style batch is one verified write of ``word/styles.xml`` (and the
+references to renamed or merged styles) with the same dry run, ``expect`` and backup.
 """
 
 from __future__ import annotations
@@ -24,10 +28,12 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR
+from doc_control.ops.stylewrite import STYLE_KINDS, apply_style_ops, op_schema
 from doc_control.ops.tracked import OPERATION_SCHEMAS, Edit, apply_edits, edit_from_dict
 from doc_control.registry import operation
 
-BATCH_KINDS = tuple(OPERATION_SCHEMAS)
+BATCH_KINDS = (*OPERATION_SCHEMAS, *STYLE_KINDS)
+_KIND_SCHEMAS = {**OPERATION_SCHEMAS, **{k: op_schema(k) for k in STYLE_KINDS}}
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -41,7 +47,7 @@ _SCHEMA: dict[str, Any] = {
                 "is a BATCH_CONFLICT. Kinds: "
                 + "; ".join(
                     f"{name} {sorted(set(s['properties']) - {'op'})}"
-                    for name, s in OPERATION_SCHEMAS.items()
+                    for name, s in _KIND_SCHEMAS.items()
                 )
                 + "."
             ),
@@ -87,15 +93,29 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
     "batch",
     "write",
     "Apply text.replace, para.insert, para.delete and para.move together as tracked "
-    "changes, all or nothing; dry_run previews.",
+    "changes, or style.create/update/rename/merge together, all or nothing; dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
     if request.get("tracked", True) is not True:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
-    edits = edits_from_request(request["ops"])
     expect = request.get("expect", {})
     path = request["doc"]
+    style_ops = [isinstance(o, dict) and o.get("op") in STYLE_KINDS for o in request["ops"]]
+    if any(style_ops):
+        if not all(style_ops):
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                "style operations and text operations cannot share a batch",
+            )
+        styled = apply_style_ops(
+            Path(path),
+            request["ops"],
+            expect_sha256=expect.get("sha256"),
+            dry_run=request.get("dry_run", False),
+        )
+        return Reply(styled, doc=Document(path).envelope_doc())
+    edits = edits_from_request(request["ops"])
     result = apply_edits(
         Path(path),
         edits,
