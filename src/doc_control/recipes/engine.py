@@ -5,12 +5,15 @@ The engine reads nothing but the texts it is given and returns operation dicts f
 read, so the result is a valid batch. With ``repeat_until_stable`` the recipe is run again
 on the text its own replacements would leave, until a pass changes nothing or
 ``max_passes`` is reached. A paragraph that needed more than one pass is proposed as one
-``text.replace`` over the smallest range that differs between before and after.
+``text.replace`` per run of characters that differ between before and after. Every
+``text.replace`` is narrowed to the characters that change, so a reviewer sees one small
+tracked change per edit rather than the whole matched text deleted and typed again.
 """
 
 from __future__ import annotations
 
 import contextlib
+import difflib
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -23,6 +26,7 @@ from doc_control.recipes.schema import DEFAULT_PASSES, SUBSTITUTION, search_opti
 
 MAX_OPS = 2000
 TIME_BUDGET_SECONDS = 10.0
+MAX_DIFF_CHARS = 4000  # longer paragraphs are compared as one smallest edit
 
 
 @dataclass
@@ -64,6 +68,47 @@ def _smallest_edit(before: str, after: str) -> tuple[int, int, str]:
     ):
         tail -= 1
     return head, len(before) - tail, after[head : len(after) - tail]
+
+
+def _trim(text: str, lo: int, hi: int, new: str) -> tuple[int, int, str]:
+    """Narrow replacing ``text[lo:hi]`` by ``new`` to the characters that really change."""
+    old = text[lo:hi]
+    limit = min(len(old), len(new))
+    head = 0
+    while head < limit and old[head] == new[head]:
+        head += 1
+    while head and not (boundary_ok(text, lo + head) and boundary_ok(new, head)):
+        head -= 1
+    tail = 0
+    while tail < limit - head and old[-1 - tail] == new[-1 - tail]:
+        tail += 1
+    while tail and not (boundary_ok(text, hi - tail) and boundary_ok(new, len(new) - tail)):
+        tail -= 1
+    return lo + head, hi - tail, new[head : len(new) - tail]
+
+
+def _edits(before: str, after: str) -> list[tuple[int, int, str]]:
+    """The separate runs that differ between ``before`` and ``after`` (each ``(start, end, new)``).
+
+    Falls back to the single smallest edit when a split would fall inside a character or the
+    paragraph is too long to compare cheaply.
+    """
+    if len(before) <= MAX_DIFF_CHARS and len(after) <= MAX_DIFF_CHARS:
+        ops = [
+            op
+            for op in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+            if op[0] != "equal"
+        ]
+        if all(
+            boundary_ok(before, i1)
+            and boundary_ok(before, i2)
+            and boundary_ok(after, j1)
+            and boundary_ok(after, j2)
+            for _, i1, i2, j1, j2 in ops
+        ):
+            return [(i1, i2, after[j1:j2]) for _, i1, i2, j1, j2 in ops]
+    edit = _smallest_edit(before, after)
+    return [] if edit == (0, 0, "") else [edit]
 
 
 def _scan(
@@ -144,8 +189,11 @@ def propose(
                         lo, hi = (0, len(text)) if step["at"] == "$para" else (start, end)
                         if text[lo:hi] == op["text"]:
                             continue  # already what the recipe wants
-                        edits.append((lo, hi, op["text"]))
+                        lo, hi, replacement = _trim(text, lo, hi, op["text"])
+                        edits.append((lo, hi, replacement))
                         if passno == 1:
+                            op["at"] = f"{addr}:{lo}-{hi}"
+                            op["text"] = replacement
                             direct.setdefault(number, []).append(op)
                         continue
                     if kind == "para.delete":
@@ -182,11 +230,10 @@ def propose(
         if number in deleted:
             continue
         if number in redone:
-            start, end, new = _smallest_edit(original[number], work[number])
-            if (start, end, new) != (0, 0, ""):
-                ops.append(
-                    {"op": "text.replace", "at": f"{address[number]}:{start}-{end}", "text": new}
-                )
+            ops.extend(
+                {"op": "text.replace", "at": f"{address[number]}:{start}-{end}", "text": new}
+                for start, end, new in _edits(original[number], work[number])
+            )
         else:
             ops.extend(direct[number])
     ops.extend(others)

@@ -148,7 +148,8 @@ def test_run_proposes_a_valid_batch_without_writing(tmp_path: Path) -> None:
         ("format.apply", "p1"),
         ("format.apply", "p3"),
     ]
-    assert batch["ops"][0]["text"] == "Chapter one"
+    # the edit is narrowed to what changes: the eight leading spaces go, the text stays put
+    assert batch["ops"][0]["text"] == "" and batch["ops"][0]["at"].endswith(":0-8")
 
     preview = REGISTRY["batch"].run({**batch, "dry_run": True})
     assert isinstance(preview, Reply) and doc.read_bytes() == before
@@ -230,7 +231,8 @@ def test_substitutions_and_other_operations(tmp_path: Path) -> None:
         },
     ]
     first = run(doc, definition=recipes[0]).result["batch"]["ops"]
-    assert first[0]["text"] == "$5 ($5 in Price: $5 today)"
+    assert first[0]["text"] == " ($5 in Price: $5 today)"  # "$5" itself is not rewritten
+    assert first[0]["at"].endswith(":9-9")
     dry(doc, first)
     note = run(doc, definition=recipes[1]).result["batch"]["ops"]
     assert note == [{"op": "comment.add", "at": note[0]["at"], "text": "check 5"}]
@@ -424,3 +426,25 @@ def test_proposal_on_a_paragraph_with_a_field_and_hidden_run(tmp_path: Path) -> 
         assert err.code is ErrorCode.UNSUPPORTED_CONTENT
     else:
         assert isinstance(reply, Reply)
+
+
+def test_edits_are_narrowed_to_the_characters_that_change(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "see: a-b and c-d.")
+    one = rx("(a)-(b)", {"op": "text.replace", "at": "$match", "text": "$1+$2"})
+    ops = run(doc, definition=one).result["batch"]["ops"]
+    assert [(o["at"].split(":")[1], o["text"]) for o in ops] == [("6-7", "+")]
+
+
+def test_repeat_proposes_one_small_edit_per_change(tmp_path: Path) -> None:
+    line = "one -two- three -four- five -six- end"
+    doc = make_docx(tmp_path / "a.docx", line)
+    hyphens = rx(
+        "^(.*?)-",
+        {"op": "text.replace", "at": "$match", "text": "$1~"},
+        repeat_until_stable=True,
+        max_passes=10,
+    )
+    ops = run(doc, definition=hyphens).result["batch"]["ops"]
+    assert [o["text"] for o in ops] == ["~"] * 6
+    spans = [tuple(map(int, o["at"].split(":")[1].split("-"))) for o in ops]
+    assert all(end - start == 1 for start, end in spans)

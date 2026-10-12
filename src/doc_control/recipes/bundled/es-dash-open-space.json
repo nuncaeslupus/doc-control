@@ -1,10 +1,10 @@
 {
   "recipe": "es-dash-open-space",
   "version": 1,
-  "description": "Space after an opening em dash of an aside inside a line of dialogue",
+  "description": "Space after an opening dash of an aside (the first dash of each pair in a line of dialogue)",
   "match": {
     "find": {
-      "regex": "^([ \\t]*—.*?\\S —)[    ]+(?=[^    .,;:!?…»”’)\\]\\s—])",
+      "regex": "^([ \\t]*—(?:[^—\\n]*—[^—\\n]*—)*[^—\\n]*\\S —)[    ]+(?=[^    .,;:!?…»”’)\\]\\s—])",
       "scope": "paragraph"
     }
   },

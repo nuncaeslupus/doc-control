@@ -4,7 +4,7 @@
   "description": "Space before a closing punctuation mark",
   "match": {
     "find": {
-      "regex": "(?<=\\S)[    ]+(?=[.,;:!?…»”’)\\]])",
+      "regex": "(?<=\\S)[    ]+(?=[.,;:!?…»”)\\]]|’(?!\\w))",
       "scope": "paragraph"
     }
   },
