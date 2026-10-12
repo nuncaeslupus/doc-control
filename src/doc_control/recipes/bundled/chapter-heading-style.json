@@ -1,0 +1,17 @@
+{
+  "recipe": "chapter-heading-style",
+  "version": 1,
+  "description": "A line like 'Chapter 3' or 'Chapter IV: Title' gets the Heading 1 style",
+  "match": {
+    "find": {
+      "regex": "^(?:Chapter|CHAPTER|Capítulo|CAPÍTULO|Kapitel|Chapitre) (?:\\d{1,3}|[IVXLCDM]{1,8})(?:[.:] .{1,60})?$"
+    }
+  },
+  "propose": [
+    {
+      "op": "style.apply",
+      "at": "$para",
+      "style": "Heading 1"
+    }
+  ]
+}

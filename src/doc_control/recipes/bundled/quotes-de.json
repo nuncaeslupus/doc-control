@@ -1,0 +1,17 @@
+{
+  "recipe": "quotes-de",
+  "version": 1,
+  "description": "Straight double quotes in pairs become German low-high quotes",
+  "match": {
+    "find": {
+      "regex": "\"([^\"]+)\""
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "„$1“"
+    }
+  ]
+}

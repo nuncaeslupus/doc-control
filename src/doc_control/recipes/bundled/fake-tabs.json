@@ -1,0 +1,17 @@
+{
+  "recipe": "fake-tabs",
+  "version": 1,
+  "description": "Replace a run of five or more spaces inside a line with a real tab",
+  "match": {
+    "find": {
+      "regex": "(?<=\\S) {5,}(?=\\S)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "\t"
+    }
+  ]
+}

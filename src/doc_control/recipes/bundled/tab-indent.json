@@ -1,0 +1,22 @@
+{
+  "recipe": "tab-indent",
+  "version": 1,
+  "description": "Replace a tab typed at the start of a paragraph by a first-line indent",
+  "match": {
+    "find": {
+      "regex": "^\\t(?=\\S)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    },
+    {
+      "op": "format.apply",
+      "at": "$para",
+      "indent_first_line_cm": 0.75
+    }
+  ]
+}

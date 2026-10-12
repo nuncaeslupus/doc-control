@@ -1,0 +1,22 @@
+{
+  "recipe": "fake-centring",
+  "version": 1,
+  "description": "Remove the many leading spaces (eight or more) or tabs (two or more) that fake a centred line and centre the paragraph",
+  "match": {
+    "find": {
+      "regex": "^(?:[  ]{8,}|\\t{2,})(?=\\S)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    },
+    {
+      "op": "format.apply",
+      "at": "$para",
+      "align": "center"
+    }
+  ]
+}

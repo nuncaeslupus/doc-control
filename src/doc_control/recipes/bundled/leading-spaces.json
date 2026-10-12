@@ -1,0 +1,17 @@
+{
+  "recipe": "leading-spaces",
+  "version": 1,
+  "description": "Strip one to seven spaces typed in front of a paragraph (eight or more is fake-centring)",
+  "match": {
+    "find": {
+      "regex": "^[  ]{1,7}(?=\\S)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": ""
+    }
+  ]
+}

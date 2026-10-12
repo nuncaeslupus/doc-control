@@ -1,0 +1,17 @@
+{
+  "recipe": "quotes-fr",
+  "version": 1,
+  "description": "Straight double quotes in pairs become French guillemets with non-breaking spaces",
+  "match": {
+    "find": {
+      "regex": "\"\\s*([^\"]*?\\S)\\s*\""
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "« $1 »"
+    }
+  ]
+}

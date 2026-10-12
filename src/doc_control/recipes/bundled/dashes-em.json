@@ -1,0 +1,17 @@
+{
+  "recipe": "dashes-em",
+  "version": 1,
+  "description": "Two or three hyphens (with or without spaces around) become an unspaced em dash",
+  "match": {
+    "find": {
+      "regex": "(?<=\\S) ?-{2,3} ?(?=\\S)"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "—"
+    }
+  ]
+}

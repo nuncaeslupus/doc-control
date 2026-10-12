@@ -1,0 +1,17 @@
+{
+  "recipe": "quotes-en",
+  "version": 1,
+  "description": "Straight double quotes in pairs become English curly quotes",
+  "match": {
+    "find": {
+      "regex": "\"([^\"]+)\""
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "“$1”"
+    }
+  ]
+}
