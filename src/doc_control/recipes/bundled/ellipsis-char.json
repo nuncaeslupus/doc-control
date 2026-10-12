@@ -4,7 +4,7 @@
   "description": "Three dots, or an ellipsis followed by a full stop: use the single ellipsis character (not in links, addresses or `(...)`)",
   "match": {
     "find": {
-      "regex": "(?<!\\S)(?!\\S*(?:://|@|mailto:))(\\S*?)(?:(?<!\\.)(?:(?<!\\()\\.\\.\\.|\\.\\.\\.(?!\\)))(?!\\.)|…\\.)",
+      "regex": "(?<!\\S)(?!www\\.|\\S*(?:://|@|mailto:|\\\\)|\\S*[\\w-]\\.[A-Za-z]{2,}/)(\\S*?)(?:(?<!\\.)(?:(?<!\\()\\.\\.\\.|\\.\\.\\.(?!\\)))(?!\\.)|…\\.)",
       "scope": "paragraph"
     }
   },

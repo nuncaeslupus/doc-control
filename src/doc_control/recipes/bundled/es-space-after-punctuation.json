@@ -4,7 +4,7 @@
   "description": "Comma, semicolon or colon glued to the word after it: add the space (not in links or addresses)",
   "match": {
     "find": {
-      "regex": "(?<!\\S)(?!\\S*(?:://|@|mailto:))(\\S*?[a-záéíóúñü»”)])([,;:])(?=[A-Za-zÁÉÍÓÚÑáéíóúñü])",
+      "regex": "(?<!\\S)(?!www\\.|\\S*(?:://|@|mailto:|\\\\)|\\S*[\\w-]\\.[A-Za-z]{2,}/)(\\S*?[a-záéíóúñü»”)])([,;:])(?=[A-Za-zÁÉÍÓÚÑáéíóúñü])",
       "scope": "paragraph"
     }
   },

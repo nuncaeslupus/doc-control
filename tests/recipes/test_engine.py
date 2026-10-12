@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 import re
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Literal
@@ -450,3 +452,63 @@ def test_repeat_proposes_one_small_edit_per_change(tmp_path: Path) -> None:
     assert [o["text"] for o in ops] == ["~"] * 6
     spans = [tuple(map(int, o["at"].split(":")[1].split("-"))) for o in ops]
     assert all(end - start == 1 for start, end in spans)
+
+
+FUZZ_PATTERNS = ["(a)|(b)", "(a)|(b)|(x)", "(ab)|(b)", "(a)(b)?", "(x)|(\u00e9)", "(a)|(\\.)"]
+FUZZ_TEXTS = ["$1-$2", "$1$1", "-$1", "$2$1", "$match$match", "$$", "", "$1", "[$2]"]
+
+
+def test_touching_edits_become_one_change_and_the_batch_is_accepted(tmp_path: Path) -> None:
+    """Narrowing an edit to a bare insertion must not make it overlap its neighbour."""
+    doc = make_docx(tmp_path / "a.docx", "xaby")
+    recipe = rx("(a)|(b)", {"op": "text.replace", "at": "$match", "text": "$1-$2"})
+    ops = run(doc, definition=recipe).result["batch"]["ops"]
+    assert [o["at"].split(":")[1] for o in ops] == ["2-2"] and ops[0]["text"] == "--"
+    dry(doc, ops)
+
+
+def test_random_small_recipes_give_an_accepted_batch_with_the_plain_result(
+    tmp_path: Path,
+) -> None:
+    rng = random.Random(24)
+    for n in range(40):
+        pattern = rng.choice(FUZZ_PATTERNS)
+        template = rng.choice(FUZZ_TEXTS)
+        line = "".join(rng.choice("abx\u00e9. ") for _ in range(rng.randint(1, 12)))
+        expected = re.sub(
+            pattern,
+            lambda m, t=template: (
+                t.replace("$$", "\0")
+                .replace("$match", m.group(0))
+                .replace("$1", m.group(1) or "")
+                .replace("$2", (m.group(2) if m.re.groups > 1 else "") or "")
+                .replace("\0", "$")
+            ),
+            line,
+        )
+        doc = make_docx(tmp_path / f"f{n}.docx", line)
+        recipe = rx(pattern, {"op": "text.replace", "at": "$match", "text": template})
+        batch = run(doc, definition=recipe).result["batch"]
+        if not batch["ops"]:
+            assert expected == line, (pattern, template, line)
+            continue
+        dry(doc, batch["ops"])
+        assert isinstance(REGISTRY["batch"].run(batch), Reply)
+        got = [p.text for p in Document(str(doc)).index.paragraphs]
+        assert got == [expected], (pattern, template, line)
+
+
+@pytest.mark.bench
+def test_dense_long_paragraph_is_proposed_well_inside_the_budget() -> None:
+    from doc_control.model.address import parse_address
+    from doc_control.recipes.engine import TIME_BUDGET_SECONDS, propose
+    from doc_control.recipes.store import parse_recipe_file
+
+    recipe = parse_recipe_file(
+        Path(store.__file__).parent / "bundled" / "es-space-after-punctuation.json"
+    )
+    text = ("ab,cd,ef " * 600)[:4000]
+    started = time.monotonic()
+    proposal = propose(recipe, [(parse_address("p1#00000000"), text)])
+    assert time.monotonic() - started < TIME_BUDGET_SECONDS / 2
+    assert proposal.warnings == [] and len(proposal.ops) > 500

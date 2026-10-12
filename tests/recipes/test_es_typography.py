@@ -88,6 +88,10 @@ CASES: dict[str, list[tuple[str, str]]] = {
         ("Dijo (mal) que sí", "Dijo (mal) que sí"),
     ],
     "es-space-after-punctuation": [
+        ("Ver www.x.es/a;b ya", "Ver www.x.es/a;b ya"),
+        ("Ver ejemplo.com/ruta/a;b ya", "Ver ejemplo.com/ruta/a;b ya"),
+        ("En C:\\dir\\a,b ya", "En C:\\dir\\a,b ya"),
+        ("www.ejemplo.com,luego", "www.ejemplo.com,luego"),
         ("Uno,dos;tres:cuatro", "Uno, dos; tres: cuatro"),
         ("Hora 10:30 y 3,5", "Hora 10:30 y 3,5"),
         ("Ya, está bien", "Ya, está bien"),
@@ -97,6 +101,9 @@ CASES: dict[str, list[tuple[str, str]]] = {
         ("Escribe a x@y.es,luego", "Escribe a x@y.es,luego"),
     ],
     "ellipsis-char": [
+        ("www.ejemplo.com/a...b", "www.ejemplo.com/a...b"),
+        ("ejemplo.com/a...b", "ejemplo.com/a...b"),
+        ("En C:\\dir\\a...b", "En C:\\dir\\a...b"),
         ("Espera... y luego", "Espera… y luego"),
         ("Espera…. Y luego", "Espera… Y luego"),
         ("Cuatro.... se queda", "Cuatro.... se queda"),
@@ -107,6 +114,9 @@ CASES: dict[str, list[tuple[str, str]]] = {
         ("Sigue (...algo) aquí", "Sigue (…algo) aquí"),
     ],
     "typographic-apostrophe": [
+        ("Mide 5'6 de alto", "Mide 5'6 de alto"),
+        ("http://x.com/a'b y d'Arc", "http://x.com/a'b y d’Arc"),
+        ("www.x.es/a'b", "www.x.es/a'b"),
         ("rock'n'roll y o'clock", "rock’n’roll y o’clock"),
         ("'comillas simples'", "'comillas simples'"),
     ],
