@@ -817,6 +817,34 @@ def test_move_refuses_a_bookmark_reaching_outside_the_range(
     assert err.details["bookmark"] == name
 
 
+@pytest.mark.parametrize(
+    "ref",
+    [
+        '<w:fldSimple w:instr=" REF _Toc123 \\h "><w:r><w:t>x</w:t></w:r></w:fldSimple>',
+        '<w:hyperlink w:anchor="_Toc123"><w:r><w:t>x</w:t></w:r></w:hyperlink>',
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGEREF _Toc123 '
+        '\\h </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>',
+    ],
+)
+def test_move_warns_when_a_carried_bookmark_is_referenced(tmp_path: Path, ref: str) -> None:
+    head = para(
+        '<w:bookmarkStart w:id="3" w:name="_Toc123"/>', run("H"), '<w:bookmarkEnd w:id="3"/>'
+    )
+    path = make(tmp_path, head, para(run("b")), para(run("c")), para(ref))
+    result = edit(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
+    assert len(result.warnings) == 1 and "_Toc123" in result.warnings[0]
+    assert result.to_dict()["warnings"] == result.warnings
+
+
+def test_move_without_references_has_no_warning(tmp_path: Path) -> None:
+    head = para(
+        '<w:bookmarkStart w:id="3" w:name="_Toc123"/>', run("H"), '<w:bookmarkEnd w:id="3"/>'
+    )
+    path = make(tmp_path, head, para(run("b")), para(run("c")))
+    result = edit(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
+    assert result.warnings == [] and "warnings" not in result.to_dict()
+
+
 def test_delete_leaves_balanced_bookmarks_and_accept_reject_texts(tmp_path: Path) -> None:
     path = make(
         tmp_path,

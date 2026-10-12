@@ -32,6 +32,9 @@ Bookmarks in a move
     leaves one live bookmark at the new place; rejecting removes the copy, and
     with it the bookmark. ``_GoBack`` is dropped (Word recreates it). A bookmark
     that starts or ends outside the range, and any comment anchor, is refused.
+    Trade-off: the references to a carried bookmark (REF/PAGEREF fields, TOC
+    ``\\h`` entries and link anchors) keep working after accepting but dangle
+    after rejecting, so :func:`referenced_bookmarks` feeds a warning.
 
 Ids
     :class:`RevisionContext` hands out ``w:id`` values above every ``w:id`` in
@@ -245,6 +248,33 @@ def _flat(p: ET.Element) -> list[tuple[ET.Element, ET.Element]]:
     return items
 
 
+_FIELD_TARGET = re.compile(r'\b(?:REF|PAGEREF|NOTEREF)\s+"?([^\s"\\]+)')
+
+
+def referenced_bookmarks(pkg: Package) -> set[str]:
+    """Names that a REF/PAGEREF/NOTEREF field (simple or complex) or a link ``w:anchor`` targets.
+
+    A TOC ``\\h`` entry is such a link. Looked up in every story part.
+    """
+    found: set[str] = set()
+    for name in pkg.names:
+        if not STORY_PART.match(name):
+            continue
+        try:
+            root = ET.fromstring(pkg.read(name))
+        except ET.ParseError:
+            continue
+        for elem in root.iter():
+            if elem.tag == W + "hyperlink" and elem.get(W + "anchor"):
+                found.add(elem.get(W + "anchor", ""))
+            elif elem.tag == W + "fldSimple":
+                found.update(_FIELD_TARGET.findall(elem.get(W + "instr", "")))
+            elif elem.tag == P:
+                instr = "".join(t.text or "" for t in elem.iter(W + "instrText"))
+                found.update(_FIELD_TARGET.findall(instr))
+    return found
+
+
 class BookmarkScope:
     """The bookmarks of a moved range of paragraphs, checked and given their new ids.
 
@@ -264,6 +294,7 @@ class BookmarkScope:
         self.ctx = ctx
         self.dropped: set[str] = set()
         self.carried: dict[str, str] = {}  # old id -> new id, allocated on first use
+        self.names: list[str] = []  # names of the carried bookmarks
         open_: dict[str, str] = {}
         for p, address in zip(paragraphs, addresses, strict=True):
             reachable = {id(node) for _, node in _flat(p)}
@@ -290,10 +321,12 @@ class BookmarkScope:
                         paragraph=address,
                         bookmark=name,
                     )
-                if open_.pop(bid) == GOBACK:
+                name = open_.pop(bid)
+                if name == GOBACK:
                     self.dropped.add(bid)
                 else:
                     self.carried[bid] = ""
+                    self.names.append(name)
         if open_:
             name = next(iter(open_.values()))
             raise unsupported(

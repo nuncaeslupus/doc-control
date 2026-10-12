@@ -30,8 +30,9 @@ The four edits
     as a tracked deletion of the originals plus a tracked insertion of copies
     (spec: v1 has no ``w:moveFrom``/``w:moveTo``). Bookmarks that start and end
     inside the moved paragraphs go with the text (same name, new id; ``_GoBack``
-    is dropped); a bookmark reaching outside them, and comment anchors, are
-    refused. Moving to after the last paragraph of a container
+    is dropped; rejecting the move removes them, so REF/PAGEREF fields, TOC entries and
+    links aimed at them are reported in ``warnings``); a bookmark reaching outside
+    them, and comment anchors, are refused. Moving to after the last paragraph of a container
     is refused (use ``before`` its successor or insert text).
 
 Offsets
@@ -77,6 +78,7 @@ from doc_control.ooxml.revisions import (
     inserted_content,
     mark_state,
     new_paragraph,
+    referenced_bookmarks,
     reject_revisions,
     used_ids,
 )
@@ -235,6 +237,7 @@ class TrackedResult:
     before_sha256: str
     after_sha256: str | None = None
     backup: Path | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -247,6 +250,8 @@ class TrackedResult:
             "author": self.author,
             "date": self.date,
         }
+        if self.warnings:
+            out["warnings"] = self.warnings
         if not self.dry_run:
             out["sha256"] = self.after_sha256
             out["backup"] = str(self.backup) if self.backup else None
@@ -760,6 +765,7 @@ def apply_edits(
         author=ctx.author,
         date=ctx.date,
         before_sha256=pkg.sha256,
+        warnings=_reference_warnings(pkg, scopes),
     )
     if dry_run:
         return result
@@ -809,6 +815,21 @@ def _bookmark_scopes(
         )
         for edit, paras in sources.items()
     }
+
+
+def _reference_warnings(pkg: Package, scopes: Mapping[int, BookmarkScope]) -> list[str]:
+    """A warning naming moved bookmarks that fields or links refer to (rejecting breaks them)."""
+    carried = sorted({name for scope in scopes.values() for name in scope.names})
+    if not carried:
+        return []
+    hit = [name for name in carried if name in referenced_bookmarks(pkg)]
+    if not hit:
+        return []
+    return [
+        "moved bookmarks are referenced by fields or links: "
+        + ", ".join(hit)
+        + "; rejecting the move removes them and leaves those references broken"
+    ]
 
 
 def _require_no_live_text(elem: ET.Element, para: Paragraph) -> None:
