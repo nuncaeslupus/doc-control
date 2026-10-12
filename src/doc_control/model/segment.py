@@ -424,6 +424,11 @@ def parse_chapter_heading(text: str) -> ChapterHeading | None:
     return None
 
 
+def number_word(text: str) -> int | None:
+    """The value of a spelled-out number alone (``Uno``, ``Tercera``, ``Twelve``), else ``None``."""
+    return _NUMBER_WORDS.get(" ".join(text.split()).rstrip(".").lower())
+
+
 def segment_document(texts: Sequence[str], language: str = DEFAULT_LANGUAGE) -> Segmentation:
     """Segment a document given each main-story paragraph's visible text, in order."""
     _abbreviations(language)
