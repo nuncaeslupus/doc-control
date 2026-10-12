@@ -47,13 +47,27 @@ CONFIG_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "keep": {"type": "integer", "minimum": 0},
-                "min_days": {"type": "number", "minimum": 0},
+                "keep": {"type": "integer", "minimum": 0, "maximum": 100_000},
+                "min_days": {"type": "number", "minimum": 0, "maximum": 36_500},
             },
         },
     },
 }
-_BACKUP_RE = re.compile(r"^(?P<ts>\d{8}T\d{6}Z)-(?P<sha>[0-9a-f]{8})\.docx$")
+# ``-<n>`` disambiguates a same-second, same-sha8 backup whose bytes differ.
+_BACKUP_RE = re.compile(r"^(?P<ts>\d{8}T\d{6}Z)-(?P<sha>[0-9a-f]{8})(?:-(?P<n>\d+))?\.docx$")
+
+
+def _reject_constant(name: str) -> Any:
+    """``json.loads`` hook: NaN and ±Infinity are not JSON and are never valid config."""
+    raise ValueError(f"non-finite number {name} is not allowed")
+
+
+def _sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        while chunk := fh.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def user_home(env: Mapping[str, str] | None = None, platform: str | None = None) -> Path:
@@ -146,37 +160,47 @@ class DocStore:
         for a corrupt ``id``, before any backup is taken.
         """
         store = cls(store_dir(doc_path, env))
+        # Read and validate everything first: an error path creates nothing.
+        config = store._load_config()
+        doc_id = store._load_id()
         store.backups_dir.mkdir(parents=True, exist_ok=True)
-        store.config = store._load_or_create_config()
-        store.doc_id = store._load_or_create_id()
+        if config is None:
+            _write_text_atomic(store.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
+            config = copy.deepcopy(DEFAULT_CONFIG)
+        if doc_id is None:
+            doc_id = str(uuid.uuid4())
+            _write_text_atomic(store.id_path, doc_id + "\n")
+        store.config = config
+        store.doc_id = doc_id
         return store
 
-    def _load_or_create_id(self) -> str:
-        if self.id_path.exists():
-            try:
-                return str(uuid.UUID(self.id_path.read_text(encoding="utf-8").strip()))
-            except ValueError as exc:
-                # Never mint a replacement: a new id would orphan the history
-                # logged under the old one, so a human has to look at it.
-                raise DocControlError(
-                    ErrorCode.INTERNAL,
-                    f"document store id is corrupt: {self.id_path}",
-                    path=str(self.id_path),
-                ) from exc
-        doc_id = str(uuid.uuid4())
-        _write_text_atomic(self.id_path, doc_id + "\n")
-        return doc_id
-
-    def _load_or_create_config(self) -> dict[str, Any]:
-        if not self.config_path.exists():
-            _write_text_atomic(self.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
-            return copy.deepcopy(DEFAULT_CONFIG)
+    def _load_id(self) -> str | None:
+        """The stored id, or None when there is none yet; never rewrites it."""
+        if not self.id_path.exists():
+            return None
         try:
-            loaded = json.loads(self.config_path.read_text(encoding="utf-8"))
-        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            return str(uuid.UUID(self.id_path.read_text(encoding="utf-8").strip()))
+        except (OSError, ValueError) as exc:
+            # Never mint a replacement: a new id would orphan the history
+            # logged under the old one, so a human has to look at it.
+            raise DocControlError(
+                ErrorCode.INTERNAL,
+                f"document store id is corrupt or unreadable: {self.id_path} ({exc})",
+                path=str(self.id_path),
+            ) from exc
+
+    def _load_config(self) -> dict[str, Any] | None:
+        """The validated config merged over defaults, or None when the file is absent."""
+        if not self.config_path.exists():
+            return None
+        try:
+            loaded = json.loads(
+                self.config_path.read_text(encoding="utf-8"), parse_constant=_reject_constant
+            )
+        except (OSError, ValueError) as exc:  # unreadable, bad JSON, bad UTF-8, NaN/Infinity
             raise DocControlError(
                 ErrorCode.SCHEMA_INVALID,
-                f"{self.config_path} is not valid JSON: {exc}",
+                f"{self.config_path} is not readable, valid JSON: {exc}",
                 path=str(self.config_path),
             ) from exc
         try:
@@ -240,10 +264,15 @@ def create_backup(
                 expected_sha256=expect_sha256,
                 actual_sha256=actual,
             )
-        dest = store.backups_dir / f"{stamp}-{actual[:8]}.docx"
-        if dest.exists():
-            tmp_path.unlink()
-            return dest  # same content in the same second: already backed up
+        base = f"{stamp}-{actual[:8]}"
+        dest = store.backups_dir / f"{base}.docx"
+        n = 0
+        while dest.exists():
+            if dest.is_file() and _sha256_of(dest) == actual:
+                tmp_path.unlink()
+                return dest  # same content in the same second: already backed up
+            n += 1  # same name, different bytes: never return or replace it
+            dest = store.backups_dir / f"{base}-{n}.docx"
         tmp_path.replace(dest)
     except BaseException:
         tmp_path.unlink(missing_ok=True)

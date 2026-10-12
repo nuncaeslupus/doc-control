@@ -215,6 +215,13 @@ def test_keep_is_clamped_to_at_least_one(tmp_path: Path) -> None:
         "[]",
         '{"backups": {"keep": 50,}',
         "",
+        '{"backups": {"min_days": 1000000}}',
+        '{"backups": {"min_days": 1e10}}',
+        '{"backups": {"min_days": Infinity}}',
+        '{"backups": {"min_days": -Infinity}}',
+        '{"backups": {"min_days": NaN}}',
+        '{"backups": {"keep": NaN}}',
+        '{"backups": {"keep": 1000000}}',
     ],
 )
 def test_bad_config_fails_before_any_backup(tmp_path: Path, text: str) -> None:
@@ -332,3 +339,88 @@ def test_create_backup_rejects_mismatch_and_leaves_nothing(tmp_path: Path) -> No
     assert list(store.backups_dir.iterdir()) == []
     ok = create_backup(store, doc, NOW, expect_sha256=sha256_file(doc).upper())
     assert ok.read_bytes() == doc.read_bytes()
+
+
+def test_config_that_is_a_directory_is_schema_invalid(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.config_path.unlink()
+    store.config_path.mkdir()
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.SCHEMA_INVALID
+    assert exc.value.details["path"] == str(store.config_path)
+    assert list(store.backups_dir.iterdir()) == []
+
+
+def test_unreadable_config_is_schema_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    real_read_text = Path.read_text
+
+    def deny(self: Path, *args: object, **kwargs: object) -> str:
+        if self == store.config_path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", deny)
+    with pytest.raises(DocControlError) as exc:
+        DocStore.open(doc)
+    assert exc.value.code is ErrorCode.SCHEMA_INVALID
+    assert exc.value.details["path"] == str(store.config_path)
+
+
+def test_id_that_is_a_directory_is_internal(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.id_path.unlink()
+    store.id_path.mkdir()
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert exc.value.details["path"] == str(store.id_path)
+    assert store.id_path.is_dir()
+    assert list(store.backups_dir.iterdir()) == []
+
+
+def test_bad_config_creates_nothing(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    root = store_dir(doc)
+    root.mkdir(parents=True)
+    (root / "config.json").write_text('{"backups": 5}')
+    with pytest.raises(DocControlError):
+        DocStore.open(doc)
+    assert sorted(p.name for p in root.iterdir()) == ["config.json"]
+
+
+def test_bad_id_creates_nothing(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    root = store_dir(doc)
+    root.mkdir(parents=True)
+    (root / "id").write_text("garbage")
+    with pytest.raises(DocControlError):
+        DocStore.open(doc)
+    assert sorted(p.name for p in root.iterdir()) == ["id"]
+
+
+def test_name_collision_with_different_content_gets_a_new_name(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    stamp = NOW.strftime("%Y%m%dT%H%M%SZ")
+    squatter = store.backups_dir / f"{stamp}-{sha256_file(doc)[:8]}.docx"
+    squatter.write_bytes(b"different bytes, same sha8 by accident")
+    path = backup(doc, now=NOW)
+    assert path != squatter
+    assert path.read_bytes() == doc.read_bytes()
+    assert squatter.read_bytes() == b"different bytes, same sha8 by accident"
+    assert path in [p for _, p in store.backups()]  # still seen by retention
+    assert backup(doc, now=NOW) == path  # identical content reuses it
+
+
+def test_same_content_same_second_reuses_backup(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    first = backup(doc, now=NOW)
+    assert backup(doc, now=NOW) == first
+    assert len(list(DocStore.open(doc).backups_dir.iterdir())) == 1
