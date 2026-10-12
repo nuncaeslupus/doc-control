@@ -1,4 +1,4 @@
-# Word Control — Plan (annotated edition)
+# Doc Control — Plan (annotated edition)
 
 > Generated 2026-10-12. This is the document with a **note slot** after every section. Read it in any Markdown app. To annotate, replace the `_(your notes…)_` placeholder under any section. When done, send the file back — notes are acted on.
 
@@ -12,7 +12,7 @@
 **Specification**: `status/specification.md` (approved, revision 3)
 **Author**: Claude
 **Revision**: 1
-**Status**: draft
+**Status**: approved (2026-10-12, revision 1) — without annotations
 **Revision log**:
 - r1 — first draft
 

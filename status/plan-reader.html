@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="70d520facf34d8a7febe0e061016d36659428c3faa3e8a5a3d165748ba26619e">
-<title>Word Control — Plan (annotatable)</title>
+<meta name="arsenal-source-sha256" content="79257142c3c81cd565ea7ae8c79a10f5cdc1b4ac178f46ac84d793ec0dd9cd80">
+<title>Doc Control — Plan (annotatable)</title>
 <style>
 :root{
   --bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2da;
@@ -125,7 +125,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <body>
 <div class="topbar">
   <div class="wrap">
-    <div class="brand">Word Control — Plan<small>annotatable reader · 2026-10-12</small></div>
+    <div class="brand">Doc Control — Plan<small>annotatable reader · 2026-10-12</small></div>
     <span class="savestate ok" id="savestate">✓ Auto-saving</span>
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
@@ -135,7 +135,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 
 <div class="wrap">
   <div class="hero">
-    <h1>Word Control — Plan</h1>
+    <h1>Doc Control — Plan</h1>
     <p>Read at your own pace and leave a note on any point you want to discuss.</p>
   </div>
   <details class="help">
@@ -172,7 +172,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <strong>Specification</strong>: <code>status/specification.md</code> (approved, revision 3)
 <strong>Author</strong>: Claude
 <strong>Revision</strong>: 1
-<strong>Status</strong>: draft
+<strong>Status</strong>: approved (2026-10-12, revision 1) — without annotations
 <strong>Revision log</strong>:
 - r1 — first draft</p></div>
 <div class="note" data-for="s-plan-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN · intro</span></div><textarea class="note-ta" data-key="s-plan-intro" data-label="Preamble &amp; scope" data-part="Plan" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
@@ -668,7 +668,7 @@ T5, T10 ─&gt; T27     T12, T15, T18 ─&gt; T28     everything ─&gt; T29    
 <script>var SPEC_SEED_NOTES={};</script>
 <script>
 (function(){
-  var NS = 'word-control-plan-v1:';
+  var NS = 'doc-control-plan-v1:';
   var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
 
   function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
@@ -761,7 +761,7 @@ T5, T10 ─&gt; T27     T12, T15, T18 ─&gt; T28     everything ─&gt; T29    
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-plan-notes-'+today()+'-r1.md';
+    var name='doc-control-plan-notes-'+today()+'-r1.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -783,7 +783,7 @@ T5, T10 ─&gt; T27     T12, T15, T18 ─&gt; T28     everything ─&gt; T29    
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-plan-notes-'+today()+'-r1.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('doc-control-plan-notes-'+today()+'-r1.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

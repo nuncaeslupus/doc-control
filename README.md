@@ -1,6 +1,6 @@
 # doc-control
 
-> Status: **spec in review** — no code yet. The repository will be renamed from `word-control` to `doc-control`.
+> Status: **spec and plan approved** — implementation starting. See `status/specification.md` and `status/plan.md`.
 
 A deterministic tool that lets AI agents work on Word documents quickly,
 precisely and safely, ideally live in the Word window the writer has open.

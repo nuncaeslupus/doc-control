@@ -28,5 +28,4 @@ Direction approved by the owner on 2026-10-12; handed to `specify`.
 
 - Switch the GitHub default branch to `main` (UI error "Could not change default branch"; no rulesets exist). Remind when the owner is at a PC.
 - Reserve `doc-control` on PyPI.
-- Rename the GitHub repo `word-control` → `doc-control` (Settings → General); then update in-repo references.
 - Find a Windows machine with Word for live-engine testing.
