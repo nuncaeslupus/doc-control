@@ -124,7 +124,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T# | Gate | Measured | Command | SHA | Env | Date |
 |----|------|----------|---------|-----|-----|------|
 | T1 | `make_check_exit_code == 0` | 0 | `make check` | 50b04fb | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
-| T2 | `operations_without_json_schema == 0` | 0 | `uv run pytest tests/test_registry.py (ops without schema counted by test)` | 5e72160 | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
+| T2 | `operations_without_json_schema == 0` | 0 | `uv run pytest tests/test_registry.py` (counts registered schemas failing `check_schema` plus ops missing from `capabilities`) | 0633dc9 | local (Linux, CPython 3.13 via uv) | 2026-10-12 |
 | T3 | `untouched_parts_byte_identical_ratio == 1.0` | 1.0 | `uv run pytest tests/ooxml/test_zipio.py (ratio of untouched members whose raw compressed bytes and header fields are identical)` | 0188f16 | local (Linux, CPython 3.13 via uv) | 2026-10-12 |
 
 ### Dependency graph

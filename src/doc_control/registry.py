@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from doc_control.schema import validate
+from doc_control.schema import check_schema, validate
 
 Handler = Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -30,13 +30,16 @@ REGISTRY: dict[str, Operation] = {}
 def operation(
     name: str, kind: Literal["read", "write"], summary: str, schema: dict[str, Any]
 ) -> Callable[[Handler], Handler]:
-    """Register a handler; the schema must describe an object request."""
+    """Register a handler; the schema must be a well-formed object schema."""
 
     def wrap(handler: Handler) -> Handler:
         if name in REGISTRY:
             raise ValueError(f"operation registered twice: {name}")
         if schema.get("type") != "object":
             raise ValueError(f"schema for {name} must be an object schema")
+        problems = check_schema(schema)
+        if problems:
+            raise ValueError(f"schema for {name} is malformed: {'; '.join(problems)}")
         REGISTRY[name] = Operation(name, kind, summary, schema, handler)
         return handler
 
