@@ -36,7 +36,9 @@ _SCHEMA: dict[str, Any] = {
         "ops": {
             "type": "array",
             "description": (
-                "Operations, applied together. Kinds: "
+                "Operations, applied together. Every address refers to the document as read; an "
+                "operation placed relative to a paragraph another operation deletes or moves "
+                "is a BATCH_CONFLICT. Kinds: "
                 + "; ".join(
                     f"{name} {sorted(set(s['properties']) - {'op'})}"
                     for name, s in OPERATION_SCHEMAS.items()
@@ -90,9 +92,7 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
 )
 def batch(request: dict[str, Any]) -> Reply:
     if request.get("tracked", True) is not True:
-        raise DocControlError(
-            ErrorCode.UNSUPPORTED_CONTENT, "untracked writes are not available: use tracked=true"
-        )
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
     edits = edits_from_request(request["ops"])
     expect = request.get("expect", {})
     path = request["doc"]

@@ -170,7 +170,8 @@ def test_expect_sha256_must_match(doc: Path) -> None:
 def test_untracked_is_refused(doc: Path) -> None:
     with pytest.raises(DocControlError) as err:
         run(doc, [{"op": "para.delete", "at": addresses(doc)[1]}], tracked=False)
-    assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
+    assert err.value.code is ErrorCode.SCHEMA_INVALID
+    assert "not supported in v1" in err.value.message
 
 
 def test_cli_batch_envelope_and_error(doc: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -238,3 +239,95 @@ def test_stale_address_after_structural_change_is_rejected(tmp_path: Path) -> No
     print(f"edits_applied_to_wrong_paragraph={wrong}")
     assert wrong == 0
     assert refused > 50 and applied > 50
+
+
+def test_ops_relative_to_a_moved_or_deleted_paragraph_conflict(doc: Path) -> None:
+    a = addresses(doc)
+    before = doc.read_bytes()
+    move = {"op": "para.move", "at": a[2], "after": a[4]}
+    delete = {"op": "para.delete", "at": a[3]}
+    insert_2 = {"op": "para.insert", "after": a[2], "text": "X"}
+    insert_3 = {"op": "para.insert", "after": a[3], "text": "X"}
+    cases: list[list[dict[str, Any]]] = [
+        [move, insert_2],
+        [{"op": "para.insert", "before": a[2], "text": "X"}, move],
+        [move, {"op": "text.replace", "at": f"{a[2]}:0-3", "text": "X"}],
+        [move, {"op": "para.move", "at": a[7], "after": a[2]}],
+        [{"op": "para.move", "at": a[7], "before": a[2]}, move],
+        [delete, insert_3],
+        [insert_3, delete],
+        [delete, {"op": "para.move", "at": a[7], "after": a[3]}],
+    ]
+    for ops in cases:
+        with pytest.raises(DocControlError) as err:
+            run(doc, ops, dry_run=True)
+        assert err.value.code is ErrorCode.BATCH_CONFLICT, ops
+        assert err.value.details["edits"] == [0, 1]
+    assert doc.read_bytes() == before
+
+
+def test_address_map_reports_the_new_place_of_a_moved_paragraph(doc: Path) -> None:
+    a = addresses(doc)
+    ops = [{"op": "para.move", "at": a[2], "after": a[5]}]
+    new_address = run(doc, ops, dry_run=True)["result"]["address_map"][a[2]]
+    run(doc, ops)
+    moved = [p for p in read_index(doc).paragraphs if str(p.address) == new_address]
+    assert len(moved) == 1 and moved[0].text == TEXTS[2]
+    assert moved[0].number > 5
+
+
+def test_stale_fuzz_duplicates_ranges_and_structure(tmp_path: Path) -> None:
+    """Duplicate texts, offsets and structural ops: refused, or applied where addressed."""
+    rng = random.Random(77)
+    base = [f"Texto {i % 4} repetido {i % 3} aquí" for i in range(10)] + ["Último párrafo"]
+    wrong = refused = applied = 0
+    for round_ in range(300):
+        path = make_docx(tmp_path / f"g{round_}.docx", *base)
+        read = addresses(path)
+        picks = sorted(rng.sample(range(len(base) - 1), rng.randint(1, 3)))
+        ops: list[dict[str, Any]] = []
+        expected: dict[int, str] = {}
+        for i in picks:
+            s = rng.randrange(0, 5)
+            e = s + rng.randrange(1, 4)
+            if rng.random() < 0.6:
+                ops.append({"op": "text.replace", "at": f"{read[i]}:{s}-{e}", "text": "ZZ"})
+                expected[i] = base[i][:s] + "ZZ" + base[i][e:]
+            else:
+                ops.append({"op": "para.insert", "after": read[i], "text": "NUEVO"})
+        current = list(base)
+        for _ in range(rng.choice([0, 1, 1, 2])):
+            kind = rng.choice(["swap", "insert", "append"])
+            if kind == "swap":  # duplicates swapping places keep some addresses valid
+                i, j = rng.sample(range(len(current)), 2)
+                current[i], current[j] = current[j], current[i]
+            elif kind == "insert":
+                current.insert(rng.randrange(len(current) + 1), "Intrusa")
+            else:  # a change in another paragraph: numbering of the rest stays
+                current[-1] += " más"
+        make_docx(path, *current)
+        before = path.read_bytes()
+        now = set(addresses(path))
+        fresh = all(read[i] in now for i in picks)
+        try:
+            run(path, ops)
+        except DocControlError as err:
+            refused += 1
+            if err.code is not ErrorCode.STALE_ADDRESS or path.read_bytes() != before or fresh:
+                wrong += 1
+            continue
+        applied += 1
+        after = texts(path)
+        inserted = [o["after"] for o in ops if o["op"] == "para.insert"]
+        if not fresh or len(after) != len(current) + len(inserted):
+            wrong += 1
+            continue
+        if after.count("NUEVO") != len(inserted):
+            wrong += 1
+        for i, text in expected.items():
+            shift = sum(1 for at in inserted if read.index(at) < i)
+            if after[i + shift] != text:
+                wrong += 1
+    print(f"edits_applied_to_wrong_paragraph={wrong}")
+    assert wrong == 0
+    assert refused > 30 and applied > 30
