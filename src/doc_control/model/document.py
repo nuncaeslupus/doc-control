@@ -18,6 +18,8 @@ from doc_control.model.styles import StyleTable, load_styles
 from doc_control.ooxml.zipio import Package
 
 DOCUMENT_PART = "word/document.xml"
+_TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
+_TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,30 @@ class Document:
                 raw = outline.get(W + "val") if outline is not None else None
                 level = int(raw) if raw is not None and raw.isdigit() else None
             out.append(ParaProps(style, level))
+        return tuple(out)
+
+    @cached_property
+    def cells(self) -> tuple[int, ...]:
+        """Per paragraph, the byte offset of its innermost table cell (-1: not in a cell)."""
+        data = self.index.spans.data
+        events = sorted(
+            [(m.start(), True) for m in _TC_OPEN.finditer(data)]
+            + [(m.start(), False) for m in _TC_CLOSE.finditer(data)]
+        )
+        spans = self.index.spans.paragraphs
+        out: list[int] = []
+        stack: list[int] = []
+        e = 0
+        for para in self.index.paragraphs:
+            start = spans[para.span_index].start
+            while e < len(events) and events[e][0] < start:
+                pos, opens = events[e]
+                if opens:
+                    stack.append(pos)
+                elif stack:
+                    stack.pop()
+                e += 1
+            out.append(stack[-1] if stack else -1)
         return tuple(out)
 
     def style_id(self, para: Paragraph) -> str | None:

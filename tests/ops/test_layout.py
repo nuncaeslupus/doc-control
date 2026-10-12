@@ -14,7 +14,10 @@ from doc_control.cli import main
 from doc_control.model.document import Document
 from tests.helpers import CONTENT_TYPES, RELS
 
-NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+NS = (
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+)
 Run = Callable[..., dict[str, Any]]
 
 
@@ -52,6 +55,10 @@ def style(sid: str) -> str:
     return f'<w:pStyle w:val="{sid}"/>'
 
 
+BREAK_ONLY = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+TRAILING_BREAK = '<w:p><w:r><w:t>last.</w:t><w:br w:type="page"/></w:r></w:p>'
+IMAGE_ONLY = "<w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>"
+
 # (paragraph xml, expected facts); facts not listed are not checked.
 CASES: list[tuple[str, dict[str, Any]]] = [
     (p("Opening"), {"empty": False, "blank_before": 0, "heading_level": None, "centred": False}),
@@ -78,10 +85,22 @@ CASES: list[tuple[str, dict[str, Any]]] = [
         '<w:p><w:r><w:t>Text</w:t></w:r><w:r><w:br w:type="page"/></w:r></w:p>',
         {"page_break_before": False},
     ),
-    (p("", "<w:sectPr><w:pgSz/></w:sectPr>"), {"empty": True, "page_break_before": False}),
+    (p("", "<w:sectPr><w:pgSz/></w:sectPr>"), {"empty": True, "page_break_before": True}),
     (p("After section"), {"page_break_before": True, "blank_before": 1}),
     (p("", '<w:sectPr><w:type w:val="continuous"/></w:sectPr>'), {"empty": True}),
     (p("After continuous"), {"page_break_before": False, "blank_before": 1}),
+    (BREAK_ONLY, {"empty": True, "blank_before": 0, "page_break_before": True}),
+    (p("Chapter Two", style("Chapter")), {"page_break_before": True, "blank_before": 0}),
+    (TRAILING_BREAK, {"empty": False, "page_break_before": False}),
+    (p("Chapter Three", style("Chapter")), {"page_break_before": True, "blank_before": 0}),
+    (p("", '<w:sectPr><w:type w:val="nextColumn"/></w:sectPr>'), {"empty": True}),
+    (p("After column"), {"page_break_before": False, "blank_before": 1}),
+    (IMAGE_ONLY, {"empty": False, "blank_before": 0}),
+    (p(""), {"empty": True, "blank_before": 0}),
+    (IMAGE_ONLY, {"empty": False, "blank_before": 1}),
+    (p("After image"), {"blank_before": 0, "page_break_before": False}),
+    (BREAK_ONLY, {"empty": True, "blank_before": 0}),
+    (p("Blank"), {"empty": False, "blank_before": 0, "page_break_before": True}),
 ]
 
 
@@ -157,3 +176,25 @@ def test_style_cycle_does_not_hang(tmp_path: Path, run: Run) -> None:
     result = run("para.get", doc=str(doc), at=_addresses(doc)[0])
     assert result["centred"] is False
     assert result["heading_level"] is None
+
+
+def test_blank_before_stops_at_table_edges_and_cells(tmp_path: Path, run: Run) -> None:
+    cell = "<w:tbl><w:tr><w:tc>{}</w:tc></w:tr></w:tbl>"
+    doc = make_doc(
+        tmp_path / "t.docx",
+        [p(), cell.format(p() + p("x") + p()), p("after table"), cell.format(p("y"))],
+    )
+    got = [run("para.get", doc=str(doc), at=at)["blank_before"] for at in _addresses(doc)]
+    # empty, cell: empty / x / empty, after table, cell: y
+    assert got == [0, 0, 1, 0, 0, 0]
+
+
+def test_alignment_from_doc_defaults(tmp_path: Path, run: Run) -> None:
+    styles = STYLES.replace(
+        _NORMAL,
+        '<w:docDefaults><w:pPrDefault><w:pPr><w:jc w:val="center"/></w:pPr></w:pPrDefault>'
+        f"</w:docDefaults>{_NORMAL}",
+    )
+    doc = make_doc(tmp_path / "d.docx", [p("a"), p("b", '<w:jc w:val="both"/>')], styles)
+    got = [run("para.get", doc=str(doc), at=at)["centred"] for at in _addresses(doc)]
+    assert got == [True, False]
