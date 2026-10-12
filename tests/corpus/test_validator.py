@@ -230,3 +230,15 @@ def test_libreoffice_output_is_kept_in_failure_reason(
     reason = " ".join(results["plain"])
     assert "fake soffice exploded on purpose" in reason, reason
     assert len(reason) < 2000
+
+
+@pytest.mark.skipif(validator.soffice_path() is None, reason="LibreOffice not installed")
+def test_round_trip_converts_every_document_across_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Many documents go through several soffice runs and none is dropped."""
+    monkeypatch.setattr(validator, "BATCH_SIZE", 2)
+    docs = {f"doc-{seed}": generate("plain", seed) for seed in range(5)}
+    results = validator.libreoffice_round_trip(docs, tmp_path)
+    assert results == {doc_id: [] for doc_id in docs}
+    assert len(list((tmp_path / "lo-out").glob("*.html"))) == 5
