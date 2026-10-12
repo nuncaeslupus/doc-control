@@ -9,7 +9,13 @@ import unicodedata
 import pytest
 
 from doc_control.cli import main
-from doc_control.model.normalized import IGNORABLE, NormalizedText, normalize
+from doc_control.model.normalized import (
+    IGNORABLE,
+    NormalizedText,
+    decode_runs,
+    encode_runs,
+    normalize,
+)
 
 SEEDS = range(3000)
 ALPHABET = [
@@ -22,9 +28,21 @@ ALPHABET = [
 ]  # fmt: skip
 
 
+HANGUL_RUNS = [
+    "\u1100\u1161\u11a8", "\u1100\u1161", "\u1112\u1175\u11c2", "\u1161\u11a8",
+    "\uac00\u11a8", "\uac01", "\u1100\u1161\u11a8\u11a8", "\u1100\u200b\u1161\u00ad\u11a8",
+]  # fmt: skip
+
+
 def random_text(seed: int) -> str:
     rng = random.Random(seed)
-    return "".join(rng.choice(ALPHABET) for _ in range(rng.randrange(0, 14)))
+    parts: list[str] = []
+    for _ in range(rng.randrange(0, 14)):
+        if rng.random() < 0.15:  # deliberate Hangul runs: L, L+V, L+V+T, V+T and precomposed + T
+            parts.append(rng.choice(HANGUL_RUNS))
+        else:
+            parts.append(rng.choice(ALPHABET))
+    return "".join(parts)
 
 
 def boundaries(result: NormalizedText) -> list[int]:
@@ -50,9 +68,12 @@ def test_offset_map_roundtrip_collapsed_to_visible() -> None:
     assert mismatches == 0
 
 
-@pytest.mark.parametrize("seed", range(0, 3000, 5))
-def test_maps_are_monotonic_and_consistent(seed: int) -> None:
-    text = random_text(seed)
+def test_maps_are_monotonic_and_consistent() -> None:
+    for seed in range(0, 3000, 5):
+        check_maps(random_text(seed))
+
+
+def check_maps(text: str) -> None:
     result = normalize(text)
     to_o, to_n = result.to_original, result.to_normalized
     assert len(to_o) == len(result.text) + 1
@@ -71,36 +92,59 @@ def test_maps_are_monotonic_and_consistent(seed: int) -> None:
         assert to_n[to_o[to_n[o]]] == to_n[o]
 
 
-@pytest.mark.parametrize("seed", range(600))
-def test_text_matches_independent_normalisation(seed: int) -> None:
-    text = random_text(seed)
-    expected = unicodedata.normalize("NFC", "".join(c for c in text if c not in IGNORABLE))
-    expected = " ".join(expected.replace("\u00a0", " ").split()) if False else expected
-    got = normalize(text).text
-    # Whitespace collapsing is the only difference from plain NFC.
-    squeezed: list[str] = []
-    for ch in expected:
-        if ch.isspace():
-            if not squeezed or squeezed[-1] != " ":
-                squeezed.append(" ")
-        else:
-            squeezed.append(ch)
-    assert got == "".join(squeezed)
+def test_text_matches_independent_normalisation() -> None:
+    for seed in range(1500):
+        text = random_text(seed)
+        expected = unicodedata.normalize("NFC", "".join(c for c in text if c not in IGNORABLE))
+        # Whitespace collapsing is the only difference from plain NFC.
+        squeezed: list[str] = []
+        for ch in expected:
+            if ch.isspace():
+                if not squeezed or squeezed[-1] != " ":
+                    squeezed.append(" ")
+            else:
+                squeezed.append(ch)
+        assert normalize(text).text == "".join(squeezed), ascii(text)
 
 
-@pytest.mark.parametrize("seed", range(600))
-def test_slice_corresponds_to_original_slice(seed: int) -> None:
+def test_hangul_syllables_compose_from_jamo() -> None:
+    lvt = normalize("\u1100\u1161\u11a8")
+    assert lvt.text == "\uac01" and lvt.to_original == (0, 3) and lvt.to_normalized == (0, 0, 0, 1)
+    assert normalize("\u1100\u1161").text == "\uac00"
+    assert normalize("\uac00\u11a8").text == "\uac01"
+    assert normalize("x\u1112\u1175\u11c2y").text == "x\ud7a3y"
+    assert normalize("\u1100\u200b\u1161\u00ad\u11a8").text == "\uac01"
+    assert normalize("\u1100\u1161\u11a8\u11a8").text == unicodedata.normalize(
+        "NFC", "\u1100\u1161\u11a8\u11a8"
+    )
+
+
+def test_slice_corresponds_to_original_slice() -> None:
     """normalized[a:b] is the normalisation of original[map(a):map(b)] (at cluster edges)."""
-    text = random_text(seed)
-    result = normalize(text)
-    rng = random.Random(seed)
-    for _ in range(8):
-        edges = boundaries(result)
-        a, b = sorted(rng.choice(edges) for _ in range(2))
-        piece = text[result.original_offset(a) : result.original_offset(b)]
-        again = normalize(piece).text
-        # Pieces may carry collapsed whitespace at their edges, so compare modulo that.
-        assert again.strip(" ") == result.text[a:b].strip(" ")
+    for seed in range(600):
+        text = random_text(seed)
+        result = normalize(text)
+        rng = random.Random(seed)
+        for _ in range(8):
+            edges = boundaries(result)
+            a, b = sorted(rng.choice(edges) for _ in range(2))
+            piece = text[result.original_offset(a) : result.original_offset(b)]
+            again = normalize(piece).text
+            # Pieces may carry collapsed whitespace at their edges, so compare modulo that.
+            assert again.strip(" ") == result.text[a:b].strip(" "), ascii(text)
+
+
+def test_runs_round_trip() -> None:
+    for seed in range(600):
+        result = normalize(random_text(seed))
+        for values in (result.to_original, result.to_normalized):
+            runs = encode_runs(values, 0, len(values))
+            assert decode_runs(runs) == dict(enumerate(values))
+            half = len(values) // 2
+            assert decode_runs(encode_runs(values, half, len(values))) == {
+                i: values[i] for i in range(half, len(values))
+            }
+    assert encode_runs(list(range(5000)), 0, 5000) == [[0, 0, 5000]]
 
 
 def test_astral_characters_count_as_one_offset() -> None:
@@ -163,14 +207,17 @@ def test_out_of_range_offsets_raise() -> None:
 
 
 def test_text_normalized_operation_via_cli(capsys: pytest.CaptureFixture[str]) -> None:
-    request = json.dumps({"text": "Ca\u00adfe\u0301  au\u00a0lait"})
-    code = main(["text.normalized", "--json", request])
+    original = "Ca\u00adf\u0065\u0301  au\u00a0lait"
+    code = main(["text.normalized", "--json", json.dumps({"text": original})])
     env = json.loads(capsys.readouterr().out)
     assert code == 0
-    assert env["result"]["text"] == "Caf\u00e9 au lait"
-    mapping = env["result"]["offset_map"]
-    assert len(mapping["to_original"]) == len("Caf\u00e9 au lait") + 1
-    assert mapping["to_original"][-1] == len("Ca\u00adfe\u0301  au\u00a0lait")
+    (entry,) = env["result"]["paragraphs"]
+    assert entry["text"] == "Caf\u00e9 au lait"
+    expected = normalize(original)
+    assert decode_runs(entry["offset_map"]["to_original"]) == dict(enumerate(expected.to_original))
+    assert decode_runs(entry["offset_map"]["to_normalized"]) == dict(
+        enumerate(expected.to_normalized)
+    )
 
 
 def test_text_normalized_is_registered_read_only_with_schema(

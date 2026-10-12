@@ -9,6 +9,9 @@ end of a range is exclusive. :func:`normalize` applies, in this order:
 3. collapse of every run of whitespace (``str.isspace``: space, tab, newline, no-break
    space U+00A0, U+2028...) into one space. Nothing is trimmed.
 
+Zero-width characters go even where they hold a sequence together: U+200D (ZWJ) is
+removed from an emoji sequence, which then reads as its separate emoji.
+
 Every normalised character covers a half-open range of original characters (if nothing
 is left, the only boundary maps to 0). A removed
 character belongs to the character that follows it (the trailing ones to the last
@@ -29,9 +32,10 @@ from __future__ import annotations
 
 import bisect
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-IGNORABLE = frozenset("­​‌‍⁠﻿")
+IGNORABLE = frozenset("\u00ad\u200b\u200c\u200d\u2060\ufeff")
 
 
 @dataclass(frozen=True)
@@ -88,23 +92,59 @@ def normalize(original: str) -> NormalizedText:
 def _chunks(original: str, kept: list[int]) -> list[list[int]]:
     """Split the kept indexes where NFC cannot combine across the cut.
 
-    A character with combining class 0 composes only with the character right before
-    it, so a cut before one is safe when NFC of the pair equals the NFC of each part.
+    A character joins the current chunk when it has a combining class, or when NFC of
+    the chunk plus the character differs from NFC of the chunk followed by the
+    character (a base letter and its accent, or Hangul L+V+T, which compose step by
+    step). Whitespace stands alone: nothing composes with it, and a collapsed space
+    must stay whole.
     """
     chunks: list[list[int]] = []
-    for pos, i in enumerate(kept):
+    text = ""  # the current chunk's characters
+    for i in kept:
         ch = original[i]
-        joins = False
-        if chunks:
-            prev = original[kept[pos - 1]]
-            # Nothing composes with whitespace, and a collapsed space must stay whole.
-            joins = not prev.isspace() and (
+        if (
+            chunks
+            and not text[-1].isspace()
+            and (
                 unicodedata.combining(ch) != 0
-                or unicodedata.normalize("NFC", prev + ch)
-                != unicodedata.normalize("NFC", prev) + unicodedata.normalize("NFC", ch)
+                or unicodedata.normalize("NFC", text + ch)
+                != unicodedata.normalize("NFC", text) + unicodedata.normalize("NFC", ch)
             )
-        if joins:
+        ):
             chunks[-1].append(i)
+            text += ch
         else:
             chunks.append([i])
+            text = ch
     return chunks
+
+
+def encode_runs(values: Sequence[int], lo: int, hi: int) -> list[list[int]]:
+    """Compact form of ``values[lo:hi]`` as runs ``[index, value, count]``.
+
+    Entry ``index + k`` is ``value + k`` for ``k < count``. A run whose values do not
+    move is written ``[index, value, count, 0]``: entry ``index + k`` is ``value``.
+    """
+    runs: list[list[int]] = []
+    i = lo
+    while i < hi:
+        step = values[i + 1] - values[i] if i + 1 < hi else 1
+        if step not in (0, 1):
+            step = 1
+        j = i + 1
+        while j < hi and values[j] - values[j - 1] == step:
+            j += 1
+        runs.append([i, values[i], j - i] if step else [i, values[i], j - i, 0])
+        i = j
+    return runs
+
+
+def decode_runs(runs: Sequence[Sequence[int]]) -> dict[int, int]:
+    """Inverse of :func:`encode_runs`: index to value."""
+    out: dict[int, int] = {}
+    for run in runs:
+        index, value, count = run[:3]
+        step = 0 if len(run) > 3 else 1
+        for k in range(count):
+            out[index + k] = value + k * step
+    return out

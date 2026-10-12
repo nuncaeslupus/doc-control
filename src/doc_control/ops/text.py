@@ -7,32 +7,28 @@ Two inputs, exactly one of which must be given (otherwise ``SCHEMA_INVALID``):
   normalised text and the offset map. For a range, the first and last paragraph are cut
   at the range offsets; ``start`` is the visible-text offset where the cut text begins,
   and the map's original offsets are relative to it (add ``start`` for paragraph offsets).
-* ``text``, a string, which is normalised on its own.
+* ``text``, a string, which is normalised on its own (offsets count from its start).
 
 The reply is paged like every list (:mod:`doc_control.ops.paging`): at most about 8,000
 bytes and ``limit`` paragraphs per call, ``next`` holding the cursor to continue with the
-same ``at``.
+same ``at`` (or the same ``text``). A paragraph whose map would be large is split
+into several entries (see the result description in the operation's schema), so a reply
+stays within the cap even for one long paragraph.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any, overload
+import hashlib
+import json
+from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex, Paragraph
-from doc_control.model.normalized import NormalizedText, normalize
+from doc_control.model.normalized import NormalizedText, encode_runs, normalize
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
-
-
-def _map(result: NormalizedText) -> dict[str, list[int]]:
-    return {
-        "to_original": list(result.to_original),
-        "to_normalized": list(result.to_normalized),
-    }
 
 
 def _invalid(message: str, **details: Any) -> DocControlError:
@@ -57,33 +53,71 @@ def _selection(index: DocumentIndex, at: str | None) -> list[tuple[Paragraph, in
     ]
 
 
-def _entry(para: Paragraph, start: int, end: int) -> dict[str, Any]:
-    result = normalize(para.text[start:end])
-    return {
-        "at": str(para.address),
+WINDOW_BYTES = 3000  # an entry bigger than this is split, so one never nears the 8,000 cap
+
+
+def _window(
+    result: NormalizedText, start: int, at: str | None, a: int, b: int, last: bool
+) -> list[dict[str, Any]]:
+    """Entries for normalised boundaries ``[a, b)`` (``[a, len]`` for the last window).
+
+    A window lists the original boundaries from ``to_original[a]`` up to (not including)
+    ``to_original[b]``, so the windows of a paragraph partition both maps. It is split in
+    halves while its JSON is over :data:`WINDOW_BYTES`.
+    """
+    n = len(result.text)
+    top = n + 1 if last else b
+    o_lo = result.to_original[a]
+    o_hi = result.original_length + 1 if last else result.to_original[b]
+    entry: dict[str, Any] = {} if at is None else {"at": at}
+    entry |= {
         "start": start,
-        "text": result.text,
-        "offset_map": _map(result),
+        "from": a,
+        "text": result.text[a : n if last else b],
+        "offset_map": {
+            "to_original": encode_runs(result.to_original, a, top),
+            "to_normalized": encode_runs(result.to_normalized, o_lo, o_hi),
+        },
     }
+    size = len(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
+    if size <= WINDOW_BYTES or b - a < 2:
+        return [entry]
+    mid = (a + b) // 2
+    return _window(result, start, at, a, mid, False) + _window(result, start, at, mid, b, last)
 
 
-class _Entries(Sequence[dict[str, Any]]):
-    """Entries built on demand, so a page costs only the paragraphs it shows."""
+def _entries(text: str, start: int, at: str | None) -> list[dict[str, Any]]:
+    result = normalize(text)
+    return _window(result, start, at, 0, len(result.text), True)
 
-    def __init__(self, selection: list[tuple[Paragraph, int, int]]) -> None:
-        self._selection = selection
 
-    def __len__(self) -> int:
-        return len(self._selection)
+class _TextSource(Document):
+    """Stands in for a document so a `text` request pages and takes cursors the same way."""
 
-    @overload
-    def __getitem__(self, item: int) -> dict[str, Any]: ...
-    @overload
-    def __getitem__(self, item: slice) -> list[dict[str, Any]]: ...
-    def __getitem__(self, item: int | slice) -> dict[str, Any] | list[dict[str, Any]]:
-        if isinstance(item, slice):
-            return [_entry(*row) for row in self._selection[item]]
-        return _entry(*self._selection[item])
+    def __init__(self, text: str) -> None:
+        self.path = "-"
+        self._sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        self._length = len(text)
+
+    @property
+    def sha256(self) -> str:
+        return self._sha256
+
+    def envelope_doc(self) -> dict[str, Any]:
+        return {"source": "text", "sha256": self._sha256, "characters": self._length}
+
+
+_RESULT = (
+    "Result: `paragraphs`, each {at (absent for `text`), start, from, text, offset_map}. "
+    "`start` is where the entry's text begins in the paragraph's visible text (non-zero "
+    "for a range cut); a long paragraph comes as several entries, `from` being the "
+    "normalised offset where each entry's `text` begins. offset_map.to_original maps "
+    "normalised offsets to original ones and offset_map.to_normalized the reverse, both "
+    "counted in code points from `start`, as runs: [index, value, count] means entry "
+    "index+k is value+k for k < count, and [index, value, count, 0] means entry index+k "
+    "is value. Each entry lists its own normalised offsets (to_original) and original "
+    "offsets (to_normalized); the entries of a paragraph together list every offset once."
+)
 
 
 @operation(
@@ -94,6 +128,7 @@ class _Entries(Sequence[dict[str, Any]]):
     "(whole, or the paragraph/range `at`) or for a `text` string.",
     {
         "type": "object",
+        "description": _RESULT,
         "properties": {
             "doc": {"type": "string", "minLength": 1, "description": "Path to a .docx."},
             "text": {"type": "string", "description": "Text to normalise instead of `doc`."},
@@ -111,11 +146,15 @@ def text_normalized(request: dict[str, Any]) -> dict[str, Any] | Reply:
     if has_doc == has_text:
         raise _invalid("give exactly one of `doc` and `text`")
     if has_text:
-        extra = sorted(k for k in ("at", "limit", "cursor") if k in request)
+        extra = sorted(k for k in ("at",) if k in request)
         if extra:
-            raise _invalid(f"{', '.join(extra)} need `doc`")
-        result = normalize(request["text"])
-        return {"text": result.text, "offset_map": _map(result)}
+            raise _invalid("`at` needs `doc`")
+        source = _TextSource(request["text"])
+        return paged(
+            "text.normalized", source, request, "paragraphs", _entries(request["text"], 0, None)
+        )
     doc = Document(request["doc"])
-    selection = _selection(doc.index, request.get("at"))
-    return paged("text.normalized", doc, request, "paragraphs", _Entries(selection))
+    items: list[dict[str, Any]] = []
+    for para, start, end in _selection(doc.index, request.get("at")):
+        items += _entries(para.text[start:end], start, str(para.address))
+    return paged("text.normalized", doc, request, "paragraphs", items)
