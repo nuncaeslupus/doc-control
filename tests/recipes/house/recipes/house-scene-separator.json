@@ -1,0 +1,7 @@
+{
+  "recipe": "house-scene-separator",
+  "version": 1,
+  "description": "A line of asterisks typed as plain text gets the house separator style",
+  "match": {"find": {"regex": "^\\s*\\*(?:\\s*\\*){2,}\\s*$", "scope": "paragraph"}},
+  "propose": [{"op": "style.apply", "at": "$para", "style": "SceneBreak"}]
+}
