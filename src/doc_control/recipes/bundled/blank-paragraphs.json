@@ -1,0 +1,16 @@
+{
+  "recipe": "blank-paragraphs",
+  "version": 1,
+  "description": "Delete paragraphs that hold only spaces or tabs (truly empty paragraphs hold no text and are not scanned)",
+  "match": {
+    "find": {
+      "regex": "^[ \\t  　]+$"
+    }
+  },
+  "propose": [
+    {
+      "op": "para.delete",
+      "at": "$para"
+    }
+  ]
+}

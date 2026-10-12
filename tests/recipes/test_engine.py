@@ -49,6 +49,8 @@ SHRINK: dict[str, Any] = {
 def _ops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     load_operations()
     monkeypatch.setenv("DOC_CONTROL_HOME", str(tmp_path / "home"))
+    # these tests own the catalogue: no bundled recipes
+    monkeypatch.setattr(store, "BUNDLED_DIR", tmp_path / "no-bundled")
 
 
 def run(doc: Path, **request: Any) -> Reply:

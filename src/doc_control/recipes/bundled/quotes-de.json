@@ -1,0 +1,17 @@
+{
+  "recipe": "quotes-de",
+  "version": 1,
+  "description": "Straight double quotes in pairs become German low-high quotes; a quote mark after a digit (inches) never opens a quotation",
+  "match": {
+    "find": {
+      "regex": "(?<!\\d)\"([^\"\\s][^\"]*)\""
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "„$1“"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "recipe": "dashes-spaced-en",
+  "version": 1,
+  "description": "A hyphen with a space on each side between two words becomes a spaced en dash; sums, negative numbers and the dash that opens a list item are left alone",
+  "match": {
+    "find": {
+      "regex": "^(?!\\s*[-‐‒–—•*] )(.*?[^\\W\\d_]) [-‐‒] (?=[^\\W\\d_])"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1 – "
+    }
+  ],
+  "repeat_until_stable": true,
+  "max_passes": 10
+}
