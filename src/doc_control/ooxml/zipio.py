@@ -199,17 +199,24 @@ def write_package(
     for name, data in replacements.items():
         if not isinstance(data, bytes):
             raise TypeError(f"replacement for {name} must be bytes")
-    payload = _build(pkg, replacements)
-    _commit(payload, dest, stage)
+    payload = build_package(pkg, replacements)
+    commit_bytes(payload, dest, stage)
     return hashlib.sha256(payload).hexdigest()
+
+
+def build_package(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
+    """The bytes ``write_package`` would write, without touching any file."""
+    return _build(pkg, replacements)
 
 
 def restore_file(src: Path, dest: Path) -> None:
     """Put the bytes of ``src`` at ``dest`` with the same atomic replace a write uses."""
-    _commit(src.read_bytes(), dest, None)
+    commit_bytes(src.read_bytes(), dest, None)
 
 
-def _commit(payload: bytes, dest: Path, stage: Callable[[str], None] | None) -> None:
+def commit_bytes(payload: bytes, dest: Path, stage: Callable[[str], None] | None) -> None:
+    """Write ``payload`` to ``dest`` via a same-directory temp file and an atomic replace."""
+
     def at(name: str) -> None:
         if stage is not None:
             stage(name)

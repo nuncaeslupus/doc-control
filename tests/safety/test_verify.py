@@ -15,6 +15,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml import zipio
 from doc_control.ooxml.splice import scan
 from doc_control.ooxml.zipio import Package, sha256_file
+from doc_control.safety.store import DocStore
 from doc_control.safety.verify import (
     DOCUMENT_PART,
     STAGES,
@@ -176,13 +177,18 @@ class Fault:
     """One injected failure: how to trigger it, and what the write is asked to do."""
 
     name: str
-    install: Callable[[pytest.MonkeyPatch], Hook | None]
+    install: Callable[[pytest.MonkeyPatch, Path], Hook | None]
     replacements: Callable[[Path], dict[str, bytes]] = _edit
     footprint: Footprint = field(default_factory=lambda: Footprint(replaced=frozenset({1})))
+    code: ErrorCode = ErrorCode.VERIFY_FAILED_RESTORED
+    # A foreign save is the user's: it must stay on disk, with a copy kept in the store.
+    foreign: bool = False
+    # Refused before our replace, the foreign file was never at risk, so no copy is needed.
+    copy_kept: bool = True
 
 
-def _raise_at(stage_name: str, exc: Exception) -> Callable[[pytest.MonkeyPatch], Hook]:
-    def install(_mp: pytest.MonkeyPatch) -> Hook:
+def _raise_at(stage_name: str, exc: Exception) -> Callable[[pytest.MonkeyPatch, Path], Hook]:
+    def install(_mp: pytest.MonkeyPatch, _path: Path) -> Hook:
         def hook(name: str) -> None:
             if name == stage_name:
                 raise exc
@@ -192,7 +198,7 @@ def _raise_at(stage_name: str, exc: Exception) -> Callable[[pytest.MonkeyPatch],
     return install
 
 
-def _real_fsync_failure(mp: pytest.MonkeyPatch) -> Hook:
+def _real_fsync_failure(mp: pytest.MonkeyPatch, _path: Path) -> Hook:
     armed = False
     real = os.fsync
 
@@ -227,14 +233,14 @@ def _first_replace(
     mp.setattr(zipio, "_replace", replace)
 
 
-def _replace_denied(mp: pytest.MonkeyPatch) -> None:
+def _replace_denied(mp: pytest.MonkeyPatch, _path: Path) -> None:
     def fail(_real: Callable[..., None], _src: Path, _dest: Path) -> None:
         raise PermissionError(13, "target held open")
 
     _first_replace(mp, fail)
 
 
-def _replace_then_error(mp: pytest.MonkeyPatch) -> None:
+def _replace_then_error(mp: pytest.MonkeyPatch, _path: Path) -> None:
     def fail(real: Callable[..., None], src: Path, dest: Path) -> None:
         real(src, dest)
         raise OSError(5, "reported failure after the rename")
@@ -242,7 +248,7 @@ def _replace_then_error(mp: pytest.MonkeyPatch) -> None:
     _first_replace(mp, fail)
 
 
-def _replace_then_truncated(mp: pytest.MonkeyPatch) -> None:
+def _replace_then_truncated(mp: pytest.MonkeyPatch, _path: Path) -> None:
     def fail(real: Callable[..., None], src: Path, dest: Path) -> None:
         real(src, dest)
         dest.write_bytes(dest.read_bytes()[:200])
@@ -250,14 +256,41 @@ def _replace_then_truncated(mp: pytest.MonkeyPatch) -> None:
     _first_replace(mp, fail)
 
 
-def _backup_disk_full(mp: pytest.MonkeyPatch) -> None:
+def _backup_disk_full(mp: pytest.MonkeyPatch, _path: Path) -> None:
     def boom(*_a: Any, **_k: Any) -> None:
         raise OSError(28, "no space left on device")
 
     mp.setattr(zipio.os, "fsync", boom)
 
 
-def _no_fault(_mp: pytest.MonkeyPatch) -> None:
+FOREIGN_TEXT = "usuario"
+
+
+def _foreign_save_at(stage_name: str) -> Callable[[pytest.MonkeyPatch, Path], Hook]:
+    """At ``stage_name`` another program saves a different, valid document over ours."""
+
+    def install(_mp: pytest.MonkeyPatch, path: Path) -> Hook:
+        def hook(name: str) -> None:
+            if name == stage_name:
+                make_docx(path, FOREIGN_TEXT)
+
+        return hook
+
+    return install
+
+
+def _lock_at(stage_name: str) -> Callable[[pytest.MonkeyPatch, Path], Hook]:
+    def install(_mp: pytest.MonkeyPatch, path: Path) -> Hook:
+        def hook(name: str) -> None:
+            if name == stage_name:
+                path.with_name("~$" + path.name).write_bytes(b"")
+
+        return hook
+
+    return install
+
+
+def _no_fault(_mp: pytest.MonkeyPatch, _path: Path) -> None:
     """The write itself is the fault: it asks for a change the footprint does not allow."""
 
 
@@ -265,10 +298,24 @@ FAULTS: list[Fault] = [
     *(Fault(f"hook_{s}", _raise_at(s, OSError(5, f"injected at {s}"))) for s in STAGES),
     *(Fault(f"hook_{s}_runtime", _raise_at(s, RuntimeError("boom"))) for s in STAGES),
     Fault("real_fsync_eio", _real_fsync_failure),
-    Fault("real_replace_denied", _replace_denied),
+    Fault(
+        "foreign_save_at_verify",
+        _foreign_save_at("verify"),
+        code=ErrorCode.DOC_CHANGED_ON_DISK,
+        foreign=True,
+    ),
+    Fault(
+        "foreign_save_before_replace",
+        _foreign_save_at("fsync"),
+        code=ErrorCode.DOC_CHANGED_ON_DISK,
+        foreign=True,
+        copy_kept=False,
+    ),
+    Fault("word_lock_before_replace", _lock_at("fsync"), code=ErrorCode.DOC_LOCKED),
+    Fault("real_replace_denied", _replace_denied, code=ErrorCode.DOC_LOCKED),
     Fault("real_replace_applied_then_error", _replace_then_error),
     Fault("real_replace_then_truncated_file", _replace_then_truncated),
-    Fault("real_backup_disk_full", _backup_disk_full),
+    Fault("real_backup_disk_full", _backup_disk_full, code=ErrorCode.INTERNAL),
     Fault(
         "verify_change_outside_paragraphs", _no_fault, footprint=Footprint(replaced=frozenset({0}))
     ),
@@ -294,41 +341,52 @@ FAULTS: list[Fault] = [
 def _inject(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Fault
 ) -> tuple[DocControlError, bytes]:
+    """Run the faulty write; return the error and the bytes the document must now hold."""
     path = _doc(tmp_path)
     original = path.read_bytes()
     replacements = fault.replacements(path)
-    hook = fault.install(monkeypatch)
+    hook = fault.install(monkeypatch, path)
     with pytest.raises(DocControlError) as err:
         write_verified(path, replacements, fault.footprint, stage=hook)
     monkeypatch.undo()
+    if fault.foreign:
+        return err.value, path.read_bytes()
     return err.value, original
 
 
-def _partial_write(tmp_path: Path, original: bytes, fault: Fault) -> bool:
-    """Whether the document, the directory or the backup is left in a bad state."""
+def _partial_write(tmp_path: Path, expected: bytes, fault: Fault) -> bool:
+    """Whether the document, the directory or the backups are left in a bad state."""
     path = tmp_path / "Novela.docx"
     try:
-        if path.read_bytes() != original:
+        if path.read_bytes() != expected:
             return True
         Package(path)
     except (OSError, DocControlError):
         return True
     store = tmp_path / ".doc-control"
     temp_files = list(store.rglob("*.tmp")) if store.exists() else []
-    if _stray(tmp_path) or temp_files:
+    if [n for n in _stray(tmp_path) if n != "~$Novela.docx"] or temp_files:
         return True
+    if fault.foreign and fault.copy_kept:
+        # The user's save stays and a copy of it is kept next to the backups.
+        return not any(b.read_bytes() == expected for b in _foreign_copies(tmp_path))
+    if fault.foreign:
+        return False
     # Every fault past the backup stage must leave a backup that restores the original.
     needs_backup = fault.name not in ("hook_backup", "hook_backup_runtime", "real_backup_disk_full")
-    return needs_backup and not any(b.read_bytes() == original for b in _backups(tmp_path))
+    return needs_backup and not any(b.read_bytes() == expected for b in _backups(tmp_path))
+
+
+def _foreign_copies(tmp_path: Path) -> list[Path]:
+    return sorted((tmp_path / ".doc-control" / "Novela.docx" / "backups").glob("foreign-*.docx"))
 
 
 @pytest.mark.parametrize("fault", FAULTS, ids=lambda f: f.name)
-def test_every_fault_restores_original_and_reports_verify_failed_restored(
+def test_every_fault_leaves_a_whole_document_and_the_right_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Fault
 ) -> None:
     err, original = _inject(tmp_path, monkeypatch, fault)
-    assert err.code == ErrorCode.VERIFY_FAILED_RESTORED
-    assert "stage" in err.details
+    assert err.code == fault.code
     assert not _partial_write(tmp_path, original, fault)
 
 
@@ -352,7 +410,7 @@ def test_fault_at_each_stage_leaves_original_unchanged(
         sub = tmp_path / f"f{n}"
         sub.mkdir()
         err, original = _inject(sub, monkeypatch, fault)
-        assert err.code == ErrorCode.VERIFY_FAILED_RESTORED, fault.name
+        assert err.code == fault.code, fault.name
         if _partial_write(sub, original, fault):
             partial += 1
     with capsys.disabled():
@@ -381,7 +439,7 @@ def test_restore_failure_is_internal_and_names_the_backup(
     def boom(src: Path, dest: Path) -> None:
         raise OSError(5, "restore failed too")
 
-    _replace_then_truncated(monkeypatch)
+    _replace_then_truncated(monkeypatch, path)
     monkeypatch.setattr(verify_mod, "restore_file", boom)
     with pytest.raises(DocControlError) as err:
         write_verified(path, _edit(path), Footprint(replaced=frozenset({1})))
@@ -410,3 +468,128 @@ def test_restored_file_keeps_permission_bits(tmp_path: Path) -> None:
     with pytest.raises(DocControlError):
         write_verified(path, _edit(path), Footprint(replaced=frozenset({0})))
     assert path.stat().st_mode & 0o777 == 0o640
+
+
+def test_foreign_save_is_kept_not_overwritten(tmp_path: Path) -> None:
+    path = _doc(tmp_path)
+
+    def hook(name: str) -> None:
+        if name == "verify":
+            make_docx(path, FOREIGN_TEXT)
+
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
+    assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
+    assert FOREIGN_TEXT.encode() in Package(path).read(DOCUMENT_PART)
+    (copy,) = _foreign_copies(tmp_path)
+    assert copy.read_bytes() == path.read_bytes()
+    assert err.value.details["saved_copy"] == str(copy)
+
+
+def test_recheck_before_replace_leaves_the_foreign_file_alone(tmp_path: Path) -> None:
+    path = _doc(tmp_path)
+
+    def hook(name: str) -> None:
+        if name == "fsync":
+            make_docx(path, FOREIGN_TEXT)
+
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
+    assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
+    assert FOREIGN_TEXT.encode() in Package(path).read(DOCUMENT_PART)
+    assert _stray(tmp_path) == []
+
+
+def test_verify_reads_are_retried_on_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _doc(tmp_path)
+    monkeypatch.setattr(verify_mod.time, "sleep", lambda _s: None)
+    real = verify_mod.sha256_file
+    failures = 0
+
+    def flaky(p: Path) -> str:
+        nonlocal failures
+        if p == path and failures < 3:
+            failures += 1
+            raise PermissionError(13, "antivirus holds the file")
+        return real(p)
+
+    monkeypatch.setattr(verify_mod, "sha256_file", flaky)
+    write_verified(path, _edit(path), Footprint(replaced=frozenset({1})))
+    assert failures == 3
+    assert b"cambiado" in Package(path).read(DOCUMENT_PART)
+
+
+def test_unreadable_document_after_retries_is_not_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _doc(tmp_path)
+    monkeypatch.setattr(verify_mod.time, "sleep", lambda _s: None)
+    real = verify_mod.sha256_file
+    armed = False
+
+    def locked(p: Path) -> str:
+        if armed and p == path:
+            raise PermissionError(13, "held open")
+        return real(p)
+
+    def hook(name: str) -> None:
+        nonlocal armed
+        armed = name == "verify"
+
+    monkeypatch.setattr(verify_mod, "sha256_file", locked)
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
+    assert err.value.code == ErrorCode.INTERNAL
+    assert Path(err.value.details["backup"]).read_bytes() != Path(path).read_bytes()
+
+
+def test_guard_stage_internal_error_passes_through(tmp_path: Path) -> None:
+    path = _doc(tmp_path)
+    original = path.read_bytes()
+    DocStore.open(path).id_path.write_text("not-a-uuid")
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})))
+    assert err.value.code == ErrorCode.INTERNAL
+    assert "corrupt" in err.value.message
+    assert path.read_bytes() == original
+
+
+def test_interrupt_is_not_masked_by_a_failed_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _doc(tmp_path)
+
+    def boom(src: Path, dest: Path) -> None:
+        raise OSError(5, "restore failed too")
+
+    def hook(name: str) -> None:
+        if name == "verify":
+            path.write_bytes(path.read_bytes()[:100])
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(verify_mod, "restore_file", boom)
+    with pytest.raises(KeyboardInterrupt) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})), stage=hook)
+    assert isinstance(err.value.__cause__, DocControlError)
+
+
+def test_backup_that_does_not_match_is_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _doc(tmp_path)
+    original = path.read_bytes()
+    real = verify_mod.guard_write
+
+    def torn(*args: Any, **kwargs: Any) -> Path:
+        backup = real(*args, **kwargs)
+        backup.write_bytes(backup.read_bytes()[:-5])
+        return backup
+
+    monkeypatch.setattr(verify_mod, "guard_write", torn)
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, _edit(path), Footprint(replaced=frozenset({1})))
+    assert err.value.code == ErrorCode.DOC_CHANGED_ON_DISK
+    assert _backups(tmp_path) == []
+    assert path.read_bytes() == original

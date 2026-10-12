@@ -7,23 +7,48 @@ alone; a failure at or after it (including a verification that finds a change
 outside the declared footprint) puts the backup back with the same atomic
 replace. Either way the caller gets ``VERIFY_FAILED_RESTORED`` and the original
 bytes, never a half-written file.
+
+The restore never destroys anyone else's work. Just before the replace the
+document is re-checked (lock file, sha256), and it is put back only if it is
+missing, holds exactly the bytes we wrote, or is a truncated copy of them. If
+anything else is on disk (Word or a sync client saved in between), that file
+is left in place, a copy of it is saved in the backups folder as
+``foreign-<sha8>-<UTC stamp>.docx`` (a name retention never prunes) and the
+error is ``DOC_CHANGED_ON_DISK``. Reads of the document are retried briefly on
+``PermissionError``, as antivirus scanners on Windows hold files for a moment.
+
+Known gap: a process killed between the replace and the verification leaves
+the new file on disk with no marker saying it was never verified; the backup
+taken before it is the way back.
 """
 
 from __future__ import annotations
 
+import hashlib
+import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypeVar
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.splice import scan
-from doc_control.ooxml.zipio import Package, restore_file, sha256_file, write_package
+from doc_control.ooxml.zipio import (
+    Package,
+    build_package,
+    commit_bytes,
+    restore_file,
+    sha256_file,
+)
 from doc_control.safety import guard_write
+from doc_control.safety.lock import check_unlocked
 
 DOCUMENT_PART = "word/document.xml"
 STAGES = ("backup", "temp_write", "fsync", "replace", "verify")
+_READ_RETRY_DELAYS = (0.05, 0.1, 0.2)
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
@@ -154,11 +179,15 @@ def write_verified(
 ) -> WriteResult:
     """Apply ``replacements`` to ``doc_path`` and verify the result against ``footprint``.
 
-    The pre-write checks of ``guard_write`` (and its errors) come first and leave
-    the document alone. After that any failure, whatever the stage, restores the
-    original from the backup if the document was touched and raises
-    ``VERIFY_FAILED_RESTORED`` naming the stage; if the restore itself cannot be
-    confirmed byte for byte the error is ``INTERNAL`` and names the backup.
+    Errors raised by the checks around the backup (``DOC_NOT_FOUND``,
+    ``DOC_LOCKED``, ``DOC_CHANGED_ON_DISK``, ``SCHEMA_INVALID``, ``INTERNAL``)
+    and by the re-check just before the replace pass through unchanged, with
+    the document untouched; so does ``DOC_LOCKED`` when the replace is still
+    denied after its retry. After that any failure, whatever the stage, puts
+    the original back if the document was touched (see the module docstring for
+    when it is not) and raises ``VERIFY_FAILED_RESTORED`` naming the stage. If
+    the restore cannot be confirmed byte for byte the error is ``INTERNAL`` and
+    names the backup; an interrupt is re-raised with that error as its cause.
     ``stage``, if given, is called with each name in ``STAGES`` just before that
     step runs: tests raise from it to inject a fault.
     """
@@ -166,44 +195,61 @@ def write_verified(
         if not isinstance(data, bytes):
             raise TypeError(f"replacement for {name} must be bytes")
     current = "backup"
+    touched = False  # the replace may have happened: the document can differ from the original
     backup_path: Path | None = None
     original_sha = ""
+    payload = b""
 
     def mark(name: str) -> None:
-        nonlocal current
+        nonlocal current, touched
         current = name
         if stage is not None:
             stage(name)
+        if name == "replace":
+            check_unlocked(doc_path)
+            _check_unchanged(doc_path, original_sha)
+            touched = True
 
     try:
         mark("backup")
         backup_path = guard_write(doc_path, expect_sha256, now=now, env=env)
         pkg = Package(doc_path)
-        original_sha = pkg.sha256
-        if sha256_file(backup_path) != original_sha:
+        if sha256_file(backup_path) != pkg.sha256:
+            backup_path.unlink(missing_ok=True)  # a torn copy is no backup
+            backup_path = None
             raise DocControlError(
                 ErrorCode.DOC_CHANGED_ON_DISK,
                 f"{doc_path.name} changed on disk while it was backed up",
                 path=str(doc_path),
             )
-        after_sha = write_package(pkg, replacements, doc_path, mark)
+        original_sha = pkg.sha256
+        payload = build_package(pkg, replacements)
+        after_sha = hashlib.sha256(payload).hexdigest()
+        commit_bytes(payload, doc_path, mark)
         mark("verify")
-        if sha256_file(doc_path) != after_sha:
+        if _retry(sha256_file, doc_path) != after_sha:
             raise OSError(f"{doc_path.name} does not hold the bytes that were written")
-        problems = verify_footprint(pkg, Package(doc_path), footprint)
+        problems = verify_footprint(pkg, _retry(Package, doc_path), footprint)
         if problems:
             raise _FootprintViolation("; ".join(problems), problems)
     except BaseException as exc:
-        if backup_path is not None:
-            _restore(doc_path, backup_path, original_sha)
+        if touched and backup_path is not None:
+            try:
+                _restore(doc_path, backup_path, original_sha, payload)
+            except DocControlError as restore_error:
+                if isinstance(exc, Exception):
+                    raise restore_error from exc
+                raise exc from restore_error
         if not isinstance(exc, Exception):
             raise
-        if (
-            current == "backup"
-            and isinstance(exc, DocControlError)
-            and (exc.code != ErrorCode.INTERNAL)
-        ):
-            raise  # a guard refusal (locked, changed, bad config): nothing was touched
+        if isinstance(exc, DocControlError) and current in ("backup", "replace"):
+            raise  # a refusal before anything was written: nothing to restore, nothing to wrap
+        if current == "replace" and isinstance(exc, PermissionError):
+            raise DocControlError(
+                ErrorCode.DOC_LOCKED,
+                f"could not replace {doc_path.name}, it is held open: {exc}",
+                path=str(doc_path),
+            ) from exc
         raise DocControlError(
             ErrorCode.VERIFY_FAILED_RESTORED,
             f"write failed at stage {current}, original kept: {exc}",
@@ -215,22 +261,75 @@ def write_verified(
     return WriteResult(original_sha, after_sha, backup_path)
 
 
-def _restore(doc_path: Path, backup_path: Path, original_sha: str) -> None:
-    """Put the backup back unless the document already holds the original bytes."""
-    try:
-        if sha256_file(doc_path) == original_sha:
-            return
-    except OSError:
-        pass  # missing or unreadable: restore below
-    try:
-        restore_file(backup_path, doc_path)
-        restored = sha256_file(doc_path) == original_sha
-    except OSError:
-        restored = False
-    if not restored:
+def _retry(read: Callable[[Path], _T], path: Path) -> _T:
+    """``read(path)``, retried a few times on ``PermissionError`` (a scanner holding the file)."""
+    for delay in _READ_RETRY_DELAYS:
+        try:
+            return read(path)
+        except PermissionError:
+            time.sleep(delay)
+    return read(path)
+
+
+def _check_unchanged(doc_path: Path, original_sha: str) -> None:
+    actual = _retry(sha256_file, doc_path)
+    if actual != original_sha:
         raise DocControlError(
+            ErrorCode.DOC_CHANGED_ON_DISK,
+            f"{doc_path.name} changed on disk while the write was prepared",
+            path=str(doc_path),
+            expected_sha256=original_sha,
+            actual_sha256=actual,
+        )
+
+
+def _restore(doc_path: Path, backup_path: Path, original_sha: str, written: bytes) -> None:
+    """Put the backup back if the document is missing, ours or a truncated copy of ours.
+
+    Anything else was saved by someone else since our replace: leave it, keep a
+    copy of it in the backups folder and raise ``DOC_CHANGED_ON_DISK``.
+    """
+
+    def internal(why: str) -> DocControlError:
+        return DocControlError(
             ErrorCode.INTERNAL,
-            f"could not restore {doc_path.name}; the original is at {backup_path}",
+            f"{why} {doc_path.name}; the original is at {backup_path}",
             path=str(doc_path),
             backup=str(backup_path),
         )
+
+    try:
+        digest = _retry(sha256_file, doc_path)
+    except FileNotFoundError:
+        digest = None
+    except OSError as exc:
+        raise internal("could not inspect") from exc
+    if digest == original_sha:
+        return
+    if digest is not None and digest != hashlib.sha256(written).hexdigest():
+        try:
+            current = doc_path.read_bytes()
+        except OSError as exc:
+            raise internal("could not inspect") from exc
+        if not (len(current) < len(written) and written.startswith(current)):
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            copy = backup_path.parent / f"foreign-{digest[:8]}-{stamp}.docx"
+            try:
+                commit_bytes(current, copy, None)
+            except OSError as exc:
+                raise internal("could not save a copy of the newer") from exc
+            raise DocControlError(
+                ErrorCode.DOC_CHANGED_ON_DISK,
+                f"{doc_path.name} was saved by another program during the write; "
+                "it was left as it is and a copy was kept",
+                path=str(doc_path),
+                saved_copy=str(copy),
+                actual_sha256=digest,
+            )
+    try:
+        restore_file(backup_path, doc_path)
+        restored = _retry(sha256_file, doc_path) == original_sha
+    except OSError as exc:
+        raise internal("could not restore") from exc
+    if not restored:
+        raise internal("could not restore")
