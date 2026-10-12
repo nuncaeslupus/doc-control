@@ -34,3 +34,4 @@ def test_cli_version_prints_api_envelope(capsys: pytest.CaptureFixture[str]) -> 
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["api"] == "1.0"
     assert envelope["ok"] is True
+    assert envelope["result"]["api"] == "1.0"

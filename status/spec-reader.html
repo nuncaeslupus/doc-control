@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="7115407aa05a6268b4226e7bc80f92208b9ddedf461cdedd949095fd87dcb2a4">
-<title>Word Control — Specification (annotatable)</title>
+<meta name="arsenal-source-sha256" content="dac761ddf46bd079e68eccb81a79d73836a04dcac79c789adeab4caa0979bdf8">
+<title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
   --bg:#fbfaf7;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2da;
@@ -125,7 +125,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <body>
 <div class="topbar">
   <div class="wrap">
-    <div class="brand">Word Control — Specification<small>annotatable reader · 2026-10-12</small></div>
+    <div class="brand">Doc Control — Specification<small>annotatable reader · 2026-10-12</small></div>
     <span class="savestate ok" id="savestate">✓ Auto-saving</span>
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
@@ -135,7 +135,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 
 <div class="wrap">
   <div class="hero">
-    <h1>Word Control — Specification</h1>
+    <h1>Doc Control — Specification</h1>
     <p>Read at your own pace and leave a note on any point you want to discuss.</p>
   </div>
   <details class="help">
@@ -593,6 +593,12 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <td>agreed</td>
 <td>2026-10-12</td>
 </tr>
+<tr>
+<td>D-20</td>
+<td>The CLI reads a request from stdin only with <code>--json -</code> (never by default), so an agent's open stdin pipe cannot hang it; a plain <code>&lt; request.json</code> is not read</td>
+<td>agreed</td>
+<td>2026-10-12</td>
+</tr>
 </tbody>
 </table></div>
 <div class="note" data-for="s-spec-4"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></div><textarea class="note-ta" data-key="s-spec-4" data-label="§4 Recommendation" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
@@ -604,10 +610,10 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 </article>
 <article class="sec" id="s-spec-api-contracts">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">API contracts</span></h4>
-<div class="sec-body"><h4>CLI invocation — <code>doc-control &lt;op&gt; [--json '&lt;request&gt;' | &lt; request.json]</code></h4>
+<div class="sec-body"><h4>CLI invocation — <code>doc-control &lt;op&gt; [--json '&lt;request&gt;' | --json - &lt; request.json]</code></h4>
 <ul>
 <li><strong>Auth</strong>: none (local process). No network access, ever.</li>
-<li><strong>Request</strong>: one JSON object; <code>doc</code> is a path to a <code>.docx</code>. Read operations may pass <code>limit</code> and <code>cursor</code>.</li>
+<li><strong>Request</strong>: one JSON object, inline or read from stdin only with <code>--json -</code> (stdin is never read otherwise, so an open pipe cannot hang the CLI); <code>doc</code> is a path to a <code>.docx</code>. Read operations may pass <code>limit</code> and <code>cursor</code>.</li>
 <li><strong>Response envelope (success)</strong>:
   <code>json
   {"api": "1.0", "ok": true, "op": "find",
@@ -868,7 +874,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <script>var SPEC_SEED_NOTES={};</script>
 <script>
 (function(){
-  var NS = 'word-control-spec-v1:';
+  var NS = 'doc-control-spec-v1:';
   var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
 
   function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
@@ -961,7 +967,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-spec-notes-'+today()+'-r6.md';
+    var name='doc-control-spec-notes-'+today()+'-r6.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -983,7 +989,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r6.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('doc-control-spec-notes-'+today()+'-r6.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

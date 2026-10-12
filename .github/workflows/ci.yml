@@ -44,7 +44,7 @@ jobs:
         shell: bash
         # Same steps as `make check`, spelled out so Windows runners need no make.
         run: |
-          uv sync --locked
+          uv sync
           uv run ruff check .
           uv run ruff format --check .
           uv run mypy
