@@ -14,7 +14,7 @@ from tests.conftest import CorpusWriter
 from tests.corpus.generator import KINDS, generate, generate_parts
 from tests.corpus.private import ENV_VAR, private_documents, short_id
 from tests.corpus.structural import validate_structure
-from tests.corpus.validator import validate_documents, validator_name
+from tests.corpus.validator import require_soffice, validate_documents, validator_name
 
 SEEDS = (0, 1, 2)
 
@@ -36,12 +36,17 @@ def _rebuild(parts: dict[str, bytes]) -> bytes:
 
 
 def test_corpus_generator_documents_pass_validator(tmp_path: Path) -> None:
+    name = validator_name()
+    print(f"validator: {name}")
+    try:
+        require_soffice()  # DOC_CONTROL_REQUIRE_SOFFICE=1: no silent lint-only pass
+    except RuntimeError as exc:
+        pytest.fail(f"validator: {name}: {exc}")
     docs = _corpus()
     results = validate_documents(docs, tmp_path)
     failing = {doc_id: problems for doc_id, problems in results.items() if problems}
-    print(f"validator: {validator_name()}")
     print(f"synthetic_docs_failing_validator={len(failing)} (of {len(docs)})")
-    assert failing == {}
+    assert failing == {}, f"validator: {name}; failing: {failing}"
 
 
 @pytest.mark.parametrize("kind", KINDS)
@@ -58,7 +63,7 @@ def test_unknown_kind_is_rejected() -> None:
         generate("nope", 0)
 
 
-def test_novel_is_100k_spanish_words_and_fast() -> None:
+def test_novel_is_100k_spanish_words() -> None:
     start = time.perf_counter()
     parts = generate_parts("novel", 0)
     data = generate("novel", 0)
@@ -66,10 +71,18 @@ def test_novel_is_100k_spanish_words_and_fast() -> None:
     xml = parts["word/document.xml"].decode("utf-8")
     text = " ".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml))
     assert len(text.split()) >= 100_000
-    assert elapsed < 5.0, f"novel took {elapsed:.2f}s"
+    assert elapsed < 60.0, f"novel took {elapsed:.2f}s (sanity bound; budget is a bench test)"
     assert "Capítulo 1" in xml and "* * *" in xml
     assert "—" in text and "«" in text and "»" in text
     assert len(data) < 5_000_000
+
+
+@pytest.mark.bench
+def test_novel_generation_is_fast() -> None:
+    start = time.perf_counter()
+    generate("novel", 0)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 5.0, f"novel took {elapsed:.2f}s"
 
 
 def test_kitchen_sink_covers_every_structure() -> None:
@@ -175,7 +188,8 @@ def test_structural_lint_rejects_non_zip() -> None:
     assert validate_structure(b"not a zip") == ["not a zip package"]
 
 
-def test_validator_rejects_document_libreoffice_cannot_load(tmp_path: Path) -> None:
+def test_validator_rejects_document_that_does_not_parse(tmp_path: Path) -> None:
+    # Fails the lint already; the LibreOffice-only case is in test_validator.py.
     parts = generate_parts("plain", 0)
     parts["word/document.xml"] = b"<w:document"
     results = validate_documents({"broken": _rebuild(parts)}, tmp_path)
@@ -184,14 +198,16 @@ def test_validator_rejects_document_libreoffice_cannot_load(tmp_path: Path) -> N
 
 # -- private corpus ----------------------------------------------------
 
-PRIVATE = list(private_documents())
 
-
-@pytest.mark.skipif(not PRIVATE, reason=f"{ENV_VAR} not set or holds no .docx files")
 def test_private_corpus_documents_pass_validator(tmp_path: Path) -> None:
-    results = validate_documents(dict(PRIVATE), tmp_path)
+    # Read here, not at import: collecting the suite must not load the corpus.
+    private = dict(private_documents())
+    if not private:
+        pytest.skip(f"{ENV_VAR} not set or holds no .docx files")
+    results = validate_documents(private, tmp_path)
     failing = {doc_id: len(problems) for doc_id, problems in results.items() if problems}
-    print(f"private_docs_failing_validator={len(failing)} (of {len(PRIVATE)})")
+    print(f"validator: {validator_name()}")
+    print(f"private_docs_failing_validator={len(failing)} (of {len(private)})")
     # Report short ids and problem counts only: never names, never content.
     assert failing == {}
 

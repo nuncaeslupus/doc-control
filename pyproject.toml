@@ -58,3 +58,8 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Wall-clock budgets are opt-in (`make bench`); a later `-m bench` overrides this default.
+addopts = "--strict-markers -m 'not bench'"
+markers = [
+    "bench: wall-clock performance budgets; run with `make bench` (pytest -m bench)",
+]

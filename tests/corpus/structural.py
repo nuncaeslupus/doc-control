@@ -17,6 +17,7 @@ from __future__ import annotations
 import posixpath
 import re
 import zipfile
+import zlib
 from collections import Counter
 from collections.abc import Iterable
 from io import BytesIO
@@ -63,9 +64,13 @@ def validate_structure(data: bytes) -> list[str]:
         zf = zipfile.ZipFile(BytesIO(data))
     except zipfile.BadZipFile:
         return ["not a zip package"]
-    with zf:
-        names = [n for n in zf.namelist() if not n.endswith("/")]
-        raw = {n: zf.read(n) for n in names}
+    try:
+        with zf:
+            names = [n for n in zf.namelist() if not n.endswith("/")]
+            raw = {n: zf.read(n) for n in names}
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError, NotImplementedError, RuntimeError):
+        # Truncated or corrupt member data, unsupported compression, encryption.
+        return ["unreadable zip package (member data is corrupt or unsupported)"]
 
     problems: list[str] = []
     trees: dict[str, ET.Element] = {}
