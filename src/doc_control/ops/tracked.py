@@ -93,10 +93,13 @@ __all__ = [
     "Edit",
     "InsertParagraph",
     "MoveParagraphs",
+    "PreparedEdits",
     "ReplaceText",
     "TrackedResult",
     "apply_edits",
     "edit_from_dict",
+    "next_in_container",
+    "prepare_edits",
 ]
 
 PREVIEW_LIMIT = 200
@@ -394,8 +397,9 @@ class _NewParagraph:
 
 
 class _Planner:
-    def __init__(self, index: DocumentIndex) -> None:
+    def __init__(self, index: DocumentIndex, *, layered: bool = False) -> None:
         self.index = index
+        self.layered = layered
         self.layout = _Layout(index)
         self.plans: dict[int, _ParaPlan] = {}
         self.new: list[_NewParagraph] = []
@@ -418,14 +422,14 @@ class _Planner:
     def _anchor(self, para: Paragraph, edit: int) -> None:
         """Edit ``edit`` inserts or moves relative to ``para``."""
         other = self.removed.get(para.number)
-        if other is not None and other != edit:
+        if other is not None and other != edit and not self.layered:
             raise self._conflict(para, other, edit)
         self.anchored.setdefault(para.number, set()).add(edit)
 
     def _remove(self, para: Paragraph, edit: int) -> None:
         """Edit ``edit`` deletes or moves ``para`` away."""
         for other in sorted(self.anchored.get(para.number, ())):
-            if other != edit:
+            if other != edit and not self.layered:
                 raise self._conflict(para, other, edit)
         self.removed[para.number] = edit
 
@@ -455,13 +459,13 @@ class _Planner:
         plan.intervals.append(new)
 
     def _claim_slot(self, slot: tuple[str, int], edit: int) -> None:
-        if slot in self.slots and self.slots[slot] != edit:
+        if slot in self.slots and self.slots[slot] != edit and not self.layered:
             raise DocControlError(
                 ErrorCode.BATCH_CONFLICT,
                 f"edits {self.slots[slot]} and {edit} insert at the same place",
                 edits=[self.slots[slot], edit],
             )
-        self.slots[slot] = edit
+        self.slots.setdefault(slot, edit)
 
     def _run_of(self, at: str) -> list[Paragraph]:
         """Paragraphs of ``pN#fp`` or ``pN#fp..pM#fp`` (adjacent, in one container)."""
@@ -538,7 +542,7 @@ class _Planner:
         for para in paras:
             if para is not last:
                 self._remove(para, i)
-            plan = self._plan(para, i, exclusive=para is not last)
+            plan = self._plan(para, i, exclusive=para is not last and not self.layered)
             if para is first:
                 self._add_interval(plan, _Interval(s, len(para.text), edit.text, i))
             elif para is last:
@@ -586,7 +590,7 @@ class _Planner:
         self._anchor(anchor, i)
         slot, native = self._slot_for(anchor, where, i)
         if native:
-            self._plan(anchor, i, exclusive=True).mark = "ins"
+            self._plan(anchor, i, exclusive=not self.layered).mark = "ins"
         self.new.append(_NewParagraph(i, slot, anchor, edit.text, None, native, edit.text))
         self.previews.append(
             {"op": i, "at": f"{where} {anchor.address}", "before": "", "after": _short(edit.text)}
@@ -668,46 +672,50 @@ def _merge_marks(texts: Sequence[str], carry_forward: Sequence[bool]) -> list[st
     return out
 
 
-def apply_edits(
-    doc_path: Path,
+@dataclass(frozen=True)
+class PreparedEdits:
+    """The edited ``word/document.xml`` of a package, checked but not written anywhere."""
+
+    pkg: Package
+    new_data: bytes
+    footprint: Footprint
+    result: TrackedResult
+
+
+def next_in_container(index: DocumentIndex, para: Paragraph) -> Paragraph | None:
+    """The paragraph right after ``para`` in the same container, or None if ``para`` is the
+    last of its cell, section or the body (Word cannot delete such a mark)."""
+    return _Layout(index).next_adjacent(para)
+
+
+def prepare_edits(
+    pkg: Package,
     edits: Sequence[Edit],
     *,
-    expect_sha256: str | None = None,
     author: str = DEFAULT_AUTHOR,
     tag: str | None = None,
     now: datetime | None = None,
     dry_run: bool = False,
-    env: Mapping[str, str] | None = None,
-    stage: Callable[[str], None] | None = None,
-) -> TrackedResult:
-    """Apply ``edits`` to ``doc_path`` as tracked changes in one verified write.
+    layered: bool = False,
+    index: DocumentIndex | None = None,
+) -> PreparedEdits:
+    """Plan and build ``edits`` on ``pkg`` without writing: the part of :func:`apply_edits`
+    that works on bytes, self-checked (see there).
 
-    Raises ``DOC_NOT_FOUND``, ``NOT_A_DOCX``, ``DOC_LOCKED`` or
-    ``DOC_CHANGED_ON_DISK`` (also when ``expect_sha256`` differs),
-    ``ADDRESS_INVALID``, ``STALE_ADDRESS``, ``UNSUPPORTED_CONTENT``,
-    ``BATCH_CONFLICT`` and ``SCHEMA_INVALID`` before touching the file; later
-    failures are ``VERIFY_FAILED_RESTORED`` (see :func:`write_verified`). Before the
-    write the result is checked: the paragraph texts must be the intended ones
-    and rejecting this call's revisions must give back the original texts, or
-    ``INTERNAL`` is raised and nothing is written. A dry run does everything but
-    the write.
+    With ``layered`` several paragraphs may be inserted at the same place (they
+    keep the order of the edits), a paragraph may be edited and also be the anchor of an
+    insertion after the end of its container, and the first paragraph of a range across
+    paragraphs may carry other (non-overlapping) edits; used by ``compare``.
     """
     if not edits:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
     _check_name(author, "author")
     if tag is not None:
         _check_name(tag, "tag")
-    if not doc_path.is_file():
-        raise DocControlError(
-            ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)
-        )
-    if not dry_run:
-        check_unlocked(doc_path)
-    check_changed(doc_path, expect_sha256)
-    pkg = Package(doc_path)
-    index = DocumentIndex.from_package(pkg)
+    if index is None:
+        index = DocumentIndex.from_package(pkg)
 
-    planner = _Planner(index)
+    planner = _Planner(index, layered=layered)
     for i, edit in enumerate(edits):
         if isinstance(edit, ReplaceText):
             planner.replace(i, edit)
@@ -740,9 +748,12 @@ def apply_edits(
 
     after: dict[int, list[bytes]] = {}
     before: dict[int, list[bytes]] = {}
+    last_native = {item.slot: item for item in planner.new if item.native}
     for item in planner.new:
         ref_elem = spans.parse_paragraph(item.ref.span_index)
-        p, props = new_paragraph(ref_elem, ctx, inserted_mark=not item.native)
+        # Several paragraphs after the end of a container: only the last keeps the original mark.
+        native = item.native and last_native[item.slot] is item
+        p, props = new_paragraph(ref_elem, ctx, inserted_mark=not native)
         content: ET.Element | None
         if item.source is not None:
             runs = ParagraphEditor(ref_elem, item.source, ctx).copy_runs(scopes.get(item.edit))
@@ -805,12 +816,54 @@ def apply_edits(
         before_sha256=pkg.sha256,
         warnings=_reference_warnings(pkg, scopes),
     )
+    return PreparedEdits(pkg, new_data, footprint, result)
+
+
+def apply_edits(
+    doc_path: Path,
+    edits: Sequence[Edit],
+    *,
+    expect_sha256: str | None = None,
+    author: str = DEFAULT_AUTHOR,
+    tag: str | None = None,
+    now: datetime | None = None,
+    dry_run: bool = False,
+    env: Mapping[str, str] | None = None,
+    stage: Callable[[str], None] | None = None,
+) -> TrackedResult:
+    """Apply ``edits`` to ``doc_path`` as tracked changes in one verified write.
+
+    Raises ``DOC_NOT_FOUND``, ``NOT_A_DOCX``, ``DOC_LOCKED`` or
+    ``DOC_CHANGED_ON_DISK`` (also when ``expect_sha256`` differs),
+    ``ADDRESS_INVALID``, ``STALE_ADDRESS``, ``UNSUPPORTED_CONTENT``,
+    ``BATCH_CONFLICT`` and ``SCHEMA_INVALID`` before touching the file; later
+    failures are ``VERIFY_FAILED_RESTORED`` (see :func:`write_verified`). Before the
+    write the result is checked: the paragraph texts must be the intended ones
+    and rejecting this call's revisions must give back the original texts, or
+    ``INTERNAL`` is raised and nothing is written. A dry run does everything but
+    the write.
+    """
+    if not edits:
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
+    _check_name(author, "author")
+    if tag is not None:
+        _check_name(tag, "tag")
+    if not doc_path.is_file():
+        raise DocControlError(
+            ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)
+        )
+    if not dry_run:
+        check_unlocked(doc_path)
+    check_changed(doc_path, expect_sha256)
+    pkg = Package(doc_path)
+    prepared = prepare_edits(pkg, edits, author=author, tag=tag, now=now, dry_run=dry_run)
+    result = prepared.result
     if dry_run:
         return result
     written = write_verified(
         doc_path,
-        {DOCUMENT_PART: new_data},
-        footprint,
+        {DOCUMENT_PART: prepared.new_data},
+        prepared.footprint,
         pkg.sha256,
         now=now,
         env=env,
