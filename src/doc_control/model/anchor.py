@@ -9,18 +9,25 @@ Matching
     Exact first: every place the quote occurs verbatim is a candidate. Only when no exact
     candidate is good enough does the fuzzy search run, over a short list of paragraphs
     (the paragraph with the anchor's fingerprint, the ones near the hint, and the ones
-    sharing the most quote words, rare words counting more). In each, ``difflib`` aligns
-    the quote with the text and the densest run of matching blocks gives a window; the
-    same paragraph is searched again with that window masked, so a repeated phrase shows
-    up as several candidates.
+    sharing the most character runs of the quote, rare runs counting more). In each,
+    ``difflib`` aligns the quote with the text and the densest run of matching blocks gives
+    a window, whose ends are then moved by whole words while that helps; the same paragraph
+    is searched again with that window masked, so a repeated phrase shows up as several
+    candidates. Quotes of three words or fewer are never matched fuzzily.
 
 Score
-    ``0.5*quote + 0.2*prefix + 0.2*suffix + 0.1*position``, each part in ``[0, 1]``: the
-    similarity of the quote, of the text before and of the text after (context may reach
-    into neighbouring paragraphs, joined by ``"\\n"``), and how close the paragraph number
-    is to the hint. Below :data:`MIN_SCORE` a candidate is not accepted. When the best
-    accepted candidates are within :data:`TIE_MARGIN` of each other, the anchor is
-    ambiguous: all of them are reported and none is chosen.
+    ``(0.5*quote + 0.2*prefix + 0.2*suffix) / 0.9``, each part in ``[0, 1]``, compared word
+    by word: a word with a typo (character similarity >= 0.8) counts by that similarity,
+    a different word counts nothing, longer words weigh more, and in a fuzzy quote a
+    different word also scales the quote part down. The context is the text before and
+    after (it may reach into neighbouring paragraphs, joined by ``"\\n"``), and counts by how
+    much of the old context is still there. Position is not scored: it only orders equal
+    scores. A candidate in the anchor's own paragraph (same fingerprint) or within
+    :data:`NEAR_PARAGRAPHS` of its hint needs :data:`MIN_SCORE`; any other needs
+    :data:`FAR_MIN_SCORE`; a short quote needs :data:`SHORT_MIN_SCORE` wherever it is.
+    When anything scoring at least :data:`MIN_SCORE` is within :data:`TIE_MARGIN` of the
+    best, the anchor is ambiguous and the candidates are reported, unless exactly one of
+    them is in a paragraph with the anchor's fingerprint.
 
 Offsets are code points into a paragraph's visible text, like every other address. A
 range never starts or ends between a character and the combining marks after it.
@@ -48,14 +55,19 @@ MAX_REPORTED = 5
 CONTEXT_CHARS = 32
 MAX_CONTEXT_CHARS = 200
 MAX_QUOTE_CHARS = 1000
-W_QUOTE, W_PREFIX, W_SUFFIX, W_POSITION = 0.5, 0.2, 0.2, 0.1
-POSITION_REACH = 200  # paragraphs away from the hint at which the position part reaches 0
+FAR_MIN_SCORE = 0.85  # minimum for a candidate that is not where the anchor came from
+NEAR_PARAGRAPHS = 8  # "where the anchor came from": the hint's paragraph number +- this
+SHORT_QUOTE_WORDS = 3  # quotes this short are never matched fuzzily
+SHORT_MIN_SCORE = 0.95  # and need nearly all of their context to match
+W_QUOTE, W_PREFIX, W_SUFFIX = 0.5, 0.2, 0.2
+TOKEN_MATCH = 0.8  # character similarity at which two words count as the same word, typo aside
 
 _FLOOR = 1e-9  # slack so 0.8 computed as 0.7999999999 is still 0.8
 _MAX_FUZZY_PARAGRAPHS = 40
 _NEIGHBOURS = 3  # paragraphs on each side of the hint always searched
 _MAX_WINDOWS = 3  # fuzzy windows taken from one paragraph
 _MIN_WINDOW_RATIO = 0.4
+_WORD = re.compile(r"\w+")
 _GRAM = 5  # characters in a run used to shortlist paragraphs
 _GRAM_SHARE = 0.25  # share of the quote's runs a shortlisted paragraph must hold
 
@@ -120,6 +132,11 @@ class Candidate:
     end: int
     score: float
     kind: MatchKind
+    near: bool = True  # in the anchor's own paragraph (by fingerprint) or close to its hint
+
+    @property
+    def threshold(self) -> float:
+        return MIN_SCORE if self.near else FAR_MIN_SCORE
 
     @property
     def at(self) -> str:
@@ -151,12 +168,127 @@ def _nfc(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
 
+def _tokens(text: str) -> list[str]:
+    return _WORD.findall(_nfc(text).casefold())
+
+
+def _token_credit(ta: list[str], tb: list[str]) -> float:
+    return _token_credit_pair(ta, tb)[0]
+
+
+def _token_credit_pair(ta: list[str], tb: list[str]) -> tuple[float, int]:
+    """Characters of ``ta`` that ``tb`` matches: whole words fully, a word with a typo
+    (character similarity of at least :data:`TOKEN_MATCH`) by that similarity, a different
+    word not at all."""
+    credit = 0.0
+    matched = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, ta, tb, autojunk=False).get_opcodes():
+        if tag == "equal":
+            n = sum(len(t) for t in ta[i1:i2])
+            credit += n
+            matched += n
+        elif tag == "replace":
+            for x, y in zip(ta[i1:i2], tb[j1:j2], strict=False):
+                r = difflib.SequenceMatcher(None, x, y, autojunk=False).ratio()
+                if r >= TOKEN_MATCH:
+                    credit += r * len(x)
+                    matched += len(x)
+    return credit, matched
+
+
 def _similarity(a: str, b: str) -> float:
+    """How alike two stretches of text are, word by word, in ``[0, 1]``.
+
+    Longer words weigh more, so changing a content word costs far more than changing
+    "la"; a word with a typo still counts. Text without words falls back to character
+    similarity.
+    """
     if a == b:
         return 1.0
-    if not a or not b:
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta and not tb:
+        return difflib.SequenceMatcher(None, _nfc(a), _nfc(b), autojunk=False).ratio()
+    if not ta or not tb:
         return 0.0
-    return difflib.SequenceMatcher(None, _nfc(a), _nfc(b), autojunk=False).ratio()
+    total = max(sum(map(len, ta)), sum(map(len, tb)))
+    return min(1.0, _token_credit(ta, tb) / total)
+
+
+def _quote_similarity(quote: str, found: str) -> float:
+    """Word-level similarity of a quote to what was found, for fuzzy matches.
+
+    Typos cost a little. A word that is simply different costs twice: it earns no credit
+    and it also scales the whole score down, so a near-copy with one content word changed
+    cannot pass for the quote.
+    """
+    ta, tb = _tokens(quote), _tokens(found)
+    if not ta or not tb:
+        return _similarity(quote, found)
+    credit, matched = _token_credit_pair(ta, tb)
+    total = max(sum(map(len, ta)), sum(map(len, tb)))
+    return min(1.0, credit / total) * (matched / sum(map(len, ta)))
+
+
+def _word_edges(text: str, lo: int, hi: int) -> list[tuple[int, int]]:
+    """Windows one word wider or narrower than ``text[lo:hi]`` at either end."""
+    out: list[tuple[int, int]] = []
+    k = lo
+    while k > 0 and text[k - 1].isspace():
+        k -= 1
+    if k > 0:
+        while k > 0 and (text[k - 1].isalnum() or _is_mark(text[k - 1])):
+            k -= 1
+        out.append((k, hi))
+    k = hi
+    while k < len(text) and text[k].isspace():
+        k += 1
+    if k < len(text):
+        while k < len(text) and (text[k].isalnum() or _is_mark(text[k])):
+            k += 1
+        out.append((lo, k))
+    cut = text.find(" ", lo, hi)
+    if cut >= 0:
+        out.append((cut + 1, hi))
+    cut = text.rfind(" ", lo, hi)
+    if cut >= 0:
+        out.append((lo, cut))
+    return out
+
+
+def _refine(quote: str, text: str, lo: int, hi: int) -> tuple[int, int]:
+    """Move the ends of a window by whole words while that makes it more like the quote."""
+    best = _quote_similarity(quote, text[lo:hi])
+    for _ in range(6):
+        scored = [
+            (_quote_similarity(quote, text[a:b]), a, b)
+            for a, b in _word_edges(text, lo, hi)
+            if "\x00" not in text[a:b] and b > a
+        ]
+        if not scored:
+            break
+        top = max(scored)
+        if top[0] <= best + 0.005:
+            break
+        best, lo, hi = top
+    return lo, hi
+
+
+def _context_similarity(anchor_side: str, actual: str, *, before: bool) -> float:
+    """How much of the anchor's prefix (``before``) or suffix is found in the text now.
+
+    ``actual`` is a longer stretch than the anchor's, so words inserted nearby do not push
+    the old ones out of view; the outermost word on each side may be cut and is ignored.
+    What counts is how much of the old context is still there, word for word.
+    """
+    ta, tb = _tokens(anchor_side), _tokens(actual)
+    if len(ta) > 2:
+        ta = ta[1:] if before else ta[:-1]
+    if len(tb) > 2:
+        tb = tb[1:] if before else tb[:-1]
+    total = sum(map(len, ta))
+    if total == 0:
+        return 1.0
+    return min(1.0, _token_credit(ta, tb) / total)
 
 
 # -- context -----------------------------------------------------------------
@@ -251,12 +383,6 @@ def create(
 # -- resolve -----------------------------------------------------------------
 
 
-def _position(anchor: Anchor, number: int) -> float:
-    if anchor.hint is None:
-        return 1.0
-    return max(0.0, 1.0 - abs(number - anchor.hint) / POSITION_REACH)
-
-
 def _candidate(
     index: DocumentIndex,
     anchor: Anchor,
@@ -266,23 +392,29 @@ def _candidate(
     quote_score: float,
     kind: MatchKind,
 ) -> Candidate:
+    near = (para.fp == anchor.fingerprint) or (
+        anchor.hint is not None and abs(para.number - anchor.hint) <= NEAR_PARAGRAPHS
+    )
+    wide = len(anchor.prefix) * 3 // 2 + 1, len(anchor.suffix) * 3 // 2 + 1
     prefix = (
-        _similarity(anchor.prefix, _text_before(index, para.number, start, len(anchor.prefix)))
+        _context_similarity(
+            anchor.prefix, _text_before(index, para.number, start, wide[0]), before=True
+        )
         if anchor.prefix
         else 1.0
     )
     suffix = (
-        _similarity(anchor.suffix, _text_after(index, para.number, end, len(anchor.suffix)))
+        _context_similarity(
+            anchor.suffix, _text_after(index, para.number, end, wide[1]), before=False
+        )
         if anchor.suffix
         else 1.0
     )
-    score = (
-        W_QUOTE * quote_score
-        + W_PREFIX * prefix
-        + W_SUFFIX * suffix
-        + W_POSITION * _position(anchor, para.number)
+    # Normalised to [0, 1]; position is not part of it, it only orders equal scores.
+    score = (W_QUOTE * quote_score + W_PREFIX * prefix + W_SUFFIX * suffix) / (
+        W_QUOTE + W_PREFIX + W_SUFFIX
     )
-    return Candidate(para.number, para.fp, start, end, score, kind)
+    return Candidate(para.number, para.fp, start, end, score, kind, near)
 
 
 def _exact_spans(text: str, quote: str) -> list[tuple[int, int]]:
@@ -312,17 +444,40 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
         for start, end in _exact_spans(para.text, quote):
             taken.setdefault(para.number, []).append((start, end))
             found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
-    accepted = [c for c in found if c.score + _FLOOR >= MIN_SCORE]
-    if not accepted and not exact_only:
+    short = len(_WORD.findall(quote)) <= SHORT_QUOTE_WORDS
+
+    def accepted_of(pool: list[Candidate]) -> list[Candidate]:
+        # A short quote has too little text to prove a match: it needs the stricter bar
+        # even where it came from.
+        return [c for c in pool if c.score + _FLOOR >= (SHORT_MIN_SCORE if short else c.threshold)]
+
+    accepted = accepted_of(found)
+    if not accepted and not exact_only and not short:
         found += _fuzzy(index, anchor, taken)
-        accepted = [c for c in found if c.score + _FLOOR >= MIN_SCORE]
-    ranked = sorted(found, key=lambda c: (-c.score, c.number, c.start))
+        accepted = accepted_of(found)
+    order = anchor.hint or 0
+
+    def key(c: Candidate) -> tuple[float, int, int, int]:
+        # Position only orders results that score the same; it never lifts a score.
+        return (-round(c.score, 6), abs(c.number - order), c.number, c.start)
+
+    ranked = sorted(found, key=key)
     if not accepted:
         return Resolution("not_found", ranked[0] if ranked else None)
-    accepted.sort(key=lambda c: (-c.score, c.number, c.start))
+    accepted.sort(key=key)
     best = accepted[0]
-    tied = [c for c in accepted if best.score - c.score <= TIE_MARGIN + _FLOOR]
+    # Everything that scores nearly as well counts, accepted or not: a runner-up the
+    # stricter bar rejected still shows the passage is not unique.
+    tied = [
+        c
+        for c in sorted(found, key=key)
+        if c.score + _FLOOR >= MIN_SCORE and best.score - c.score <= TIE_MARGIN + _FLOOR
+    ]
     if len(tied) > 1:
+        # The one paragraph that still has the anchor's own fingerprint is where it came from.
+        own = [c for c in tied if c.fp == anchor.fingerprint]
+        if len(own) == 1 and own[0] in accepted:
+            return Resolution("found", own[0])
         return Resolution("ambiguous", None, tuple(tied[:MAX_REPORTED]))
     return Resolution("found", best)
 
@@ -380,8 +535,17 @@ def _fuzzy(
             window = _best_window(quote, text)
             if window is None:
                 break
-            start, end, ratio = window
-            out.append(_candidate(index, anchor, para, start, end, ratio, "fuzzy"))
+            start, end, _ = window
+            lo, hi = start, end
+            while lo > 0 and (text[lo - 1].isalnum() or _is_mark(text[lo - 1])):
+                lo -= 1
+            while hi < len(text) and (text[hi].isalnum() or _is_mark(text[hi])):
+                hi += 1
+            if "\x00" in text[lo:hi]:
+                lo, hi = start, end
+            lo, hi = _refine(quote, text, lo, hi)
+            quote_score = _quote_similarity(quote, text[lo:hi])
+            out.append(_candidate(index, anchor, para, lo, hi, quote_score, "fuzzy"))
             text = text[:start] + "\x00" * (end - start) + text[end:]
     return out
 

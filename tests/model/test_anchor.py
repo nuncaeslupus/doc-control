@@ -12,6 +12,7 @@ not found / ambiguous, never guessed.
 from __future__ import annotations
 
 import random
+import re
 import statistics
 import time
 import unicodedata
@@ -244,7 +245,7 @@ def test_repeated_phrase_with_distinct_context_resolves_to_the_right_one() -> No
         "Cerró la puerta del sótano y bajó sin luz.",
     ]
     index = index_of(*texts)
-    anchor = quote_at(index, 3, "Cerró la puerta")
+    anchor = quote_at(index, 3, "Cerró la puerta del sótano")
     result = resolve(index, anchor)
     assert result.status == "found"
     assert result.best is not None
@@ -265,17 +266,6 @@ def test_ambiguity_candidates_are_capped_at_five() -> None:
     assert len(result.candidates) == 5
 
 
-def test_far_apart_duplicates_are_decided_by_position_only_beyond_the_margin() -> None:
-    line = "Entonces cerró la puerta sin mirar atrás."
-    filler = [f"Párrafo de relleno número {n} sin nada especial." for n in range(300)]
-    index = index_of(line, *filler, line)
-    near = Anchor(exact="cerró la puerta", prefix="Entonces ", suffix=" sin mirar", hint=1)
-    assert resolve(index, near).status == "ambiguous" or resolve(index, near).best is not None
-    # Two identical paragraphs one apart: always ambiguous.
-    tight = index_of(line, line)
-    assert resolve(tight, near).status == "ambiguous"
-
-
 def test_exact_only_resolution_skips_fuzzy_candidates() -> None:
     before = index_of("Al final, María cerró la puerta sin mirar atrás.")
     anchor = quote_at(before, 1, "María cerró la puerta")
@@ -285,9 +275,9 @@ def test_exact_only_resolution_skips_fuzzy_candidates() -> None:
 
 
 def test_unicode_equivalent_forms_still_resolve() -> None:
-    before = index_of("a", "Dijo café con leche, y se fue a casa.")
-    anchor = quote_at(before, 2, "café con leche")
-    after = index_of("a", "Dijo café con leche, y se fue a casa.")
+    before = index_of("a", "Dijo cafe\u0301 con leche, y se fue a casa.")
+    anchor = quote_at(before, 2, "cafe\u0301 con leche, y se fue")
+    after = index_of("a", "Dijo caf\u00e9 con leche, y se fue a casa.")
     result = resolve(after, anchor)
     assert result.status == "found"
     assert result.best is not None
@@ -308,21 +298,29 @@ class Para:
 def _edit(text: str, lo: int, hi: int, rng: random.Random, budget: float) -> tuple[str, int]:
     """Change up to ``budget`` of ``text[lo:hi]`` with small edits; returns text and the net shift.
 
-    Each edit substitutes or deletes one character or inserts a short word; characters
-    changed (an insertion counts its length) never exceed ``budget * (hi - lo)``. Edits go
-    from the right so earlier offsets stay valid.
+    A typo changes one letter inside a word of four or more letters (substituted or
+    deleted), at most one per word; an insertion adds a short word between two words.
+    Characters changed (an insertion counts its length) never exceed ``budget * (hi - lo)``.
+    Edits go from the right so earlier offsets stay valid.
     """
     allowed = max(1, int((hi - lo) * budget))
+    words = [m for m in re.finditer(r"\w+", text) if m.start() >= lo and m.end() <= hi]
+    rng.shuffle(words)
     plan: list[tuple[int, str, str]] = []
     used = 0
-    for _ in range(allowed):
+    for m in words:
         kind = rng.choice(("sub", "del", "ins"))
         word = rng.choice(("ya ", "un ", "y "))
         cost = len(word) if kind == "ins" else 1
         if used + cost > allowed:
             continue
+        if kind == "ins":
+            plan.append((m.start(), kind, word))
+        elif m.end() - m.start() >= 4:
+            plan.append((rng.randrange(m.start() + 1, m.end() - 1), kind, word))
+        else:
+            continue
         used += cost
-        plan.append((rng.randrange(lo, hi), kind, word))
     shift = 0
     for pos, kind, word in sorted(plan, reverse=True):
         if kind == "sub":
@@ -381,9 +379,10 @@ def _apply(scenario: str, para: Para, rng: random.Random, aid: int) -> list[Para
             text, start, end = edit_outside(text, start, end, 0.10)
         return [Para(text, {aid: (start, end)})]
     if scenario == "rewritten_prefix":
-        head = text[:start]
-        text = "Mientras tanto, " + head[len(head) // 2 :] + text[start:]
-        shift = len("Mientras tanto, ") - len(head) // 2
+        # The paragraph's beginning is rewritten, the 32 characters before the quote are not.
+        keep = max(0, start - 40)
+        text = "Mientras tanto, " + text[keep:]
+        shift = len("Mientras tanto, ") - keep
         return [Para(text, {aid: (start + shift, end + shift)})]
     if scenario == "split_before":
         cut = text.rfind(" ", 0, start)
@@ -410,7 +409,6 @@ def build_edited(
     out: list[Para] = []
     scenario_of: dict[int, str] = {}
     moved: list[Para] = []
-    pending_insert: list[int] = []
     for i, text in enumerate(texts):
         if i not in picks:
             out.append(Para(text))
@@ -433,14 +431,14 @@ def build_edited(
             )
             continue
         if scenario == "paragraphs_inserted_before":
-            pending_insert.append(len(out))
+            out.extend(Para("Párrafo nuevo sin relación con nada.") for _ in range(2))
         out.extend(_apply(scenario, para, rng, i))
-    for k, para in enumerate(moved):
+    for para in moved:
+        # Never between the two halves of a split paragraph.
         at = rng.randrange(1, len(out))
-        out.insert(at + k, para)
-    for pos in sorted(pending_insert, reverse=True):
-        for _ in range(6):
-            out.insert(pos, Para("Párrafo nuevo sin relación con nada."))
+        while out[at].marks or out[at - 1].marks:
+            at = rng.randrange(1, len(out))
+        out.insert(at, para)
     expected: dict[int, tuple[int, int, int]] = {}
     for n, para in enumerate(out):
         for aid, (s, e) in para.marks.items():
@@ -557,3 +555,167 @@ def test_parse_range_of_a_result_is_a_valid_address() -> None:
     assert result.best is not None
     rng = parse_range(result.best.at)
     assert (rng.start_offset, rng.end_offset) == (5, 10)
+
+
+# -- decoys: wrong confident matches -----------------------------------------
+
+P11 = (
+    "Marta abrió la ventana y miró hacia el puerto,"
+    " donde los barcos dormían bajo la niebla de la mañana."
+)
+P22 = (
+    "Marta cerró la ventana y miró hacia el río,"
+    " donde las barcas dormían bajo la niebla de la mañana."
+)
+DECOY_QUOTE = "miró hacia el puerto, donde los barcos dormían"
+
+
+def _decoy_doc(original: str | None) -> list[str]:
+    filler = [f"Párrafo de relleno {n} con otras cosas, nada que ver." for n in range(10)]
+    return [*filler, original or "Se borró aquel párrafo.", *filler, P22, *filler]
+
+
+def test_near_duplicate_decoy_is_not_found_when_the_original_is_gone() -> None:
+    before = index_of(*_decoy_doc(P11))
+    anchor = quote_at(before, 11, DECOY_QUOTE)
+    assert resolve(before, anchor).status == "found"
+    for original in (None, "Marta abrió la ventana y se quedó callada."):
+        result = resolve(index_of(*_decoy_doc(original)), anchor)
+        assert result.status in ("not_found", "ambiguous")
+        assert result.best is None or result.best.score < MIN_SCORE
+
+
+def test_exact_quote_far_away_with_changed_context_is_held_to_the_stricter_bar() -> None:
+    before = index_of(*_decoy_doc(P11))
+    anchor = quote_at(before, 11, DECOY_QUOTE)
+    other = (
+        "Entonces Lucía vio a Pedro, que miró hacia el puerto, donde los barcos dormían, y calló."
+    )
+    result = resolve(index_of(*_decoy_doc(other)), anchor)
+    assert result.best is None or result.best.score < 0.85
+    assert result.status == "not_found"
+
+
+def test_short_quote_needs_an_exact_match_and_strong_context() -> None:
+    texts = ["Ella calló.", "—Sí —dijo él.", "Fuera llovía.", "Ya era tarde.", "—No sé."]
+    index = index_of(*texts)
+    anchor = quote_at(index, 2, "—Sí —dijo él.")
+    assert resolve(index, anchor).status == "found"
+    typo = index_of(*[t.replace("dijo", "dijio") for t in texts])
+    assert resolve(typo, anchor).status == "not_found"  # no fuzzy match for 3 words
+    lone = Anchor(exact="dijo él", prefix="", suffix="")
+    assert resolve(index_of("x " * 5, "dijo él", "y"), lone).status != "ambiguous"
+
+
+def test_identical_chapters_after_reordering_are_ambiguous_not_decided_by_position() -> None:
+    chapter = [
+        "Capítulo único",
+        "Marta abrió la ventana y miró hacia el puerto.",
+        "Los barcos dormían bajo la niebla de la mañana.",
+        "Nadie dijo nada hasta que sonó la campana.",
+    ]
+    other = ["Capítulo otro", "Pedro volvió tarde.", "La cena se enfrió sobre la mesa."]
+    before = index_of(*other, *chapter, *other)
+    anchor = quote_at(before, 5, "miró hacia el puerto")
+    assert resolve(before, anchor).status == "found"
+    reordered = index_of(*other, *other, *chapter, *chapter)
+    result = resolve(reordered, anchor)
+    assert result.status == "ambiguous"
+    assert len(result.candidates) == 2
+
+
+def test_unchanged_duplicate_paragraphs_are_ambiguous_even_at_their_old_address() -> None:
+    index = index_of(
+        "Uno.",
+        "Marta cerró la puerta sin mirar atrás.",
+        "Dos.",
+        "Marta cerró la puerta sin mirar atrás.",
+    )
+    anchor = quote_at(index, 2, "Marta cerró la puerta sin mirar atrás.", 0)
+    assert resolve(index, anchor).status == "ambiguous"
+
+
+def _swap_words(text: str, rng: random.Random, start: int, end: int) -> str:
+    """Replace two long words of ``text[start:end]`` with different words."""
+    words = [m for m in re.finditer(r"\w{5,}", text[start:end])]
+    rng.shuffle(words)
+    chosen = sorted(words[:2], key=lambda m: m.start(), reverse=True)
+    for m in chosen:
+        text = text[: start + m.start()] + "zorro" + text[start + m.end() :]
+    return text
+
+
+def test_wrong_anchor_matches_on_the_decoy_corpus(novel_texts: list[str]) -> None:
+    """Near-duplicates, refrains, short quotes: anything found must be the right place."""
+    rng = random.Random(21)
+    wrong = cases = 0
+    details: list[str] = []
+    picks = _pick_quotes(novel_texts, 30, seed=8)
+    original = index_of(*novel_texts)
+
+    # 1. The anchored passage is deleted or rewritten; a near-copy (two words changed)
+    #    remains far away. Nothing may be found.
+    decoy_cases = 0
+    for i, (s, e) in picks.items():
+        anchor = quote_at(original, i + 1, novel_texts[i][s:e])
+        decoy = _swap_words(novel_texts[i], rng, s, e)
+        gone = rng.choice(("Se borró aquel párrafo.", "Texto reescrito por completo sin relación."))
+        texts = list(novel_texts)
+        texts[i] = gone
+        far = (i + 400) % len(texts)
+        texts[far] = decoy
+        result = resolve(index_of(*texts), anchor)
+        decoy_cases += 1
+        if result.status == "found":
+            wrong += 1
+    cases += decoy_cases
+
+    # 2. Refrains: the same line again and again, different neighbours.
+    refrain_wrong = refrain_found = 0
+    for k in range(20):
+        lines = ["—Sí —dijo él.", "—Sí —dijo él, y calló."]
+        paragraphs = []
+        for n in range(12):
+            paragraphs += [novel_texts[(k * 37 + n * 5) % len(novel_texts)][:70], lines[n % 2]]
+        index = index_of(*paragraphs)
+        target = 2 * rng.randrange(1, 11) + 2
+        anchor = quote_at(index, target, "—Sí —dijo él")
+        result = resolve(index, anchor)
+        if result.status == "found":
+            refrain_found += 1
+            if result.best is None or result.best.number != target:
+                refrain_wrong += 1
+                details.append(f"refrain {target}: {result.best}")
+        # delete the target: whatever remains must not be mistaken for it
+        without = index_of(*[p for n, p in enumerate(paragraphs, 1) if n != target])
+        if resolve(without, anchor).status == "found":
+            refrain_wrong += 1
+            details.append(f"refrain deleted {target}")
+    wrong += refrain_wrong
+    cases += 40
+
+    # 3. Short quotes (1-3 words) from the novel, the original paragraph rewritten.
+    short_wrong = 0
+    for i in list(picks)[:20]:
+        text = novel_texts[i]
+        words = text.split(" ")
+        j = rng.randrange(2, len(words) - 4)
+        quote = " ".join(words[j : j + rng.randrange(1, 4)])
+        start = text.index(quote)
+        anchor = create(
+            original, f"{original.paragraph(i + 1).address}:{start}-{start + len(quote)}"
+        )
+        texts = list(novel_texts)
+        texts[i] = "Párrafo reescrito sin relación con el anterior."
+        result = resolve(index_of(*texts), anchor)
+        if result.status == "found" and result.best is not None:
+            hit = texts[result.best.number - 1][result.best.start : result.best.end]
+            # Another verbatim copy of a short quote is not the passage: count as wrong.
+            if hit == quote:
+                short_wrong += 1
+                details.append(f"short {quote!r}: {result.best}")
+    wrong += short_wrong
+    cases += 20
+
+    print(f"decoy_cases={cases} refrain_found={refrain_found} wrong_anchor_matches={wrong}")
+    assert wrong == 0, details
