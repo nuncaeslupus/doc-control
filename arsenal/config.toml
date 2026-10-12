@@ -127,6 +127,9 @@ queue-automation = true
 
 branch-protection = "existing"
 
+# Only CodeRabbit is installed on this repo; the default also waits on Gemini and Claude.
+review-bots = ["coderabbitai[bot]"]
+
 bot-triggers = ["coderabbitai[bot]=@coderabbitai review"]
 
 [models]
