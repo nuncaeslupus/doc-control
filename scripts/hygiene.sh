@@ -3,19 +3,19 @@
 # fixtures, no oversized files. Runs locally (host-gate) and in CI.
 set -euo pipefail
 fail=0
-files=$(git ls-files)
+shopt -s nocasematch
 
-locks=$(grep -E '(^|/)~\$' <<<"$files" || true)
-if [[ -n "$locks" ]]; then echo "Word lock files tracked:"; echo "$locks"; fail=1; fi
-
-docs=$(grep -iE '\.(docx|docm|dotx|dotm|doc|odt)$' <<<"$files" | grep -v '^tests/fixtures/' || true)
-if [[ -n "$docs" ]]; then echo "Documents outside tests/fixtures/:"; echo "$docs"; fail=1; fi
-
-while IFS= read -r f; do
-  [[ -f "$f" ]] || continue
-  size=$(wc -c <"$f")
-  if (( size > 5000000 )); then echo "File over 5 MB: $f ($size bytes)"; fail=1; fi
-done <<<"$files"
+while IFS= read -r -d '' f; do
+  name=${f##*/}
+  if [[ $name == '~$'* ]]; then echo "Word lock file tracked: $f"; fail=1; fi
+  if [[ $f =~ \.(docx|docm|dotx|dotm|doc|odt)$ && $f != tests/fixtures/* ]]; then
+    echo "Document outside tests/fixtures/: $f"; fail=1
+  fi
+  if [[ -f $f ]]; then
+    size=$(wc -c <"$f")
+    if (( size > 5000000 )); then echo "File over 5 MB: $f ($size bytes)"; fail=1; fi
+  fi
+done < <(git ls-files -z)
 
 if (( fail )); then exit 1; fi
 echo "hygiene: OK"
