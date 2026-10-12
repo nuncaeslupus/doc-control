@@ -4,6 +4,7 @@ title: "T24: Bundled recipes: generally useful docx-fixer rules, with their roun
 label: "bundled recipes"
 priority: 1
 deps: [t-333cfaa3, t-c028d6b7]
+status: merged
 ---
 
 # T24: Bundled recipes: generally useful docx-fixer rules, with their round-trip cases
