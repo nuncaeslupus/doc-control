@@ -129,8 +129,6 @@ def _check_step(step: Any, path: str, groups: int, options: SearchOptions, repea
     for ref in SUBSTITUTION.findall(step.get("text", "")):
         if ref.isdigit() and int(ref) > groups:
             raise _invalid(f"{path}.text: ${ref} but the pattern has {groups} group(s)")
-        if ref.isdigit() and options.ignore_accents:
-            raise _invalid(f"{path}.text: groups cannot be used with `ignore_accents`")
     probe = {**step, "at": PLACEHOLDER}
     try:
         if kind == "comment.add":

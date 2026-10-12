@@ -5,8 +5,9 @@ from __future__ import annotations
 import copy
 import json
 import re
+import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -282,3 +283,141 @@ def test_cli_recipe_run_envelope(tmp_path: Path, capsys: pytest.CaptureFixture[s
     out = json.loads(capsys.readouterr().out)
     assert code == 0 and out["ok"] is True and out["result"]["batch"]["ops"]
     assert re.fullmatch(r"[0-9a-f]{64}", out["doc"]["sha256"])
+
+
+def rx(pattern: str, *steps: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    return {
+        "recipe": "probe",
+        "version": 1,
+        "match": {"find": {"regex": pattern}},
+        "propose": list(steps) or [{"op": "text.replace", "at": "$match", "text": "x"}],
+        **extra,
+    }
+
+
+@pytest.mark.parametrize("pattern", ["(a|a)*b", "(a|aa)*b", "(a|b|ab)*c", r"(a+)\1+b", "(.*a){25}"])
+def test_catastrophic_regex_is_cut_off_with_a_partial_proposal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pattern: str
+) -> None:
+    from doc_control.recipes import engine
+
+    monkeypatch.setattr(engine, "TIME_BUDGET_SECONDS", 1.0)
+    doc = make_docx(tmp_path / "a.docx", "a" * 34 + "x", "ab" * 40 + "x", "fine -- line")
+    try:
+        reply = run(doc, definition=rx(pattern))
+    except DocControlError as err:  # the static screen may stop it first: also a clean outcome
+        assert err.code is ErrorCode.RECIPE_INVALID
+        return
+    if pattern != r"(a+)\1+b":  # that one is merely slow; the rest must be cut off
+        assert any(w.startswith("TIME_BUDGET") for w in reply.warnings)
+        assert reply.result["stable"] is False
+    if reply.result["batch"]["ops"]:
+        dry(doc, reply.result["batch"]["ops"])
+
+
+def test_catastrophic_regex_keeps_matches_found_before_the_cut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from doc_control.recipes import engine
+
+    monkeypatch.setattr(engine, "TIME_BUDGET_SECONDS", 1.0)
+    doc = make_docx(tmp_path / "a.docx", "ab", "a" * 34 + "x")
+    ops = run(doc, definition=rx("(a|a)*b")).result["batch"]["ops"]
+    assert [o["at"].split("#")[0] for o in ops] == ["p1"]
+
+
+@pytest.mark.parametrize("form", ["NFC", "NFD"])
+def test_groups_match_in_both_unicode_forms(tmp_path: Path, form: Literal["NFC", "NFD"]) -> None:
+    import unicodedata
+
+    text = unicodedata.normalize(form, "caféx y")
+    doc = make_docx(tmp_path / "a.docx", text)
+    step = {"op": "text.replace", "at": "$match", "text": "<$1>"}
+    ops = run(doc, definition=rx("(é)x", step)).result["batch"]["ops"]
+    assert len(ops) == 1
+    assert unicodedata.normalize("NFC", ops[0]["text"]) == "<é>"
+    assert isinstance(REGISTRY["batch"].run({"doc": str(doc), "ops": ops}), Reply)
+    para = Document(str(doc)).index.paragraphs[0].text
+    assert unicodedata.normalize("NFC", para) == "caf<é> y"
+
+
+def test_groups_follow_a_folded_match_without_dropping_it(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "caf\u00e9x")
+    recipe = {
+        "recipe": "probe",
+        "version": 1,
+        "match": {"find": {"regex": "(cafe)x", "ignore_accents": True}},
+        "propose": [{"op": "text.replace", "at": "$match", "text": "[$1]"}],
+    }
+    ops = run(doc, definition=recipe).result["batch"]["ops"]
+    assert [o["text"] for o in ops] == ["[caf\u00e9]"]  # groups read from the original text
+
+
+def test_repeat_proposes_other_operations_once_from_the_original_text(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "aabb")
+    recipe = rx(
+        "(a)b",
+        {"op": "text.replace", "at": "$match", "text": "$1"},
+        {"op": "comment.add", "at": "$para", "text": "was: $para"},
+        repeat_until_stable=True,
+    )
+    result = run(doc, definition=recipe).result
+    comments = [o for o in result["batch"]["ops"] if o["op"] == "comment.add"]
+    assert len(comments) == 1 and comments[0]["text"] == "was: aabb"
+    assert result["stable"] is True and result["passes"] > 1
+
+
+def test_definition_size_is_capped(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "a.docx", "x")
+    big = {**SHRINK, "description": "d" * (store.MAX_RECIPE_BYTES + 1)}
+    with pytest.raises(DocControlError) as caught:
+        run(doc, definition=big)
+    assert caught.value.code is ErrorCode.RECIPE_INVALID
+
+
+def test_user_store_does_not_follow_symlinks(tmp_path: Path) -> None:
+    home = tmp_path / "home" / "recipes"
+    home.mkdir(parents=True)
+    target = tmp_path / "elsewhere.json"
+    target.write_text(json.dumps({**SHRINK, "recipe": "linked"}))
+    try:
+        (home / "linked.json").symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks not available")
+    cat = store.catalogue(bundled_dir=tmp_path / "none")
+    assert cat.recipes == {} and [b["file"] for b in cat.invalid] == ["linked.json"]
+
+
+def test_proposal_on_a_paragraph_with_a_field_and_hidden_run(tmp_path: Path) -> None:
+    from tests.helpers import CONTENT_TYPES, RELS
+
+    body = (
+        '<w:p><w:r><w:t xml:space="preserve">pre -- </w:t></w:r>'
+        '<w:fldSimple w:instr=" PAGE "><w:r><w:t>5</w:t></w:r></w:fldSimple>'
+        "<w:r><w:rPr><w:vanish/></w:rPr><w:t>hid</w:t></w:r>"
+        '<w:r><w:t xml:space="preserve"> post -- end</w:t></w:r></w:p>'
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body>{body}</w:body></w:document>"
+    )
+    doc = tmp_path / "f.docx"
+    with zipfile.ZipFile(doc, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", CONTENT_TYPES)
+        zf.writestr("_rels/.rels", RELS)
+        zf.writestr("word/document.xml", xml)
+    recipe = {
+        "recipe": "dashes",
+        "version": 1,
+        "match": {"find": {"literal": "--"}},
+        "propose": [{"op": "text.replace", "at": "$match", "text": "—"}],
+    }
+    ops = run(doc, definition=recipe).result["batch"]["ops"]
+    assert len(ops) == 2
+    try:
+        reply = REGISTRY["batch"].run({"doc": str(doc), "ops": ops})
+    except DocControlError as err:  # refused cleanly is acceptable
+        assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+    else:
+        assert isinstance(reply, Reply)

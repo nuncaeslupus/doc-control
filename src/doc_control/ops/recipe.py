@@ -9,6 +9,7 @@ and changes nothing. A recipe is a stored one (``recipe``: name) or an inline
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.recipes.engine import propose
 from doc_control.recipes.schema import validate_recipe
-from doc_control.recipes.store import catalogue
+from doc_control.recipes.store import MAX_RECIPE_BYTES, catalogue
 from doc_control.registry import operation
 
 _LIST: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -75,6 +76,11 @@ def recipe_run(request: dict[str, Any]) -> Reply:
             ErrorCode.SCHEMA_INVALID, "give exactly one of `recipe` and `definition`"
         )
     if "definition" in request:
+        size = len(json.dumps(request["definition"], ensure_ascii=False).encode("utf-8"))
+        if size > MAX_RECIPE_BYTES:
+            raise DocControlError(
+                ErrorCode.RECIPE_INVALID, f"definition is larger than {MAX_RECIPE_BYTES} bytes"
+            )
         recipe = validate_recipe(request["definition"])
     else:
         found = catalogue().recipes.get(request["recipe"])

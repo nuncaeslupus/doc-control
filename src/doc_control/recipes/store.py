@@ -75,6 +75,8 @@ def _load_dir(
         return
     for path in sorted(directory.glob("*.json")):
         try:
+            if path.is_symlink():
+                raise DocControlError(ErrorCode.RECIPE_INVALID, "symbolic links are not followed")
             recipe = parse_recipe_file(path)
             if recipe["recipe"] in found:
                 raise DocControlError(

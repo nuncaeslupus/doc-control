@@ -10,14 +10,14 @@ on the text its own replacements would leave, until a pass changes nothing or
 
 from __future__ import annotations
 
-import json
+import contextlib
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from doc_control.model.address import Address
-from doc_control.model.search import Matcher
+from doc_control.model.search import IsolatedScan, Match, Matcher, SearchOptions
 from doc_control.ops.tracked import boundary_ok
 from doc_control.recipes.schema import DEFAULT_PASSES, SUBSTITUTION, search_options
 
@@ -66,6 +66,29 @@ def _smallest_edit(before: str, after: str) -> tuple[int, int, str]:
     return head, len(before) - tail, after[head : len(after) - tail]
 
 
+def _scan(
+    options: SearchOptions, matcher: Matcher, items: list[tuple[int, str]], deadline: float
+) -> tuple[list[tuple[int, list[Match]]], int | None]:
+    """Matches per paragraph, and the paragraph the time budget stopped at (or ``None``).
+
+    A regex runs in a child process that is killed at the deadline (Python's regex engine
+    cannot be interrupted, and the static screen cannot catch every pattern that
+    backtracks badly). A literal cannot backtrack and is searched here.
+    """
+    if options.regex:
+        scan = IsolatedScan(options, items, deadline, detail=True)
+        with contextlib.closing(scan.__iter__()) as found:
+            return [(number, list(spans)) for number, spans in found], scan.stopped_at
+    out: list[tuple[int, list[Match]]] = []
+    for done, (number, text) in enumerate(items):
+        if done and time.monotonic() > deadline:
+            return out, number
+        spans = list(matcher.matches(text))
+        if spans:
+            out.append((number, spans))
+    return out, None
+
+
 def propose(
     recipe: dict[str, Any],
     paragraphs: Sequence[tuple[Address, str]],
@@ -79,14 +102,13 @@ def propose(
     repeat = recipe.get("repeat_until_stable", False)
     max_passes = recipe.get("max_passes", DEFAULT_PASSES) if repeat else 1
     deadline = time.monotonic() + TIME_BUDGET_SECONDS if deadline is None else deadline
-    pattern = matcher.pattern if options.regex else None
 
     work = {a.number: t for a, t in paragraphs}
     original = dict(work)
     address = {a.number: a for a, _ in paragraphs}
     direct: dict[int, list[dict[str, Any]]] = {}  # pass-1 text edits, kept when no 2nd pass
-    others: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    others: list[dict[str, Any]] = []  # every other operation, from the original text only
+    seen: set[tuple[str, str]] = set()
     redone: set[int] = set()  # paragraphs whose text changed in a pass after the first
     deleted: set[int] = set()
     warnings: list[str] = []
@@ -94,70 +116,62 @@ def propose(
     passes = 0
     stable = False
     capped = False
+    to_scan = sorted(n for n, t in work.items() if t)
 
     for passno in range(1, max_passes + 1):
         passes = passno
-        changed = False
-        for number in sorted(work):
-            if number in deleted or capped:
+        found, stopped = _scan(options, matcher, [(n, work[n]) for n in to_scan], deadline)
+        if stopped is not None:
+            warnings.append(f"TIME_BUDGET: stopped at p{stopped}; the proposal is partial")
+            capped = True
+        changed: list[int] = []
+        for number, spans in found:
+            if number in deleted:
                 continue
-            if time.monotonic() > deadline:
-                warnings.append(f"TIME_BUDGET: stopped at p{number}; the proposal is partial")
-                capped = True
-                break
             text = work[number]
-            spans = list(matcher.spans(text))
-            if not spans:
-                continue
             addr = address[number]
             edits: list[tuple[int, int, str]] = []
-            for start, end in spans:
-                groups: Sequence[str] = ()
-                if pattern is not None and pattern.groups:
-                    found = pattern.match(text, start)
-                    if found is None or found.end() != end:
-                        continue
-                    groups = [g or "" for g in found.groups()]
-                total += 1
+            for start, end, groups in spans:
+                if passno == 1:
+                    total += 1
                 matched = text[start:end]
                 for step in steps:
+                    kind = step["op"]
+                    if kind != "text.replace" and passno > 1:
+                        continue  # other operations are decided on the text as read
                     op = _instantiate(step, addr, start, end, matched, text, groups)
-                    if op["op"] == "para.delete":
-                        deleted.add(number)
-                        key = json.dumps(op, sort_keys=True)
-                        if key not in seen:
-                            seen.add(key)
-                            others.append(op)
-                    elif op["op"] == "text.replace":
+                    if kind == "text.replace":
                         lo, hi = (0, len(text)) if step["at"] == "$para" else (start, end)
                         if text[lo:hi] == op["text"]:
                             continue  # already what the recipe wants
                         edits.append((lo, hi, op["text"]))
                         if passno == 1:
                             direct.setdefault(number, []).append(op)
-                    else:
-                        key = json.dumps(op, sort_keys=True)
-                        if key not in seen:
-                            seen.add(key)
-                            others.append(op)
+                        continue
+                    if kind == "para.delete":
+                        deleted.add(number)
+                    if (kind, op["at"]) not in seen:
+                        seen.add((kind, op["at"]))
+                        others.append(op)
             if number in deleted:
                 continue
             new = text
             for start, end, replacement in reversed(edits):
                 new = new[:start] + replacement + new[end:]
             if new != text:
-                changed = True
+                changed.append(number)
                 work[number] = new
                 if passno > 1:
                     redone.add(number)
-            if len(others) + sum(map(len, direct.values())) > MAX_OPS:
-                warnings.append(f"OPS_CAP: more than {MAX_OPS} operations; narrow the recipe")
-                capped = True
+        if len(others) + sum(map(len, direct.values())) > MAX_OPS:
+            warnings.append(f"OPS_CAP: more than {MAX_OPS} operations; narrow the recipe")
+            capped = True
         if capped:
             break
         if not changed:
             stable = True
             break
+        to_scan = [n for n in changed if work[n]]
     if not stable and not capped and repeat:
         warnings.append(f"NOT_STABLE: still changing after {max_passes} passes")
     if capped:
@@ -188,8 +202,8 @@ def _instantiate(
     para: str,
     groups: Sequence[str],
 ) -> dict[str, Any]:
-    out = {k: v for k, v in step.items() if k != "at"}
+    out = {k: v for k, v in step.items() if k not in ("op", "at")}
     if "text" in out:
         out["text"] = _substitute(out["text"], matched, para, groups)
-    out["at"] = str(addr) if step["at"] == "$para" else f"{addr}:{start}-{end}"
-    return {"op": out.pop("op"), "at": out.pop("at"), **out}
+    at = str(addr) if step["at"] == "$para" else f"{addr}:{start}-{end}"
+    return {"op": step["op"], "at": at, **out}
