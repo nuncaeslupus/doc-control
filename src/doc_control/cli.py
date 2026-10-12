@@ -1,5 +1,8 @@
 """Command-line front door: `doc-control <op> [--json '<request>' | --json - < request.json]`.
 
+`doc-control help <op>` is shorthand for `doc-control help --json '{"op": "<op>"}'`, and
+`--help` / `-h` are aliases of `help`.
+
 Never prompts and never reads stdin unless asked with `--json -`, so an agent whose
 stdin is an open pipe cannot hang it. Prints exactly one JSON envelope on stdout. Exit codes:
 0 success, 1 operation error, 2 usage error (unknown op or invalid request).
@@ -24,8 +27,14 @@ def main(argv: list[str] | None = None) -> int:
     op = args[0] if args else "help"
     if op in ("--version", "version"):
         op = "capabilities"
+    elif op in ("--help", "-h"):
+        op = "help"
     try:
-        request = _read_request(args[1:])
+        rest = args[1:]
+        if op == "help" and len(rest) == 1 and not rest[0].startswith("-"):
+            request: dict[str, Any] = {"op": rest[0]}
+        else:
+            request = _read_request(rest)
         if op not in registry:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
         envelope = success(op, registry[op].run(request))
