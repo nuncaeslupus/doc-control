@@ -334,3 +334,18 @@ def test_reject_restores_and_accept_drops_format_apply_changes(corpus_doc: Corpu
     kept = paragraphs(xml_of(path))[target.number - 1]
     assert b"Change" not in xml_of(path) and kept.find(f".//{W}jc") is not None
     assert kept.find(f".//{W}b") is not None
+
+
+def test_comment_survives_accepting_the_deletion_of_its_text(corpus_doc: CorpusWriter) -> None:
+    from doc_control.model.annotations import read_comments
+
+    path = corpus_doc("plain", 0)
+    target = next(p for p in build_index(xml_of(path)).paragraphs if len(p.text) > 12)
+    at = f"{target.address}:2-8"
+    batch({"doc": str(path), "ops": [{"op": "comment.add", "at": at, "text": "note"}]})
+    batch({"doc": str(path), "ops": [{"op": "text.replace", "at": at, "text": ""}]})
+    batch({"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
+    comments = read_comments(Document(str(path)))
+    assert [c.text for c in comments] == ["note"] and comments[0].at is not None
+    assert b"commentReference" in xml_of(path) and pending(path) == []
+    assert texts(path)[target.number - 1] == target.text[:2] + target.text[8:]
