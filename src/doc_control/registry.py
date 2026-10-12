@@ -9,6 +9,7 @@ from typing import Any, Literal
 from doc_control.envelope import Reply
 from doc_control.schema import check_schema, validate
 
+# A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
 Handler = Callable[[dict[str, Any]], dict[str, Any] | Reply]
 
 
@@ -49,6 +50,6 @@ def operation(
 
 def load_operations() -> dict[str, Operation]:
     """Import every operation module so their decorators run."""
-    from doc_control.ops import meta, page, read  # noqa: F401
+    from doc_control.ops import find, meta, page, read  # noqa: F401
 
     return REGISTRY
