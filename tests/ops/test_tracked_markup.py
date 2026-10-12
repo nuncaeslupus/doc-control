@@ -1206,6 +1206,7 @@ def test_public_names() -> None:
         "TrackedResult",
         "apply_edits",
         "edit_from_dict",
+        "edits_as_request",
         "next_in_container",
         "prepare_edits",
     }

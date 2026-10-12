@@ -84,6 +84,7 @@ from doc_control.ooxml.revisions import (
 )
 from doc_control.ooxml.splice import W_NS, DocumentSpans
 from doc_control.ooxml.zipio import Package
+from doc_control.safety.history import has_live_text, record, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 from doc_control.schema import validate
@@ -98,6 +99,7 @@ __all__ = [
     "TrackedResult",
     "apply_edits",
     "edit_from_dict",
+    "edits_as_request",
     "next_in_container",
     "prepare_edits",
 ]
@@ -241,6 +243,7 @@ class TrackedResult:
     after_sha256: str | None = None
     backup: Path | None = None
     warnings: list[str] = field(default_factory=list)
+    op_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -258,6 +261,7 @@ class TrackedResult:
         if not self.dry_run:
             out["sha256"] = self.after_sha256
             out["backup"] = str(self.backup) if self.backup else None
+            out["op_id"] = self.op_id
         return out
 
 
@@ -680,6 +684,8 @@ class PreparedEdits:
     new_data: bytes
     footprint: Footprint
     result: TrackedResult
+    changes: list[dict[str, Any]] = field(default_factory=list)
+    """The undo-log record of the edit: each touched paragraph's bytes before and after."""
 
 
 def next_in_container(index: DocumentIndex, para: Paragraph) -> Paragraph | None:
@@ -816,7 +822,59 @@ def prepare_edits(
         before_sha256=pkg.sha256,
         warnings=_reference_warnings(pkg, scopes),
     )
-    return PreparedEdits(pkg, new_data, footprint, result)
+    changes = _log_changes(spans, planner, replacements, after, before)
+    return PreparedEdits(pkg, new_data, footprint, result, changes)
+
+
+def _log_changes(
+    spans: DocumentSpans,
+    planner: _Planner,
+    replacements: Mapping[int, bytes],
+    after: Mapping[int, Sequence[bytes]],
+    before: Mapping[int, Sequence[bytes]],
+) -> list[dict[str, Any]]:
+    """The undo-log records of an edit, in document order (see ``safety.history``)."""
+    texts = {plan.para.span_index: plan.para.text for plan in planner.plans.values()}
+    changes: list[dict[str, Any]] = []
+    for index in sorted(replacements):
+        changes.append(
+            {
+                "part": DOCUMENT_PART,
+                "kind": "replace",
+                "index": index,
+                "before": to_text(spans.paragraph_bytes(index)),
+                "after": to_text(replacements[index]),
+                "text_before": texts[index],
+                "deleted": not has_live_text(replacements[index]),
+            }
+        )
+    for slot, groups in (("before", before), ("after", after)):
+        for index in sorted(groups):
+            changes.extend(
+                {
+                    "part": DOCUMENT_PART,
+                    "kind": "insert",
+                    "slot": slot,
+                    "index": index,
+                    "after": to_text(data),
+                }
+                for data in groups[index]
+            )
+    return changes
+
+
+def edits_as_request(edits: Sequence[Edit]) -> list[dict[str, Any]]:
+    """The edits as the ``ops`` objects a batch request carries (for the undo log)."""
+    out: list[dict[str, Any]] = []
+    for edit in edits:
+        name = {
+            ReplaceText: "text.replace",
+            InsertParagraph: "para.insert",
+            DeleteParagraphs: "para.delete",
+            MoveParagraphs: "para.move",
+        }[type(edit)]
+        out.append({"op": name, **{k: v for k, v in vars(edit).items() if v is not None}})
+    return out
 
 
 def apply_edits(
@@ -830,6 +888,9 @@ def apply_edits(
     dry_run: bool = False,
     env: Mapping[str, str] | None = None,
     stage: Callable[[str], None] | None = None,
+    kind: str = "batch",
+    request: Any = None,
+    log_extra: Mapping[str, Any] | None = None,
 ) -> TrackedResult:
     """Apply ``edits`` to ``doc_path`` as tracked changes in one verified write.
 
@@ -841,7 +902,9 @@ def apply_edits(
     write the result is checked: the paragraph texts must be the intended ones
     and rejecting this call's revisions must give back the original texts, or
     ``INTERNAL`` is raised and nothing is written. A dry run does everything but
-    the write.
+    the write. A real write is appended to the undo log (``kind``, ``request`` and
+    ``log_extra`` describe it there); if that append fails the write stands and
+    the result carries a warning instead of ``op_id``.
     """
     if not edits:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
@@ -869,11 +932,33 @@ def apply_edits(
         env=env,
         stage=stage,
     )
+    warnings = list(result.warnings)
+    op_id: str | None = None
+    try:
+        op_id = record(
+            doc_path,
+            kind,
+            before_sha256=written.before_sha256,
+            after_sha256=written.after_sha256,
+            backup=written.backup,
+            changes=prepared.changes,
+            request=request if request is not None else edits_as_request(edits),
+            author=result.author,
+            tag=tag,
+            footprint={DOCUMENT_PART: result.footprint},
+            extra=log_extra,
+            now=now,
+            env=env,
+        )
+    except (DocControlError, OSError) as exc:
+        warnings.append(f"HISTORY_NOT_RECORDED: the write succeeded but could not be logged: {exc}")
     return replace(
         result,
         before_sha256=written.before_sha256,
         after_sha256=written.after_sha256,
         backup=written.backup,
+        warnings=warnings,
+        op_id=op_id,
     )
 
 
