@@ -12,7 +12,7 @@
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
 **Revision**: 3
-**Status**: draft
+**Status**: approved (2026-10-12, revision 3) — without annotations
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
