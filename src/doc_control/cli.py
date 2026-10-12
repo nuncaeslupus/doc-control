@@ -37,7 +37,15 @@ def main(argv: list[str] | None = None) -> int:
             request = _read_request(rest)
         if op not in registry:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
-        envelope = success(op, registry[op].run(request))
+        result = registry[op].run(request)
+        # Envelope-level fields a handler may return next to its result.
+        envelope = success(
+            op,
+            result,
+            doc=result.pop("doc", None),
+            warnings=result.pop("warnings", None),
+            next_cursor=result.pop("next", None),
+        )
         code = 0
     except DocControlError as err:
         envelope = failure(op, err)
