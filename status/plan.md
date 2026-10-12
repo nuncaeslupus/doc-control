@@ -49,8 +49,8 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | Service | Database | Change | Description |
 |---------|----------|--------|-------------|
 | Document | the `.docx` | UPDATE | Only through verified batches; tracked by default |
-| Document store | `.doc-control/<stem>/backups/` | CREATE/DELETE | Backup on open-for-write and before every write; pruned to 20 or 30 days, whichever keeps more |
-| Document store | `.doc-control/<stem>/log.jsonl` | CREATE (append) | One line per applied batch; removed only by `history.purge` (tombstone line) |
+| Document store | `.doc-control/<file name>/backups/` | CREATE/DELETE | Backup on open-for-write and before every write; pruned to 20 or 30 days, whichever keeps more. Keyed by the full file name, not the stem, to avoid same-stem collisions (`Novela.docx` / `Novela.dotx`) |
+| Document store | `.doc-control/<file name>/log.jsonl` | CREATE (append) | One line per applied batch; removed only by `history.purge` (tombstone line) |
 | User store | `recipes/`, `stylesets/` | CREATE/UPDATE | Written only when the agent saves a user recipe or style set |
 
 ### Technology choices
@@ -126,6 +126,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T1 | `make_check_exit_code == 0` | 0 | `make check` | 50b04fb | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 | T2 | `operations_without_json_schema == 0` | 0 | `uv run pytest tests/test_registry.py` (counts registered schemas failing `check_schema` plus ops missing from `capabilities`) | 0633dc9 | local (Linux, CPython 3.13 via uv) | 2026-10-12 |
 | T3 | `untouched_parts_byte_identical_ratio == 1.0` | 1.0 | `uv run pytest tests/ooxml/test_zipio.py (ratio of untouched members whose raw compressed bytes and header fields are identical)` | 0188f16 | local (Linux, CPython 3.13 via uv) | 2026-10-12 |
+| T9 | `writes_with_word_lock_present == 0` | 0 | `uv run pytest tests/safety` | bffa774 | local (Linux, CPython 3.11 via uv) | 2026-10-12 |
 
 ### Dependency graph
 
