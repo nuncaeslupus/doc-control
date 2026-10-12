@@ -137,6 +137,8 @@ def cases() -> list[Case]:
         (5, 4, 4, 1, 2, 1, False),  # backward
         (4, 3, 2, 0, 1, 3, False),  # the marker opens its chapter; target is the previous one
         (6, 5, 1, 2, 5, 3, False),  # forward over several chapters
+        (3, 3, 1, 1, 3, 2, False),  # after the last chapter, the end of the body
+        (5, 4, 2, 0, 5, 4, True),  # after the last chapter, with a comment
     ]
     rng = random.Random("writer-notes")
     for _ in range(24):  # fuzz over chapter numbers, positions and passage lengths
@@ -145,7 +147,7 @@ def cases() -> list[Case]:
         per = rng.randint(2, 6)
         # The body's last paragraph cannot be deleted by the move: keep one after the passage.
         offset = rng.randint(0, per - (2 if marker_in == chapters else 1))
-        wanted = rng.choice([c for c in range(1, chapters) if c != marker_in] or [1])
+        wanted = rng.choice([c for c in range(1, chapters + 1) if c != marker_in])
         out.append(
             (
                 chapters,
@@ -175,9 +177,12 @@ def test_marker_move_after_chapter_applies_as_tracked_batch(tmp_path: Path, caps
     assert {k: v for k, v in problems.items() if v} == {}
 
 
-def test_moving_after_the_last_chapter_is_refused_cleanly(tmp_path: Path, capsys: Capsys) -> None:
-    path = make_docx(tmp_path / "last.docx", *book(3, 3, 1, 1, 3))
+def test_a_passage_that_ends_the_document_is_refused_cleanly(
+    tmp_path: Path, capsys: Capsys
+) -> None:
+    # Word cannot delete the body's last paragraph mark, so the move cannot take it away.
+    path = make_docx(tmp_path / "end.docx", *book(3, 3, 3, 1, 1))
     before = path.read_bytes()
-    envelope = apply_note(capsys, path, 1, False)
+    envelope = apply_note(capsys, path, 2, False)
     assert not envelope["ok"]
     assert path.read_bytes() == before

@@ -635,9 +635,52 @@ def test_move_to_inside_or_next_to_the_moved_run_is_refused(
     assert refused(path, move).code is ErrorCode.ADDRESS_INVALID
 
 
-def test_move_after_the_last_paragraph_is_refused(tmp_path: Path) -> None:
-    path = make(tmp_path, *(para(run(w)) for w in ("a", "b", "c")))
-    err = refused(path, MoveParagraphs(at(path, 1), after=at(path, 3)))
+FINAL_SECT = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>'
+CENTER = '<w:jc w:val="center"/>'
+
+
+def last_paragraph_doc(tmp_path: Path) -> Path:
+    blocks = [para(run(w)) for w in ("a", "b")] + [para(run("c"), ppr=CENTER)]
+    return make(tmp_path, *blocks, FINAL_SECT)
+
+
+def test_move_after_the_last_paragraph_uses_the_form_word_writes(tmp_path: Path) -> None:
+    path = last_paragraph_doc(tmp_path)
+    original = revsim.document_xml(path.read_bytes())
+    edit(path, MoveParagraphs(f"{at(path, 1)}..{at(path, 2)}", after=at(path, 3)))
+    xml = body(path)
+    assert xml.endswith(FINAL_SECT)  # the copies stay before the body's section properties
+    assert xml.count("<w:sectPr>") == 1
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["c", "a", "b"]
+    assert revsim.resolved(new, "Claude", "reject") == revsim.resolved(original, None, "current")
+    # the last paragraph keeps its own properties when the move is rejected
+    assert revsim.resolved(new, "Claude", "reject") == ["a", "b", "c"]
+
+
+def test_insert_after_the_last_paragraph_stays_before_the_body_section(tmp_path: Path) -> None:
+    path = last_paragraph_doc(tmp_path)
+    edit(path, InsertParagraph("end", after=at(path, 3)))
+    assert body(path).endswith(FINAL_SECT)
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["a", "b", "c", "end"]
+    assert revsim.resolved(new, "Claude", "reject") == ["a", "b", "c"]
+
+
+def test_edits_clash_with_a_move_after_the_last_paragraph(tmp_path: Path) -> None:
+    path = last_paragraph_doc(tmp_path)
+    move = MoveParagraphs(at(path, 1), after=at(path, 3))
+    for clash in (
+        ReplaceText(at(path, 3), "x"),
+        InsertParagraph("x", after=at(path, 3)),
+        MoveParagraphs(at(path, 2), after=at(path, 3)),
+    ):
+        assert refused(path, move, clash).code is ErrorCode.BATCH_CONFLICT
+
+
+def test_moving_the_last_paragraph_away_is_still_refused(tmp_path: Path) -> None:
+    path = last_paragraph_doc(tmp_path)
+    err = refused(path, MoveParagraphs(at(path, 3), before=at(path, 1)))
     assert err.code is ErrorCode.UNSUPPORTED_CONTENT
 
 
