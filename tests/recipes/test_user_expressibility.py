@@ -178,6 +178,7 @@ def case_author_note_patterns(tmp: Path) -> None:
         "REVISION 2031 shorter",
         "Why would she?? Nobody knows",
         "Stop!!! Now.",
+        "FINAL (3 drafts) of this passage",
     ]
     ordinary = [
         "Please check the door, it is time to delete nothing and move on.",  # lower case
@@ -185,6 +186,8 @@ def case_author_note_patterns(tmp: Path) -> None:
         "She asked who? Then why? Then nothing.",  # single marks
         "He said NOTHING at all.",  # an upper-case word that is not a marker
         "Exactly XXX of them came.",  # too short a run of X
+        "The final (2 of them) arrived.",  # lower case
+        "FINAL answer, in capitals but no bracket.",
     ]
     doc = styled_docx(tmp / "notes.docx", *[("Body", t) for t in notes + ordinary])
     install_house(doc)
@@ -212,8 +215,12 @@ def case_whole_line_notes_are_removed(tmp: Path) -> None:
     )
     proposal = run_recipe(doc, "house-note-lines")
     assert proposal["matches"] == 2
-    kept = REGISTRY["revisions.list"].run({"doc": str(doc)}).result  # type: ignore[union-attr]
-    assert len(kept["revisions"]) >= 2
+    with zipfile.ZipFile(doc) as zf:
+        root = ET.fromstring(zf.read("word/document.xml"))
+    deleted = [
+        "".join(t.text or "" for t in d.iter(f"{{{W}}}delText")) for d in root.iter(f"{{{W}}}del")
+    ]
+    assert [d.strip() for d in deleted if d.strip()] == ["XXXXXX", "TODO!"]
     texts = [t for _, t in paragraphs(doc)]
     assert PROSE in texts and "TODO: but this one has prose in it" in texts
 

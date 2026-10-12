@@ -4,7 +4,7 @@
   "description": "Flag the author's own working notes (capitalised markers) left in the narration",
   "match": {
     "find": {
-      "regex": "\\bX{4,}\\b|\\b(?:CHECK|FIXME|TODO|DELETE|MOVE|PENDING|SHORTEN|EXPAND)\\b[!? ]*|\\bFROM HERE\\b.*|\\bNOT SURE\\b.*|\\bREVISION\\s+\\d{4}\\b.*|\\?{2,}|!{3,}",
+      "regex": "\\bX{4,}\\b|\\b(?:CHECK|FIXME|TODO|DELETE|MOVE|PENDING|SHORTEN|EXPAND)\\b[!? ]*|\\bFROM HERE\\b.*|\\bNOT SURE\\b.*|\\bREVISION\\s+\\d{4}\\b.*|\\bFINAL\\s*\\(\\d|\\?{2,}|!{3,}",
       "scope": "paragraph"
     }
   },
