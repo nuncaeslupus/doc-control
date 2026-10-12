@@ -71,6 +71,21 @@ def style_entry(style: Style) -> dict[str, Any]:
 )
 def styleset_export(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
+    styleset = select_styleset(doc, request)
+    entries = styleset["styles"]
+    result: dict[str, Any] = {"styleset": styleset, "count": len(entries)}
+    if "out" in request:
+        write_new_file(Path(request["out"]), Path(request["doc"]), _json_bytes(styleset))
+        result["path"] = request["out"]
+    return Reply(result, doc=doc.envelope_doc())
+
+
+def _json_bytes(styleset: dict[str, Any]) -> bytes:
+    return (json.dumps(styleset, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def select_styleset(doc: Document, request: dict[str, Any]) -> dict[str, Any]:
+    """The document's styles (``styles`` / ``custom_only`` applied) as a style set."""
     chosen = request.get("styles")
     wanted: set[str] | None = None
     if chosen is not None:
@@ -85,19 +100,14 @@ def styleset_export(request: dict[str, Any]) -> Reply:
         for s in doc.styles.styles
         if (wanted is None or s.id in wanted) and not (request.get("custom_only") and not s.custom)
     ]
-    styleset = {
+    return {
         "styleset": request.get("name") or Path(request["doc"]).stem,
         "version": VERSION,
         "styles": entries,
     }
-    result: dict[str, Any] = {"styleset": styleset, "count": len(entries)}
-    if "out" in request:
-        _write_new(Path(request["out"]), Path(request["doc"]), styleset)
-        result["path"] = request["out"]
-    return Reply(result, doc=doc.envelope_doc())
 
 
-def _write_new(out: Path, doc: Path, styleset: dict[str, Any]) -> None:
+def write_new_file(out: Path, doc: Path, payload: bytes) -> None:
     """Write the set to a file that does not exist yet; never the document itself."""
     same = out.exists() and doc.exists() and out.samefile(doc)
     if same or out.resolve() == doc.resolve():
@@ -111,8 +121,8 @@ def _write_new(out: Path, doc: Path, styleset: dict[str, Any]) -> None:
             path=str(out),
         )
     try:
-        with out.open("x", encoding="utf-8") as fh:
-            fh.write(json.dumps(styleset, ensure_ascii=False, indent=2) + "\n")
+        with out.open("xb") as fh:
+            fh.write(payload)
     except FileExistsError as exc:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, f"out already exists: {out}", path=str(out)
