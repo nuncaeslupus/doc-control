@@ -1,7 +1,8 @@
 """The ``batch`` write operation: all-or-nothing tracked edits in one verified write.
 
 A request lists ``ops`` (``text.replace``, ``para.insert``, ``para.delete``,
-``para.move``; their schemas are in :data:`OPERATION_SCHEMAS`). Every address refers to
+``para.move``, ``revision.accept``, ``revision.reject``; their schemas are in
+:data:`ALL_SCHEMAS`). Every address refers to
 the document as it was read. Before anything is written each operation is validated:
 addresses must resolve and still match their fingerprint (``STALE_ADDRESS``), ranges
 must not overlap (``BATCH_CONFLICT``, naming both operation indexes in ``edits``) and
@@ -11,8 +12,9 @@ response with a per-operation preview. The result carries ``address_map`` (old t
 address of every paragraph whose index changed) and, with the envelope's ``doc``, the
 new sha256.
 
-The four operation kinds are batch operations only; they are not registered as
-standalone writes.
+The operation kinds are batch operations only; they are not registered as
+standalone writes. ``revision.*`` operations resolve revisions (see
+:mod:`doc_control.ops.revision`) and cannot be mixed with the editing kinds.
 """
 
 from __future__ import annotations
@@ -24,10 +26,15 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR
+from doc_control.ops.revision import (
+    OPERATION_SCHEMAS as REVISION_SCHEMAS,
+)
+from doc_control.ops.revision import apply_resolutions, resolution_from_dict
 from doc_control.ops.tracked import OPERATION_SCHEMAS, Edit, apply_edits, edit_from_dict
 from doc_control.registry import operation
 
-BATCH_KINDS = tuple(OPERATION_SCHEMAS)
+ALL_SCHEMAS = {**OPERATION_SCHEMAS, **REVISION_SCHEMAS}
+BATCH_KINDS = tuple(ALL_SCHEMAS)
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -41,7 +48,7 @@ _SCHEMA: dict[str, Any] = {
                 "is a BATCH_CONFLICT. Kinds: "
                 + "; ".join(
                     f"{name} {sorted(set(s['properties']) - {'op'})}"
-                    for name, s in OPERATION_SCHEMAS.items()
+                    for name, s in ALL_SCHEMAS.items()
                 )
                 + "."
             ),
@@ -87,15 +94,41 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Edit]:
     "batch",
     "write",
     "Apply text.replace, para.insert, para.delete and para.move together as tracked "
-    "changes, all or nothing; dry_run previews.",
+    "changes, or revision.accept and revision.reject to resolve revisions (by ids, author, "
+    "address range or all), all or nothing; dry_run previews.",
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
     if request.get("tracked", True) is not True:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
-    edits = edits_from_request(request["ops"])
     expect = request.get("expect", {})
     path = request["doc"]
+    kinds = {op.get("op") in REVISION_SCHEMAS for op in request["ops"]}
+    if True in kinds:
+        if False in kinds:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                "revision.accept/revision.reject cannot be combined with text or paragraph "
+                "edits in one batch: send them as separate batches",
+            )
+        resolutions = []
+        for i, raw in enumerate(request["ops"]):
+            try:
+                resolutions.append(resolution_from_dict(raw))
+            except DocControlError as err:
+                if err.code is not ErrorCode.SCHEMA_INVALID:
+                    raise
+                raise DocControlError(
+                    ErrorCode.SCHEMA_INVALID, f"ops[{i}]: {err.message}", op_index=i
+                ) from err
+        res = apply_resolutions(
+            Path(path),
+            resolutions,
+            expect_sha256=expect.get("sha256"),
+            dry_run=request.get("dry_run", False),
+        )
+        return Reply(res.to_dict(), doc=Document(path).envelope_doc())
+    edits = edits_from_request(request["ops"])
     result = apply_edits(
         Path(path),
         edits,

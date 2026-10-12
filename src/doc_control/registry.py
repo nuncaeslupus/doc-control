@@ -61,6 +61,7 @@ def load_operations() -> dict[str, Operation]:
         meta,
         page,
         read,
+        revision,
         segment,
         text,
     )
