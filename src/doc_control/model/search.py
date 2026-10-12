@@ -164,6 +164,11 @@ class Matcher:
             raise _invalid(f"invalid regular expression: {exc}") from exc
         self._folder = _folder(options.ignore_accents, fold_case)
 
+    @property
+    def pattern(self) -> re.Pattern[str]:
+        """The compiled pattern (a regex's groups are read from it)."""
+        return self._pattern
+
     def spans(self, text: str) -> Iterator[Span]:
         """Non-empty matches of ``text`` as ``(start, end)`` offsets into ``text``."""
         folded, units = self._folder.fold(text)
