@@ -11,10 +11,11 @@
 **Date**: 2026-10-12
 **Specification**: `status/specification.md` (approved, revision 3)
 **Author**: Claude
-**Revision**: 1
-**Status**: approved (2026-10-12, revision 1) — without annotations
+**Revision**: 2
+**Status**: approved (2026-10-12, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft
+- r2 — owner decision D-18 (2026-10-12): tasks T31–T36 for literary-critic indexing support; T29 also depends on them
 
 <!-- -->
 
@@ -143,12 +144,18 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T26 | Owner-rule expressibility: house styles, template and author-note patterns as user recipes and style sets, on synthetic documents | recipes | S | T21, T23 | `owner_rules_not_expressible == 0` | `test_house_rules_expressible_as_user_recipes` in `tests/recipes/test_user_expressibility.py` — each owner-specific docx-fixer rule has a declarative equivalent that passes its case |
 | T27 | CI extras: OOXML validator and LibreOffice round trip, no-network smoke on 3.11, benchmark job, private-corpus hygiene check | repo/ci | M | T5, T10 | `private_corpus_identifiers_in_repo == 0` | `test_hygiene_flags_denylisted_name` in `tests/ci/test_hygiene.py` — the hygiene check fails when a denylisted identifier appears in a tracked file |
 | T28 | Writer-notes scenario: marker paragraph `========== Move this after chapter X` applied with `find` + chapters + one tracked batch | ops | S | T12, T15, T18 | `writer_note_scenario_failures == 0` | `test_marker_move_after_chapter_applies_as_tracked_batch` in `tests/scenarios/test_writer_notes.py` — the passage moves after chapter X, the marker is deleted, both as revisions |
-| T29 | Coverage and documentation: README usage, error-code reference, generated operation reference from schemas | repo | M | T7, T13, T17, T19, T20, T22, T24, T25, T26, T27, T28 | `line_coverage >= 0.90` | `test_docs_list_every_error_code` in `tests/test_docs.py` — every error code in `errors.py` appears in the reference |
+| T29 | Coverage and documentation: README usage, error-code reference, generated operation reference from schemas | repo | M | T7, T13, T17, T19, T20, T22, T24, T25, T26, T27, T28, T31, T32, T33, T34, T35, T36 | `line_coverage >= 0.90` | `test_docs_list_every_error_code` in `tests/test_docs.py` — every error code in `errors.py` appears in the reference |
 | T30 | Manual real-Word check (Windows, Word 2016+ and M365): open without repair, accept/reject/reply/resolve | manual | S | T15, T16 | `real_word_repair_prompts == 0` | Manual checklist in `docs/real-word-check.md` — evidence recorded as `unmeasured` until a Windows machine is available |
+| T31 | Layout facts in `para.get` and `outline`: `empty`, `blank_before`, heading level (via `basedOn`), style, centred, page break before | ops | S | T7 | `layout_fact_mismatches == 0` | `test_para_get_reports_blank_before_and_heading_level` in `tests/ops/test_layout.py` — a heading after two empty paragraphs reports `blank_before: 2` and its level |
+| T32 | `text.normalized`: NFC, soft hyphens and zero-width removed, whitespace collapsed, with a two-way offset map | model | S | T6 | `offset_map_roundtrip_mismatches == 0` | `test_offset_map_roundtrip_collapsed_to_visible` in `tests/model/test_normalized.py` — every offset maps collapsed → visible → collapsed unchanged |
+| T33 | Structure detection: stable chapter and scene ids, detection signals, fingerprint-keyed overrides, profile settings (minimum chapter words) | model | M | T18 | `structure_override_failures == 0` | `test_override_forces_chapter_start_by_fingerprint` in `tests/model/test_structure.py` — an override makes the given paragraph start a chapter and is reported as the signal |
+| T34 | `anchor.resolve` exact mode and match kind | model | S | T19 | `exact_mode_fuzzy_matches == 0` | `test_exact_mode_rejects_fuzzy_candidate` in `tests/model/test_anchor_exact.py` — a one-character change returns `ANCHOR_NOT_FOUND` in exact mode and `match: fuzzy` in best mode |
+| T35 | `diff`: paragraph alignment between two document versions (unchanged, modified, moved, split, merged) with a cross-version address map | ops | M | T6 | `diff_alignment_errors == 0` | `test_diff_detects_moved_and_split_paragraphs` in `tests/ops/test_diff.py` — a corpus pair with a moved and a split paragraph is aligned exactly |
+| T36 | `locate`: chapter, scene, estimated page and shortest unique first-and-last-words phrase per paragraph | ops | S | T8, T20, T33 | `locators_not_unique == 0` | `test_locator_phrase_is_unique_in_document` in `tests/ops/test_locate.py` — every returned phrase matches exactly one place in the document |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 
-**Merge order**: T1 → T2, T3 → T4, T5, T9 → T6, T10 → T7, T8, T11, T18, T20 → T12 → T13–T17, T21, T23, T19 → T22, T24–T28 → T29; T30 when a Windows machine is available.
+**Merge order**: T1 → T2, T3 → T4, T5, T9 → T6, T10 → T7, T8, T11, T18, T20 → T12 → T13–T17, T21, T23, T19 → T22, T24–T28, T31–T36 → T29; T30 when a Windows machine is available.
 **Branch pattern**: `doc-control-T<N>-<description>` from the default branch
 
 <!-- -->
@@ -176,6 +183,7 @@ T1 ─┬─> T2 ──────────────┬─> T7
             └─> T9 ─> T10 ──┴─> T11 ─> T12 ─┬─> T13, T14, T15, T16, T21 ─> T22
                                             └─> T23 ─> T24, T25, T26
 T5, T10 ─> T27     T12, T15, T18 ─> T28     everything ─> T29     T15, T16 ─> T30
+T7 ─> T31   T6 ─> T32, T35   T18 ─> T33   T19 ─> T34   T8, T20, T33 ─> T36
 ```
 
 <!-- -->

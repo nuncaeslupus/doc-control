@@ -3,12 +3,13 @@
 **Date**: 2026-10-12
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
-**Revision**: 3
-**Status**: approved (2026-10-12, revision 3) — without annotations
+**Revision**: 4
+**Status**: approved (2026-10-12, revision 4) — without annotations
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
 - r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 - r3 — applied `word-control-spec-notes-2026-10-12-r2.md` and the owner's answers: bundle only generally useful recipes (owner-specific docx-fixer rules become user recipes/style sets on the owner's side, D-17); private test corpus never referenced in the repo; real-Word check left unmeasured for the first release; Python 3.11 floor with the other arsenal defaults; `move` primitive so marker-driven edits (writer notes in the text) can be applied with primitives
+- r4 — owner decision D-18 (2026-10-12, in conversation, no notes export): v1 also serves literary-critic's indexing needs (`docs/research/03-literary-critic-indexer.md`)
 
 ---
 
@@ -59,6 +60,14 @@ Anchors and segmentation
 - [ ] `reanchor_success_ratio >= 0.98` on an edit corpus where up to 10% of characters around the anchor changed; `wrong_anchor_matches == 0` (ambiguous or weak matches return `ambiguous` / `not_found`, never a guess).
 - [ ] Spanish sentence segmentation `boundary_f1 >= 0.98` on a gold set of at least 500 sentences covering abbreviations, `¿¡`, `«»`, ellipses and raya dialogue.
 
+literary-critic indexing support (D-18)
+- [ ] `para.get` and `outline` report `empty`, `blank_before`, heading level, style, centred and page break before (`layout_fact_mismatches == 0` on the corpus).
+- [ ] A normalised-text view (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) with a two-way offset map to visible text (`offset_map_roundtrip_mismatches == 0`).
+- [ ] Structure detection returns stable chapter and scene ids, the signal behind each detection, accepts fingerprint-keyed overrides and per-profile settings such as minimum chapter words (`structure_override_failures == 0`).
+- [ ] `anchor.resolve` with `mode: "exact"` never returns a fuzzy match and every response names its match kind (`exact_mode_fuzzy_matches == 0`).
+- [ ] `diff` aligns two versions of a document paragraph by paragraph (unchanged, modified, moved, split, merged) and returns a cross-version address map (`diff_alignment_errors == 0` on corpus pairs with known edits).
+- [ ] `locate` returns, per paragraph, chapter, scene, estimated page and the shortest unique first-and-last-words phrase (`locators_not_unique == 0`).
+
 Parity and coverage
 - [ ] docx-fixer parity (D-17): every generally useful docx-fixer rule ships as a bundled recipe and its round-trip cases pass (`docx_fixer_general_cases_failing == 0`); every owner-specific rule (house style ids, house template, the owner's author-note patterns) is expressible as a declarative user recipe or user style set, shown by tests on synthetic documents (`owner_rules_not_expressible == 0`). The owner's actual user recipes and style sets live on the owner's side, never in the repo.
 - [ ] Bundled recipes beyond docx-fixer cover common needs (whitespace and empty-paragraph cleanup, quotes and dashes per language, ellipsis, fake centring and fake tabs, leftover revisions/comments/highlights/hidden text, direct formatting to style, language tags, scene-break normalisation, heading hygiene); the final list is fixed in `design`, each with tests (`bundled_recipes_without_tests == 0`).
@@ -77,7 +86,7 @@ Parity and coverage
 | Recipe engine + bundled recipes (new) | Primary | Declarative user recipes and Python bundled recipes producing batch proposals; Spanish-novel set ported from docx-fixer | Yes (new) | Replaces docx-fixer for its only user | Med |
 | Styles and style sets (new) | Primary | Style read/write, JSON style sets, `.dotx` export/import | Yes (new) | literary-critic and writers share house styles across books | Med |
 | `.doc-control/` store (new) | Shared resource | Backups, permanent undo log, history search, next to each document | Yes (new) | Disk use bounded by retention (≈20–60 MB for a 1–3 MB manuscript); log ≈1 KB per changed paragraph | Med |
-| literary-critic | Dependent | First downstream consumer through one adapter (locate, apply batch, rename, comments, map positions, report) | No (validation only) | Its adapter targets the v1 API; live-engine features (locate in open Word, save/reopen) come with the live engine spec | Med |
+| literary-critic | Dependent | First downstream consumer through one adapter (locate, apply batch, rename, comments, map positions, report) and, per D-18, its `.docx` indexing (layout facts, segmentation, structure, anchors, diff, locators) | No (validation only) | Its adapter targets the v1 API; live-engine features (locate in open Word, save/reopen) come with the live engine spec | Med |
 | docx-fixer | Dependent | Retired: frozen now, archived at parity (D-14) | No | Its rules, lessons and tests are the porting source | Low |
 | CI (GitHub Actions) | Infrastructure | Linux + Windows × 3.11/3.13, validator, LibreOffice round trip, benchmarks, no-network smoke test | Yes | Validator and LibreOffice are test-only dependencies, never runtime | Low |
 | Live engine (Windows COM), MCP server, `.mcpb` packaging | Future | Out of scope here; the API reserves room for them | No | Separate specs | Low |
@@ -131,7 +140,7 @@ Parity and coverage
 **Recommended option**: Option B — it is the only option that can meet `unintended_changes == 0` with byte-identical untouched content, keeps the package stdlib-only for the chat sandbox (D-7), and gives the live engine an engine-neutral contract. docx-fixer remains the source of OOXML lessons, rules and test cases.
 
 **Scope of v1 (from the decisions log)**
-- Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote.
+- Read: outline, stats, styles and fonts in use, paragraph with formatting, estimated page of a paragraph (marked estimated), find (literal, regex, case- and accent-insensitive, whole word; capped output with cursors), comments with replies and resolved state, tracked revisions with authors, history search by quote; for literary-critic (D-18): layout facts, normalised-text view with offset map, structure detection with ids/signals/overrides, exact-only anchors, paragraph diff between versions, unique-phrase locators.
 - Write primitives: replace a range's text, insert/delete paragraphs, move a range of paragraphs (written as a tracked deletion plus a tracked insertion in v1), apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, `restore` from the undo log.
 - Addresses `p142#a7b2` with `stale` errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
@@ -172,6 +181,7 @@ Parity and coverage
 | D-15 | Undo log is permanent and append-only (before/after of every changed paragraph); `restore` brings any logged paragraph back as a tracked change; backup on every open; history searchable by quote | agreed | 2026-10-12 |
 | D-16 | Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with `.dotx` export/import; style application tracked, definition changes covered by dry run + backup + undo log | agreed | 2026-10-12 |
 | D-17 | docx-fixer frozen now (owner is its only user); archived at parity: its generally useful rules ship as bundled recipes with passing round-trip cases, owner-specific rules are re-created as user recipes / style sets on the owner's side; other common recipes are bundled too; reviewing tracked changes in Word with the agent replaces its review page | agreed | 2026-10-12 |
+| D-18 | v1 serves literary-critic's indexing needs: layout facts in `para.get`/`outline`, normalised-text view with two-way offset map, structure detection with stable ids, signals and overrides, exact-only anchor mode with match kind, paragraph diff between document versions, unique-phrase locators | agreed | 2026-10-12 |
 
 ---
 
@@ -220,7 +230,7 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
 
 #### Operations (v1)
 
-Read: `capabilities`, `help`, `info`, `outline`, `stats`, `para.get`, `find`, `styles.list`, `style.get`, `comments.list`, `revisions.list`, `page.estimate` (always `"estimated": true`), `segment` (sentences, dialogue lines, scene breaks, chapters), `anchor.create`, `anchor.resolve`, `history.list`, `history.search`, `recipe.list`, `styleset.export`.
+Read: `capabilities`, `help`, `info`, `outline`, `stats`, `para.get` (includes `empty`, `blank_before`, `heading_level`, `style`, `centred`, `page_break_before`), `find`, `styles.list`, `style.get`, `comments.list`, `revisions.list`, `page.estimate` (always `"estimated": true`), `segment` (sentences, dialogue lines, scene breaks, chapters; stable ids, detection signals, `overrides` and `profile` parameters), `text.normalized` (with `offset_map`), `diff` (two documents → alignment and cross-version `address_map`), `locate` (chapter, scene, estimated page, unique phrase), `anchor.create`, `anchor.resolve` (`mode`: `best` default or `exact`; response includes `match`: `exact` or `fuzzy`), `history.list`, `history.search`, `recipe.list`, `styleset.export`.
 
 Write (each runs as a batch): `batch`, `restore`, `undo`, `history.purge`, `recipe.run` (returns a proposal batch; applying it is a separate `batch` call), `styleset.install`, `styleset.import-dotx`, `styleset.export-dotx` (writes a new `.dotx`, never touches the document).
 
