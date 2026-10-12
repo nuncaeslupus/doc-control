@@ -640,20 +640,68 @@ def test_move_after_the_last_paragraph_is_refused(tmp_path: Path) -> None:
     assert err.code is ErrorCode.UNSUPPORTED_CONTENT
 
 
-def test_move_copies_runs_but_not_markers_or_comment_references(tmp_path: Path) -> None:
-    ref = '<w:r><w:commentReference w:id="4"/></w:r>'
-    path = make(
-        tmp_path,
-        para(
-            '<w:bookmarkStart w:id="3" w:name="m"/>', run("mov"), ref, '<w:bookmarkEnd w:id="3"/>'
-        ),
-        para(run("b")),
-        para(run("c")),
-    )
-    edit(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
-    out = body(path)
-    assert out.count("<w:bookmarkStart") == 1 and out.count("commentReference") == 1
-    assert out.count("<w:t>mov</w:t>") == 1 and out.count("<w:delText>mov</w:delText>") == 1
+HIDDEN = "<w:r><w:rPr><w:vanish/></w:rPr><w:t>HID</w:t></w:r>"
+
+
+def hidden_doc(tmp_path: Path) -> Path:
+    return make(tmp_path, para(run("a"), HIDDEN), para(run("c")), para(run("d")))
+
+
+def test_deleting_a_paragraph_deletes_its_hidden_runs_too(tmp_path: Path) -> None:
+    path = hidden_doc(tmp_path)
+    original = revsim.document_xml(path.read_bytes())
+    edit(path, DeleteParagraphs(at(path, 1)))
+    new = revsim.document_xml(path.read_bytes())
+    assert "<w:delText>HID</w:delText>" in body(path)
+    assert revsim.resolved(new, "Claude", "accept") == ["c", "d"]
+    assert revsim.resolved(new, "Claude", "reject") == revsim.resolved(original, None, "current")
+
+
+def test_moving_a_paragraph_does_not_duplicate_its_hidden_runs(tmp_path: Path) -> None:
+    path = hidden_doc(tmp_path)
+    original = revsim.document_xml(path.read_bytes())
+    edit(path, MoveParagraphs(at(path, 1), before=at(path, 3)))
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["c", "aHID", "d"]
+    assert revsim.resolved(new, "Claude", "reject") == revsim.resolved(original, None, "current")
+
+
+def test_middle_paragraphs_of_a_cross_paragraph_replace_lose_hidden_runs(tmp_path: Path) -> None:
+    path = make(tmp_path, para(run("first")), para(run("m"), HIDDEN), para(run("last")))
+    edit(path, ReplaceText(f"{at(path, 1)}:2..{at(path, 3)}:2", "-"))
+    new = revsim.document_xml(path.read_bytes())
+    assert revsim.resolved(new, "Claude", "accept") == ["fi-st"]
+
+
+def test_hidden_comment_reference_blocks_delete_and_move(tmp_path: Path) -> None:
+    ref = '<w:r><w:rPr><w:vanish/></w:rPr><w:commentReference w:id="4"/></w:r>'
+    path = make(tmp_path, para(run("a"), ref), para(run("c")), para(run("d")))
+    assert refused(path, DeleteParagraphs(at(path, 1))).code is ErrorCode.UNSUPPORTED_CONTENT
+    err = refused(path, MoveParagraphs(at(path, 1), before=at(path, 3)))
+    assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        '<w:bookmarkStart w:id="3" w:name="m"/>',
+        '<w:commentRangeStart w:id="4"/>',
+        '<w:r><w:commentReference w:id="4"/></w:r>',
+    ],
+)
+def test_move_refuses_paragraphs_with_anchors(tmp_path: Path, marker: str) -> None:
+    path = make(tmp_path, para(run("mov"), marker), para(run("b")), para(run("c")))
+    err = refused(path, MoveParagraphs(at(path, 1), after=at(path, 2)))
+    assert err.code is ErrorCode.UNSUPPORTED_CONTENT
+
+
+def test_insert_after_a_last_paragraph_whose_mark_is_someone_elses_insertion(
+    tmp_path: Path,
+) -> None:
+    mark = '<w:rPr><w:ins w:id="8" w:author="Ana"/></w:rPr>'
+    path = make(tmp_path, para(run("one")), para(run("two"), ppr=mark))
+    err = refused(path, InsertParagraph("x", after=at(path, 2)))
+    assert err.code is ErrorCode.UNSUPPORTED_CONTENT
 
 
 # -- batches ------------------------------------------------------------------------------------

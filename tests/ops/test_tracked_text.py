@@ -12,6 +12,7 @@ ones' revisions as someone else's.
 from __future__ import annotations
 
 import random
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -266,8 +267,7 @@ def run_batch(path: Path, rng: random.Random, author: str, stats: Stats) -> bool
 
     # Accepting them gives the intended text (where the model's text matches the index's).
     raw, _ = revsim.raw_texts(old_xml, None, "current")
-    touched = {k for s in specs for k in range(s.i, max(s.i, s.j) + 1)}
-    touched |= {s.target for s in specs if s.kind == "move"}
+    touched = {k for s in specs if s.kind in ("replace", "cross") for k in (s.i, max(s.i, s.j))}
     already_deleted = revsim.deleted_marks(old_xml)
     marked = {k for s in specs if s.kind in ("delete", "move", "cross") for k in range(s.i, s.j)}
     marked |= {s.j for s in specs if s.kind in ("delete", "move")}
@@ -324,6 +324,43 @@ def test_reject_all_after_edits_restores_original_text(
     assert stats.lint_problems == 0
     assert stats.other_changes == 0
     assert stats.applied - stats.accept_skipped > 80
+
+
+def _hide_text(path: Path) -> None:
+    """Append a hidden run to every other paragraph (the index never sees it)."""
+    import zipfile
+
+    parts = revsim.package_parts(path.read_bytes())
+    count = 0
+
+    def add(match: re.Match[str]) -> str:
+        nonlocal count
+        count += 1
+        hidden = "<w:r><w:rPr><w:vanish/></w:rPr><w:t>HIDDEN</w:t></w:r>" if count % 2 else ""
+        return hidden + match.group(0)
+
+    xml = re.sub(r"</w:p>", add, parts["word/document.xml"].decode())
+    parts["word/document.xml"] = xml.encode()
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in parts.items():
+            zf.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+
+
+def test_hidden_text_is_deleted_and_moved_with_its_paragraph(
+    tmp_path: Path, corpus_doc: CorpusWriter
+) -> None:
+    stats = Stats()
+    for kind in ("plain", "headings", "comments", "tables"):
+        for seed in range(4):
+            path = corpus_doc(kind, seed)
+            _hide_text(path)
+            rng = random.Random(f"hidden:{kind}:{seed}")
+            for round_no in range(3):
+                run_batch(path, rng, f"Hider{round_no}", stats)
+    print(f"hidden text_after_reject_all_mismatches={stats.reject_mismatches}")
+    assert stats.applied > 20
+    assert stats.reject_mismatches == stats.accept_mismatches == 0
+    assert stats.id_problems == stats.lint_problems == stats.other_changes == 0
 
 
 def test_novel_edits_restore_original_text(tmp_path: Path, corpus_doc: CorpusWriter) -> None:

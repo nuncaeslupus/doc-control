@@ -306,7 +306,9 @@ def set_mark(p: ET.Element, kind: str, ctx: RevisionContext) -> None:
         later = [i for i, c in enumerate(ppr) if c.tag in (W + "sectPr", W + "pPrChange")]
         ppr.insert(later[0] if later else len(ppr), rpr)
     if any(c.tag == W + kind for c in rpr):
-        return  # already tracked by someone else
+        if kind == "ins":
+            raise unsupported("the paragraph mark is already someone else's insertion")
+        return  # already deleted by someone else
     where = 0
     if kind == "del" and len(rpr) and rpr[0].tag == INS:
         where = 1  # CT_ParaRPr orders ins before del
@@ -567,8 +569,19 @@ class ParagraphEditor:
                 broken = False
             else:
                 broken = True
-        last_del: ET.Element | None = None
-        last_parent_of_del = self.p
+        wrapped = self._wrap(groups)
+        last_del, last_parent_of_del = wrapped if wrapped else (None, self.p)
+        if text:
+            assert last_del is not None
+            ins = inserted_content(self.ctx, text=text, run_props=run_props)
+            assert ins is not None
+            self._insert_after(last_parent_of_del, last_del, ins)
+
+    def _wrap(
+        self, groups: list[list[tuple[ET.Element, ET.Element]]]
+    ) -> tuple[ET.Element, ET.Element] | None:
+        """Move each group of runs into a new ``w:del``; returns the last ``(del, parent)``."""
+        last: tuple[ET.Element, ET.Element] | None = None
         for group in groups:
             parent = group[0][0]
             runs = [node for _, node in group]
@@ -581,12 +594,8 @@ class ParagraphEditor:
                         child.tag = DELTEXT
                 deletion.append(run)
             parent.insert(at, deletion)
-            last_del, last_parent_of_del = deletion, parent
-        if text:
-            assert last_del is not None
-            ins = inserted_content(self.ctx, text=text, run_props=run_props)
-            assert ins is not None
-            self._insert_after(last_parent_of_del, last_del, ins)
+            last = (deletion, parent)
+        return last
 
     def _insert_at(self, offset: int, text: str) -> None:
         """Insert ``text`` at visible ``offset`` (no characters deleted)."""
@@ -644,19 +653,57 @@ class ParagraphEditor:
         return props if len(props) else None
 
     def delete_content(self) -> None:
-        """Track the deletion of everything visible in the paragraph."""
+        """Track the deletion of every run in the paragraph, hidden ones included."""
         self._require_plain()
-        if self.para.text:
-            self.replace(0, len(self.para.text), None)
+        groups: list[list[tuple[ET.Element, ET.Element]]] = []
+        broken = True
+        for parent, node in _flat(self.p):
+            kind = _item_kind(node)
+            if kind == "hidden" and W + "commentReference" in _tokens(node):
+                raise unsupported(
+                    "a hidden run holds a comment reference, which cannot be deleted here",
+                    **self._where("comment reference"),
+                )
+            if kind in ("text", "hidden"):
+                if broken or groups[-1][-1][0] is not parent:
+                    groups.append([])
+                groups[-1].append((parent, node))
+                broken = False
+            else:
+                broken = True
+        self._wrap(groups)
 
     def copy_runs(self) -> list[ET.Element]:
-        """Copies of the paragraph's visible runs (for a move), made before it is edited."""
+        """Copies of the paragraph's runs (for a move), made before it is edited.
+
+        A paragraph with a comment reference, a bookmark or a comment range
+        marker is refused: copying them would duplicate their ids, and leaving
+        them behind would orphan the new text.
+        """
         self._require_plain()
-        return [
-            clone_run(node, self.ctx)
-            for _, node in _flat(self.p)
-            if node.tag == R and _run_kind(node) in ("text", "hidden")
-        ]
+        out: list[ET.Element] = []
+        for _, node in _flat(self.p):
+            if node.tag in _INERT_ELEMENTS and node.tag != W + "proofErr":
+                raise unsupported(
+                    "the paragraph holds a bookmark or comment anchor, which a move cannot carry",
+                    **self._where(node.tag.removeprefix(W)),
+                )
+            if node.tag != R:
+                continue
+            kind = _run_kind(node)
+            if kind == "inert" and W + "commentReference" in _tokens(node):
+                raise unsupported(
+                    "the paragraph holds a comment reference, which a move cannot carry",
+                    **self._where("comment reference"),
+                )
+            if kind in ("text", "hidden"):
+                if W + "commentReference" in _tokens(node):
+                    raise unsupported(
+                        "the paragraph holds a comment reference, which a move cannot carry",
+                        **self._where("comment reference"),
+                    )
+                out.append(clone_run(node, self.ctx))
+        return out
 
     def mark(self, kind: str) -> None:
         set_mark(self.p, kind, self.ctx)

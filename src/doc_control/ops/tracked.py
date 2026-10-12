@@ -687,6 +687,7 @@ def apply_edits(
         editor = ParagraphEditor(elem, para, ctx)
         if plan.delete_all:
             editor.delete_content()
+            _require_no_live_text(elem, para)
         for part in sorted(plan.intervals, key=lambda x: (x.start, x.end), reverse=True):
             editor.replace(part.start, part.end, part.text)
         if plan.mark:
@@ -769,6 +770,30 @@ def apply_edits(
         after_sha256=written.after_sha256,
         backup=written.backup,
     )
+
+
+def _require_no_live_text(elem: ET.Element, para: Paragraph) -> None:
+    """A deleted paragraph must keep no text outside a deletion, hidden text included."""
+    live = {"t", "tab", "br", "cr", "noBreakHyphen", "softHyphen", "sym", "ptab"}
+
+    def walk(node: ET.Element, deleted: bool) -> bool:
+        for child in node:
+            if not isinstance(child.tag, str):
+                continue
+            local = child.tag.rpartition("}")[2]
+            if local == "pPr":
+                continue
+            if not deleted and local in live:
+                return True
+            if walk(child, deleted or local == "del"):
+                return True
+        return False
+
+    if walk(elem, False):
+        raise DocControlError(
+            ErrorCode.INTERNAL,
+            f"self-check: deleting {para.address} left text outside a deletion",
+        )
 
 
 def _expected_text(para: Paragraph, plan: _ParaPlan | None) -> str:
