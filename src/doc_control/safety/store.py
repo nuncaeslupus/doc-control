@@ -163,20 +163,37 @@ class DocStore:
         # Read and validate everything first: an error path creates nothing.
         config = store._load_config()
         doc_id = store._load_id()
-        store.backups_dir.mkdir(parents=True, exist_ok=True)
-        if config is None:
-            _write_text_atomic(store.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
-            config = copy.deepcopy(DEFAULT_CONFIG)
-        if doc_id is None:
-            doc_id = str(uuid.uuid4())
-            _write_text_atomic(store.id_path, doc_id + "\n")
+        try:
+            store.backups_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:  # the root or ``backups`` is a regular file, or no permission
+            raise DocControlError(
+                ErrorCode.INTERNAL,
+                f"cannot create the document store at {store.backups_dir}: {exc}",
+                path=str(store.backups_dir),
+            ) from exc
+        try:
+            if config is None:
+                _write_text_atomic(store.config_path, json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
+                config = copy.deepcopy(DEFAULT_CONFIG)
+            if doc_id is None:
+                doc_id = str(uuid.uuid4())
+                _write_text_atomic(store.id_path, doc_id + "\n")
+        except OSError as exc:
+            raise DocControlError(
+                ErrorCode.INTERNAL,
+                f"cannot initialise the document store at {store.root}: {exc}",
+                path=str(store.root),
+            ) from exc
         store.config = config
         store.doc_id = doc_id
         return store
 
     def _load_id(self) -> str | None:
-        """The stored id, or None when there is none yet; never rewrites it."""
-        if not self.id_path.exists():
+        """The stored id, or None when there is none yet; never rewrites it.
+
+        A dangling symlink is not "none yet": it is reported as corrupt.
+        """
+        if not os.path.lexists(self.id_path):
             return None
         try:
             return str(uuid.UUID(self.id_path.read_text(encoding="utf-8").strip()))
@@ -190,8 +207,11 @@ class DocStore:
             ) from exc
 
     def _load_config(self) -> dict[str, Any] | None:
-        """The validated config merged over defaults, or None when the file is absent."""
-        if not self.config_path.exists():
+        """The validated config merged over defaults, or None when the file is absent.
+
+        A dangling symlink is not absent: reading it fails as ``SCHEMA_INVALID``.
+        """
+        if not os.path.lexists(self.config_path):
             return None
         try:
             loaded = json.loads(
@@ -242,8 +262,62 @@ def create_backup(
 
     The bytes are hashed as they are copied, so the name always matches the
     content. If ``expect_sha256`` is given and the copied bytes differ, the
-    partial backup is removed and ``DOC_CHANGED_ON_DISK`` is raised.
+    partial backup is removed and ``DOC_CHANGED_ON_DISK`` is raised. The final
+    name is claimed without clobbering (hard link, then unlink the temp file),
+    so a concurrent creator's file is never overwritten. An I/O failure is
+    ``INTERNAL`` and leaves no file behind.
     """
+    try:
+        return _create_backup(store, doc_path, now, expect_sha256)
+    except OSError as exc:
+        raise DocControlError(
+            ErrorCode.INTERNAL,
+            f"could not back up {doc_path.name} into {store.backups_dir}: {exc}",
+            path=str(doc_path),
+            backups_dir=str(store.backups_dir),
+        ) from exc
+
+
+def _is_existing_backup_of(dest: Path, doc_path: Path, sha256: str) -> bool:
+    """True only for a real, independent copy holding exactly these bytes.
+
+    A symlink or hard link (to the live document or anything else) is not a
+    backup: it would change along with its target. Unreadable means "no".
+    """
+    try:
+        st = dest.lstat()
+        if dest.is_symlink() or not dest.is_file() or st.st_nlink > 1:
+            return False
+        if dest.samefile(doc_path):
+            return False
+        return _sha256_of(dest) == sha256
+    except OSError:
+        return False
+
+
+def _claim_name(tmp_path: Path, dest: Path) -> None:
+    """Give ``tmp_path`` the name ``dest`` without ever replacing an existing file.
+
+    Raises ``FileExistsError`` if ``dest`` exists (or appears meanwhile).
+    """
+    try:
+        os.link(tmp_path, dest)
+    except FileExistsError:
+        raise
+    except (OSError, NotImplementedError):
+        if os.name != "nt":
+            raise
+        tmp_path.rename(dest)  # no hard links here; Windows rename never clobbers
+        return
+    tmp_path.unlink()
+
+
+def _create_backup(
+    store: DocStore,
+    doc_path: Path,
+    now: datetime | None,
+    expect_sha256: str | None,
+) -> Path:
     stamp = _now(now).astimezone(UTC).strftime(TIMESTAMP_FORMAT)
     digest = hashlib.sha256()
     fd, tmp = tempfile.mkstemp(dir=store.backups_dir, prefix=".backup.", suffix=".tmp")
@@ -267,13 +341,18 @@ def create_backup(
         base = f"{stamp}-{actual[:8]}"
         dest = store.backups_dir / f"{base}.docx"
         n = 0
-        while dest.exists():
-            if dest.is_file() and _sha256_of(dest) == actual:
+        while True:
+            if not os.path.lexists(dest):
+                try:
+                    _claim_name(tmp_path, dest)
+                    break
+                except FileExistsError:
+                    continue  # someone created it meanwhile: judge it below
+            if _is_existing_backup_of(dest, doc_path, actual):
                 tmp_path.unlink()
                 return dest  # same content in the same second: already backed up
-            n += 1  # same name, different bytes: never return or replace it
+            n += 1  # taken by different bytes, a link or an unreadable file
             dest = store.backups_dir / f"{base}-{n}.docx"
-        tmp_path.replace(dest)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise

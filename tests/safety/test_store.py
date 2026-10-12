@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -424,3 +426,157 @@ def test_same_content_same_second_reuses_backup(tmp_path: Path) -> None:
     first = backup(doc, now=NOW)
     assert backup(doc, now=NOW) == first
     assert len(list(DocStore.open(doc).backups_dir.iterdir())) == 1
+
+
+# --- round 3: links, unreadable squatters, raw OSError, no-clobber rename -----
+
+
+def _squatter_name(store: DocStore, doc: Path) -> Path:
+    return store.backups_dir / f"{NOW.strftime('%Y%m%dT%H%M%SZ')}-{sha256_file(doc)[:8]}.docx"
+
+
+def _assert_real_copy(path: Path, doc: Path) -> None:
+    assert not path.is_symlink()
+    assert path.stat().st_nlink == 1
+    assert not path.samefile(doc)
+    assert path.read_bytes() == doc.read_bytes()
+
+
+def test_symlink_to_document_is_not_accepted_as_backup(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    squatter = _squatter_name(store, doc)
+    squatter.symlink_to(doc)
+    path = backup(doc, now=NOW)
+    assert path != squatter
+    _assert_real_copy(path, doc)
+
+
+def test_hard_link_to_document_is_not_accepted_as_backup(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    squatter = _squatter_name(store, doc)
+    squatter.hardlink_to(doc)
+    path = backup(doc, now=NOW)
+    assert path != squatter
+    _assert_real_copy(path, doc)
+
+
+def test_unreadable_same_name_file_is_a_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    squatter = _squatter_name(store, doc)
+    squatter.write_bytes(doc.read_bytes())
+    real_open = Path.open
+
+    def deny(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == squatter:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny)
+    path = backup(doc, now=NOW)
+    assert path != squatter
+    assert path.name.endswith("-1.docx")
+
+
+def test_store_root_that_is_a_file_is_internal(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    root = store_dir(doc)
+    root.parent.mkdir(parents=True)
+    root.write_text("not a folder")
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert "path" in exc.value.details
+    assert root.read_text() == "not a folder"
+
+
+def test_backups_that_is_a_file_is_internal_and_writes_nothing(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    root = store_dir(doc)
+    root.mkdir(parents=True)
+    (root / "backups").write_text("not a folder")
+    with pytest.raises(DocControlError) as exc:
+        guard_write(doc, None, now=NOW)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert exc.value.details["path"] == str(root / "backups")
+    assert sorted(p.name for p in root.iterdir()) == ["backups"]
+
+
+def test_copy_failure_is_internal_and_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    real_open = Path.open
+
+    def failing(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == doc:
+            raise OSError(5, "Input/output error", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", failing)
+    with pytest.raises(DocControlError) as exc:
+        backup(doc, now=NOW)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert exc.value.details["path"] == str(doc)
+    assert list(store.backups_dir.iterdir()) == []
+
+
+def test_dangling_id_symlink_is_internal_and_kept(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.id_path.unlink()
+    store.id_path.symlink_to(tmp_path / "gone")
+    with pytest.raises(DocControlError) as exc:
+        DocStore.open(doc)
+    assert exc.value.code is ErrorCode.INTERNAL
+    assert exc.value.details["path"] == str(store.id_path)
+    assert store.id_path.is_symlink()
+    assert not (tmp_path / "gone").exists()
+
+
+def test_dangling_config_symlink_is_schema_invalid_and_kept(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    store.config_path.unlink()
+    store.config_path.symlink_to(tmp_path / "gone")
+    with pytest.raises(DocControlError) as exc:
+        DocStore.open(doc)
+    assert exc.value.code is ErrorCode.SCHEMA_INVALID
+    assert exc.value.details["path"] == str(store.config_path)
+    assert store.config_path.is_symlink()
+    assert not (tmp_path / "gone").exists()
+
+
+def test_concurrent_creator_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = make_docx(tmp_path / "Novela.docx", "Hola")
+    store = DocStore.open(doc)
+    squatter = _squatter_name(store, doc)
+    real_link = os.link
+    real_replace = Path.replace
+
+    def racer() -> None:
+        if not squatter.exists():
+            squatter.write_bytes(b"written by another process")
+
+    def racing_link(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+        racer()
+        real_link(src, dst, *args, **kwargs)
+
+    def racing_replace(self: Path, target: Any) -> Path:
+        racer()
+        return real_replace(self, target)
+
+    monkeypatch.setattr(os, "link", racing_link)
+    monkeypatch.setattr(Path, "replace", racing_replace)
+    path = backup(doc, now=NOW)
+    assert squatter.read_bytes() == b"written by another process"
+    assert path.name.endswith("-1.docx")
+    _assert_real_copy(path, doc)
+    assert not [p for p in store.backups_dir.iterdir() if p.name.endswith(".tmp")]
