@@ -89,26 +89,29 @@ def _prune(
                 continue  # nothing to do: not worth reporting
         kept.append(op)
     deletes = [op for op in kept if op["op"] == "para.delete"]
-    if deletes and not _applies(path, deletes):
+    if deletes and _refusal(path, deletes) is not None:
+        # Each delete may pass alone yet fail with the others (emptying a cell), so
+        # the set is grown one op at a time and every op it refuses is left out.
+        accepted: list[dict[str, Any]] = []
         for op in deletes:
-            try:
-                apply_edits(path, [edit_from_dict(op)], dry_run=True)
-            except DocControlError as err:
-                if err.code is not ErrorCode.UNSUPPORTED_CONTENT:
-                    raise
+            reason = _refusal(path, [*accepted, op])
+            if reason is None:
+                accepted.append(op)
+            else:
                 kept.remove(op)
-                skipped.append({"op": op["op"], "at": op["at"], "reason": err.message})
+                skipped.append({"op": op["op"], "at": op["at"], "reason": reason})
     return kept, skipped
 
 
-def _applies(path: Path, ops: list[dict[str, Any]]) -> bool:
+def _refusal(path: Path, ops: list[dict[str, Any]]) -> str | None:
+    """The engine's structural refusal of ``ops`` in a dry run, or None when they apply."""
     try:
         apply_edits(path, [edit_from_dict(op) for op in ops], dry_run=True)
     except DocControlError as err:
         if err.code is not ErrorCode.UNSUPPORTED_CONTENT:
             raise
-        return False
-    return True
+        return err.message
+    return None
 
 
 @operation(
