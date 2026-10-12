@@ -32,7 +32,7 @@ Offsets
     Offsets are indexes into the visible text as a Python ``str``, that is code
     points, not user-perceived characters: a combining mark is its own offset, so
     a range can split it from its base letter. What a write does about that is
-    decided by the edit operations (T11), not here.
+    decided by the edit operations (``doc_control.ops.tracked``), not here.
 """
 
 from __future__ import annotations
@@ -79,12 +79,14 @@ class Piece:
     :meth:`DocumentSpans.parse_paragraph`, comments counted) down to the source
     element: a ``w:t``, ``w:tab``, ``w:br``… ``path[:-1]`` is its run. For a
     ``w:t``, character ``i`` of the paragraph is character ``i - start`` of the
-    element's text.
+    element's text. ``in_field`` is true for text inside a field's result (also a
+    field that began in an earlier paragraph).
     """
 
     start: int
     end: int
     path: tuple[int, ...]
+    in_field: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,7 +160,7 @@ class _Walker:
             nonlocal pos
             if text:
                 parts.append(text)
-                pieces.append(Piece(pos, pos + len(text), path))
+                pieces.append(Piece(pos, pos + len(text), path, bool(self.fields)))
                 pos += len(text)
 
         self.walk(root, (), scope, emit)

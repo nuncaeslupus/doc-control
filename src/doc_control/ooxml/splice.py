@@ -206,6 +206,7 @@ class DocumentSpans:
         insert_after: Mapping[int, Sequence[bytes]] | None = None,
         delete: Iterable[int] = (),
         check: bool = True,
+        insert_before: Mapping[int, Sequence[bytes]] | None = None,
     ) -> bytes:
         """Return the document with paragraph operations applied.
 
@@ -215,6 +216,10 @@ class DocumentSpans:
           ``i`` (after its replacement, if any; also allowed when ``i`` is
           deleted). Key ``-1`` inserts at the very start of the body content,
           at body level, before any paragraph, table or ``w:sdt``.
+        - ``insert_before[i]`` inserts the given paragraphs right before paragraph
+          ``i`` (before its replacement, if any), in the container of ``i``. Where
+          one offset is both the end of paragraph ``j`` and the start of ``i``,
+          the ``insert_after[j]`` paragraphs come first.
         - ``delete`` removes paragraphs.
 
         Indices are those of :attr:`paragraphs` in this (original) document.
@@ -231,19 +236,20 @@ class DocumentSpans:
         """
         replacements = dict(replacements or {})
         inserts = {i: list(paras) for i, paras in (insert_after or {}).items()}
+        befores = {i: list(paras) for i, paras in (insert_before or {}).items()}
         deletes = set(delete)
         n = len(self.paragraphs)
-        for i in [*replacements, *deletes, *inserts]:
+        for i in [*replacements, *deletes, *inserts, *befores]:
             if isinstance(i, bool) or not isinstance(i, int):
                 raise TypeError(f"paragraph index must be an int, not {type(i).__name__}")
-            if not (0 <= i < n or (i == -1 and i in inserts)):
+            if not (0 <= i < n or (i == -1 and i in inserts and i not in befores)):
                 raise IndexError(f"no paragraph {i} (document has {n})")
 
         both = deletes & replacements.keys()
         if both:
             raise _conflict(f"paragraphs both replaced and deleted: {sorted(both)}")
         touched = deletes | replacements.keys()
-        for i in sorted(touched | inserts.keys()):
+        for i in sorted(touched | inserts.keys() | befores.keys()):
             if i < 0:
                 continue
             anc = self.paragraphs[i].parent
@@ -261,6 +267,10 @@ class DocumentSpans:
             scope = self._insert_scope(i)
             for new in paras:
                 found = _validate_fragment(new, scope)
+                mce_problems += found or []
+        for i, paras in befores.items():
+            for new in paras:
+                found = _validate_fragment(new, self.paragraphs[i].outer_scope)
                 mce_problems += found or []
         if check and mce_problems:
             raise DocControlError(
@@ -283,6 +293,9 @@ class DocumentSpans:
                 assert pos is not None  # _insert_scope refused a missing body
             else:
                 pos = self.paragraphs[i].end
+            ops.append((pos, pos, b"".join(paras)))
+        for i, paras in befores.items():
+            pos = self.paragraphs[i].start
             ops.append((pos, pos, b"".join(paras)))
         ops.sort(key=lambda op: (op[0], op[1]))
 
@@ -320,10 +333,15 @@ def splice(
     insert_after: Mapping[int, Sequence[bytes]] | None = None,
     delete: Iterable[int] = (),
     check: bool = True,
+    insert_before: Mapping[int, Sequence[bytes]] | None = None,
 ) -> bytes:
     """Scan ``original`` and apply :meth:`DocumentSpans.splice` to it."""
     return scan(original).splice(
-        replacements, insert_after=insert_after, delete=delete, check=check
+        replacements,
+        insert_after=insert_after,
+        delete=delete,
+        check=check,
+        insert_before=insert_before,
     )
 
 
