@@ -194,10 +194,10 @@ All contracts below are v1 of the public API (`"api": "1.0"`). Additive changes 
 
 ### API contracts
 
-#### CLI invocation — `doc-control <op> [--json '<request>' | < request.json]`
+#### CLI invocation — `doc-control <op> [--json '<request>' | --json - < request.json]`
 
 - **Auth**: none (local process). No network access, ever.
-- **Request**: one JSON object; `doc` is a path to a `.docx`. Read operations may pass `limit` and `cursor`.
+- **Request**: one JSON object, inline or read from stdin only with `--json -` (stdin is never read otherwise, so an open pipe cannot hang the CLI); `doc` is a path to a `.docx`. Read operations may pass `limit` and `cursor`.
 - **Response envelope (success)**:
   ```json
   {"api": "1.0", "ok": true, "op": "find",
