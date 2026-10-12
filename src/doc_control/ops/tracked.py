@@ -405,8 +405,33 @@ class _Planner:
         self.new: list[_NewParagraph] = []
         self.slots: dict[tuple[str, int], int] = {}
         self.previews: list[dict[str, Any]] = []
+        self.removed: dict[int, int] = {}  # paragraph number -> op that deletes or moves it
+        self.anchored: dict[int, set[int]] = {}  # paragraph number -> ops placed relative to it
 
     # -- bookkeeping --
+
+    def _conflict(self, para: Paragraph, a: int, b: int) -> DocControlError:
+        return DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"edit {max(a, b)} is placed relative to {para.address}, which edit "
+            f"{min(a, b)} deletes or moves: addresses refer to the document as read",
+            paragraph=str(para.address),
+            edits=sorted((a, b)),
+        )
+
+    def _anchor(self, para: Paragraph, edit: int) -> None:
+        """Edit ``edit`` inserts or moves relative to ``para``."""
+        other = self.removed.get(para.number)
+        if other is not None and other != edit and not self.layered:
+            raise self._conflict(para, other, edit)
+        self.anchored.setdefault(para.number, set()).add(edit)
+
+    def _remove(self, para: Paragraph, edit: int) -> None:
+        """Edit ``edit`` deletes or moves ``para`` away."""
+        for other in sorted(self.anchored.get(para.number, ())):
+            if other != edit and not self.layered:
+                raise self._conflict(para, other, edit)
+        self.removed[para.number] = edit
 
     def _plan(self, para: Paragraph, edit: int, *, exclusive: bool) -> _ParaPlan:
         plan = self.plans.setdefault(para.number, _ParaPlan(para))
@@ -515,6 +540,8 @@ class _Planner:
         paras = list(self.index.paragraphs[first.number - 1 : last.number])
         self._require_adjacent(paras, edit.at)
         for para in paras:
+            if para is not last:
+                self._remove(para, i)
             plan = self._plan(para, i, exclusive=para is not last and not self.layered)
             if para is first:
                 self._add_interval(plan, _Interval(s, len(para.text), edit.text, i))
@@ -540,6 +567,7 @@ class _Planner:
                 address=edit.at,
             )
         for para in paras:
+            self._remove(para, i)
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
@@ -559,6 +587,7 @@ class _Planner:
         )
         assert anchor_at is not None
         anchor = self.index.resolve_address(parse_address(anchor_at))
+        self._anchor(anchor, i)
         slot, native = self._slot_for(anchor, where, i)
         if native:
             self._plan(anchor, i, exclusive=not self.layered).mark = "ins"
@@ -591,6 +620,7 @@ class _Planner:
                 "it cannot be moved away",
                 address=edit.at,
             )
+        self._anchor(target, i)
         slot, native = self._slot_for(target, where, i)
         if native:
             raise DocControlError(
@@ -600,6 +630,7 @@ class _Planner:
                 address=target_at,
             )
         for para in paras:
+            self._remove(para, i)
             plan = self._plan(para, i, exclusive=True)
             plan.delete_all = True
             plan.mark = "del"
@@ -759,8 +790,15 @@ def prepare_edits(
     new_index = _self_check(index, new_data, ctx, expected, sequence, planner)
 
     address_map: dict[str, str] = {}
+    moved_to: dict[int, int] = {}  # old number of a moved paragraph -> number of its copy
+    for number, (_, copy) in enumerate(sequence, start=1):
+        if copy is not None and copy.source is not None:
+            moved_to[copy.source.number] = number
     for number, (old, _) in enumerate(sequence, start=1):
-        if old is not None and old.number != number:
+        if old is None:
+            continue
+        number = moved_to.get(old.number, number)
+        if old.number != number:
             address_map[str(old.address)] = str(new_index.paragraph(number).address)
     result = TrackedResult(
         applied=len(edits),
