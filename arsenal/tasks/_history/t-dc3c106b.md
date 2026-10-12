@@ -4,6 +4,7 @@ title: "T33: Structure detection: stable chapter and scene ids, detection signal
 label: "structure detection"
 priority: 5
 deps: [t-206b1b9a]
+status: merged
 ---
 
 # T33: Structure detection: stable chapter and scene ids, detection signals, fingerprint-keyed overrides, profile settings (minimum chapter words)

@@ -269,7 +269,10 @@ def test_resolve_range_fills_offsets_and_checks_bounds() -> None:
     assert (across.first.number, across.last.number) == (1, 2)
     assert (across.start_offset, across.end_offset) == (5, 2)
     sentence = index.resolve_range(f"{b}.s1")
-    assert (sentence.sentence, sentence.start_offset) == (1, None)
+    assert (sentence.sentence, sentence.start_offset, sentence.end_offset) == (1, 0, 5)
+    with pytest.raises(DocControlError) as err:
+        index.resolve_range(f"{b}.s2")
+    assert err.value.code is ErrorCode.ADDRESS_INVALID
     for bad in (f"{a}:5-11", f"{a}:11-11", f"{a}:5..{b}:6"):
         with pytest.raises(DocControlError) as err:
             index.resolve_range(bad)
