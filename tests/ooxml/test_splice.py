@@ -639,6 +639,50 @@ def test_insert_before_everything_lands_at_body_level(first: bytes) -> None:
     assert out.startswith(_ROOT + b"><w:body>" + new)
 
 
+def test_insert_before_lands_at_the_start_of_the_paragraph_in_its_container() -> None:
+    cell = b"<w:tbl><w:tr><w:tc><w:p>a</w:p><w:p>b</w:p></w:tc></w:tr></w:tbl>"
+    data = _ROOT + b"><w:body><w:p>x</w:p>" + cell + b"<w:p>y</w:p></w:body></w:document>"
+    new = b"<w:p>new</w:p>"
+    spans = scan(data)
+    assert len(spans.paragraphs) == 4
+    # before the first paragraph of the cell: inside the cell, not after the paragraph "x"
+    out = spans.splice(insert_before={1: [new]})
+    assert out == data.replace(b"<w:tc>", b"<w:tc>" + new)
+    # before the paragraph after the table: after the table
+    out = spans.splice(insert_before={3: [new, new]})
+    assert out == data.replace(b"<w:p>y", new + new + b"<w:p>y")
+    # a replaced paragraph: the insertion comes first
+    out = spans.splice({0: b"<w:p>X</w:p>"}, insert_before={0: [new]})
+    assert out == data.replace(b"<w:p>x</w:p>", new + b"<w:p>X</w:p>")
+
+
+def test_insert_after_a_paragraph_precedes_insert_before_the_next_one() -> None:
+    data = _ROOT + b"><w:body><w:p>a</w:p><w:p>b</w:p></w:body></w:document>"
+    out = splice(data, insert_after={0: [b"<w:p>1</w:p>"]}, insert_before={1: [b"<w:p>2</w:p>"]})
+    assert out == data.replace(b"<w:p>b", b"<w:p>1</w:p><w:p>2</w:p><w:p>b")
+
+
+def test_insert_before_checks_its_arguments() -> None:
+    data = _ROOT + b"><w:body><w:p>a</w:p></w:body></w:document>"
+    for bad in (-1, 1):
+        with pytest.raises(IndexError):
+            splice(data, insert_before={bad: [b"<w:p/>"]})
+    with pytest.raises(TypeError):
+        splice(data, insert_before={True: [b"<w:p/>"]})
+    with pytest.raises(DocControlError) as exc:
+        splice(data, insert_before={0: [b"<w:p/><w:p/>"]})
+    assert exc.value.code is ErrorCode.SCHEMA_INVALID
+    nested = (
+        _ROOT
+        + b"><w:body><w:p><w:r><w:pict><w:txbxContent><w:p/></w:txbxContent></w:pict></w:r></w:p>"
+        b"</w:body></w:document>"
+    )
+    spans = scan(nested)
+    with pytest.raises(DocControlError) as exc:
+        spans.splice({0: b"<w:p/>"}, insert_before={1: [b"<w:p/>"]})
+    assert exc.value.code is ErrorCode.BATCH_CONFLICT
+
+
 @pytest.mark.parametrize(
     ("data", "code"),
     [
