@@ -46,6 +46,7 @@ references/performance-tuning.md
 references/pre-pr-review.md
 references/queue-seeding.md
 references/quota-governance.md
+references/repo-housekeeping.md
 references/state-layout.md
 references/worker-loop.md
 scripts/arsenal_config.py
@@ -55,12 +56,14 @@ scripts/branch_protection.py
 scripts/create_reader.py
 scripts/gate_evidence.py
 scripts/handle_sync.py
+scripts/ideas_log.py
 scripts/issue_for_task.py
 scripts/issue_import.py
 scripts/pr_audit.py
 scripts/query_status.py
 scripts/queue_hooks.py
 scripts/reader_check.py
+scripts/repo_health.py
 scripts/review_sources.py
 scripts/task_select.py
 scripts/usage_report.py

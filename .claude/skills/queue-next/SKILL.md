@@ -69,7 +69,9 @@ only by `queue_hooks.py sweep-claims`, and a retry needs
 **5. Work the task, then open its PR with `open_task_pr.sh`.** It writes
 `Closes #<issue>` into the PR body and the commit message and moves the task
 file into `arsenal/tasks/_history/` in the same diff, so merging closes the
-issue, archives the task and unblocks dependents in one step.
+issue, archives the task and unblocks dependents in one step. A session told to
+push only to one designated branch passes `--branch <that-branch>`: the commit
+lands there instead of a new `arsenal/…` branch, with every check still run.
 
 **6. Loop back to step 2.**
 

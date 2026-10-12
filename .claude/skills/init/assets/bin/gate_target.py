@@ -146,6 +146,20 @@ INLINE_SOURCE_FLAGS = frozenset({"-c", "-e", "--eval", "--exec", "-"})
 # cannot resolve — and an unresolvable path must not qualify as a read.
 _QUOTED_SKILL_PATH = r"""['"][^'"]*(?:\.claude/skills|plugins/[^/'"]+/skills)/[^'"]*['"]"""
 
+# A skill *script* (by extension) and the interpreters that run one, for the
+# "source runs a skill script as a program" arms below (#500): a heredoc that
+# calls `subprocess.run(["python3", ".claude/skills/x/scripts/y.py", …])`
+# executes that file, the same read a bare `python3 <script>` on the command
+# line already is.
+_SKILL_SCRIPT = (
+    r"""[^'"\s]*(?:\.claude/skills|plugins/[^/'"\s]+/skills)/[^'"\s]*"""
+    r"\.(?:py|pyw|js|mjs|cjs|ts|pl|pm|rb|php|sh|bash|zsh)"
+)
+_RUNNER = (
+    r"(?:(?:uv|poetry|pdm)\s+run\s+)?(?:[\w./-]*/)?"
+    r"(?:python[\d.]*|node|nodejs|deno|bun|perl|ruby|php|sh|bash|zsh|dash)"
+)
+
 # The closed set of read-only uses. Each is removed from the source before it is
 # searched for skill paths; whatever path is still standing afterwards is a
 # write. A read mode is `r`, `b`, `t`, `U` and nothing else — `r+` reopens the
@@ -175,6 +189,17 @@ READ_ONLY_USES = re.compile(
           | os \s* \. \s* path \s* \. \s*
                 (?: exists | isfile | isdir | islink | getsize | getmtime )
         ) \s* \( \s* {_QUOTED_SKILL_PATH}
+      # A skill script run as a program from inside the source (#500), as an
+      # argv list -- `["python3", "<script>"` or `[sys.executable, "<script>"`
+      # -- or as a shell string -- `"python3 <script> …"`. Only the runner and
+      # the script path are removed: anything else in that string, a redirect
+      # into a skill folder included, is still searched. The interpreter has to
+      # be named; a bare `["<script>"]` is too easily a list of paths to write.
+      | \[ \s* (?: ['"] (?: uv | poetry | pdm | run ) ['"] \s* , \s* )*
+            (?: ['"] {_RUNNER} ['"] | sys \s* \. \s* executable ) \s* , \s*
+            (?: ['"] -[A-Za-z]+ ['"] \s* , \s* )* ['"] {_SKILL_SCRIPT} ['"]
+      | (?<=['"]) \s* {_RUNNER} (?: \s+ -[A-Za-z]+ )* \s+ {_SKILL_SCRIPT}
+            (?= [\s'"] )
     )""",
     re.VERBOSE,
 )
@@ -508,8 +533,12 @@ def _destinations(cmd: list[str]) -> list[str]:
             dests.extend(files)
         elif files:
             dests.append(files[-1])
-    elif INTERPRETERS.match(util) and _runs_inline_source(util, rest):
-        dests.extend(_inline_source_targets(" ".join(cmd)))
+    elif INTERPRETERS.match(util):
+        # A script file or module is trusted to be what it says it is, and its
+        # arguments are its own: `--title 'fix write_text(…) in <skill path>'`
+        # is text handed to the script, not source to scan for writes (#500).
+        if _runs_inline_source(util, rest):
+            dests.extend(_inline_source_targets(" ".join(cmd)))
     elif WRITERS.search(" ".join(cmd)):
         # An interpreter gets its script as one argument, so the path is inside
         # a token rather than being one. Scan the text for skill-shaped paths.

@@ -97,11 +97,22 @@ def _load_review_sources() -> ModuleType | None:
     return None
 
 
+# review_sources.py reports a bot that said it will not review as `unavailable`
+# and names why in `extra.reason`; this loop keeps its finer states, in this
+# order of precedence when several bots are out at once.
 _BOT_STATES = {
     "rate-limited": "bot_rate_limited",
     "skipped": "bot_skipped",
+    "paused": "bot_skipped",
     "absent": "bot_absent",
 }
+
+
+def _bot_reason(verdict: Any) -> str:
+    """`rate-limited` / `skipped` / `paused` for an unavailable bot, else its state."""
+    if verdict.state == "unavailable":
+        return str((verdict.extra or {}).get("reason") or "skipped")
+    return str(verdict.state)
 
 
 def _bot_fallback(args: argparse.Namespace, result: dict, repo: str) -> dict:
@@ -127,7 +138,7 @@ def _bot_fallback(args: argparse.Namespace, result: dict, repo: str) -> dict:
     except rs.SourceError as exc:
         sys.stderr.write(f"review_sources: {exc}\n")
         sys.exit(2)
-    states = [v.state for v in report.bots]
+    states = [_bot_reason(v) for v in report.bots]
     result["bot_sources"] = [
         {"login": v.login, "state": v.state, "detail": v.detail} for v in report.bots
     ]

@@ -24,11 +24,13 @@ A spec or plan is any of: `status/specification.md`, `status/plan.md`,
 `<home>/project/*/{spec,plan}.md`, `docs/**/specs/*.md`, `docs/**/plans/*.md`
 (`<home>` is `ARSENAL_HOME`, default `arsenal`).
 
-Its reader is `<dir>/<stem>-reader.html` or `<dir>/{spec,plan}-reader.html`
-(plus `docs/spec-reader/spec-reader.html` for a workspace spec). A reader
-current for the document carries the document's digest in its
-`arsenal-source-sha256` meta; one generated before that meta existed is judged
-by time instead — newer than the document passes.
+Its reader is `<dir>/<repo>-<doc>-v<N>-<date>-reader.html`, <doc> being `spec` /
+`plan` for the canonical documents and the stem otherwise — or, from before
+readers were dated, `<dir>/<stem>-reader.html` / `<dir>/{spec,plan}-reader.html`
+(plus `docs/spec-reader/` for a workspace spec). A reader current for the
+document carries the document's digest in its `arsenal-source-sha256` meta; one
+generated before that meta existed is judged by time instead — newer than the
+document passes.
 
 Exit: 0 clean, 1 stale or missing reader (`branch`), 2 usage error.
 """
@@ -36,6 +38,7 @@ Exit: 0 clean, 1 stale or missing reader (`branch`), 2 usage error.
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -46,7 +49,10 @@ import sys
 from pathlib import Path, PurePosixPath
 
 META_RE = re.compile(r'<meta name="arsenal-source-sha256" content="([0-9a-f ]*)">')
+# `<project>-<spec|plan>-notes-<date>-r<N>.md` (older readers), or the reader's own
+# naming, `<repo>-<doc>-v<N>-<date>-notes.md`.
 EXPORT_RE = re.compile(r"^(?P<prefix>.+)-(?:spec|plan)-notes-.+\.md$")
+DATED_EXPORT_RE = re.compile(r"^(?P<stem>.+)-v\d+-\d{4}-\d{2}-\d{2}-notes\.md$")
 # Localized names a desktop gives the Downloads folder, beside whatever
 # `xdg-user-dir DOWNLOAD` and XDG_DOWNLOAD_DIR report.
 DOWNLOAD_NAMES = ("Downloads", "Download", "Descargas", "Téléchargements", "Scaricati")
@@ -61,7 +67,11 @@ def is_doc(rel: str) -> bool:
     """True when the repo-relative path names a spec or plan."""
     p = PurePosixPath(rel.replace("\\", "/"))
     name = p.name
-    if not name.endswith(".md") or name.endswith("-annotated.md") or "-notes-" in name:
+    if (
+        not name.endswith(".md")
+        or name.endswith(("-annotated.md", "-notes.md"))
+        or "-notes-" in name
+    ):
         return False
     if str(p) in ("status/specification.md", "status/plan.md"):
         return True
@@ -78,11 +88,17 @@ def is_doc(rel: str) -> bool:
 
 
 def reader_candidates(rel: str) -> list[str]:
+    """Repo-relative names (glob patterns for the dated form) a reader of `rel` may have."""
     p = PurePosixPath(rel.replace("\\", "/"))
     kind = "plan" if p.stem == "plan" else "spec"
-    out = [str(p.parent / f"{p.stem}-reader.html"), str(p.parent / f"{kind}-reader.html")]
+    doc = kind if p.stem in ("spec", "specification", "plan") else p.stem
+    dirs = [p.parent]
     if p.name == "spec.md" and "project" in p.parts:
-        out.append("docs/spec-reader/spec-reader.html")
+        dirs.append(PurePosixPath("docs/spec-reader"))
+    out = []
+    for d in dirs:
+        out.append(str(d / f"*-{glob.escape(doc)}-v*-*-reader.html"))
+        out += [str(d / f"{p.stem}-reader.html"), str(d / f"{kind}-reader.html")]
     return list(dict.fromkeys(out))
 
 
@@ -190,7 +206,14 @@ def _changed_at(root: Path, rel: str) -> float:
 def reader_status(root: Path, rel: str) -> tuple[bool, str]:
     text = (root / rel).read_text(encoding="utf-8")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    existing = [c for c in reader_candidates(rel) if (root / c).is_file()]
+    existing = sorted(
+        {
+            f.relative_to(root).as_posix()
+            for pattern in reader_candidates(rel)
+            for f in root.glob(pattern)
+            if f.is_file()
+        }
+    )
     if not existing:
         return False, "no reader"
     for cand in existing:
@@ -268,16 +291,26 @@ def _project_prefixes(root: Path) -> set[str]:
 
 def stray_exports(root: Path, all_projects: bool = False) -> list[Path]:
     tracked = {
-        PurePosixPath(n).name for n in (_git(root, "ls-files") or "").splitlines() if "-notes-" in n
+        PurePosixPath(n).name
+        for n in (_git(root, "ls-files") or "").splitlines()
+        if "-notes-" in n or n.endswith("-notes.md")
     }
     prefixes = _project_prefixes(root)
     found = []
     for d in download_dirs():
-        for f in sorted(d.glob("*-notes-*.md")):
-            m = EXPORT_RE.match(f.name)
-            if not m or f.name in tracked:
+        for f in sorted(set(d.glob("*-notes-*.md")) | set(d.glob("*-notes.md"))):
+            if f.name in tracked:
                 continue
-            if all_projects or m.group("prefix") in prefixes:
+            m = EXPORT_RE.match(f.name)
+            dated = DATED_EXPORT_RE.match(f.name)
+            if m:
+                ours = m.group("prefix") in prefixes
+            elif dated:
+                # `<repo>-<doc>`: the repo is a prefix of it, the doc whatever follows.
+                ours = any(dated.group("stem").startswith(p + "-") for p in prefixes)
+            else:
+                continue
+            if all_projects or ours:
                 found.append(f)
     return found
 

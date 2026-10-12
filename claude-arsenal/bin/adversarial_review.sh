@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# adversarial_review.sh <emit|verdict|check> [options]
+# adversarial_review.sh <emit|verdict|check|marker> [options]
 # The pre-PR adversarial review gate: build a self-contained case file for a
 # reviewer that has never seen this work, then hold the answer it gives.
 #
@@ -69,6 +69,20 @@
 #            review of this one, and the digest is what makes "I reviewed it,
 #            then kept coding" impossible to pass off as a cleared change.
 #
+#   marker   publish the receipt where a merge can see it. Prints a PR comment
+#            body carrying one machine line —
+#              <!-- arsenal-review: verdict=CLEAR head=<sha> session=<id> -->
+#            — for the committed HEAD, and with `--post <pr>` posts it. It
+#            refuses unless the receipt is fresh for this tree AND the tree is
+#            exactly HEAD (nothing uncommitted), because the marker names a
+#            commit and a receipt is about a working tree: the two only agree
+#            when there is nothing between them. `session=` is filled from
+#            CLAUDE_CODE_REMOTE_SESSION_ID, else CLAUDE_CODE_SESSION_ID, and is
+#            what `[review] reviewer-identity = "distinct-session"` compares
+#            against the PR's Claude-Session trailers (pr_audit.py). Run it in
+#            the REVIEWER's session: a subagent reports its parent's id, so a
+#            marker minted by the implementing session names the implementer.
+#
 # A MISSING VERDICT IS NOT A PASS. `verdict` exits 2 when it cannot find the
 # line, and `check` exits 2 with no receipt at all — distinct from the 0 that
 # means cleared, so no caller can read silence as approval. This is the same
@@ -98,7 +112,8 @@
 # Config: review-max-rounds (default 2) — the round cap; review-budget-min (10)
 #         and verification (balanced) are quoted in the packet's Budget line
 # Options: emit [--task <id>] [--intent <file>] [--checks <file>] [--base <ref>]
-#          [--reset] [--out <dir>]; verdict/check [--task <id>] [--out <dir>]
+#          [--reset] [--out <dir>]; verdict/check [--task <id>] [--out <dir>];
+#          marker [--task <id>] [--out <dir>] [--post <pr>]
 # Exit: emit    0 packet written (absolute path on stdout); 3 nothing to
 #               review; 2 error — including the round cap being exhausted and
 #               a follow-up whose tree is unchanged since the last round, both
@@ -106,6 +121,10 @@
 #       verdict 0 CLEAR, 1 BLOCK, 2 no usable verdict, 3 stale (tree moved)
 #       check   0 fresh CLEAR, 1 BLOCK on record, 2 no review on record,
 #               3 receipt is stale — the tree changed after it was written
+#       marker  0 marker printed (and posted, with --post) — whichever verdict
+#               it carries; 2 no receipt, uncommitted changes, or the post
+#               failed; 3 receipt is stale; 5 no scriptable GitHub channel —
+#               the body and the call to make are printed
 #
 # 1 means A REVIEWER SAID BLOCK, and never anything else. Every other way the
 # step can fail to produce a verdict — no reply file, no packet, an unreadable
@@ -146,9 +165,9 @@ CONFIG_PY="${SCRIPT_DIR}/../scripts/arsenal_config.py"
 die() { echo "adversarial_review: $1" >&2; exit "${2:-2}"; }
 
 SUB="${1:-}"; shift || true
-[[ -z "${SUB}" ]] && die "usage: adversarial_review.sh <emit|verdict|check> [--task id] [--intent file] [--checks file] [--base ref] [--reset] [--out dir]"
+[[ -z "${SUB}" ]] && die "usage: adversarial_review.sh <emit|verdict|check|marker> [--task id] [--intent file] [--checks file] [--base ref] [--reset] [--out dir]"
 
-RESET=0; BASE_OVERRIDE=""; TASK_ID=""; INTENT_FILE=""; REPLY_FILE=""; CHECKS_FILE=""
+RESET=0; BASE_OVERRIDE=""; TASK_ID=""; INTENT_FILE=""; REPLY_FILE=""; CHECKS_FILE=""; POST_PR=""
 OUT_DIR="${ARSENAL_REVIEW_DIR:-}"; OUT_DIR_GIVEN=0
 [[ -n "${OUT_DIR}" ]] && OUT_DIR_GIVEN=1
 # `${2:?message}` was the obvious way to write these and exits 1 — the status
@@ -168,6 +187,7 @@ while [[ $# -gt 0 ]]; do
         --intent) INTENT_FILE="$(_need --intent "${2:-}")" || exit $?; shift 2 ;;
         --checks) CHECKS_FILE="$(_need --checks "${2:-}")" || exit $?; shift 2 ;;
         --out)    OUT_DIR="$(_need --out "${2:-}")" || exit $?; OUT_DIR_GIVEN=1; shift 2 ;;
+        --post)   POST_PR="$(_need --post "${2:-}")" || exit $?; shift 2 ;;
         -*)       die "unknown option: $1" ;;
         *)        [[ -z "${REPLY_FILE}" ]] && REPLY_FILE="$1" || die "unexpected argument: $1"; shift ;;
     esac
@@ -975,9 +995,58 @@ cmd_check() {
     exit 0
 }
 
+cmd_marker() {
+    [[ -z "${POST_PR}" || "${POST_PR}" =~ ^[0-9]+$ ]] || die "--post needs a PR number, got '${POST_PR}'"
+    [[ -f "${RECEIPT}" ]] || die "no review on record in ${OUT_DIR} — nothing to publish"
+    local verdict digest base reason now head session body
+    verdict="$(sed -n 's/^verdict=//p' "${RECEIPT}")"
+    digest="$(sed -n 's/^digest=//p' "${RECEIPT}")"
+    base="$(sed -n 's/^base=//p' "${RECEIPT}")"
+    reason="$(sed -n 's/^reason=//p' "${RECEIPT}" | head -1)"
+    [[ "${verdict}" == "CLEAR" || "${verdict}" == "BLOCK" ]] || die "the receipt in ${OUT_DIR} carries no verdict"
+    # Freshness for BOTH verdicts: a BLOCK about an earlier tree is not an
+    # objection to this one, and a marker names the commit it is posted for.
+    git rev-parse --verify --quiet "${base}^{commit}" >/dev/null 2>&1 \
+        || die "the reviewed base ${base:0:12} is gone — the receipt cannot be verified" 3
+    now="$(_diff_digest "${base}")" || die "could not re-read the diff against ${base:0:12}" 3
+    [[ "${now}" == "${digest}" ]] \
+        || die "the tree changed since the review (${digest:0:12} → ${now:0:12}) — re-review before publishing" 3
+    # The receipt is about the working tree; the marker is about a commit. They
+    # are the same thing only when nothing is uncommitted.
+    if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+        die "uncommitted changes: the marker names HEAD, and HEAD is not the tree that was reviewed — commit (and push) first"
+    fi
+    head="$(git rev-parse HEAD)" || die "cannot resolve HEAD"
+    # Bare token only: it lands inside an HTML comment that is parsed as
+    # key=value pairs, so anything else is dropped rather than quoted.
+    session="${CLAUDE_CODE_REMOTE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+    [[ "${session}" =~ ^[A-Za-z0-9._:/-]+$ ]] || session=""
+    body="<!-- arsenal-review: verdict=${verdict} head=${head}${session:+ session=${session}} -->"
+    body+=$'\n'"Adversarial review **${verdict}** on \`${head:0:7}\`${reason:+ — ${reason}}"
+    [[ -n "${session}" ]] || echo "adversarial_review: no session id in the environment — the marker cannot clear a PR under reviewer-identity = distinct-session" >&2
+    if [[ -z "${POST_PR}" ]]; then
+        printf '%s\n' "${body}"
+        return 0
+    fi
+    local channel="${SCRIPT_DIR}/github_channel.sh" slug payload status
+    slug="$(bash "${channel}" --slug 2>/dev/null)" || die "cannot determine owner/repo from the git remote"
+    payload="$(BODY="${body}" python3 -c 'import json,os;print(json.dumps({"body":os.environ["BODY"]}))')" \
+        || die "cannot encode the comment body"
+    bash "${channel}" --api POST "/repos/${slug}/issues/${POST_PR}/comments" "${payload}" >/dev/null 2>&1
+    status=$?
+    case ${status} in
+        0) printf '%s\n' "${body}"; echo "adversarial_review: ${verdict} marker posted on #${POST_PR} for ${head:0:12}" >&2 ;;
+        5) printf '%s\n' "${body}"
+           echo "adversarial_review: no scriptable GitHub channel — post the body above with your GitHub tools: POST /repos/${slug}/issues/${POST_PR}/comments" >&2
+           exit 5 ;;
+        *) die "posting the marker on #${POST_PR} failed (channel exit ${status})" ;;
+    esac
+}
+
 case "${SUB}" in
     emit)    cmd_emit ;;
     verdict) cmd_verdict ;;
     check)   cmd_check ;;
-    *)       die "unknown subcommand '${SUB}' (expected emit, verdict or check)" ;;
+    marker)  cmd_marker ;;
+    *)       die "unknown subcommand '${SUB}' (expected emit, verdict, check or marker)" ;;
 esac
