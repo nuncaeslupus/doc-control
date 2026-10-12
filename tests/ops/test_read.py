@@ -186,7 +186,9 @@ def test_outline_lists_headings_with_levels(corpus_doc: CorpusWriter, run: Run) 
     assert [h["level"] for h in shallow["headings"]] == [1, 2, 2]
 
 
-def _custom_docx(path: Path, document_body: str, styles: str) -> Path:
+def _custom_docx(
+    path: Path, document_body: str, styles: str, extra: dict[str, str] | None = None
+) -> Path:
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -202,6 +204,8 @@ def _custom_docx(path: Path, document_body: str, styles: str) -> Path:
         zf.writestr("_rels/.rels", RELS)
         zf.writestr("word/document.xml", document)
         zf.writestr("word/styles.xml", styles_xml)
+        for name, xml in (extra or {}).items():
+            zf.writestr(name, xml)
     return path
 
 
@@ -552,3 +556,161 @@ def test_private_corpus_read_ops_stay_in_budget(doc_id: str, run: Run, tmp_path:
     for op in ("info", "outline", "stats", "styles.list", "comments.list", "revisions.list"):
         code, _, nbytes = run(op, doc=str(path))
         assert code == 0 and nbytes <= RESPONSE_BUDGET, op
+
+
+_W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+
+def _rev_attrs(rid: int, author: str) -> str:
+    return f'w:id="{rid}" w:author="{author}" w:date="2026-01-01T00:00:00Z"'
+
+
+def _revisions_of(run: Run, path: Path) -> list[dict[str, Any]]:
+    return pages(run, "revisions.list", "revisions", doc=str(path))
+
+
+def test_revisions_nested_inside_insertions_are_listed(tmp_path: Path, run: Run) -> None:
+    """Deleting another author's insertion, and formatting inserted text, are both revisions."""
+    runs = (
+        f"<w:ins {_rev_attrs(1, 'A')}><w:del {_rev_attrs(2, 'B')}>"
+        "<w:r><w:delText>gone</w:delText></w:r></w:del></w:ins>"
+        f"<w:ins {_rev_attrs(3, 'A')}><w:r><w:rPr><w:b/>"
+        f"<w:rPrChange {_rev_attrs(4, 'C')}><w:rPr/></w:rPrChange></w:rPr><w:t>bold</w:t></w:r>"
+        "</w:ins>"
+        f'<w:del {_rev_attrs(5, "D")}><w:r><w:rPr><w:rStyle w:val="Strong"/>'
+        f"<w:rPrChange {_rev_attrs(6, 'E')}><w:rPr/></w:rPrChange></w:rPr>"
+        "<w:delText>old</w:delText></w:r></w:del>"
+        f"<w:moveTo {_rev_attrs(7, 'F')}><w:ins {_rev_attrs(8, 'G')}>"
+        "<w:r><w:t>moved</w:t></w:r></w:ins></w:moveTo>"
+    )
+    ppr = (
+        f"<w:rPr><w:ins {_rev_attrs(9, 'H')}/>"
+        f"<w:rPrChange {_rev_attrs(10, 'I')}><w:rPr/></w:rPrChange></w:rPr>"
+    )
+    path = _custom_docx(tmp_path / "nested.docx", _para("", ppr, runs), _style("Normal", "Normal"))
+    got = [(r["id"], r["type"], r.get("text")) for r in _revisions_of(run, path)]
+    assert got == [
+        ("9", "mark_insert", None),  # the paragraph mark comes first in the markup
+        ("10", "mark_format", None),
+        ("1", "insert", "gone"),
+        ("2", "delete", "gone"),
+        ("3", "insert", "bold"),
+        ("4", "format", None),
+        ("5", "delete", "old"),
+        ("6", "format", None),
+        ("7", "move_to", "moved"),
+        ("8", "insert", "moved"),
+    ]
+    stats = ok(run, "stats", doc=str(path))["result"]["revisions"]
+    assert stats["total"] == 10
+    assert stats["by_type"] == {
+        "delete": 2,
+        "format": 2,
+        "insert": 3,
+        "mark_format": 1,
+        "mark_insert": 1,
+        "move_to": 1,
+    }
+
+
+def test_table_row_and_cell_revisions_are_listed(tmp_path: Path, run: Run) -> None:
+    cells = (
+        f"<w:tc><w:tcPr><w:cellIns {_rev_attrs(2, 'B')}/></w:tcPr>{_para('one')}</w:tc>"
+        f"<w:tc><w:tcPr><w:cellDel {_rev_attrs(3, 'B')}/>"
+        f'<w:cellMerge {_rev_attrs(4, "B")} w:vMerge="rest"/></w:tcPr>{_para("two")}</w:tc>'
+    )
+    table = (
+        f"<w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>{_para('plain')}</w:tc></w:tr>"
+        f"<w:tr><w:trPr><w:ins {_rev_attrs(1, 'A')}/></w:trPr>{cells}</w:tr>"
+        f"<w:tr><w:trPr><w:del {_rev_attrs(5, 'A')}/></w:trPr><w:tc>{_para('gone')}</w:tc></w:tr>"
+        "</w:tbl>"
+    )
+    path = _custom_docx(
+        tmp_path / "rows.docx", _para("before") + table + _para("after"), _style("Normal", "Normal")
+    )
+    index = Document(str(path)).index
+    revs = _revisions_of(run, path)
+    assert [(r["id"], r["type"]) for r in revs] == [
+        ("1", "row_insert"),
+        ("2", "cell_insert"),
+        ("3", "cell_delete"),
+        ("4", "cell_merge"),
+        ("5", "row_delete"),
+    ]
+    assert [index.resolve_address(r["at"]).text for r in revs] == [
+        "one",
+        "one",
+        "two",
+        "two",
+        "gone",
+    ]
+    assert ok(run, "stats", doc=str(path))["result"]["revisions"]["total"] == 5
+
+
+def test_cursors_are_bound_to_filters_and_address(
+    corpus_doc: CorpusWriter, run: Run, tmp_path: Path
+) -> None:
+    path = corpus_doc("comments")
+    cursor = ok(run, "comments.list", doc=str(path), limit=1, resolved=False)["next"]
+    assert ok(run, "comments.list", doc=str(path), resolved=False, cursor=cursor)["result"]
+    for other in ({"resolved": True}, {}, {"resolved": False, "author": "Claude"}):
+        code, env, _ = run("comments.list", doc=str(path), cursor=cursor, **other)
+        assert (code, env["error"]["code"]) == (2, "SCHEMA_INVALID"), other
+    long = _custom_docx(
+        tmp_path / "long.docx", _para("a" * 20000) + _para("b" * 20000), _style("Normal", "Normal")
+    )
+    one, two = Document(str(long)).index.paragraphs
+    page = ok(run, "para.get", doc=str(long), at=str(one.address))
+    code, env, _ = run("para.get", doc=str(long), at=str(two.address), cursor=page["next"])
+    assert (code, env["error"]["code"]) == (2, "SCHEMA_INVALID")
+    assert ok(run, "para.get", doc=str(long), at=str(one.address), cursor=page["next"])
+
+
+def test_comment_location_is_the_range_start_not_the_reference(tmp_path: Path, run: Run) -> None:
+    def comment(cid: int, text: str) -> str:
+        return (
+            f'<w:comment w:id="{cid}" w:author="A" w:date="2026-01-01T00:00:00Z">'
+            f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:comment>"
+        )
+
+    comments = f"<w:comments {_W}>{comment(0, 'body level')}{comment(1, 'inside')}</w:comments>"
+    body = (
+        _para("first")
+        + '<w:commentRangeStart w:id="0"/>'  # between paragraphs: belongs to the next one
+        + _para("second", runs='<w:commentRangeStart w:id="1"/><w:r><w:t>second</w:t></w:r>')
+        + _para(
+            "third",
+            runs='<w:commentRangeEnd w:id="0"/><w:commentRangeEnd w:id="1"/>'
+            '<w:r><w:commentReference w:id="0"/></w:r><w:r><w:commentReference w:id="1"/></w:r>',
+        )
+    )
+    path = _custom_docx(
+        tmp_path / "c.docx", body, _style("Normal", "Normal"), {"word/comments.xml": comments}
+    )
+    index = Document(str(path)).index
+    listed = pages(run, "comments.list", "comments", doc=str(path))
+    got = {c["id"]: index.resolve_address(c["at"]).text for c in listed}
+    assert got == {"0": "second", "1": "second"}
+
+
+def test_style_usage_ignores_deleted_runs_and_old_properties(tmp_path: Path, run: Run) -> None:
+    styles = _style("Normal", "Normal") + (
+        '<w:style w:type="character" w:styleId="Strong"><w:name w:val="Strong"/></w:style>'
+        '<w:style w:type="table" w:styleId="Grid"><w:name w:val="Grid"/></w:style>'
+    )
+    runs = (
+        '<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>live</w:t></w:r>'
+        f'<w:del {_rev_attrs(1, "A")}><w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr>'
+        "<w:delText>dead</w:delText></w:r></w:del>"
+        '<w:r><w:rPr><w:b/><w:rPrChange w:id="2" w:author="A">'
+        '<w:rPr><w:rStyle w:val="Strong"/></w:rPr></w:rPrChange></w:rPr><w:t>x</w:t></w:r>'
+    )
+    table = (
+        '<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/>'
+        '<w:tblPrChange w:id="3" w:author="A"><w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>'
+        f"</w:tblPrChange></w:tblPr><w:tr><w:tc>{_para('cell')}</w:tc></w:tr></w:tbl>"
+    )
+    path = _custom_docx(tmp_path / "u.docx", _para("", runs=runs) + table, styles)
+    used = {s["id"]: s["used"] for s in pages(run, "styles.list", "styles", doc=str(path))}
+    assert used["Strong"] == 1
+    assert used["Grid"] == 1

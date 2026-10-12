@@ -9,6 +9,7 @@ after the file changed is ``DOC_CHANGED_ON_DISK`` rather than a silent skip.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Sequence
@@ -20,7 +21,10 @@ from doc_control.model.document import Document
 
 RESPONSE_BUDGET = 8000
 MAX_LIMIT = 1000
-_CURSOR = re.compile(r"c:(?P<op>[a-z.]+):(?P<sha>[0-9a-f]{8}):(?P<offset>0|[1-9][0-9]{0,11})")
+_CURSOR = re.compile(
+    r"c:(?P<op>[a-z.]+):(?P<sha>[0-9a-f]{8}):(?P<scope>[0-9a-f]{6}):(?P<offset>0|[1-9][0-9]{0,11})"
+)
+_NOT_SCOPE = frozenset({"doc", "limit", "cursor"})
 
 #: Properties every list request accepts, to merge into an operation's schema.
 PAGING_PROPERTIES: dict[str, Any] = {
@@ -38,18 +42,35 @@ PAGING_PROPERTIES: dict[str, Any] = {
 }
 
 
-def make_cursor(op: str, doc: Document, offset: int) -> str:
-    return f"c:{op}:{doc.sha256[:8]}:{offset}"
+def _scope(request: dict[str, Any]) -> str:
+    """Short hash of what selects the items (filters, target address), not of paging."""
+    chosen = {k: v for k, v in sorted(request.items()) if k not in _NOT_SCOPE}
+    return hashlib.sha256(json.dumps(chosen, sort_keys=True).encode()).hexdigest()[:6]
 
 
-def read_cursor(op: str, doc: Document, cursor: str | None) -> int:
-    """The offset a cursor continues from (0 without one)."""
+def make_cursor(op: str, doc: Document, request: dict[str, Any], offset: int) -> str:
+    return f"c:{op}:{doc.sha256[:8]}:{_scope(request)}:{offset}"
+
+
+def read_cursor(op: str, doc: Document, request: dict[str, Any]) -> int:
+    """The offset the request's cursor continues from (0 without one).
+
+    A cursor only continues the request that issued it: the same operation, the same
+    filters or address, and the same file.
+    """
+    cursor = request.get("cursor")
     if cursor is None:
         return 0
     m = _CURSOR.fullmatch(cursor)
     if m is None or m["op"] != op:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, f"cursor is not a {op} cursor: {cursor!r}", path="$.cursor"
+        )
+    if m["scope"] != _scope(request):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            "cursor was issued for a request with different filters or address",
+            path="$.cursor",
         )
     if m["sha"] != doc.sha256[:8]:
         raise DocControlError(
@@ -79,10 +100,10 @@ def paged(
     Takes items from the cursor's offset while the whole envelope stays within the
     budget and the limit; always at least one, so a list always advances.
     """
-    start = read_cursor(op, doc, request.get("cursor"))
+    start = read_cursor(op, doc, request)
     limit = request.get("limit", MAX_LIMIT)
     head: dict[str, Any] = {**(base or {}), "total": len(items), key: []}
-    placeholder = make_cursor(op, doc, 10**12)
+    placeholder = make_cursor(op, doc, request, 10**12)
     room = RESPONSE_BUDGET - size(
         success(op, head, doc=doc.envelope_doc(), next_cursor=placeholder)
     )
@@ -99,5 +120,5 @@ def paged(
     return Reply(
         head,
         doc=doc.envelope_doc(),
-        next_cursor=make_cursor(op, doc, end) if end < len(items) else None,
+        next_cursor=make_cursor(op, doc, request, end) if end < len(items) else None,
     )

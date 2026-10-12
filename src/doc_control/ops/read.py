@@ -178,23 +178,52 @@ def outline(request: dict[str, Any]) -> Reply:
 # -- stats -----------------------------------------------------------------
 
 _FONT_REF = re.compile(rb'<(?:[\w.-]+:)?rFonts\s[^>]*?\b(?:ascii|hAnsi)="([^"]*)"')
-_STYLE_REF = {
-    "character": re.compile(rb'<(?:[\w.-]+:)?rStyle\s[^>]*?\bval="([^"]*)"'),
-    "table": re.compile(rb'<(?:[\w.-]+:)?tblStyle\s[^>]*?\bval="([^"]*)"'),
-}
+_RSTYLE_TAG = re.compile(rb"<(?:[\w.-]+:)?rStyle[\s/>]")
+_TBLSTYLE_REF = re.compile(rb'<(?:[\w.-]+:)?tblStyle\s[^>]*?\bval="([^"]*)"')
+_TBL_CHANGE = re.compile(
+    rb"<(?:[\w.-]+:)?tblPrChange[\s>].*?</(?:[\w.-]+:)?tblPrChange>", re.DOTALL
+)
+# Where a character style is not in use: deleted text and the "before" properties of a change.
+_NOT_IN_USE = frozenset(W + name for name in ("del", "moveFrom", "rPrChange", "pPrChange"))
+
+
+def _run_styles(elem: Any, out: Counter[str]) -> None:
+    for child in elem:
+        tag = child.tag
+        if not isinstance(tag, str) or tag in _NOT_IN_USE:
+            continue
+        if tag == W + "rStyle":
+            if (value := child.get(W + "val")) is not None:
+                out[value] += 1
+        else:
+            _run_styles(child, out)
 
 
 def _style_usage(doc: Document) -> Counter[tuple[str, str]]:
-    """Uses of each style as ``(type, id)``: paragraphs counted, runs and tables referenced."""
+    """Uses of each style as ``(type, id)``.
+
+    Paragraphs are counted by style; character and table styles by reference, ignoring
+    references inside deleted runs and the old properties kept by a tracked format change.
+    """
     usage: Counter[tuple[str, str]] = Counter()
     for para in doc.index.paragraphs:
         style = doc.style_id(para)
         if style is not None:
             usage["paragraph", style] += 1
+        if _RSTYLE_TAG.search(doc.paragraph_bytes(para)):
+            runs: Counter[str] = Counter()
+            _run_styles(doc.index.spans.parse_paragraph(para.span_index), runs)
+            for key, n in runs.items():
+                usage["character", key] += n
     data = doc.index.spans.data
-    for kind, pattern in _STYLE_REF.items():
-        for raw in pattern.findall(data):
-            usage[kind, raw.decode("utf-8", "replace")] += 1
+    tables = Counter(m.decode("utf-8", "replace") for m in _TBLSTYLE_REF.findall(data))
+    for change in _TBL_CHANGE.finditer(data):
+        tables.subtract(
+            m.decode("utf-8", "replace") for m in _TBLSTYLE_REF.findall(change.group(0))
+        )
+    for key, n in tables.items():
+        if n > 0:
+            usage["table", key] += n
     return usage
 
 
@@ -312,7 +341,7 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
 def para_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
     para = doc.index.resolve_address(request["at"])
-    start = read_cursor("para.get", doc, request.get("cursor"))
+    start = read_cursor("para.get", doc, request)
     total = len(para.text)
     if start > total:
         raise DocControlError(
@@ -338,7 +367,7 @@ def para_get(request: dict[str, Any]) -> Reply:
         end = start + count
         result = {**head, "offset": start, "text": para.text[start:end]}
         result["runs"] = _clip_spans(spans, start, end)
-        cursor = make_cursor("para.get", doc, end) if end < total else None
+        cursor = make_cursor("para.get", doc, request, end) if end < total else None
         reply = Reply(result, doc=doc.envelope_doc(), next_cursor=cursor)
         envelope = success("para.get", result, doc=reply.doc, next_cursor=cursor)
         if count <= 1 or size(envelope) <= RESPONSE_BUDGET:
