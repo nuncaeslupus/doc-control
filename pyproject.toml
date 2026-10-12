@@ -38,6 +38,11 @@ select = [
     "PTH", # flake8-use-pathlib (prefer Path.open over open)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# OOXML namespace URIs and content types are long literals; splitting them hurts reading.
+"tests/helpers.py" = ["E501"]
+"src/doc_control/ooxml/*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 files = ["src", "tests"]
