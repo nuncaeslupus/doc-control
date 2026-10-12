@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="be166cb535b5921a1b53bfdd7ae7c8458537dd1e57abc222a8b2435a9a50a1d0">
+<meta name="arsenal-source-sha256" content="7dfa768116093af38d5483d0cd6b1f19ba91b7ca407e70f576b19e99eb012a7f">
 <title>Word Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -169,10 +169,11 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-12
 <strong>Ticket / PR</strong>: nuncaeslupus/word-control#2
 <strong>Author</strong>: Claude (with the owner, via <code>explore-idea</code>)
-<strong>Revision</strong>: 1
+<strong>Revision</strong>: 2
 <strong>Status</strong>: draft
 <strong>Revision log</strong>:
-- r1 — first draft, from the explore-idea decisions log D-1…D-16 and <code>docs/research/01-tooling-and-risks.md</code>, <code>docs/research/02-docx-fixer-inventory.md</code></p></div>
+- r1 — first draft, from the explore-idea decisions log D-1…D-16 and <code>docs/research/01-tooling-and-risks.md</code>, <code>docs/research/02-docx-fixer-inventory.md</code>
+- r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules</p></div>
 <div class="note" data-for="s-spec-intro"><div class="note-head"><span class="note-ico">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></div><textarea class="note-ta" data-key="s-spec-intro" data-label="Preamble &amp; scope" data-part="Specification" rows="1" placeholder="Tap to add a note for this point…"></textarea></div>
 </article>
 <article class="sec" id="s-spec-1">
@@ -180,7 +181,34 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 <div class="sec-body"><p>AI agents (Claude in Cowork, Claude Code, a chat's code sandbox) and downstream tools such as literary-critic need to read and change Word documents quickly, precisely and safely, while the writer — a non-technical person — keeps full control: every content change must be visible and rejectable in any Word version, and work must never be lost. Today this is done with computer use, ad-hoc scripts or docx-fixer, which only handles Spanish-novel typography and rewrites whole XML parts. Generic libraries do not fit: python-docx cannot write tracked changes, comment replies or the resolved state, and naive <code>xml.etree</code> serialisation silently drops namespace declarations listed in <code>mc:Ignorable</code>, which makes Word report the file as corrupt. This spec covers the first deliverable of <strong>doc-control</strong>: a deterministic, stdlib-only Python core with a file engine that edits a closed <code>.docx</code>, exposed through a JSON CLI, with stable addresses and anchors, all-or-nothing tracked-change batches, styles and templates, recipes, and a safety layer (lock and change detection, backups, verification, automatic restore, permanent undo log). The API is designed so that a live engine (Word on Windows via COM, later Mac) and an MCP front door can be added without breaking it; those are separate specs.</p>
 <p><strong>Success criteria (measurable)</strong> — each seeds a task Gate in the plan:</p>
 <p>Safety and correctness
-- [ ] <code>unintended_changes == 0</code> — over the test corpus, after every operation, every part and every paragraph outside the requested range is identical to the input (untouched zip members byte-identical; touched parts differ only inside the targeted paragraphs).
+- [ ] <code>unintended_changes == 0</code> — over the test corpus, after every operation, everything outside the operation's declared footprint is identical to the input. The footprint is the targeted paragraphs in <code>word/document.xml</code> plus a fixed per-operation allowlist of supporting parts; every other zip member is byte-identical, and inside allowed parts only the entries the operation owns may change:</p>
+<table>
+<thead>
+<tr>
+<th>Operation family</th>
+<th>Supporting parts that may change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Text, paragraph, direct-formatting and revision accept/reject edits</td>
+<td>none beyond the targeted paragraphs</td>
+</tr>
+<tr>
+<td>Comments (add, reply, resolve)</td>
+<td><code>word/comments.xml</code>, <code>commentsExtended.xml</code>, <code>commentsIds.xml</code>, <code>commentsExtensible.xml</code>, <code>people.xml</code> (only the entries for the touched comments/authors); <code>[Content_Types].xml</code> and <code>word/_rels/document.xml.rels</code> only when a comment part is created</td>
+</tr>
+<tr>
+<td>Styles and style sets (create, update, rename, merge, install)</td>
+<td><code>word/styles.xml</code> (only the touched style entries; for rename/merge also the style references in affected paragraphs); <code>word/stylesWithEffects.xml</code> when present; <code>[Content_Types].xml</code> and <code>document.xml.rels</code> only when <code>styles.xml</code> is created</td>
+</tr>
+<tr>
+<td>Batches</td>
+<td>the union of their operations' footprints</td>
+</tr>
+</tbody>
+</table>
+<p>The verifier computes the expected footprint before writing and fails (then auto-restores) on any change outside it.
 - [ ] <code>untouched_parts_byte_identical_ratio == 1.0</code>
 - [ ] <code>xml_parse_errors == 0</code> and <code>ooxml_validator_errors_introduced == 0</code> (the .NET OOXML validator and a LibreOffice round trip run in CI; errors already present in the input do not count).
 - [ ] <code>content_edits_without_revision_markup == 0</code> when tracked mode is on (the default).
@@ -409,7 +437,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
 - Write primitives: replace a range's text, insert/delete paragraphs, apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, <code>restore</code> from the undo log.
 - Addresses <code>p142#a7b2</code> with <code>stale</code> errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
-- Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, <code>.doc-control/</code> next to the document with an app-data option.
+- Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, <code>.doc-control/</code> next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit <code>history purge</code> (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by <code>history orphans</code> so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; <code>.dotx</code> export/import; style sets stored on the user's side.
 - Recipes: bundled (Python allowed, tested here; Spanish-novel set ported from docx-fixer for parity) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
 - CLI with JSON I/O, <code>help --json</code>, <code>capabilities</code>, API version in every response, stable error codes with hints.
@@ -653,7 +681,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
     if(r.n===0){toast('No notes yet — add some first.');return;}
-    var name='word-control-spec-notes-'+today()+'-r1.md';
+    var name='word-control-spec-notes-'+today()+'-r2.md';
     var saved=download(name,r.text);openModal(r.text);
     try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(r.text).then(function(){},function(){});}}catch(e){}
     if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
@@ -675,7 +703,7 @@ h4.sec-h{font-size:16.5px;color:var(--fg)}
     if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
     else{report(false);}
   });
-  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r1.md',modalTa.value);toast('Download started');});
+  document.getElementById('modal-dl').addEventListener('click',function(){download('word-control-spec-notes-'+today()+'-r2.md',modalTa.value);toast('Download started');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
 

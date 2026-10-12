@@ -19,6 +19,8 @@
 | D-15 | Undo log is permanent and append-only (before/after of every changed paragraph); `restore` brings any logged paragraph back as a tracked change; backup on every open; history searchable by quote | agreed | 2026-10-12 |
 | D-16 | Styles and templates in the core: list/read/create/update/apply/rename/merge styles; style sets as JSON (source of truth) with `.dotx` export/import; style application tracked, definition changes covered by dry run + backup + undo log | agreed | 2026-10-12 |
 
+Clarification of D-13/D-15 (spec r2): retention prunes full backups only; undo history is removed only by an explicit `history purge`; orphaned app-data history is listed, never auto-deleted.
+
 Direction approved by the owner on 2026-10-12; handed to `specify`.
 
 ## Owner to-dos

@@ -3,10 +3,11 @@
 **Date**: 2026-10-12
 **Ticket / PR**: nuncaeslupus/word-control#2
 **Author**: Claude (with the owner, via `explore-idea`)
-**Revision**: 1
+**Revision**: 2
 **Status**: draft
 **Revision log**:
 - r1 — first draft, from the explore-idea decisions log D-1…D-16 and `docs/research/01-tooling-and-risks.md`, `docs/research/02-docx-fixer-inventory.md`
+- r2 — CodeRabbit review on PR #2: per-operation allowlist of supporting parts in the safety gate; undo-log retention and purge rules
 
 ---
 
@@ -17,7 +18,16 @@ AI agents (Claude in Cowork, Claude Code, a chat's code sandbox) and downstream 
 **Success criteria (measurable)** — each seeds a task Gate in the plan:
 
 Safety and correctness
-- [ ] `unintended_changes == 0` — over the test corpus, after every operation, every part and every paragraph outside the requested range is identical to the input (untouched zip members byte-identical; touched parts differ only inside the targeted paragraphs).
+- [ ] `unintended_changes == 0` — over the test corpus, after every operation, everything outside the operation's declared footprint is identical to the input. The footprint is the targeted paragraphs in `word/document.xml` plus a fixed per-operation allowlist of supporting parts; every other zip member is byte-identical, and inside allowed parts only the entries the operation owns may change:
+
+  | Operation family | Supporting parts that may change |
+  |---|---|
+  | Text, paragraph, direct-formatting and revision accept/reject edits | none beyond the targeted paragraphs |
+  | Comments (add, reply, resolve) | `word/comments.xml`, `commentsExtended.xml`, `commentsIds.xml`, `commentsExtensible.xml`, `people.xml` (only the entries for the touched comments/authors); `[Content_Types].xml` and `word/_rels/document.xml.rels` only when a comment part is created |
+  | Styles and style sets (create, update, rename, merge, install) | `word/styles.xml` (only the touched style entries; for rename/merge also the style references in affected paragraphs); `word/stylesWithEffects.xml` when present; `[Content_Types].xml` and `document.xml.rels` only when `styles.xml` is created |
+  | Batches | the union of their operations' footprints |
+
+  The verifier computes the expected footprint before writing and fails (then auto-restores) on any change outside it.
 - [ ] `untouched_parts_byte_identical_ratio == 1.0`
 - [ ] `xml_parse_errors == 0` and `ooxml_validator_errors_introduced == 0` (the .NET OOXML validator and a LibreOffice round trip run in CI; errors already present in the input do not count).
 - [ ] `content_edits_without_revision_markup == 0` when tracked mode is on (the default).
@@ -122,7 +132,7 @@ Parity and coverage
 - Write primitives: replace a range's text, insert/delete paragraphs, apply a style or direct formatting, alignment and indentation, add/reply/resolve comments, accept/reject revisions, rename a term (word boundaries, case options) as one atomic batch, `restore` from the undo log.
 - Addresses `p142#a7b2` with `stale` errors and an old→new address map after structural edits; quote+context anchors with re-anchoring; segmentation into paragraphs, Spanish-aware sentences, dialogue lines, scene breaks, chapters (per-profile settings).
 - Batches all-or-nothing with dry run and preview diff; tracked changes by default; author default "Claude" plus per-call tag.
-- Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, `.doc-control/` next to the document with an app-data option.
+- Safety: lock and on-disk change detection, backup before every write and on every open, verification, automatic restore, permanent append-only undo log, retention 20 backups / 30 days, `.doc-control/` next to the document with an app-data option. The retention rule prunes full backups only, never undo-log entries. Undo history is removed only by an explicit `history purge` (whole log or before a date; for privacy), which itself is confirmed with a dry run and logged as a tombstone. In app-data mode, history is keyed by a document id stored in the log; history whose document no longer exists is never deleted automatically and is listed by `history orphans` so the user can restore or purge it.
 - Styles: list/read/create/update/apply/rename/merge; JSON style sets as source of truth; `.dotx` export/import; style sets stored on the user's side.
 - Recipes: bundled (Python allowed, tested here; Spanish-novel set ported from docx-fixer for parity) and user (declarative only, stored on the user's side, created by the agent on the fly or saved); every recipe yields a batch proposal.
 - CLI with JSON I/O, `help --json`, `capabilities`, API version in every response, stable error codes with hints.

@@ -1,6 +1,6 @@
 # docx-fixer inventory (input for bundled recipes)
 
-Source: `nuncaeslupus/docx-fixer` @ e2510db, surveyed 2026-10-12. Stdlib-only Python 3.9+ (`zipfile` + `xml.etree`).
+Source: [`nuncaeslupus/docx-fixer` @ `e2510db3f1365750b6500353d7ddade4ead100e9`](https://github.com/nuncaeslupus/docx-fixer/tree/e2510db3f1365750b6500353d7ddade4ead100e9) (branch `claude/word-novel-review-tiorl2`, private repository; access requires the owner's permission), surveyed 2026-10-12. Stdlib-only Python 3.9+ (`zipfile` + `xml.etree`).
 Rules register via `@rule(name, title, scope, kind)` (`docx_fixer/findings.py`); findings carry severity `auto|review|info`, kind `apply|edit|style|note`, paragraph-text offsets and a `replacement`.
 
 ## Paragraph text rules (`docx_fixer/rules/text.py`)
