@@ -1,0 +1,18 @@
+{
+  "recipe": "es-dash-first-aside",
+  "version": 1,
+  "description": "Dialogue line whose first aside dash is glued to the word before it and spaced after: space before, glue after",
+  "match": {
+    "find": {
+      "regex": "^([ \\t]*—[^—\\n]*[^    —\\n])—[    ]+(?=[a-záéíóúñ])",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1 —"
+    }
+  ]
+}

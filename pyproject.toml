@@ -42,6 +42,7 @@ select = [
 # The test helpers hold OOXML namespace URIs and content types as long literals.
 "tests/helpers.py" = ["E501"]
 "tests/ops/test_stylesets.py" = ["E501"]  # the style-sheet fixture is one long XML literal
+"tests/recipes/docx_fixer_cases.py" = ["RUF001"]  # typographic characters are the test data
 
 [tool.mypy]
 python_version = "3.11"

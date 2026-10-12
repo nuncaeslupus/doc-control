@@ -1,0 +1,18 @@
+{
+  "recipe": "es-space-after-punctuation",
+  "version": 1,
+  "description": "Comma, semicolon or colon glued to the word after it: add the space",
+  "match": {
+    "find": {
+      "regex": "(?<=[a-záéíóúñü»”)])([,;:])(?=[A-Za-zÁÉÍÓÚÑáéíóúñü])",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1 "
+    }
+  ]
+}

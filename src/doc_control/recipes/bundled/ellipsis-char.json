@@ -1,0 +1,18 @@
+{
+  "recipe": "ellipsis-char",
+  "version": 1,
+  "description": "Three dots, or an ellipsis followed by a full stop: use the single ellipsis character",
+  "match": {
+    "find": {
+      "regex": "(?<!\\.)\\.\\.\\.(?!\\.)|…\\.",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "…"
+    }
+  ]
+}

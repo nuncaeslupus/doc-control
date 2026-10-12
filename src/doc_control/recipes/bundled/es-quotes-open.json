@@ -1,0 +1,18 @@
+{
+  "recipe": "es-quotes-open",
+  "version": 1,
+  "description": "Straight double quote that opens a quotation: use «",
+  "match": {
+    "find": {
+      "regex": "(?<![^\\s(\\[¿¡—])\"(?=[^\\s.,;:!?…»”’)\\]])",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "«"
+    }
+  ]
+}

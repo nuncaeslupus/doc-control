@@ -104,7 +104,8 @@ def test_user_recipe_with_unknown_key_is_rejected(tmp_path: Path) -> None:
         (tmp_path / "home" / "recipes" / "fake-centring.json").write_text(json.dumps(definition))
         listing = REGISTRY["recipe.list"].run({})
         assert isinstance(listing, dict)
-        assert listing["recipes"] == [] and len(listing["invalid"]) == 1
+        assert [r for r in listing["recipes"] if r["source"] == "user"] == []
+        assert len(listing["invalid"]) == 1
     assert set(PROPOSABLE) <= set(ALL_SCHEMAS)  # nothing but batch operation kinds
     assert through == 0  # user_recipe_capabilities_outside_batch == 0
 
@@ -263,11 +264,13 @@ def test_user_store_lists_and_runs_by_name(tmp_path: Path) -> None:
     (home / "fake-centring.json").unlink()
     listing = REGISTRY["recipe.list"].run({})
     assert isinstance(listing, dict)
-    assert listing["recipes"] == []
+    assert [r for r in listing["recipes"] if r["source"] == "user"] == []
     (home / "fake-centring.json").write_text(json.dumps(CENTRING))
     listing = REGISTRY["recipe.list"].run({})
     assert isinstance(listing, dict)
-    assert [(r["name"], r["source"]) for r in listing["recipes"]] == [("fake-centring", "user")]
+    assert [(r["name"], r["source"]) for r in listing["recipes"] if r["source"] == "user"] == [
+        ("fake-centring", "user")
+    ]
     doc = make_docx(tmp_path / "a.docx", "        Centred")
     assert run(doc, recipe="fake-centring").result["matches"] == 1
     with pytest.raises(DocControlError) as caught:

@@ -1,0 +1,20 @@
+{
+  "recipe": "es-dash-open-space",
+  "version": 1,
+  "description": "Space after an opening em dash of an aside inside a line of dialogue",
+  "match": {
+    "find": {
+      "regex": "^([ \\t]*—.*?\\S —)[    ]+(?=[^    .,;:!?…»”’)\\]\\s—])",
+      "scope": "paragraph"
+    }
+  },
+  "propose": [
+    {
+      "op": "text.replace",
+      "at": "$match",
+      "text": "$1"
+    }
+  ],
+  "repeat_until_stable": true,
+  "max_passes": 10
+}
