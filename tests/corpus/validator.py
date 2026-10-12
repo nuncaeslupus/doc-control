@@ -39,6 +39,9 @@ NO_SOFFICE_ENV = "DOC_CONTROL_NO_SOFFICE"
 REQUIRE_ENV = "DOC_CONTROL_REQUIRE_SOFFICE"
 SOFFICE_FILTER = "html:HTML (StarWriter):UTF8"
 OUTPUT_LIMIT = 600
+# One soffice process silently stops converting (exit 0, no error) after a few hundred
+# files in a single command line, so documents go to LibreOffice in bounded batches.
+BATCH_SIZE = 40
 
 # Exceptions that mean "this is not a readable .docx package".
 UNREADABLE = (
@@ -334,7 +337,7 @@ def _iter_readable(
 
 
 def libreoffice_round_trip(docs: Mapping[str, bytes], workdir: Path) -> dict[str, list[str]]:
-    """Convert every readable document to HTML in one soffice run; return problems per id."""
+    """Convert every readable document to HTML in batched soffice runs; return problems per id."""
     soffice = soffice_path()
     if soffice is None:
         return {doc_id: [] for doc_id in docs}
@@ -349,8 +352,14 @@ def libreoffice_round_trip(docs: Mapping[str, bytes], workdir: Path) -> dict[str
         expected[doc_id] = segments
     if not expected:
         return results
-    paths = [str(src / f"{doc_id}.docx") for doc_id in expected]
-    code, output = _run_soffice(soffice, paths, workdir)
+    ids = list(expected)
+    code: int | None = 0
+    output = ""
+    for start in range(0, len(ids), BATCH_SIZE):
+        batch = [str(src / f"{doc_id}.docx") for doc_id in ids[start : start + BATCH_SIZE]]
+        batch_code, batch_output = _run_soffice(soffice, batch, workdir)
+        code = batch_code if code == 0 else code
+        output += batch_output + "\n"
     for doc_id, segments in expected.items():
         html = out / f"{doc_id}.html"
         if not html.is_file():
