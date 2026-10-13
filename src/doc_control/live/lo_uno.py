@@ -151,8 +151,9 @@ def _walk(text: Any) -> Iterator[Any]:
             yield item
 
 
-def _runs(paragraph: Any) -> Iterator[Any]:
+def _runs(paragraph: Any) -> list[Any]:
     """The portions holding the paragraph's visible text: tracked deletions left out."""
+    runs: list[Any] = []
     deleted = False
     portions = paragraph.createEnumeration()
     while portions.hasMoreElements():
@@ -160,9 +161,12 @@ def _runs(paragraph: Any) -> Iterator[Any]:
         kind = portion.TextPortionType
         if kind == "Redline":
             if portion.RedlineType == "Delete":
+                if not portion.IsStart and not deleted:
+                    runs.clear()  # the deletion began in an earlier paragraph
                 deleted = portion.IsStart
         elif kind in ("Text", "TextField") and not deleted:
-            yield portion
+            runs.append(portion)
+    return runs
 
 
 def _visible(paragraph: Any) -> str:
@@ -384,18 +388,28 @@ class LibreOffice:
         # is matched against what the writer sees.
         # ponytail: several calls per tracked deletion; cache per document if a heavily
         # revised novel makes select slow.
+        done: set[str] = set()
         redlines = doc.Redlines.createEnumeration()
         while redlines.hasMoreElements():
             redline = redlines.nextElement()
             if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
                 continue
-            start = redline.RedlineStart
-            paragraph = _around(start.getText().createTextCursorByRange(start))
-            at = [n for n, text in enumerate(raw) if text == paragraph.getString()]
-            if len(at) != 1:
-                # A repeated paragraph cannot be placed: read them all, in order.
-                return [_visible(paragraph) for paragraph in _walk(doc.Text)]
-            texts[at[0]] = _visible(paragraph)
+            # ponytail: a paragraph wholly inside a deletion that spans three or more
+            # still reads with its deleted text; walk from start to end if that bites.
+            for edge in (redline.RedlineStart, redline.RedlineEnd):
+                paragraph = _around(edge.getText().createTextCursorByRange(edge))
+                whole = paragraph.getString()
+                if whole in done:
+                    continue  # read for another deletion (or the other end of this one)
+                done.add(whole)
+                seen = _visible(paragraph)
+                if seen == whole:
+                    continue  # the deletion only touches this paragraph's edge
+                at = [n for n, text in enumerate(raw) if text == whole]
+                if len(at) != 1:
+                    # A repeated paragraph cannot be placed: read them all, in order.
+                    return [_visible(paragraph) for paragraph in _walk(doc.Text)]
+                texts[at[0]] = seen
         return texts
 
     @_guard
