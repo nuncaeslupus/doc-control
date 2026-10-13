@@ -23,14 +23,14 @@ KINDS = [
     ("~$Novela.docx", "owner", True, "word", None),
     (
         ".~lock.Novela.docx#",
-        f",ana,{HERE},13.10.2026 17:26,file:///home/ana/profile;",
+        f",ana,{HERE},13.10.2026 17:26,file:///x;",
         True,
         "libreoffice",
         False,
     ),
     (
         ".~lock.Novela.docx#",
-        f",ana,{HERE},13.10.2026 17:26,file:///home/ana/profile;",
+        f",ana,{HERE},13.10.2026 17:26,file:///x;",
         False,
         "libreoffice",
         True,
