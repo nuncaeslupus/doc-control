@@ -326,9 +326,12 @@ def test_one_rendered_mark_does_not_switch_off_the_model(run: Run, tmp_path: Pat
     assert rows[-1]["page"] > 45
 
 
-def test_marks_resync_the_model_when_text_was_added_since_layout(run: Run, tmp_path: Path) -> None:
+def test_marks_win_over_the_model_even_when_text_was_added_since_layout(
+    run: Run, tmp_path: Path
+) -> None:
     # Six pages as Word laid them out (8 paragraphs each, a mark on each page's first),
-    # then three paragraphs typed in at the top without a new layout.
+    # then three paragraphs typed in at the top without a new layout. The model cannot tell
+    # added text from its own misestimate, so up to the last mark Word's pages stand (T42).
     added = "".join(para(words(100)) for _ in range(3))
     pages = ""
     for n in range(6):
@@ -336,11 +339,17 @@ def test_marks_resync_the_model_when_text_was_added_since_layout(run: Run, tmp_p
     result = estimate(run, build(tmp_path, added + pages))
     rows = result["paragraphs"]
     marked = [r for r in rows if r["source"] == "rendered"]
-    assert len(marked) == 5
-    # The model pushes the first marked paragraph to page 3; each mark then restarts a page.
-    assert [r["page"] for r in marked] == [3, 4, 5, 6, 7]
-    assert result["page_count"] == 7
+    assert [r["page"] for r in marked] == [2, 3, 4, 5, 6]
+    assert result["page_count"] == 6 == result["rendered_marks"] + 1
     assert [r["page"] for r in rows] == sorted(r["page"] for r in rows)
+
+
+def test_text_after_the_last_mark_is_paged_by_the_model(run: Run, tmp_path: Path) -> None:
+    body = para(words(100)) + para(words(100), before=MARK)
+    body += "".join(para(words(100)) for _ in range(40))  # far more than a page
+    result = estimate(run, build(tmp_path, body))
+    assert result["paragraphs"][1]["page"] == 2
+    assert result["page_count"] > 3
 
 
 def test_page_labels_follow_pgnumtype_start_per_section(run: Run, tmp_path: Path) -> None:

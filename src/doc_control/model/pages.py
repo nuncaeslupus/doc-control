@@ -3,9 +3,10 @@
 The word-count model always runs; the marks and breaks correct it:
 
 * ``w:lastRenderedPageBreak`` marks, written by Word each time it laid the document out,
-  are resync points: a mark starts a new page and resets the filled height, so the model
-  restarts from Word's own page start. Text added since the last layout carries no marks and
-  is paged by the model alone, like everything after the last mark. A mark that lands on a
+  are Word's own page starts and win: up to the last mark only marks and explicit breaks
+  start pages (the model never overflows there), so a document Word laid out gets Word's
+  page count. Text after the last mark (added since the last layout, or a document without
+  marks) is paged by the model alone, restarting from the last mark's page. A mark that lands on a
   page the model (or an explicit break) just started is not counted twice.
 * Explicit page starts: ``w:br w:type="page"``, ``pageBreakBefore`` (direct or from the style
   chain) and section breaks that start a new page (``nextPage``, ``oddPage``, ``evenPage``;
@@ -276,6 +277,7 @@ class _Sim:
         self.empty = True  # nothing placed on the current page yet
         self.pending = False  # a break was just counted; Word's own mark for it is a duplicate
         self.broke = False  # the current page was started by an explicit break
+        self.marks_ahead = 0  # rendered marks still to come: the model may not add pages
 
     def new_page(self, *, explicit: bool = False) -> None:
         self.page += 1
@@ -289,6 +291,8 @@ class _Sim:
             self.page += 1
 
     def event(self, ev: _Event) -> None:
+        if ev.kind == "lrpb":
+            self.marks_ahead -= 1
         if ev.kind == "lrpb" and (self.pending or self.empty):
             self.pending = False  # this page already started here
         else:
@@ -296,6 +300,9 @@ class _Sim:
 
     def place(self, height: float, line_h: float, geo: _Geometry) -> int:
         """Fill pages with a block of ``height``; returns the page it starts on."""
+        if self.marks_ahead > 0:  # Word's marks decide where pages start
+            self.used = min(self.used + height, geo.height_pt)
+            return self.page
         room = geo.height_pt - self.used
         if not self.empty and room < line_h:
             self.new_page()
@@ -345,6 +352,7 @@ def estimate_pages(doc: Document) -> PageEstimate:
     placed: dict[int, tuple[int, int]] = {}  # row id -> (start page, end page)
 
     sim = _Sim()
+    sim.marks_ahead = marks
     rows: list[ParaPage] = []
     section = 0
     opens_section = False
