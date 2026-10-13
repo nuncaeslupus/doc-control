@@ -124,6 +124,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T46 | Performance gate in CI on the 100k-word document through `api.open` | repo | M | T39 | `perf_budget_breaches == 0` | `test_perf_budgets_100k` in `tests/bench/test_perf_gate.py` |
 | T47 | Cold bulk read: one shared read-only parse per paragraph (C parser), faster normalised text | model | S | T39, T46 | `cold_bulk_read_regressions == 0` | `test_cold_bulk_read_same_rows_within_budget` in `tests/bench/test_cold_read.py` |
 | T48 | Bulk read reports page basis, marks and count; page-starting section breaks count as `page_break_before` | ops | S | T31, T39, T42 | `page_fact_mismatches == 0` | `test_bulk_page_header_and_section_breaks` in `tests/ops/test_page_facts.py` |
+| T49 | `segment`: scenes opened by a paragraph style (`scene_style`); untitled headings take their subtitle line (`heading_last`); decorated numerals | model | S | T40 | `scene_heading_mismatches == 0` | `test_scene_styles_and_heading_subtitles` in `tests/ops/test_segment_scene_styles.py` |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 
