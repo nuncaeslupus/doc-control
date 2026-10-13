@@ -8,7 +8,7 @@ An error answers with `ok: false` and `error: {code, message, hint, details}`. T
 | Code | What to do |
 |---|---|
 | `DOC_NOT_FOUND` | Check the path; it is resolved relative to the current directory. |
-| `NOT_A_DOCX` | Pass a Word .docx file (or UTF-8 .txt/.md, read operations only); .doc and other formats are not supported. |
+| `NOT_A_DOCX` | Pass a Word .docx file (or .txt/.md/.odt, read operations only); .doc and other formats are not supported. |
 | `DOC_LOCKED` | An editor (Word, LibreOffice) has the file open: close it, then retry. |
 | `DOC_CHANGED_ON_DISK` | The file changed since you read it: re-read, then retry. |
 | `SCHEMA_INVALID` | Run `doc-control help <op>` to see the request schema. |
