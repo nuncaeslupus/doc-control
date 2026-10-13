@@ -14,6 +14,7 @@ from pathlib import Path
 from doc_control.model.document import Document
 from doc_control.model.wordfind import WORD_FIND_MAX, word_find
 from doc_control.ops.locate import (
+    FindPhrase,
     LazyIndexes,
     MarkIndex,
     _indexes,
@@ -102,3 +103,34 @@ def test_no_phrase_spans_a_mark_that_is_not_plain() -> None:
     found = across_marks(texts, spans, MarkIndex(texts), 0)
     assert found is not None and found.across == "next"
     assert across_marks(texts, spans, MarkIndex(texts), 0, lambda j: False) is None
+
+
+def test_pruning_matches_brute_force() -> None:
+    """Skipping marks whose paragraph pair recurs never loses a unique phrase; the pair that
+    opens the document has no mark before it (the whole-paragraph phrase still counts)."""
+    import random
+
+    from doc_control.ops.locate import word_spans
+
+    class NoPrune(MarkIndex):
+        def pair_repeats(self, j: int) -> bool:
+            return False
+
+    def both(texts: list[str], i: int) -> tuple[FindPhrase | None, FindPhrase | None]:
+        def spans(j: int) -> list[tuple[int, int]]:
+            return word_spans(texts[j])
+
+        return (
+            across_marks(texts, spans, MarkIndex(texts), i),
+            across_marks(texts, spans, NoPrune(texts), i),
+        )
+
+    texts = ["SS", "ss \U0010ffff", "ss \U0010ffff", "b a", "ss", "ss \U0010ffff"]
+    assert both(texts, 4)[0] == both(texts, 4)[1]  # the pair (4, 5) recurs at (0, 1)
+    rng = random.Random(11)
+    words = ["ss", "SS", "b", "a b", "\u2014S\u00ed.", ""]
+    for _ in range(3000):
+        texts = [rng.choice(words) for _ in range(rng.randint(2, 9))]
+        for i in range(len(texts)):
+            pruned, brute = both(texts, i)
+            assert pruned == brute, (texts, i)

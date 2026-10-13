@@ -259,16 +259,15 @@ def across_marks(
         return pieces
 
     # Only a plain paragraph mark is ^p: not one ending a table cell or a section.
+    has_before = i > 0 and crossable(i - 1)
+    has_after = i + 1 < len(texts) and crossable(i)
+    # A phrase across a mark whose two paragraphs recur as a pair recurs with them. Not
+    # so the whole paragraph between both marks: a recurring pair that opens the document
+    # has no mark before it, so that phrase is still checked.
     before = (
-        neighbour_words(i - 1, tail=True)
-        if i > 0 and crossable(i - 1) and not marks.pair_repeats(i - 1)
-        else []
+        neighbour_words(i - 1, tail=True) if has_before and not marks.pair_repeats(i - 1) else []
     )
-    after = (
-        neighbour_words(i + 1, tail=False)
-        if i + 1 < len(texts) and crossable(i) and not marks.pair_repeats(i)
-        else []
-    )
+    after = neighbour_words(i + 1, tail=False) if has_after and not marks.pair_repeats(i) else []
     for k in range(1, min(n, MAX_FIND_WORDS) + 1):
         head = text[: own[k - 1][1]]
         if before and runs[0] >= k - 1 and not _BREAK.search(head):
@@ -278,7 +277,7 @@ def across_marks(
         if after and not _BREAK.search(tail):
             for j, piece in enumerate(after[: MAX_FIND_WORDS - k + 1]):
                 found.append((k + j, 1, 1, tail + "\r" + piece, own[n - k][0], "next"))
-    if before and after and n <= MAX_FIND_WORDS and not _BREAK.search(text):
+    if has_before and has_after and n <= MAX_FIND_WORDS and not _BREAK.search(text):
         found.append((n, 2, 2, "\r" + text + "\r", 0, "both"))
     for words, _marks, _order, phrase, start, side in sorted(found, key=lambda c: c[:3]):
         if word_find(phrase) is not None and marks.once(phrase.casefold()):
