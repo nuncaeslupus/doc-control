@@ -69,6 +69,9 @@ _FIXED_TEXT = {
     W + "ptab": "\t",
 }
 
+# Word's own hyphens: its Find tells them from the same characters written as text.
+_TYPED = frozenset({W + "noBreakHyphen", W + "softHyphen"})
+
 _Emit = Callable[[str, tuple[int, ...]], None]
 
 
@@ -92,13 +95,20 @@ class Piece:
 
 @dataclass(frozen=True)
 class Paragraph:
-    """One indexed paragraph of the main story."""
+    """One indexed paragraph of the main story.
+
+    ``typed`` holds the offsets of the soft and no-break hyphens that are Word's own
+    (``w:softHyphen``, ``w:noBreakHyphen``); any other U+00AD or U+2011 of ``text`` is a
+    literal character of a ``w:t``. Word's Find tells the two apart (see
+    :mod:`doc_control.model.wordfind`).
+    """
 
     number: int  # 1-based
     span_index: int  # position in DocumentSpans.paragraphs
     text: str
     fp: str
     pieces: tuple[Piece, ...] = field(repr=False)
+    typed: tuple[int, ...] = field(default=(), repr=False)
 
     @property
     def address(self) -> Address:
@@ -149,6 +159,8 @@ class _Walker:
     def __init__(self) -> None:
         # One entry per open field: True once its ``separate`` was seen (result part).
         self.fields: list[bool] = []
+        # Paths of the current paragraph's w:softHyphen and w:noBreakHyphen elements.
+        self.typed: set[tuple[int, ...]] = set()
 
     def paragraph(
         self, root: ET.Element, scope: Mapping[str, str]
@@ -164,8 +176,15 @@ class _Walker:
                 pieces.append(Piece(pos, pos + len(text), path, bool(self.fields)))
                 pos += len(text)
 
+        self.typed.clear()
         self.walk(root, (), scope, emit)
         return "".join(parts), tuple(pieces)
+
+    def typed_offsets(self, pieces: Sequence[Piece]) -> tuple[int, ...]:
+        """Offsets of the hyphens of the paragraph just read that are Word's own elements."""
+        if not self.typed:
+            return ()
+        return tuple(p.start for p in pieces if p.path in self.typed)
 
     def walk(
         self, elem: ET.Element, path: tuple[int, ...], scope: Mapping[str, str], emit: _Emit
@@ -200,6 +219,8 @@ class _Walker:
                 emit("".join(child.itertext()), (*path, i))
             elif tag in _FIXED_TEXT:
                 emit(_FIXED_TEXT[tag], (*path, i))
+                if tag in _TYPED:
+                    self.typed.add((*path, i))
             elif tag == W + "br" and child.get(W + "type") not in _BREAKS_WITHOUT_TEXT:
                 emit("\n", (*path, i))
             elif tag == W + "sym":
@@ -349,5 +370,6 @@ def _paragraphs(spans: DocumentSpans, *, carry: bool) -> tuple[list[Paragraph], 
             walker.fields.clear()
         text, pieces = walker.paragraph(spans.parsed(span.index), span.scope)
         number = len(paragraphs) + 1
-        paragraphs.append(Paragraph(number, span.index, text, fingerprint(text), pieces))
+        typed = walker.typed_offsets(pieces)
+        paragraphs.append(Paragraph(number, span.index, text, fingerprint(text), pieces, typed))
     return paragraphs, bool(walker.fields)

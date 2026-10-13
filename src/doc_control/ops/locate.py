@@ -40,8 +40,12 @@ Find phrase
     spanned (not ones in table cells or ending a section), and uniqueness counts the mark
     Word puts after the last paragraph too. ``find_phrase_word`` is the same
     phrase as typed in Word's Find box (``^p`` mark, ``^t`` tab, ``^s`` no-break space,
-    ``^^`` caret), None past 255 characters or when the phrase holds a soft or no-break
-    hyphen (Word keeps two forms of each and no one Find string matches both).
+    ``^^`` caret), None past 255 characters. Word keeps two forms of a soft and of a
+    no-break hyphen and finds each with its own code: ``^-`` and ``^~`` for its own optional
+    and no-break hyphens, ``^u173`` and ``^u8209`` for the same characters written as text;
+    ``find_phrase_word`` has the code of the form the document holds. Uniqueness follows
+    Word there too: a search skips Word's own optional hyphens (``zebra`` also finds
+    ``ze^-bra``) and a plain ``-`` also finds its own no-break hyphen.
     When none is unique ``find_phrase_unique`` is false with ``find_phrase_reason``
     (``empty``, ``duplicate`` or ``none_within_25_words``), and a non-empty paragraph gets
     ``context``: the find phrase (and ``after_word``) of the nearest earlier paragraph that
@@ -70,7 +74,7 @@ from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
 from doc_control.model.structure import detect_in
-from doc_control.model.wordfind import two_forms, word_find
+from doc_control.model.wordfind import as_searched, word_find
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.ops.segment import (
     OVERRIDES_SCHEMA,
@@ -240,8 +244,7 @@ def across_marks(
     meets once: words ending the previous paragraph (or none), the mark, the paragraph's
     first words; or its last words, the mark, words opening the next one (or none); or the
     whole paragraph between both marks. Fewest words first, then fewest marks, then the
-    paragraph's start first. None when no such phrase fits in Word's Find box (too long, or
-    holding a soft or no-break hyphen)."""
+    paragraph's start first. None when no such phrase fits in Word's Find box."""
     text, own = texts[i], spans(i)
     if not own:
         return None
@@ -282,7 +285,7 @@ def across_marks(
     if has_before and has_after and n <= MAX_FIND_WORDS and not _BREAK.search(text):
         found.append((n, 2, 2, "\r" + text + "\r", 0, "both"))
     for words, _marks, _order, phrase, start, side in sorted(found, key=lambda c: c[:3]):
-        if word_find(phrase) is not None and marks.once(phrase.casefold()):
+        if word_find(phrase, ()) is not None and marks.once(phrase.casefold()):
             return FindPhrase(phrase, words, start, across=side)
     return None
 
@@ -437,13 +440,10 @@ class FindIndex:
     ) -> FindPhrase | None:
         text, spans, runs = self.texts[i], self.spans[i], self._runs[i]
         starts = range(len(spans) - length + 1)  # the paragraph's start comes first
-        risky = two_forms(text)
         for s in starts:
             if runs[s] < s + length - 1:
                 continue
             begin, end = spans[s][0], spans[s + length - 1][1]
-            if risky and two_forms(text[begin:end]):
-                continue  # Word's Find has no one string for it (see wordfind)
             if seen is not None and seen[tuple(self._tokens[i][2 * s : 2 * (s + length) - 1])] != 1:
                 continue
             if seen is not None and length > 1:
@@ -473,12 +473,21 @@ class LazyIndexes:
     (the gate compares them on every paragraph of the corpus); each answer costs a scan of
     the paragraphs' edges and substring counts in the document's folded text, which beats
     building both indexes when a request asks about a handful of paragraphs.
+
+    ``search``: the texts as Word's Find meets them (see :class:`Forms`), which the find
+    phrases are taken from; default ``texts``.
     """
 
-    def __init__(self, texts: list[str], crossable: Sequence[bool] | None = None) -> None:
+    def __init__(
+        self,
+        texts: list[str],
+        crossable: Sequence[bool] | None = None,
+        search: list[str] | None = None,
+    ) -> None:
         self.texts = texts
+        self.search = texts if search is None else search
         self.crossable = crossable
-        self.haystack = "\r".join(t.casefold() for t in texts) + "\r"  # see FindIndex
+        self.haystack = "\r".join(t.casefold() for t in self.search) + "\r"  # see FindIndex
         self._copies: Counter[str] | None = None  # folded text -> paragraphs holding it
         self._edges: list[tuple[tuple[str, ...], tuple[str, ...], int]] | None = None
         self._locators: dict[int, Locator] = {}
@@ -486,8 +495,10 @@ class LazyIndexes:
         self.spent = 0.0  # seconds spent answering (see _Phrases)
         self._mark_index: MarkIndex | None = None
 
-    def _keys(self, i: int) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
-        text = self.texts[i]
+    def _keys(
+        self, i: int, texts: list[str] | None = None
+    ) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
+        text = (texts or self.texts)[i]
         spans = word_spans(text)
         return spans, tuple(text[s:e].casefold() for s, e in spans)
 
@@ -503,8 +514,8 @@ class LazyIndexes:
 
     def _copies_of(self, i: int) -> int:
         if self._copies is None:
-            self._copies = Counter(t.casefold() for t in self.texts)
-        return self._copies[self.texts[i].casefold()]
+            self._copies = Counter(t.casefold() for t in self.search)
+        return self._copies[self.search[i].casefold()]
 
     def locator(self, i: int) -> Locator:
         if i not in self._locators:
@@ -558,7 +569,7 @@ class LazyIndexes:
 
     def _marks(self) -> MarkIndex:
         if self._mark_index is None:
-            self._mark_index = MarkIndex(self.texts)
+            self._mark_index = MarkIndex(self.search)
         return self._mark_index
 
     def _once(self, key: str) -> bool:
@@ -567,8 +578,9 @@ class LazyIndexes:
         return at >= 0 and self.haystack.find(key, at + 1) < 0
 
     def _find(self, i: int) -> FindPhrase:
-        text = self.texts[i]
-        spans, key = self._keys(i)
+        texts = self.search
+        text = texts[i]
+        spans, key = self._keys(i, texts)
         if not key:
             return FindPhrase(None, reason="empty")
         marks = self.crossable
@@ -576,31 +588,35 @@ class LazyIndexes:
         if self._copies_of(i) > 1:
             # Every run of a repeated paragraph recurs in its twin; only its marks differ.
             spanning = across_marks(
-                self.texts, lambda j: self._keys(j)[0], self._marks(), i, crossable
+                texts, lambda j: self._keys(j, texts)[0], self._marks(), i, crossable
             )
             return spanning or FindPhrase(None, reason="duplicate")
         runs = FindIndex._run_ends(text, spans)
-        risky = two_forms(text)
         for length in range(1, MAX_FIND_WORDS + 1):
             for s in range(len(spans) - length + 1):
                 if runs[s] < s + length - 1:
                     continue
                 begin, end = spans[s][0], spans[s + length - 1][1]
-                if risky and two_forms(text[begin:end]):
-                    continue  # as FindIndex._pick
                 if self._once(text[begin:end].casefold()):
                     return FindPhrase(text[begin:end], length, begin)
-        spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._marks(), i, crossable)
+        spanning = across_marks(
+            texts, lambda j: self._keys(j, texts)[0], self._marks(), i, crossable
+        )
         return spanning or FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
 
 
 def _indexes(
-    texts: list[str], crossable: Sequence[bool] | None = None
+    texts: list[str],
+    crossable: Sequence[bool] | None = None,
+    search: list[str] | None = None,
 ) -> tuple[LocatorIndex, list[FindPhrase]]:
     """The whole-document indexes; ``crossable[j]``: the mark after paragraph j is a plain
-    paragraph mark a phrase may span (default: every one)."""
+    paragraph mark a phrase may span (default: every one). ``search``: the texts as Word's
+    Find meets them, which the find phrases are taken from (default ``texts``)."""
     locators = LocatorIndex(texts)
-    finder = FindIndex(locators)
+    searched = locators if search is None else LocatorIndex(search)
+    texts = searched.texts
+    finder = FindIndex(searched)
     found = finder.found
     marks: MarkIndex | None = None
     for i, phrase in enumerate(found):
@@ -608,13 +624,70 @@ def _indexes(
             marks = marks or MarkIndex(texts)
             spanning = across_marks(
                 texts,
-                locators.spans.__getitem__,
+                searched.spans.__getitem__,
                 marks,
                 i,
                 (lambda j: crossable[j]) if crossable is not None else (lambda j: True),
             )
             found[i] = spanning or phrase
     return locators, found
+
+
+class Forms:
+    """Find phrases of a document that holds Word's own optional or no-break hyphens.
+
+    ``typed[i]``: the offsets, in paragraph ``i`` (0-based), of the hyphens that are Word's
+    own elements. ``search`` is each text as a plain search in Word meets it (see
+    :func:`doc_control.model.wordfind.as_searched`); the find phrases are taken from those
+    texts, so a phrase counted once there is one Word's Find meets once. ``search`` is None
+    when no paragraph holds such a hyphen: the texts are searched as they are.
+    """
+
+    def __init__(self, texts: list[str], typed: dict[int, tuple[int, ...]]) -> None:
+        self.texts = texts
+        self.typed = {i: frozenset(offsets) for i, offsets in typed.items()}
+        self.search: list[str] | None = None
+        self._kept: dict[int, list[int]] = {}
+        if typed:
+            self.search = list(texts)
+            for i, offsets in self.typed.items():
+                self.search[i], self._kept[i] = as_searched(texts[i], offsets)
+
+    def _segments(self, i: int, find: FindPhrase) -> list[tuple[int, int, int]]:
+        """``(paragraph, start, end)`` in the searched texts of each part of ``find.text``
+        between paragraph marks."""
+        assert self.search is not None and find.text is not None
+        parts = find.text.split("\r")
+        if find.across is None:
+            return [(i, find.start, find.start + len(find.text))]
+        if find.across == "previous":
+            before = len(self.search[i - 1])
+            return [(i - 1, before - len(parts[0]), before), (i, 0, len(parts[1]))]
+        if find.across == "next":
+            return [(i, find.start, len(self.search[i])), (i + 1, 0, len(parts[1]))]
+        return [(i, 0, 0), (i, 0, len(parts[1])), (i, 0, 0)]  # between both marks
+
+    def written(self, i: int, find: FindPhrase) -> tuple[str, str | None]:
+        """The phrase of paragraph ``i`` in the document's own characters, and as typed in
+        Word's Find box with the code of the form each hyphen has."""
+        assert find.text is not None
+        if self.search is None:
+            return find.text, word_find(find.text, ())
+        pieces: list[str] = []
+        typed: set[int] = set()
+        at = 0
+        for j, start, end in self._segments(i, find):
+            kept = self._kept.get(j)
+            if kept is not None and start < end:
+                start, end = kept[start], kept[end - 1] + 1
+            elif kept is not None:
+                start = end = 0
+            pieces.append(self.texts[j][start:end])
+            typed.update(at + k - start for k in self.typed.get(j, ()) if start <= k < end)
+            at += end - start + 1
+        text = "\r".join(pieces)
+        # Past the box's limit with the codes: the searched text finds the same place.
+        return text, word_find(text, typed) or word_find(find.text, ())
 
 
 def _plain_marks(doc: Document) -> list[bool]:
@@ -633,14 +706,23 @@ class _Phrases:
     whole-document indexes (built once, same answers): a run of near-identical paragraphs
     makes each lazy answer scan the document again, where the indexes answer from tables."""
 
-    def __init__(self, doc: Document, texts: list[str], crossable: Sequence[bool]) -> None:
+    def __init__(
+        self,
+        doc: Document,
+        texts: list[str],
+        crossable: Sequence[bool],
+        search: list[str] | None,
+    ) -> None:
         self.doc = doc
         self.texts = texts
         self.crossable = crossable
-        self.lazy = doc.memo("locate-lazy", lambda: LazyIndexes(texts, crossable))
+        self.search = search
+        self.lazy = doc.memo("locate-lazy", lambda: LazyIndexes(texts, crossable, search))
 
     def _indexes(self) -> tuple[LocatorIndex, list[FindPhrase]]:
-        return self.doc.memo("locate-index", lambda: _indexes(self.texts, self.crossable))
+        return self.doc.memo(
+            "locate-index", lambda: _indexes(self.texts, self.crossable, self.search)
+        )
 
     def _lazy(self, answer: Callable[[int], _A], i: int) -> _A:
         start = time.perf_counter()
@@ -729,13 +811,17 @@ def locate(request: dict[str, Any]) -> Reply:
         numbers = range(1, count + 1)
     memo: dict[Any, Any] = doc.__dict__.get("_memo", {})
     crossable = doc.memo("locate-marks", lambda: _plain_marks(doc))
+    forms = doc.memo(
+        "locate-forms",
+        lambda: Forms(texts, {p.number - 1: p.typed for p in index.paragraphs if p.typed}),
+    )
     if len(numbers) <= LAZY_MAX and "locate-index" not in memo:
         # A few paragraphs: answer them alone, without the whole-document indexes.
-        phrases = _Phrases(doc, texts, crossable)
+        phrases = _Phrases(doc, texts, crossable, forms.search)
         locator_of: Callable[[int], Locator] = phrases.locator
         find_of: Callable[[int], FindPhrase] = phrases.find
     else:
-        locators, finds = doc.memo("locate-index", lambda: _indexes(texts, crossable))
+        locators, finds = doc.memo("locate-index", lambda: _indexes(texts, crossable, forms.search))
         locator_of = locators.locator
         find_of = finds.__getitem__
 
@@ -790,17 +876,18 @@ def locate(request: dict[str, Any]) -> Reply:
         out["find_phrase"] = find.text
         out["find_phrase_unique"] = find.text is not None
         if find.text is not None:
+            out["find_phrase"], out["find_phrase_word"] = forms.written(n - 1, find)
             out["find_phrase_words"] = find.words
-            out["find_phrase_word"] = word_find(find.text)
             if find.across is not None:
                 out["find_phrase_across"] = find.across
         else:
             out["find_phrase_reason"] = find.reason
             earlier = next((j for j in range(n - 2, -1, -1) if find_of(j).text is not None), None)
             if earlier is not None and find.reason != "empty":
+                after, after_word = forms.written(earlier, find_of(earlier))
                 out["context"] = {
-                    "after": find_of(earlier).text,
-                    "after_word": word_find(find_of(earlier).text or ""),
+                    "after": after,
+                    "after_word": after_word,
                     "at": str(index.paragraph(earlier + 1).address),
                     "paragraphs_after": n - 1 - earlier,
                 }
