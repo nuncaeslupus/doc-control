@@ -51,7 +51,7 @@ def test_both_lock_name_forms_are_detected(tmp_path: Path, name: str, lock: str)
 
 def test_short_name_does_not_use_truncated_form(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Ab.docx", "x")
-    assert [p.name for p in lock_file_candidates(doc)] == ["~$Ab.docx"]
+    assert [p.name for p in lock_file_candidates(doc)] == ["~$Ab.docx", ".~lock.Ab.docx#"]
 
 
 def test_sha_mismatch_returns_doc_changed_on_disk(tmp_path: Path) -> None:

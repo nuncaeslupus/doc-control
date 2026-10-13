@@ -24,6 +24,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import uncapped
 from doc_control.model.document import Document, shared_documents
 from doc_control.registry import REGISTRY, load_operations
+from doc_control.safety.store import stores_in
 
 __all__ = ["OpenDocument", "open", "run"]
 
@@ -41,8 +42,9 @@ def run(op: str, request: dict[str, Any]) -> Reply:
 class OpenDocument:
     """A document held open for several operations; see the module docstring."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, store: str | Path | None = None) -> None:
         self.path = str(path)
+        self.store = Path(store) if store is not None else None
         self._cache: dict[str, tuple[tuple[int, int, int], Document]] = {}
 
     def reply(self, op: str, request: dict[str, Any] | None = None) -> Reply:
@@ -57,9 +59,15 @@ class OpenDocument:
         if operation.kind != "read":
             self._cache.clear()
             try:
-                return run(op, req)
+                if self.store is None:
+                    return run(op, req)
+                with stores_in(self.store):
+                    return run(op, req)
             finally:
                 self._cache.clear()
+        if self.store is not None:
+            with stores_in(self.store), shared_documents(self._cache):
+                return run(op, req)
         with shared_documents(self._cache):
             return run(op, req)
 
@@ -96,6 +104,10 @@ class OpenDocument:
         self.close()
 
 
-def open(path: str | Path) -> OpenDocument:
-    """Open ``path`` for several operations (nothing is read until the first one)."""
-    return OpenDocument(path)
+def open(path: str | Path, store: str | Path | None = None) -> OpenDocument:
+    """Open ``path`` for several operations (nothing is read until the first one).
+
+    ``store`` is the folder for backups and history (one subfolder per document), so
+    writes leave nothing next to the document but the document itself.
+    """
+    return OpenDocument(path, store)

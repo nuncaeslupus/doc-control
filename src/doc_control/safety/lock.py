@@ -1,4 +1,4 @@
-"""Pre-write checks: Word's owner lock file and on-disk change detection.
+"""Pre-write checks: editors' lock files and on-disk change detection.
 
 When Word opens ``Name.docx`` it creates a hidden owner file next to it whose
 name is ``~$`` followed by the document name. To keep the result short Word
@@ -8,7 +8,8 @@ the first two are (``Manuscrito.docx`` -> ``~$nuscrito.docx``). Short stems get
 the plain prefix (``Novela.docx`` -> ``~$Novela.docx``). Other Office builds and
 sync clients have been seen to use the plain prefix for any length, so it is
 always checked too: a false positive only refuses a write, a miss could
-overwrite a document Word is editing.
+overwrite a document Word is editing. OnlyOffice and WPS use Word's ``~$`` names;
+LibreOffice writes ``.~lock.<name>#`` next to the document, which is checked too.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ def lock_file_candidates(doc_path: Path) -> list[Path]:
         names.append(LOCK_PREFIX + name[1:])
     elif stem_len >= 8:
         names.append(LOCK_PREFIX + name[2:])
+    names.append(f".~lock.{name}#")  # LibreOffice
     return [doc_path.with_name(n) for n in names]
 
 
@@ -46,7 +48,7 @@ def check_unlocked(doc_path: Path) -> None:
     if lock is not None:
         raise DocControlError(
             ErrorCode.DOC_LOCKED,
-            f"Word has {doc_path.name} open (lock file {lock.name})",
+            f"an editor has {doc_path.name} open (lock file {lock.name})",
             path=str(doc_path),
             lock_file=str(lock),
         )

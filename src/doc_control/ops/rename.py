@@ -140,6 +140,7 @@ class RenamePlan:
     edits: list[ReplaceText] = field(default_factory=list)
     changes: list[_Change] = field(default_factory=list)
     counts: Counts = field(default_factory=Counts)
+    skipped: list[dict[str, Any]] = field(default_factory=list)  # where and why
 
 
 def _bad(i: int, why: str) -> DocControlError:
@@ -251,9 +252,11 @@ def plan_rename(
             counts.matches += 1
             if not (boundary_ok(text, s) and boundary_ok(text, e)):
                 counts.skipped_boundary += 1
+                plan.skipped.append(_skip(para.address, text, s, e, "boundary"))
                 continue
             if in_field and any(p.in_field for p in para.pieces_in(s, e)):
                 counts.skipped_unsupported += 1
+                plan.skipped.append(_skip(para.address, text, s, e, "field"))
                 continue
             matched = text[s:e]
             after = match_case(matched, exact, target) if dress else target
@@ -272,10 +275,21 @@ def plan_rename(
     return plan
 
 
+def _skip(address: Any, text: str, start: int, end: int, reason: str) -> dict[str, Any]:
+    """Where a match was left alone and why: ``field`` (a field result), ``boundary``
+    (it would split a character from its marks) or ``unsupported_structure``."""
+    return {"at": f"{address}:{start}-{end}", "text": text[start:end], "reason": reason}
+
+
+def _order(at: str) -> tuple[int, int]:
+    head, _, span = at.partition(":")
+    return int(head[1:].split("#")[0]), int(span.split("-")[0])
+
+
 def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> RenamePlan:
     """Keep only the edits the editor can make (each tried on a throwaway copy)."""
     ctx = RevisionContext(used_ids(pkg), "check", format_date(None))
-    kept = RenamePlan(counts=plan.counts)
+    kept = RenamePlan(counts=plan.counts, skipped=plan.skipped)
     for edit, change in zip(plan.edits, plan.changes, strict=True):
         para = index.paragraph(change.paragraph)
         elem = index.spans.parse_paragraph(para.span_index)
@@ -286,6 +300,9 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
                 raise
             plan.counts.skipped_unsupported += 1
             plan.counts.replaced -= 1
+            kept.skipped.append(
+                {"at": change.at, "text": change.before, "reason": "unsupported_structure"}
+            )
             continue
         kept.edits.append(edit)
         kept.changes.append(change)
@@ -342,6 +359,7 @@ def term_rename(request: dict[str, Any]) -> Reply:
         "to": new,
         "dry_run": dry_run,
         "counts": counts.to_dict(),
+        "skipped": sorted(plan.skipped, key=lambda s: _order(s["at"])),
         "preview": [
             {"at": c.at, "before": c.before, "after": c.after, "context": c.context}
             for c in plan.changes[:limit]
