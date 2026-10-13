@@ -148,10 +148,12 @@ def find(request: dict[str, Any]) -> Reply:
             " continue with `next`"
         )
         next_cursor = f"c:find:{token}:{stopped}:0"
-    # From this page on: the cursor's position plus every match after it.
-    total: dict[str, Any] = (
-        {"total_at_least": counted, "more": True} if stopped is not None else {"total": counted}
-    )
+    # The document's total, on the first page only (a later page starts mid-document).
+    total: dict[str, Any] = {}
+    if "cursor" not in request:
+        total = (
+            {"total_at_least": counted, "more": True} if stopped is not None else {"total": counted}
+        )
     return Reply(
         {"matches": matches, **total},
         doc={"path": request["doc"], "sha256": pkg.sha256, "paragraphs": len(index)},

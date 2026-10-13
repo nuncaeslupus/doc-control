@@ -33,6 +33,10 @@ def _find_total(tmp: Path) -> None:
     doc = make_docx(tmp / "f.docx", *(["uno dos uno"] * 30))
     first = REGISTRY["find"].run({"doc": str(doc), "query": "uno", "limit": 5}).result  # type: ignore[union-attr]
     assert len(first["matches"]) == 5 and first["total"] == 60
+    page = REGISTRY["find"].run({"doc": str(doc), "query": "uno", "limit": 5})
+    request = {"doc": str(doc), "query": "uno", "limit": 5, "cursor": page.next_cursor}  # type: ignore[union-attr]
+    later = REGISTRY["find"].run(request).result  # type: ignore[union-attr]
+    assert "total" not in later and len(later["matches"]) == 5
 
 
 def _help_batch_kinds(tmp: Path) -> None:
@@ -40,7 +44,8 @@ def _help_batch_kinds(tmp: Path) -> None:
     assert isinstance(one, dict) and "comment.add" in one["batch_operations"]
     every = REGISTRY["help"].run({})
     assert isinstance(every, dict)
-    assert {"text.replace", "comment.add", "para.delete"} <= set(every["batch_operations"])
+    kinds = set(every["batch_operations"])
+    assert {"text.replace", "comment.add", "para.delete", "revision.accept"} <= kinds
 
 
 def _heading_level_documented(tmp: Path) -> None:

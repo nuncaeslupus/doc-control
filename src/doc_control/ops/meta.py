@@ -55,10 +55,9 @@ def help_(request: dict[str, Any]) -> dict[str, Any]:
 
 def _batch_kinds() -> dict[str, dict[str, Any]]:
     """The operation kinds a ``batch`` takes in ``ops`` (some are not operations of their own)."""
-    from doc_control.ops.comments import COMMENT_SCHEMAS
-    from doc_control.ops.tracked import OPERATION_SCHEMAS
+    from doc_control.ops.batch import ALL_SCHEMAS
 
-    return {**OPERATION_SCHEMAS, **COMMENT_SCHEMAS}
+    return dict(ALL_SCHEMAS)
 
 
 def _describe_kind(name: str, schema: dict[str, Any]) -> dict[str, Any]:
