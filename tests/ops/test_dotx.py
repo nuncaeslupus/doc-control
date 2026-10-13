@@ -19,7 +19,7 @@ from tests.corpus.generator import KINDS, generate
 from tests.corpus.private import private_documents
 from tests.corpus.structural import validate_structure
 from tests.corpus.validator import require_soffice, validate_documents
-from tests.helpers import make_docx
+from tests.helpers import make_docx, symlink_or_skip
 from tests.ops.test_stylesets import STYLES, defs
 
 
@@ -89,7 +89,7 @@ def test_export_dotx_refuses_existing_file_and_source(tmp_path: Path) -> None:
     assert existing.read_bytes() == b"keep"
     assert src.read_bytes() == before
     link = tmp_path / "link.dotx"
-    link.symlink_to(src)
+    symlink_or_skip(link, src)
     with pytest.raises(DocControlError):
         styleset_export_dotx({"doc": str(src), "out": str(link)})
     assert src.read_bytes() == before

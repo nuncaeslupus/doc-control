@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
+
+import pytest
 
 CONTENT_TYPES = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -38,3 +41,13 @@ def make_docx(path: Path, *paragraphs: str, extra: dict[str, bytes] | None = Non
         for name, data in (extra or {}).items():
             zf.writestr(name, data, compress_type=zipfile.ZIP_STORED)
     return path
+
+
+def symlink_or_skip(link: Path, target: Path) -> None:
+    """Point ``link`` at ``target``; on Windows, skip the test if the account may not."""
+    try:
+        link.symlink_to(target)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        pytest.skip("symlinks not available")
