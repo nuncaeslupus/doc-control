@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from doc_control.envelope import Reply
+from doc_control.ooxml.plaintext import refuse_write
 from doc_control.schema import check_schema, validate
 
 # A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
@@ -23,6 +25,8 @@ class Operation:
 
     def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         validate(request, self.schema)
+        if self.kind == "write" and isinstance(request.get("doc"), str):
+            refuse_write(Path(request["doc"]))
         return self.handler(request)
 
 

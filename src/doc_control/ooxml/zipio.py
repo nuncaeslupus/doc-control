@@ -29,6 +29,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.plaintext import TEXT_SUFFIXES, decode, package_bytes, refuse_write
 
 REQUIRED_PARTS = ("[Content_Types].xml", "word/document.xml")
 
@@ -91,7 +92,11 @@ class Package:
             raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
         raw = path.read_bytes()
         self.sha256 = hashlib.sha256(raw).hexdigest()
+        #: True for a .txt/.md file read as a document: readable, never written.
+        self.from_text = path.suffix.lower() in TEXT_SUFFIXES
         try:
+            if self.from_text:
+                raw = _text_package(path, raw)
             self._load(raw)
         except DocControlError:
             raise
@@ -275,7 +280,19 @@ def _claim(tmp: Path, dest: Path) -> None:
     tmp.unlink()
 
 
+def _text_package(path: Path, raw: bytes) -> bytes:
+    try:
+        text = decode(raw)
+    except UnicodeDecodeError as exc:
+        raise DocControlError(
+            ErrorCode.NOT_A_DOCX, f"{path} is not UTF-8 text: {exc}", path=str(path)
+        ) from exc
+    return package_bytes(text, markdown=path.suffix.lower() != ".txt")
+
+
 def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
+    if pkg.from_text:
+        refuse_write(pkg.path)
     out = bytearray()
     central = bytearray()
     count = 0

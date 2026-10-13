@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.plaintext import refuse_write
 from doc_control.schema import validate
 
 STORE_DIRNAME = ".doc-control"
@@ -440,8 +441,10 @@ def backup(
 ) -> Path:
     """Back up ``doc_path`` into its store, apply retention, return the backup path.
 
-    The store's config and id are validated before anything is copied or pruned.
+    The store's config and id are validated before anything is copied or pruned. A text
+    file (.txt, .md) is refused before any store exists: it is read, never written.
     """
+    refuse_write(doc_path)
     store = DocStore.open(doc_path, env)
     path = create_backup(store, doc_path, now, expect_sha256)
     prune_backups(store, now, protect=path)
