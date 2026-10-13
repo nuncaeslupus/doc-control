@@ -176,3 +176,31 @@ def test_deletion_across_a_paragraph_mark_reads_as_the_file_engine(
         assert _run("live.select", {**base, "at": rows[1]["at"]})["text"] == "Keep one"
     finally:
         _run("live.close", {**base, "discard": True})
+
+
+def test_paragraphs_wholly_inside_a_deletion_read_as_the_file_engine(
+    live: LibreOffice, lo_home: Path
+) -> None:
+    doc = make_docx(
+        lo_home / "scene.docx",
+        "Lead.",
+        "Keep one gone tail",
+        "A whole unicorn paragraph, deleted.",
+        "Another one, deleted too.",
+        "unicorn head stays two.",
+        "Third unicorn here.",
+    )
+    with api.open(doc) as handle:
+        at = [p["at"] for p in handle.paragraphs()]
+        cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
+        handle.run("batch", {"ops": [cut]})
+        rows = handle.paragraphs()
+    base = {"doc": str(doc)}
+    _run("live.open", base)
+    try:
+        assert live.paragraphs(doc) == [p["text"] for p in rows]
+        assert _run("live.select", {**base, "find_phrase": "unicorn"})["at"] == rows[-1]["at"]
+        for row in rows:
+            assert _run("live.select", {**base, "at": row["at"]})["text"] == row["text"]
+    finally:
+        _run("live.close", {**base, "discard": True})
