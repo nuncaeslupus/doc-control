@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from doc_control.envelope import Reply
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.plaintext import refuse_write
 from doc_control.schema import check_schema, validate
 
@@ -25,6 +26,12 @@ class Operation:
     handler: Handler
 
     def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
+        if request.get("engine") == "live" and "engine" not in self.schema["properties"]:
+            raise DocControlError(
+                ErrorCode.ENGINE_UNAVAILABLE,
+                f"{self.name} has no live engine",
+                reason="operation not supported live",
+            )
         validate(request, self.schema)
         if self.kind == "write" and isinstance(request.get("doc"), str):
             refuse_write(Path(request["doc"]))
@@ -70,6 +77,10 @@ OPERATION_MODULES: dict[str, str] = {
     "history.purge": "history",
     "history.search": "history",
     "info": "read",
+    "live.close": "live",
+    "live.open": "live",
+    "live.save": "live",
+    "live.status": "live",
     "locate": "locate",
     "open": "history",
     "outline": "read",

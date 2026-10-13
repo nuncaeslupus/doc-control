@@ -44,9 +44,14 @@ class OpenDocument:
     """A document held open for several operations; see the module docstring."""
 
     def __init__(
-        self, path: str | Path, store: str | Path | None = None, text_mode: str | None = None
+        self,
+        path: str | Path,
+        store: str | Path | None = None,
+        text_mode: str | None = None,
+        engine: str = "file",
     ) -> None:
         self.path = str(path)
+        self.engine = engine
         self.store = Path(store) if store is not None else None
         self.text_mode = text_mode
         self._cache: dict[str, tuple[tuple[int, int, int], Document]] = {}
@@ -65,6 +70,8 @@ class OpenDocument:
         req = dict(request or {})
         if "doc" in operation.schema.get("properties", {}):
             req.setdefault("doc", self.path)
+        if self.engine == "live" and "engine" in operation.schema.get("properties", {}):
+            req.setdefault("engine", "live")
         if operation.kind != "read":
             self._cache.clear()
             try:
@@ -118,7 +125,11 @@ class OpenDocument:
 
 
 def open(
-    path: str | Path, store: str | Path | None = None, text_mode: str | None = None
+    path: str | Path,
+    store: str | Path | None = None,
+    text_mode: str | None = None,
+    engine: str = "file",
+    app: str | None = None,
 ) -> OpenDocument:
     """Open ``path`` for several operations (nothing is read until the first one).
 
@@ -127,9 +138,18 @@ def open(
     (``auto``, ``blocks`` or ``lines``) says how a .txt file splits into paragraphs (see
     :mod:`doc_control.ooxml.plaintext`); the ``DOC_CONTROL_TEXT_MODE`` environment
     variable sets it for the CLI and the MCP server.
+
+    ``engine="live"`` attaches to the Word or LibreOffice window holding ``path`` (opening
+    the file there when none does; ``app`` picks ``word`` or ``libreoffice``), and the
+    handle then runs ``batch`` and the ``live.*`` operations on that open document.
     """
     if text_mode is not None and text_mode not in TEXT_MODES:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, f"text_mode must be one of {', '.join(TEXT_MODES)}"
         )
-    return OpenDocument(path, store, text_mode)
+    if engine not in ("file", "live"):
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "engine must be file or live")
+    handle = OpenDocument(path, store, text_mode, engine)
+    if engine == "live":
+        handle.run("live.open", {"app": app} if app else {})
+    return handle

@@ -24,6 +24,8 @@ class ErrorCode(StrEnum):
     STYLE_CONFLICT = "STYLE_CONFLICT"
     RECIPE_INVALID = "RECIPE_INVALID"
     HISTORY_NOT_FOUND = "HISTORY_NOT_FOUND"
+    ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE"
+    UNSAVED_CHANGES = "UNSAVED_CHANGES"
     INTERNAL = "INTERNAL"
 
 
@@ -51,6 +53,10 @@ HINTS: dict[ErrorCode, str] = {
     ErrorCode.STYLE_CONFLICT: "Rename the style or merge it with style.merge.",
     ErrorCode.RECIPE_INVALID: "Fix the recipe so it only uses the documented keys.",
     ErrorCode.HISTORY_NOT_FOUND: "List history with history.list and use an existing op id.",
+    ErrorCode.ENGINE_UNAVAILABLE: (
+        "details.reason says why; live.status lists the apps. Without one, use the file engine."
+    ),
+    ErrorCode.UNSAVED_CHANGES: "Pass save: true to keep the changes or discard: true to drop them.",
     ErrorCode.INTERNAL: "Unexpected error; nothing was written. Report it with the request.",
 }
 

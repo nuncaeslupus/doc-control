@@ -87,6 +87,10 @@ _SCHEMA: dict[str, Any] = {
         "tracked": {"type": "boolean", "description": "Tracked changes (the only mode, true)."},
         "author": {"type": "string", "minLength": 1, "description": "Revision author."},
         "tag": {"type": "string", "minLength": 1, "description": "Appended to the author."},
+        "engine": {
+            "enum": ["file", "live"],
+            "description": "`live` edits the document open in Word or LibreOffice (see live.open).",
+        },
     },
     "required": ["doc", "ops"],
     "additionalProperties": False,
@@ -123,6 +127,10 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
 def batch(request: dict[str, Any]) -> Reply:
     if request.get("tracked", True) is not True:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
+    if request.get("engine") == "live":
+        from doc_control.ops.live import live_batch
+
+        return Reply(live_batch(request))
     expect = request.get("expect", {})
     path = request["doc"]
     kinds = {op.get("op") in REVISION_SCHEMAS for op in request["ops"]}

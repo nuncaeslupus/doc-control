@@ -38,6 +38,7 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 | `tracked` | boolean |  | Tracked changes (the only mode, true). |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
+| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
 
 ## `capabilities` (read)
 
@@ -157,6 +158,45 @@ File facts: size, hash, paragraph count, properties and which parts exist.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
+
+## `live.close` (write)
+
+Close the open document; with unsaved changes it needs `save` or `discard`.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+| `save` | boolean |  | Save, then close. |
+| `discard` | boolean |  | Close and drop the unsaved changes. |
+
+## `live.open` (write)
+
+Attach to the app window holding the document, or open it in a live app.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+| `app` | string |  | `word` or `libreoffice`. |
+
+## `live.save` (write)
+
+Save the open document in its app.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+
+## `live.status` (read)
+
+Live apps (Word, LibreOffice) found and reachable; with `doc`, which app has it open and whether it has unsaved changes.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string |  | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
 
 ## `locate` (read)
 
