@@ -26,6 +26,7 @@ from doc_control.inprocess import limit as list_limit
 from doc_control.model.address import Address
 from doc_control.model.document import Document
 from doc_control.model.search import IsolatedScan, LocalScan, Matcher, SearchOptions
+from doc_control.model.wordfind import word_find
 from doc_control.registry import operation
 
 DEFAULT_LIMIT = 20
@@ -85,7 +86,9 @@ SCHEMA: dict[str, Any] = {
     "read",
     "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. "
     "The first page also gives `total` (or `total_at_least` and `more: true` when the time "
-    "budget stopped the count).",
+    "budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, "
+    "^t, ^s, ^~, ^-, ^^; null past 255 characters or with ignore_accents; not for a regex), "
+    "with `query_word_options` (match_case, whole_words) to tick there.",
     SCHEMA,
 )
 def find(request: dict[str, Any]) -> Reply:
@@ -158,8 +161,19 @@ def find(request: dict[str, Any]) -> Reply:
         total = (
             {"total_at_least": counted, "more": True} if stopped is not None else {"total": counted}
         )
+    # The query as typed in Word's Find box, with the options that make Word's Find meet the
+    # same text (not for a regex: Word's wildcards differ; null when accents are ignored:
+    # Word's Find has no such option).
+    word: dict[str, Any] = {}
+    if not request.get("regex"):
+        same = not request.get("ignore_accents")
+        word["query_word"] = word_find(request["query"]) if same else None
+        word["query_word_options"] = {
+            "match_case": not request.get("ignore_case", False),
+            "whole_words": bool(request.get("whole_word", False)),
+        }
     return Reply(
-        {"matches": matches, **total},
+        {"matches": matches, **total, **word},
         doc={
             "path": request["doc"],
             "sha256": pkg.sha256,
