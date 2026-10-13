@@ -24,7 +24,9 @@ Chapters
     ``isolated``        a short line (``ISOLATED_WORDS``, no final punctuation, not
                         dialogue) with ``profile.chapter_blank_lines`` or more empty
                         paragraphs above and one below (or below its subtitle line): a
-                        plain-text heading; off by default. It is also layout for numerals
+                        plain-text heading; off by default. A numeral or chapter-word
+                        line needs no empty paragraph below, and its title line under it
+                        may run to ``PLAIN_SUBTITLE_WORDS``. It is also layout for numerals
     ``override``        an override forced it
 
     Numerals may be decorated (``-I-``, ``— 3 —``, ``[IV]``). An untitled heading (a
@@ -107,8 +109,9 @@ SCENE_STYLE_WORDS: tuple[str, ...] = ("after", "tras", "despues")
 #: A chapter-word style marking more than one text paragraph in this many is a body style.
 BODY_STYLE_SHARE = 3
 
-#: A heading subtitle's most words.
+#: A heading subtitle's most words; under a plain-text (``isolated``) heading, a title line.
 SUBTITLE_WORDS = 8
+PLAIN_SUBTITLE_WORDS = 14
 
 _DECORATION = "-\u2013\u2014[]()*\u00b7~ \t"  # around a decorated numeral: -I-, — 3 —, [IV]
 _CLOSERS = "\"'\u00bb\u201d\u2019)]"
@@ -775,14 +778,15 @@ def _subtitles(
         untitled = (
             parsed is not None and not parsed.title and parsed.kind in _TITLED_KINDS
         ) or number_word(text) is not None
-        if untitled and _is_subtitle(paras[j].text):
+        limit = PLAIN_SUBTITLE_WORDS if "isolated" in signals else SUBTITLE_WORDS
+        if untitled and _is_subtitle(paras[j].text, limit):
             out[i] = j
     return out
 
 
-def _is_subtitle(text: str) -> bool:
+def _is_subtitle(text: str, limit: int = SUBTITLE_WORDS) -> bool:
     words = text.split()
-    if not 1 <= len(words) <= SUBTITLE_WORDS or is_scene_break(text):
+    if not 1 <= len(words) <= limit or is_scene_break(text):
         return False
     tail = text.rstrip().rstrip(_CLOSERS)
     if not tail or tail[-1] in _TERMINAL or text.lstrip()[0] in _DIALOGUE:
@@ -802,7 +806,8 @@ def _isolated(
     profile: Profile,
 ) -> bool:
     """A short line set off by ``profile.chapter_blank_lines`` empty paragraphs above and one
-    below (or below its subtitle line): a plain-text heading."""
+    below (or below its subtitle line): a plain-text heading. A line that names a heading
+    (``-XIV-``, ``CAPÍTULO 3``) needs only the empty paragraphs above."""
     need = profile.chapter_blank_lines
     if not need or blank_before[i] < need or paras[i].heading_level is not None:
         return False  # a heading style already says what it is
@@ -812,7 +817,9 @@ def _isolated(
     if len(text.split()) > ISOLATED_WORDS:
         return False
     named = _parse_heading(text) is not None or number_word(text) is not None
-    if not named and (text.rstrip(_CLOSERS)[-1:] in tuple(_TERMINAL) or text[0] in _DIALOGUE):
+    if named:
+        return True  # -XIV-, CAPÍTULO 3: hard-wrapped text puts its title right under it
+    if text.rstrip(_CLOSERS)[-1:] in tuple(_TERMINAL) or text[0] in _DIALOGUE:
         return False  # a short sentence or a line of dialogue set apart
     after = i + 1
     if after < len(paras) and not blank[after] and _is_subtitle(paras[after].text):
