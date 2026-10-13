@@ -45,7 +45,12 @@ class LiveAdapter(Protocol):
 
     def dirty(self, path: Path) -> bool: ...
 
-    def paragraphs(self, path: Path) -> list[str]: ...
+    def paragraphs(self, path: Path) -> list[str]:
+        """The paragraph texts as the writer sees them (tracked deletions left out), for
+        finding one: an app may leave note marks in them (``text`` is exact)."""
+
+    def text(self, path: Path, span: Span) -> str:
+        """The text of ``span``, tracked deletions left out."""
 
     def select(self, path: Path, span: Span) -> str:
         """Select ``span`` in the app's window and return its text."""
@@ -108,6 +113,9 @@ class FakeAdapter:
             parts[-1] = parts[-1][: span.b]
         parts[0] = parts[0][span.a :]
         return "\n".join(parts)
+
+    def text(self, path: Path, span: Span) -> str:
+        return self._text(self._doc(path), span)
 
     def select(self, path: Path, span: Span) -> str:
         doc = self._doc(path)

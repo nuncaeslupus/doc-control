@@ -189,6 +189,28 @@ Save the open document in its app.
 | `doc` | string | yes | Path to the document. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
+## `live.select` (write)
+
+Select a paragraph in the app's window, by address (`at`) or by a `locate` find phrase, and return its text and address.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+| `at` | string |  | Paragraph address, e.g. `p142#a7b2a7b2`. |
+| `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `locate` gives it. |
+| `find_phrase_across` | `previous` \| `next` \| `both` |  | `locate`'s `find_phrase_across`, for a phrase spanning a mark. |
+| `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
+
+## `live.selection` (read)
+
+The text selected in the app's window, and the paragraph the cursor is in.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+
 ## `live.status` (read)
 
 Live apps (Word, LibreOffice) found and reachable; with `doc`, which app has it open and whether it has unsaved changes.
