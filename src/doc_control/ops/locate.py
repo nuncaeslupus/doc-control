@@ -49,10 +49,11 @@ results.
 from __future__ import annotations
 
 import re
+import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, overload
+from typing import Any, TypeVar, overload
 
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
@@ -73,8 +74,10 @@ _TITLE = 160
 MAX_FIND_WORDS = 25
 LONG_WORD = 24  # longer words are kept out of the affix tables (see FindIndex)
 LAZY_MAX = 20  # at most this many paragraphs asked: answer them without the indexes
+LAZY_BUDGET = 0.3  # seconds of lazy answers per document before building the indexes
 _WORD = re.compile(r"\S+")
 _BREAK = re.compile(r"[\n\r\x0b\x0c]")
+_A = TypeVar("_A")
 
 
 @dataclass(frozen=True)
@@ -338,6 +341,7 @@ class LazyIndexes:
         self._edges: list[tuple[tuple[str, ...], tuple[str, ...], int]] | None = None
         self._locators: dict[int, Locator] = {}
         self._finds: dict[int, FindPhrase] = {}
+        self.spent = 0.0  # seconds spent answering (see _Phrases)
 
     def _keys(self, i: int) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
         text = self.texts[i]
@@ -437,6 +441,37 @@ def _indexes(texts: list[str]) -> tuple[LocatorIndex, list[FindPhrase]]:
     return locators, FindIndex(locators).found
 
 
+class _Phrases:
+    """Lazy answers until they have cost ``LAZY_BUDGET`` seconds on this document, then the
+    whole-document indexes (built once, same answers): a run of near-identical paragraphs
+    makes each lazy answer scan the document again, where the indexes answer from tables."""
+
+    def __init__(self, doc: Document, texts: list[str]) -> None:
+        self.doc = doc
+        self.texts = texts
+        self.lazy = doc.memo("locate-lazy", lambda: LazyIndexes(texts))
+
+    def _indexes(self) -> tuple[LocatorIndex, list[FindPhrase]]:
+        return self.doc.memo("locate-index", lambda: _indexes(self.texts))
+
+    def _lazy(self, answer: Callable[[int], _A], i: int) -> _A:
+        start = time.perf_counter()
+        try:
+            return answer(i)
+        finally:
+            self.lazy.spent += time.perf_counter() - start
+
+    def locator(self, i: int) -> Locator:
+        if self.lazy.spent < LAZY_BUDGET:
+            return self._lazy(self.lazy.locator, i)
+        return self._indexes()[0].locator(i)
+
+    def find(self, i: int) -> FindPhrase:
+        if self.lazy.spent < LAZY_BUDGET:
+            return self._lazy(self.lazy.find, i)
+        return self._indexes()[1][i]
+
+
 class _Rows(Sequence[dict[str, Any]]):
     """Rows built only for the slice a page asks for; the indexes behind them are shared."""
 
@@ -496,9 +531,9 @@ def locate(request: dict[str, Any]) -> Reply:
     memo: dict[Any, Any] = doc.__dict__.get("_memo", {})
     if len(numbers) <= LAZY_MAX and "locate-index" not in memo:
         # A few paragraphs: answer them alone, without the whole-document indexes.
-        lazy = doc.memo("locate-lazy", lambda: LazyIndexes(texts))
-        locator_of: Callable[[int], Locator] = lazy.locator
-        find_of: Callable[[int], FindPhrase] = lazy.find
+        phrases = _Phrases(doc, texts)
+        locator_of: Callable[[int], Locator] = phrases.locator
+        find_of: Callable[[int], FindPhrase] = phrases.find
     else:
         locators, finds = doc.memo("locate-index", lambda: _indexes(texts))
         locator_of = locators.locator

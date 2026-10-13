@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from doc_control import api
 from doc_control.model.document import Document
+from doc_control.ops import locate as locate_module
 from doc_control.ops.locate import LazyIndexes, _indexes
 from tests.corpus.generator import KINDS, generate
 
@@ -52,3 +55,27 @@ def test_duplicate_and_affix_cases() -> None:
         assert lazy.locator(i) == locators.locator(i)
         assert lazy.find(i) == finds[i]
     assert lazy.find(0).reason == "duplicate"
+
+
+def test_over_budget_switches_to_the_indexes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "kind.docx"
+    path.write_bytes(generate(KINDS[0], 1))
+    with api.open(path) as doc:
+        whole = doc.run("locate")["paragraphs"][:5]
+    monkeypatch.setattr(locate_module, "LAZY_BUDGET", 0.0)
+    for row in whole:
+        with api.open(path) as doc:
+            assert doc.run("locate", {"at": row["at"]})["paragraphs"] == [row]
+
+
+def test_long_shared_edges_and_line_breaks() -> None:
+    body = " ".join(f"w{k}" for k in range(30))
+    texts = [f"Same start {body} end", f"Same start {body} other end", "a\nb c", "a b\nc", "b c"]
+    texts += [f"x {' '.join(['y'] * 14)} z{k}" for k in range(3)]
+    locators, finds = _indexes(texts)
+    lazy = LazyIndexes(texts)
+    for i in range(len(texts)):
+        assert lazy.locator(i) == locators.locator(i)
+        assert lazy.find(i) == finds[i]
