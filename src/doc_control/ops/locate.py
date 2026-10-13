@@ -68,6 +68,7 @@ MAX_SIDE = 12
 SEPARATOR = " … "
 _TITLE = 160
 MAX_FIND_WORDS = 25
+LONG_WORD = 64  # longer words are kept out of the affix tables (see FindIndex)
 _WORD = re.compile(r"\S+")
 _BREAK = re.compile(r"[\n\r\x0b\x0c]")
 
@@ -171,8 +172,12 @@ class FindIndex:
         # A window of 2+ words that occurs once word-aligned can only recur unaligned if its
         # first word ends some longer word or its last word starts one (the words between
         # sit between whitespace, so they recur whole). Without either, the count is proof.
-        self.suffixes = {w[n:] for w in distinct for n in range(1, len(w))}
-        self.prefixes = {w[:n] for w in distinct for n in range(1, len(w))}
+        # Affix tables are quadratic in word length: words past LONG_WORD (URLs, unspaced
+        # scripts) stay out of them and are checked one by one instead.
+        short = [w for w in distinct if len(w) <= LONG_WORD]
+        self.long_words = [w for w in distinct if len(w) > LONG_WORD]
+        self.suffixes = {w[n:] for w in short for n in range(1, len(w))}
+        self.prefixes = {w[:n] for w in short for n in range(1, len(w))}
         # Any occurrence of a 2+ word phrase holds a word starting with its last word, so
         # only the paragraphs holding such words need the substring search.
         self.folded = [t.casefold() for t in self.texts]
@@ -182,7 +187,7 @@ class FindIndex:
                 self._paras_of.setdefault(word, set()).add(i)
         self._starting: dict[str, list[str]] = {}
         self._ending: dict[str, list[str]] = {}
-        for w in distinct:
+        for w in short:
             for n in range(1, len(w) + 1):
                 self._starting.setdefault(w[:n], []).append(w)
                 self._ending.setdefault(w[-n:], []).append(w)
@@ -261,7 +266,13 @@ class FindIndex:
         Any occurrence holds a word ending with the first word, one starting with the last,
         and the words between whole; the narrowest of those says which paragraphs to search.
         """
-        options = [self._ending.get(words[0], []), self._starting.get(words[-1], [])]
+        ending = self._ending.get(words[0], []) + [
+            w for w in self.long_words if w.endswith(words[0])
+        ]
+        starting = self._starting.get(words[-1], []) + [
+            w for w in self.long_words if w.startswith(words[-1])
+        ]
+        options = [ending, starting]
         options += [[w] for w in words[1:-1]]
         narrowest = min(options, key=lambda ws: sum(len(self._paras_of[w]) for w in ws))
         found = 0
@@ -289,15 +300,20 @@ class FindIndex:
                 continue
             if seen is not None and length > 1:
                 words = self._keys[i]
-                if words[s] not in self.suffixes and words[s + length - 1] not in self.prefixes:
+                first, last = words[s], words[s + length - 1]
+                if (
+                    first not in self.suffixes
+                    and last not in self.prefixes
+                    and not any(w.endswith(first) or w.startswith(last) for w in self.long_words)
+                ):
                     return FindPhrase(text[begin:end], length, begin)
             key = text[begin:end].casefold()
             if length > 1:
                 if self._occurrences(key, self._keys[i][s : s + length]) == 1:
                     return FindPhrase(text[begin:end], length, begin)
                 continue
-            first = self.words.find(key)
-            if first >= 0 and self.words.find(key, first + 1) < 0:
+            hit = self.words.find(key)
+            if hit >= 0 and self.words.find(key, hit + 1) < 0:
                 return FindPhrase(text[begin:end], length, begin)
         return None
 

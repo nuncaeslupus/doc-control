@@ -3,7 +3,8 @@
 Gate: ``perf_budget_breaches == 0``. Budgets are seconds on a reference machine, scaled by
 how slow this runner is: a fixed pure-Python loop is timed and compared with its reference
 time, so a slow CI runner gets proportionally more room (never less than the reference).
-It runs with the ordinary suite on Linux, so a regression past a budget fails CI.
+Like every wall-clock budget it is opt-in (``make bench``, the CI bench job), and it runs
+when named by node id (the T46 gate).
 """
 
 from __future__ import annotations
@@ -46,9 +47,11 @@ def _timed(fn: Callable[[], Any]) -> float:
     return time.perf_counter() - start
 
 
+@pytest.mark.bench
 @pytest.mark.skipif(sys.platform != "linux", reason="budgets are calibrated on Linux runners")
 def test_perf_budgets_100k(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DOC_CONTROL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setenv("DOC_CONTROL_STORE", "appdata")
+    monkeypatch.setenv("DOC_CONTROL_HOME", str(tmp_path / "home"))
     factor = max(1.0, min(_reference_loop() for _ in range(3)) / REFERENCE_LOOP_SECONDS)
     path = tmp_path / "novel.docx"
     path.write_bytes(generate("novel", 1))
