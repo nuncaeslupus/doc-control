@@ -26,9 +26,10 @@ _TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
 _TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
-def _stamp(path: str) -> tuple[int, int]:
+def _stamp(path: str) -> tuple[int, int, int]:
+    """Changes whenever the file is written (``ctime`` too, which no tool can set back)."""
     st = Path(path).stat()
-    return st.st_mtime_ns, st.st_size
+    return st.st_mtime_ns, st.st_ctime_ns, st.st_size
 
 
 @dataclass(frozen=True)
@@ -41,13 +42,13 @@ class ParaProps:
 
 #: Documents shared across operations while :func:`shared_documents` is active, keyed by
 #: path and holding the file's (mtime, size) when it was read.
-_SHARED: ContextVar[dict[str, tuple[tuple[int, int], Document]] | None] = ContextVar(
+_SHARED: ContextVar[dict[str, tuple[tuple[int, int, int], Document]] | None] = ContextVar(
     "doc_control_shared_documents", default=None
 )
 
 
 @contextmanager
-def shared_documents(cache: dict[str, tuple[tuple[int, int], Document]]) -> Iterator[None]:
+def shared_documents(cache: dict[str, tuple[tuple[int, int, int], Document]]) -> Iterator[None]:
     """Reuse one parse of each unchanged file for every ``Document(path)`` made inside."""
     token = _SHARED.set(cache)
     try:
@@ -71,7 +72,7 @@ class Document:
         self.path = path
         cache = _SHARED.get()
         # Stamped before reading, so a write racing the read only causes a re-parse.
-        stamp = _stamp(path) if cache is not None and Path(path).exists() else (0, 0)
+        stamp = _stamp(path) if cache is not None and Path(path).exists() else (0, 0, 0)
         self.pkg = Package(Path(path))
         self.index: DocumentIndex = build_index(self.pkg.read(DOCUMENT_PART))
         if cache is not None:

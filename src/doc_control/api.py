@@ -43,7 +43,7 @@ class OpenDocument:
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
-        self._cache: dict[str, tuple[tuple[int, int], Document]] = {}
+        self._cache: dict[str, tuple[tuple[int, int, int], Document]] = {}
 
     def reply(self, op: str, request: dict[str, Any] | None = None) -> Reply:
         """Like :meth:`run`, with the warnings and the ``doc`` block."""
@@ -64,8 +64,16 @@ class OpenDocument:
             return run(op, req)
 
     def run(self, op: str, request: dict[str, Any] | None = None) -> dict[str, Any]:
-        """The result of ``op`` on this document (``doc`` is filled in)."""
-        return self.reply(op, request).result
+        """The result of ``op`` on this document (``doc`` is filled in).
+
+        Results are whole unless the request set a ``limit`` or an operation stopped at
+        its time budget (``find``); then the result carries ``next``, the cursor to
+        continue with, and :meth:`reply` has the warnings.
+        """
+        reply = self.reply(op, request)
+        if reply.next_cursor is not None:
+            return {**reply.result, "next": reply.next_cursor}
+        return reply.result
 
     def paragraphs(self, *, normalized: bool = False, pages: bool = False) -> list[dict[str, Any]]:
         """Every paragraph with its address, text, style and layout facts (``paragraphs.list``)."""

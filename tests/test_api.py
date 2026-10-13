@@ -47,7 +47,9 @@ def _mismatches(path: Path) -> tuple[int, int]:
             para = doc.run("para.get", {"at": row["at"]})
             bad += sum(row[k] != para[k] for k in FACTS)
             bad += row["text"] != para["text"]
-            bad += row["normalized"] != normalized.get(row["at"], "")
+            want = normalized.get(row["at"])
+            bad += row["normalized"] != (want if want is not None or row["text"].strip() else "")
+            bad += want is None and bool(row["text"].strip())
             bad += (row["page"], row["page_label"]) != (
                 pages[row["at"]]["page"],
                 pages[row["at"]]["page_label"],
@@ -119,6 +121,14 @@ def test_a_changed_file_is_read_again(tmp_path: Path) -> None:
         time.sleep(0.01)
         make_docx(path, "After, and longer.")
         assert doc.paragraphs()[0]["text"] == "After, and longer."
+
+
+def test_a_partial_result_says_where_to_continue(tmp_path: Path) -> None:
+    path = make_docx(tmp_path / "d.docx", "a a a a a", "a a")
+    with api.open(path) as doc:
+        first = doc.run("find", {"query": "a", "limit": 3})
+        assert len(first["matches"]) == 3 and "next" in first
+        assert "next" not in doc.run("find", {"query": "a"})
 
 
 def test_errors_raise(tmp_path: Path) -> None:
