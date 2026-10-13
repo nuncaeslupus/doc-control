@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from doc_control import api
+from doc_control.errors import DocControlError, ErrorCode
 from tests.bench.test_perf_gate import REFERENCE_LOOP_SECONDS, _reference_loop
 from tests.corpus.generator import generate
 
@@ -25,6 +26,7 @@ _CHILD = """
 import json, sys, time
 start = time.perf_counter()
 from doc_control import api
+from doc_control.errors import DocControlError, ErrorCode
 with api.open(sys.argv[1]) as doc:
     para = doc.run("para.get", {"at": sys.argv[2]})
     row = doc.run("locate", {"at": sys.argv[2], "structure": False})["paragraphs"][0]
@@ -90,3 +92,31 @@ def test_cold_locate_path_within_budget(tmp_path: Path) -> None:
     print(f"cold locate path {took:.3f}s (budget {COLD_PATH_SECONDS * factor:.3f}s)")
     print(f"cold_locate_path_regressions == {regressions}")
     assert regressions == 0
+
+
+def test_get_operation_always_waits_for_its_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An operation registers before its module finishes (read.py's layout hooks come last),
+    so a thread that finds it registered must still go through import_module, which waits
+    while another thread is importing that module."""
+    from doc_control import registry
+
+    calls: list[str] = []
+    real = registry.importlib.import_module
+
+    def recording(name: str) -> object:
+        calls.append(name)
+        return real(name)
+
+    monkeypatch.setattr(registry.importlib, "import_module", recording)
+    registry.load_operations()
+    assert registry.get_operation("para.get") is not None
+    assert calls[-1] == "doc_control.ops.read"
+
+
+def test_structure_false_still_checks_the_profile(tmp_path: Path) -> None:
+    path = tmp_path / "kitchen.docx"
+    path.write_bytes(generate("kitchen_sink", 1))
+    at = _address(path, 3)
+    with api.open(path) as doc, pytest.raises(DocControlError) as err:
+        doc.run("locate", {"at": at, "structure": False, "profile": {"chapter_level": 42}})
+    assert err.value.code is ErrorCode.SCHEMA_INVALID

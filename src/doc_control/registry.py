@@ -100,7 +100,10 @@ OPERATION_MODULES: dict[str, str] = {
 
 def get_operation(name: str) -> Operation | None:
     """The operation ``name``, importing only the module that registers it; None if unknown."""
-    if name not in REGISTRY and name in OPERATION_MODULES:
+    if name in OPERATION_MODULES:
+        # Always import (a dict lookup once loaded): while another thread is still
+        # importing the module, its operation may be registered before the module's
+        # last lines ran; import_module waits on the module lock for those.
         importlib.import_module(f"doc_control.ops.{OPERATION_MODULES[name]}")
     return REGISTRY.get(name)
 

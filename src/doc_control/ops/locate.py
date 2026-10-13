@@ -649,8 +649,9 @@ def locate(request: dict[str, Any]) -> Reply:
     index = doc.index
     count = len(index)
     texts = [index.paragraph(n).text for n in range(1, count + 1)]
+    profile, overrides = profile_of(request), overrides_of(request)  # checked either way
     if request.get("structure", True):
-        found = detect_in(doc, profile_of(request), overrides_of(request))
+        found = detect_in(doc, profile, overrides)
         chapters, parts, scenes = found.chapters, found.parts, found.scenes
     else:
         chapters, parts, scenes = (), (), ()
