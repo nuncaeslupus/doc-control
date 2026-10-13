@@ -34,7 +34,7 @@ from doc_control.registry import operation
 
 _TEXT = 160
 _SUPPRESSED_LIMIT = 20
-_UNITS = ["chapters", "scenes", "sentences", "dialogue"]
+_UNITS = ["chapters", "parts", "scenes", "sentences", "dialogue"]
 _HEX = frozenset("0123456789abcdef")
 
 PROFILE_PROPERTIES: dict[str, Any] = {
@@ -74,6 +74,21 @@ PROFILE_PROPERTIES: dict[str, Any] = {
     "scene_markers": {
         "type": "boolean",
         "description": "Ornament paragraphs (`* * *`) start scenes (default true).",
+    },
+    "chapter_styles": {
+        "type": "boolean",
+        "description": (
+            "A body paragraph whose style name holds a chapter word (`Normal inicio "
+            "capítulo`) starts an untitled chapter (default true)."
+        ),
+    },
+    "chapter_style_words": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": (
+            "Words that mark a chapter-opening style name, any case and accents "
+            "(default capítulo, chapter, chapitre, kapitel, capitolo, hoofdstuk)."
+        ),
     },
 }
 
@@ -156,6 +171,18 @@ def segment(request: dict[str, Any]) -> Reply:
         return paged("segment", doc, request, "dialogue", _dialogue(doc, request))
     found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
     base: dict[str, Any] = {"unit": unit}
+    if unit in ("chapters", "parts"):
+        front = found.front
+        base["front"] = (
+            None
+            if front is None
+            else {
+                "at": str(_address(doc, front.first)),
+                "first": front.first,
+                "last": front.last,
+                "words": front.words,
+            }
+        )
     if found.unmatched_overrides:
         base["unmatched_overrides"] = [
             {
@@ -166,7 +193,7 @@ def segment(request: dict[str, Any]) -> Reply:
             }
             for o in found.unmatched_overrides
         ]
-    kind = "chapter" if unit == "chapters" else "scene"
+    kind = "scene" if unit == "scenes" else "chapter"
     shown = [s for s in found.suppressed if s[1] == kind]
     if shown:
         base["suppressed_total"] = len(shown)
@@ -176,6 +203,8 @@ def segment(request: dict[str, Any]) -> Reply:
         ]
     if unit == "chapters":
         return paged("segment", doc, request, "chapters", _chapters(doc, found), base)
+    if unit == "parts":
+        return paged("segment", doc, request, "parts", _parts(doc, found), base)
     return paged("segment", doc, request, "scenes", _scenes(doc, request, found), base)
 
 
@@ -185,7 +214,10 @@ def _address(doc: Document, number: int) -> Address:
 
 def profile_of(request: dict[str, Any]) -> Profile:
     language = request.get("language", DEFAULT_LANGUAGE)
-    return Profile(**{"language": language, **request.get("profile", {})})
+    settings = dict(request.get("profile", {}))
+    if "chapter_style_words" in settings:
+        settings["chapter_style_words"] = tuple(settings["chapter_style_words"])
+    return Profile(**{"language": language, **settings})
 
 
 def overrides_of(request: dict[str, Any]) -> list[Override]:
@@ -221,6 +253,28 @@ def _chapters(doc: Document, found: Structure) -> list[dict[str, Any]]:
                 "words": chapter.words,
                 "scenes": scenes.get(chapter.id, 0),
                 "signals": list(chapter.signals),
+                "part": chapter.part,
+            }
+        )
+    return out
+
+
+def _parts(doc: Document, found: Structure) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for part in found.parts:
+        para = doc.index.paragraph(part.first)
+        out.append(
+            {
+                "id": part.id,
+                "at": str(para.address),
+                "kind": part.kind,
+                "number": part.number,
+                "text": " ".join(para.text.split())[:_TEXT],
+                "first": part.first,
+                "last": part.last,
+                "words": part.words,
+                "chapters": part.chapters,
+                "signals": list(part.signals),
             }
         )
     return out
