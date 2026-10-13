@@ -8,7 +8,15 @@ sections, tables and the table of contents too), with its text: spans, links and
 read through, ``text:s`` as its spaces, ``text:tab`` as a tab and ``text:line-break`` as a
 line break. A heading (``text:h``) keeps its outline level as style Heading 1-9; any other
 paragraph keeps the display name of its paragraph style (automatic styles resolved to
-their parent), so ``segment`` can match scene-break or chapter styles by name.
+their parent), so ``segment`` can match scene-break or chapter styles by name; a style the
+file does not define keeps its own name.
+
+Layout kept for the page estimate and structure detection: ``text:soft-page-break`` (the
+page starts LibreOffice wrote when it last laid the document out) becomes a rendered page
+mark (``w:lastRenderedPageBreak``), between paragraphs or inside one; ``fo:break-before="page"``
+becomes ``pageBreakBefore`` and ``fo:break-after="page"`` a break before the next paragraph;
+``fo:text-align="center"`` becomes centred. Both are read through automatic and parent styles
+and the paragraph default style.
 
 What is left out, as Word leaves it out of the main story: footnotes and endnotes
 (``text:note``), comments (``office:annotation``), text in frames and text boxes
@@ -22,8 +30,9 @@ import io
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+from typing import NamedTuple
 
-from doc_control.ooxml.plaintext import Para, build_docx
+from doc_control.ooxml.plaintext import Layout, Para, build_docx
 
 ODT_SUFFIXES = (".odt",)
 MIMETYPE = "application/vnd.oasis.opendocument.text"
@@ -31,6 +40,7 @@ MIMETYPE = "application/vnd.oasis.opendocument.text"
 _OFFICE = "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}"
 _TEXT = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
 _STYLE = "{urn:oasis:names:tc:opendocument:xmlns:style:1.0}"
+_FO = "{urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0}"
 _DRAW = "{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}"
 _SKIP = {
     _TEXT + "note",
@@ -54,6 +64,7 @@ MAX_CONTENT = 256 * 1024 * 1024  # bytes of content.xml once inflated
 _DIGITS = re.compile(r"[0-9]{1,12}")
 _XML_BAD = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _PARAS = {_TEXT + "p", _TEXT + "h"}
+_SOFT_BREAK = _TEXT + "soft-page-break"
 _ENCODED = re.compile(r"_([0-9A-Fa-f]{2,4})_")
 _DEFAULT_STYLES = {"Standard", "Default Paragraph Style", "Default"}
 
@@ -77,38 +88,86 @@ def _display(name: str) -> str:
     return _XML_BAD.sub("", _ENCODED.sub(lambda m: chr(int(m.group(1), 16)), name))
 
 
-def _style_names(content: ET.Element, styles: ET.Element | None) -> dict[str, str]:
-    """Paragraph style name → display name, automatic styles resolved to their parent."""
-    named: dict[str, str] = {}
+class _Style(NamedTuple):
+    display: str
+    parent: str
+    align: str | None
+    break_before: bool | None
+    break_after: bool | None
+
+
+def _facts(style: ET.Element, display: str) -> _Style:
+    props = style.find(_STYLE + "paragraph-properties")
+    get = props.get if props is not None else (lambda _key: None)
+    before, after = get(_FO + "break-before"), get(_FO + "break-after")
+    return _Style(
+        display,
+        style.get(_STYLE + "parent-style-name", ""),
+        get(_FO + "text-align"),
+        None if before is None else before == "page",
+        None if after is None else after == "page",
+    )
+
+
+def _styles(content: ET.Element, styles: ET.Element | None) -> dict[str, _Style]:
+    """Paragraph style name → its facts: named styles (``styles.xml``), then the automatic
+    styles of ``content.xml``, whose display name is the one of their named parent."""
+    out: dict[str, _Style] = {}
     if styles is not None:
         for style in styles.iter(_STYLE + "style"):
             if style.get(_STYLE + "family") == "paragraph":
                 name = style.get(_STYLE + "name", "")
-                named[name] = _XML_BAD.sub("", style.get(_STYLE + "display-name", "")) or (
-                    _display(name)
-                )
-    parents: dict[str, str] = {}
+                display = _XML_BAD.sub("", style.get(_STYLE + "display-name", ""))
+                out[name] = _facts(style, display or _display(name))
+        for style in styles.iter(_STYLE + "default-style"):
+            if style.get(_STYLE + "family") == "paragraph":
+                out[""] = _facts(style, "")._replace(parent="")
     automatic = content.find(_OFFICE + "automatic-styles")
     if automatic is not None:
         for style in automatic.iter(_STYLE + "style"):
             if style.get(_STYLE + "family") == "paragraph":
-                parents[style.get(_STYLE + "name", "")] = style.get(
-                    _STYLE + "parent-style-name", ""
-                )
-    out = dict(named)
-    for name in parents:
-        parent = parents[name]
-        for _ in range(MAX_STYLE_CHAIN):  # an automatic parent: follow it, a few steps at most
-            if parent not in parents or parent == name:
-                break
-            parent = parents[parent]
-        out[name] = (named.get(parent) or _display(parent)) if parent else ""
+                out[style.get(_STYLE + "name", "")] = _facts(style, "")
     return out
 
 
-def _text(elem: ET.Element) -> str:
-    """The visible text of a paragraph element (see the module docstring)."""
-    out: list[str] = [elem.text or ""]
+class _Resolved(NamedTuple):
+    display: str
+    layout: Layout
+    break_after: bool
+
+
+def _resolve(name: str, styles: dict[str, _Style], cache: dict[str, _Resolved]) -> _Resolved:
+    """A paragraph style's display name and layout, inherited along its parents (at most
+    ``MAX_STYLE_CHAIN`` steps); an undefined style keeps its own name."""
+    if name in cache:
+        return cache[name]
+    display = ""
+    align = before = after = None
+    current, seen = name, 0
+    while seen <= MAX_STYLE_CHAIN:
+        style = styles.get(current)
+        if style is None:
+            display = display or _display(current)
+            break
+        display = display or style.display
+        align = style.align if align is None else align
+        before = style.break_before if before is None else before
+        after = style.break_after if after is None else after
+        if not style.parent or style.parent == current:
+            break
+        current, seen = style.parent, seen + 1
+    default = styles.get("")
+    if default is not None and current != "":
+        align = default.align if align is None else align
+    resolved = _Resolved(display, Layout(align == "center", bool(before)), bool(after))
+    cache[name] = resolved
+    return resolved
+
+
+def _text(elem: ET.Element, out: list[str], marks: list[int]) -> None:
+    """Append the visible text of a paragraph element to ``out`` (see the module docstring),
+    and the offset of each page LibreOffice started inside it to ``marks``."""
+    out.append(elem.text or "")
     for child in elem:
         tag = child.tag
         if tag == _TEXT + "s":
@@ -117,30 +176,54 @@ def _text(elem: ET.Element) -> str:
             out.append("\t")
         elif tag == _TEXT + "line-break":
             out.append("\n")
+        elif tag == _SOFT_BREAK:
+            marks.append(sum(map(len, out)))
         elif not _skipped(tag):
-            out.append(_text(child))
+            _text(child, out, marks)
         out.append(child.tail or "")
-    return "".join(out)
 
 
-def _walk(elem: ET.Element, names: dict[str, str], out: list[Para]) -> None:
-    for child in elem:
-        if _skipped(child.tag):
-            continue
-        if child.tag in _PARAS:
-            level = None
-            if child.tag == _TEXT + "h":
-                level = min(max(_number(child.get(_TEXT + "outline-level"), 1), 1), 9)
-            style = names.get(child.get(_TEXT + "style-name", ""), "") or None
-            if style in _DEFAULT_STYLES or level is not None:
-                style = None
-            out.append((_text(child), level, style))
-            continue
-        _walk(child, names, out)
+class _Reader:
+    def __init__(self, styles: dict[str, _Style]) -> None:
+        self.styles = styles
+        self.cache: dict[str, _Resolved] = {}
+        self.paras: list[Para] = []
+        self.layouts: list[Layout] = []
+        self.page_pending = False  # a soft page break between paragraphs
+        self.break_pending = False  # the previous paragraph breaks the page after it
+
+    def walk(self, elem: ET.Element) -> None:
+        for child in elem:
+            if child.tag == _SOFT_BREAK:
+                self.page_pending = True
+            elif _skipped(child.tag):
+                continue
+            elif child.tag in _PARAS:
+                self.paragraph(child)
+            else:
+                self.walk(child)
+
+    def paragraph(self, elem: ET.Element) -> None:
+        level = None
+        if elem.tag == _TEXT + "h":
+            level = min(max(_number(elem.get(_TEXT + "outline-level"), 1), 1), 9)
+        resolved = _resolve(elem.get(_TEXT + "style-name", ""), self.styles, self.cache)
+        style: str | None = resolved.display or None
+        if style in _DEFAULT_STYLES or level is not None:
+            style = None
+        out: list[str] = []
+        marks = [0] if self.page_pending else []
+        _text(elem, out, marks)
+        layout = resolved.layout
+        if self.break_pending:
+            layout = layout._replace(break_before=True)
+        self.paras.append(("".join(out), level, style))
+        self.layouts.append(layout._replace(page_marks=tuple(marks)))
+        self.page_pending = False
+        self.break_pending = resolved.break_after
 
 
-def paragraphs(raw: bytes) -> list[Para]:
-    """``(text, heading level, style name)`` per paragraph of the .odt bytes ``raw``."""
+def _read(raw: bytes) -> _Reader:
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             members = set(zf.namelist())
@@ -163,14 +246,20 @@ def paragraphs(raw: bytes) -> list[Para]:
     body = content.find(f"{_OFFICE}body/{_OFFICE}text")
     if body is None:
         raise OdtError("no office:text body")
-    out: list[Para] = []
+    reader = _Reader(_styles(content, styles))
     try:
-        _walk(body, _style_names(content, styles), out)
+        reader.walk(body)
     except RecursionError as exc:
         raise OdtError("elements nested too deeply") from exc
-    return out
+    return reader
+
+
+def paragraphs(raw: bytes) -> list[Para]:
+    """``(text, heading level, style name)`` per paragraph of the .odt bytes ``raw``."""
+    return _read(raw).paras
 
 
 def package_bytes(raw: bytes) -> bytes:
-    """A .docx (zip bytes) with the paragraphs of the .odt bytes ``raw``."""
-    return build_docx(paragraphs(raw))
+    """A .docx (zip bytes) with the paragraphs of the .odt bytes ``raw`` and their layout."""
+    reader = _read(raw)
+    return build_docx(reader.paras, reader.layouts)

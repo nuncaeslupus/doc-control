@@ -141,3 +141,9 @@ reviewers = ""
 extract = false
 python = true
 workflow = true
+
+# Host capability probes (detect_surface.sh): a task with `requires: [app:…]` is only
+# picked on a machine where the probe exits 0.
+[capabilities]
+"app:libreoffice" = "command -v soffice && python3 -c 'import uno'"
+"app:word" = "reg query 'HKCR\\Word.Application' >/dev/null 2>&1"
