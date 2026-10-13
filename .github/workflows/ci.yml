@@ -114,7 +114,9 @@ jobs:
       - name: Install LibreOffice Writer and its Python bridge
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui python3-uno
+          # Not the -nogui build: it has no window for a comment, and crashes when a
+          # document with one is opened in a view.
+          sudo apt-get install -y --no-install-recommends libreoffice-writer python3-uno
           soffice --version
       - name: Environment on the system Python, seeing its packages
         run: |

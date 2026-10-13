@@ -230,8 +230,9 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     from doc_control.ops.batch import edits_from_request  # batch imports this module too
 
     adapter, path = held(request)
-    if request.get("dry_run"):
-        raise unavailable("dry_run is not supported live")
+    for guard in ("dry_run", "expect"):
+        if request.get(guard):
+            raise unavailable(f"{guard} is not supported live")
     ops = request["ops"]
     for i, raw in enumerate(ops):
         if raw.get("op") not in LIVE_KINDS:
@@ -252,6 +253,10 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
             address = parse_address(edit.after or edit.before or "")
             _fresh(adapter, path, count, address)
             after = address.number - (1 if edit.after else 2)
+            if any(step[4] == after for step in plan if step[3] == adapter.tracked_insert):
+                raise DocControlError(
+                    ErrorCode.BATCH_CONFLICT, f"ops[{i}] inserts where an earlier one does"
+                )
             plan.append(((after, inf), (after, inf), i, adapter.tracked_insert, after))
             continue
         rng = parse_range(edit.at)
@@ -265,6 +270,8 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
                 ErrorCode.ADDRESS_INVALID, f"ops[{i}]: {edit.at} runs past its paragraph"
             )
         span = Span(rng.start.number - 1, rng.end.number - 1, a, b)
+        if span.end != span.start:
+            guarded(adapter.text, path, span)  # refuses a span the app cannot hold as one range
         call = adapter.comment if isinstance(edit, AddComment) else adapter.tracked_replace
         plan.append(((span.start, a), (span.end, inf if b is None else b), i, call, span))
     plan.sort(key=lambda step: (step[0], step[2]), reverse=True)
@@ -276,9 +283,9 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
             )
     store = DocStore.open(path)
     op_ids: dict[int, str] = {}
-    # ponytail: not all-or-nothing. Every address is checked before the first edit, so a
-    # batch stops half-way only when the app goes away; wrap it in the app's undo context
-    # if that ever leaves a writer with half a batch.
+    # ponytail: not all-or-nothing. Every address and span is checked before the first
+    # edit, so a batch should stop half-way only when the app goes away; wrap it in the
+    # app's undo context if a writer is ever left with half a batch.
     for _, _, i, call, where in plan:
         guarded(call, path, where, ops[i]["text"], author)
         entry = append_entry(

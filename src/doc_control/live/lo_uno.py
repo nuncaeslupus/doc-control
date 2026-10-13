@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.protocol import LiveUnavailable, Span
 
 _PROGRAM_DIRS = (
@@ -371,6 +372,13 @@ class LibreOffice:
         if not 0 <= span.start <= span.end < len(texts):
             raise LiveUnavailable(f"the open document has no paragraph {span.end + 1}")
         found = [self._paragraph(doc, texts, n) for n in range(span.start, span.end + 1)]
+        if any(paragraph.getText() != found[0].getText() for paragraph in found[1:]):
+            # As the file engine: one range does not run from the body into a table
+            # cell, or from one cell into the next.
+            raise DocControlError(
+                ErrorCode.UNSUPPORTED_CONTENT,
+                f"paragraphs {span.start + 1} and {span.end + 1} are not in the same container",
+            )
         parts = [_visible(paragraph) for paragraph in found]
         if span.b is not None:
             parts[-1] = parts[-1][: span.b]

@@ -10,6 +10,7 @@ import pytest
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.lo_uno import LibreOffice
+from tests.corpus.generator import generate
 from tests.helpers import make_docx
 
 AUTHOR = "Rev Iewer"
@@ -89,3 +90,33 @@ def test_live_roundtrip_matches_file_engine(live: LibreOffice, lo_home: Path) ->
     if [e.get("engine") for e in history[:4]] != ["live"] * 4:
         failures.append(("history", history))
     assert failures == []
+
+
+def test_a_batch_the_app_cannot_take_changes_nothing(live: LibreOffice, lo_home: Path) -> None:
+    """Refusals come before the first edit: the open document stays as it was."""
+    doc = lo_home / "refused.docx"
+    doc.write_bytes(generate("tables", 1))
+    at = [p["at"] for p in _read(doc)]
+    base = {"doc": str(doc), "engine": "live"}
+    comment = {"op": "comment.add", "at": at[-1], "text": "Sure?"}
+    insert = {"op": "para.insert", "after": at[0], "text": "New."}
+
+    def across(a: int, b: int) -> dict[str, Any]:
+        return {"op": "text.replace", "at": f"{at[a]}:2..{at[b]}:1", "text": "X"}
+
+    _run("live.open", base)
+    try:
+        refused: list[tuple[dict[str, Any], ErrorCode]] = [
+            # p6 is the heading before the table, p7 and p8 its first two cells.
+            ({"ops": [comment, across(5, 6)]}, ErrorCode.UNSUPPORTED_CONTENT),
+            ({"ops": [comment, across(6, 7)]}, ErrorCode.UNSUPPORTED_CONTENT),
+            ({"ops": [comment, insert, insert]}, ErrorCode.BATCH_CONFLICT),
+            ({"ops": [comment], "expect": {"sha256": "0" * 64}}, ErrorCode.ENGINE_UNAVAILABLE),
+        ]
+        for request, code in refused:
+            with pytest.raises(DocControlError) as err:
+                _run("batch", {**base, **request})
+            assert err.value.code is code, request
+            assert _run("live.status", base)["dirty"] is False
+    finally:
+        _run("live.close", {**base, "discard": True})
