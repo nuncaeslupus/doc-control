@@ -25,7 +25,7 @@ from typing import Any
 
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.inprocess import budget
+from doc_control.inprocess import budget, is_uncapped
 from doc_control.inprocess import limit as list_limit
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex, Paragraph
@@ -67,7 +67,14 @@ WINDOW_BYTES = 3000  # an entry bigger than this is split, so one never nears th
 
 
 def _window(
-    result: NormalizedText, start: int, at: str | None, a: int, b: int, last: bool
+    result: NormalizedText,
+    start: int,
+    at: str | None,
+    a: int,
+    b: int,
+    last: bool,
+    *,
+    split: bool = True,
 ) -> list[dict[str, Any]]:
     """Entries for normalised boundaries ``[a, b)`` (``[a, len]`` for the last window).
 
@@ -90,15 +97,23 @@ def _window(
         },
     }
     size = len(json.dumps(entry, ensure_ascii=False).encode("utf-8"))
-    if size <= WINDOW_BYTES or b - a < 2:
+    if not split or size <= WINDOW_BYTES or b - a < 2:
         return [entry]
     mid = (a + b) // 2
     return _window(result, start, at, a, mid, False) + _window(result, start, at, mid, b, last)
 
 
 def _entries(text: str, start: int, at: str | None) -> list[dict[str, Any]]:
+    """A paragraph's entries: one, or (only under the CLI/MCP byte cap, for a very long
+    paragraph) consecutive windows marked ``part`` k of ``parts``."""
     result = normalize(text)
-    return _window(result, start, at, 0, len(result.text), True)
+    if is_uncapped():
+        return [_window(result, start, at, 0, len(result.text), True, split=False)[0]]
+    windows = _window(result, start, at, 0, len(result.text), True)
+    if len(windows) > 1:
+        for k, entry in enumerate(windows, 1):
+            entry["part"], entry["parts"] = k, len(windows)
+    return windows
 
 
 #: A cursor offset is ``paragraph * _STRIDE + entry``: the paragraph (row) to resume at and

@@ -28,20 +28,45 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
 @operation(
     "help",
     "read",
-    "JSON Schema of one operation, or of all operations.",
+    "JSON Schema of one operation, or of all operations; also the kinds batch takes in `ops` "
+    "(text.replace, comment.add…), listed under batch_operations.",
     {
         "type": "object",
-        "properties": {"op": {"type": "string", "description": "Operation name."}},
+        "properties": {
+            "op": {"type": "string", "description": "Operation or batch operation kind."}
+        },
         "additionalProperties": False,
     },
 )
 def help_(request: dict[str, Any]) -> dict[str, Any]:
     name = request.get("op")
+    kinds = _batch_kinds()
     if name is None:
-        return {"operations": {n: _describe(n) for n in sorted(REGISTRY)}}
+        return {
+            "operations": {n: _describe(n) for n in sorted(REGISTRY)},
+            "batch_operations": {k: _describe_kind(k, s) for k, s in sorted(kinds.items())},
+        }
+    if name in kinds and name not in REGISTRY:
+        return {"batch_operations": {name: _describe_kind(name, kinds[name])}}
     if name not in REGISTRY:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {name}", op=name)
     return {"operations": {name: _describe(name)}}
+
+
+def _batch_kinds() -> dict[str, dict[str, Any]]:
+    """The operation kinds a ``batch`` takes in ``ops`` (some are not operations of their own)."""
+    from doc_control.ops.comments import COMMENT_SCHEMAS
+    from doc_control.ops.tracked import OPERATION_SCHEMAS
+
+    return {**OPERATION_SCHEMAS, **COMMENT_SCHEMAS}
+
+
+def _describe_kind(name: str, schema: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "batch",
+        "summary": schema.get("description", f"`{name}` inside batch ops; see its schema."),
+        "schema": schema,
+    }
 
 
 def _describe(name: str) -> dict[str, Any]:

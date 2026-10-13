@@ -118,6 +118,7 @@ def find(request: dict[str, Any]) -> Reply:
     matches: list[dict[str, Any]] = []
     warnings: list[str] = []
     next_cursor: str | None = None
+    remaining = 0  # matches after this page, counted so the reply can give a total
     with contextlib.closing(scan.__iter__()) as found:
         for number, spans in found:
             para = index.paragraph(number)
@@ -126,12 +127,13 @@ def find(request: dict[str, Any]) -> Reply:
                 if k < skipping:
                     continue
                 if len(matches) == limit:
-                    next_cursor = f"c:find:{token}:{number}:{k}"
-                    break
+                    if next_cursor is None:
+                        next_cursor = f"c:find:{token}:{number}:{k}"
+                    remaining += 1
+                    continue
                 matches.append(_match(para.address, para.text, start, end, context))
-            if next_cursor is not None:
-                break
     stopped = scan.stopped_at
+    counted = len(matches) + remaining
     if stopped is not None and next_cursor is None:
         if stopped == first and not matches:
             raise DocControlError(
@@ -146,8 +148,12 @@ def find(request: dict[str, Any]) -> Reply:
             " continue with `next`"
         )
         next_cursor = f"c:find:{token}:{stopped}:0"
+    # From this page on: the cursor's position plus every match after it.
+    total: dict[str, Any] = (
+        {"total_at_least": counted, "more": True} if stopped is not None else {"total": counted}
+    )
     return Reply(
-        {"matches": matches},
+        {"matches": matches, **total},
         doc={"path": request["doc"], "sha256": pkg.sha256, "paragraphs": len(index)},
         warnings=warnings,
         next_cursor=next_cursor,
