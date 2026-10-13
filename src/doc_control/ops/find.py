@@ -23,6 +23,7 @@ from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import limit as list_limit
 from doc_control.model.address import Address
 from doc_control.model.index import DocumentIndex
 from doc_control.model.search import IsolatedScan, LocalScan, Matcher, SearchOptions
@@ -96,7 +97,7 @@ def find(request: dict[str, Any]) -> Reply:
         whole_word=request.get("whole_word", False),
     )
     matcher = Matcher(options)
-    limit: int = request.get("limit", DEFAULT_LIMIT)
+    limit: int = list_limit(request, DEFAULT_LIMIT)
     context: int = request.get("context", DEFAULT_CONTEXT)
     pkg = Package(Path(request["doc"]))
     index = DocumentIndex.from_package(pkg)

@@ -17,6 +17,8 @@ from typing import Any
 
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import budget
+from doc_control.inprocess import limit as list_limit
 from doc_control.model.document import Document
 
 RESPONSE_BUDGET = 8000
@@ -101,10 +103,10 @@ def paged(
     budget and the limit; always at least one, so a list always advances.
     """
     start = read_cursor(op, doc, request)
-    limit = request.get("limit", MAX_LIMIT)
+    limit = list_limit(request, MAX_LIMIT)
     head: dict[str, Any] = {**(base or {}), "total": len(items), key: []}
     placeholder = make_cursor(op, doc, request, 10**12)
-    room = RESPONSE_BUDGET - size(
+    room = budget(RESPONSE_BUDGET) - size(
         success(op, head, doc=doc.envelope_doc(), next_cursor=placeholder)
     )
     taken: list[Any] = []

@@ -282,7 +282,7 @@ Allowed keys only; no code, no file paths, no network; `$match`, `$para`, `$1…
 | Caller | Callee | Protocol | Contract | Failure handling |
 |--------|--------|----------|----------|-----------------|
 | Agent (Claude Code, chat sandbox) | `doc-control` CLI | Process call, JSON on stdin/argv, JSON on stdout | Envelope and operations above | Error code + hint; agent re-reads or re-anchors on `STALE_ADDRESS` / `ANCHOR_*` |
-| literary-critic adapter | `doc_control` Python API (same operations as functions) or CLI | In-process call or process call | Same schemas; checks `capabilities.api` major version at start | Refuses to run on a major version it does not know |
+| literary-critic adapter | `doc_control` Python API (same operations as functions: `api.open(path)` parses once and `.run(op, request)` returns whole results, no response cap or paging; `.paragraphs()` / `paragraphs.list` is the bulk read of addresses, text, normalised text, layout facts and estimated pages) or CLI | In-process call or process call | Same schemas; checks `capabilities.api` major version at start | Refuses to run on a major version it does not know |
 | MCP server (later spec) | `doc_control` operation registry | Generated tools, one per operation, from the JSON Schemas | Same schemas | Same error codes |
 | Live engine (later spec) | Operation registry | Same operation names; engine chosen per call, or `ENGINE_UNAVAILABLE` with reason | Same schemas | — |
 

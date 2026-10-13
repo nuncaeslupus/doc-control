@@ -20,6 +20,7 @@ from typing import Any
 
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import budget
 from doc_control.model.annotations import (
     REVISION_TYPES,
     read_comments,
@@ -370,7 +371,7 @@ def para_get(request: dict[str, Any]) -> Reply:
         cursor = make_cursor("para.get", doc, request, end) if end < total else None
         reply = Reply(result, doc=doc.envelope_doc(), next_cursor=cursor)
         envelope = success("para.get", result, doc=reply.doc, next_cursor=cursor)
-        if count <= 1 or size(envelope) <= RESPONSE_BUDGET:
+        if count <= 1 or size(envelope) <= budget(RESPONSE_BUDGET):
             return reply
         count = max(1, int(count * 0.8))
 

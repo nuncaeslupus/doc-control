@@ -7,6 +7,10 @@ on first use and cached for the life of the object, which is one operation.
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -22,6 +26,12 @@ _TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
 _TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
+def _stamp(path: str) -> tuple[int, int, int]:
+    """Changes whenever the file is written (``ctime`` too, which no tool can set back)."""
+    st = Path(path).stat()
+    return st.st_mtime_ns, st.st_ctime_ns, st.st_size
+
+
 @dataclass(frozen=True)
 class ParaProps:
     """The properties of a paragraph that decide its style and heading level."""
@@ -30,11 +40,43 @@ class ParaProps:
     outline_level: int | None  # explicit ``w:outlineLvl`` (0-9), else None
 
 
+#: Documents shared across operations while :func:`shared_documents` is active, keyed by
+#: path and holding the file's (mtime, size) when it was read.
+_SHARED: ContextVar[dict[str, tuple[tuple[int, int, int], Document]] | None] = ContextVar(
+    "doc_control_shared_documents", default=None
+)
+
+
+@contextmanager
+def shared_documents(cache: dict[str, tuple[tuple[int, int, int], Document]]) -> Iterator[None]:
+    """Reuse one parse of each unchanged file for every ``Document(path)`` made inside."""
+    token = _SHARED.set(cache)
+    try:
+        yield
+    finally:
+        _SHARED.reset(token)
+
+
 class Document:
+    def __new__(cls, path: str) -> Document:
+        cache = _SHARED.get()
+        if cache is not None:
+            hit = cache.get(path)
+            if hit is not None and Path(path).exists() and hit[0] == _stamp(path):
+                return hit[1]
+        return super().__new__(cls)
+
     def __init__(self, path: str) -> None:
+        if "index" in self.__dict__:
+            return  # a shared, already parsed document
         self.path = path
+        cache = _SHARED.get()
+        # Stamped before reading, so a write racing the read only causes a re-parse.
+        stamp = _stamp(path) if cache is not None and Path(path).exists() else (0, 0, 0)
         self.pkg = Package(Path(path))
         self.index: DocumentIndex = build_index(self.pkg.read(DOCUMENT_PART))
+        if cache is not None:
+            cache[path] = (stamp, self)
 
     @property
     def sha256(self) -> str:
@@ -43,6 +85,14 @@ class Document:
     def envelope_doc(self) -> dict[str, Any]:
         """The ``doc`` block of a response."""
         return {"path": self.path, "sha256": self.sha256, "paragraphs": len(self.index)}
+
+    def paragraph_element(self, para: Paragraph) -> ET.Element:
+        """The parsed ``w:p`` of ``para``, parsed once per document; read it, never change it."""
+        cache: dict[int, ET.Element] = self.__dict__.setdefault("_elements", {})
+        elem = cache.get(para.span_index)
+        if elem is None:
+            elem = cache[para.span_index] = self.index.spans.parse_paragraph(para.span_index)
+        return elem
 
     @cached_property
     def styles(self) -> StyleTable:

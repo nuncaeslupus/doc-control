@@ -95,6 +95,25 @@ def normalize(original: str) -> NormalizedText:
     return NormalizedText("".join(chars), len(original), to_original, to_normalized)
 
 
+def normalized_text(original: str) -> str:
+    """``normalize(original).text`` without the offset maps (for bulk reads).
+
+    Exact by construction: the shortcut applies only when the text without ignorables is
+    already NFC and has no combining marks, so no chunk can compose; else the full path.
+    """
+    kept = "".join(ch for ch in original if ch not in IGNORABLE)
+    if any(unicodedata.combining(ch) for ch in kept) or not unicodedata.is_normalized("NFC", kept):
+        return normalize(original).text
+    out: list[str] = []
+    for ch in kept:
+        if ch.isspace():
+            if not out or out[-1] != " ":
+                out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _chunks(original: str, kept: list[int]) -> list[list[int]]:
     """Split the kept indexes where NFC cannot combine across the cut.
 
