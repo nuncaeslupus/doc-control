@@ -92,12 +92,14 @@ class Package:
             raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
         raw = path.read_bytes()
         self.sha256 = hashlib.sha256(raw).hexdigest()
-        #: For a .txt/.md file read as a document (readable, never written): its
-        #: ``format``, ``encoding`` and paragraph ``mode``; None for a .docx.
+        #: For a .txt/.md/.odt file read as a document (readable, never written): its
+        #: ``format`` (and for text ``encoding`` and paragraph ``mode``); None for a .docx.
         self.text_source: dict[str, str] | None = None
         try:
             if path.suffix.lower() in TEXT_SUFFIXES:
                 raw, self.text_source = _text_package(path, raw)
+            elif path.suffix.lower() == ".odt":
+                raw, self.text_source = _odt_package(path, raw)
             self._load(raw)
         except DocControlError:
             raise
@@ -292,6 +294,17 @@ def _text_package(path: Path, raw: bytes) -> tuple[bytes, dict[str, str]]:
     fmt = "txt" if path.suffix.lower() == ".txt" else "md"
     data, mode = package_bytes(text, markdown=fmt == "md")
     return data, {"format": fmt, "encoding": encoding, "mode": mode}
+
+
+def _odt_package(path: Path, raw: bytes) -> tuple[bytes, dict[str, str]]:
+    from doc_control.ooxml import odt  # only for .odt files
+
+    try:
+        return odt.package_bytes(raw), {"format": "odt"}
+    except odt.OdtError as exc:
+        raise DocControlError(
+            ErrorCode.NOT_A_DOCX, f"{path} is not a readable .odt: {exc}", path=str(path)
+        ) from exc
 
 
 def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:

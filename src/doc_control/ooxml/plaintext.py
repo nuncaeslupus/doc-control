@@ -50,6 +50,8 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.xmltext import escape
 
 TEXT_SUFFIXES = (".txt", ".md", ".markdown")
+#: Formats read as a document but never written (OpenDocument text: doc_control.ooxml.odt).
+READ_ONLY_SUFFIXES = (*TEXT_SUFFIXES, ".odt")
 
 _W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
@@ -98,27 +100,39 @@ _DOC_RELS = (
 )
 
 
-def _styles() -> str:
+#: A paragraph to build: text, heading level (1-9) or None, other style name or None.
+Para = tuple[str, int | None, str | None]
+
+
+def _styles(custom: dict[str, str]) -> str:
+    """Normal, Heading 1-9 and each ``custom`` style (id → name), based on Normal."""
     headings = "".join(
         f'<w:style w:type="paragraph" w:styleId="Heading{n}"><w:name w:val="heading {n}"/>'
         f'<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
         f'<w:pPr><w:outlineLvl w:val="{n - 1}"/></w:pPr></w:style>'
-        for n in range(1, 7)
+        for n in range(1, 10)
+    )
+    others = "".join(
+        f'<w:style w:type="paragraph" w:customStyle="1" w:styleId="{sid}">'
+        f'<w:name w:val="{escape(name, {chr(34): "&quot;"})}"/><w:basedOn w:val="Normal"/>'
+        "</w:style>"
+        for sid, name in custom.items()
     )
     return (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="{_W}">'
         '<w:style w:type="paragraph" w:default="1" w:styleId="Normal">'
         '<w:name w:val="Normal"/><w:qFormat/></w:style>'
-        f"{headings}</w:styles>"
+        f"{headings}{others}</w:styles>"
     )
 
 
 def refuse_write(path: Path) -> None:
-    """``UNSUPPORTED_CONTENT`` when ``path`` is a text file: it is read, never written."""
-    if path.suffix.lower() in TEXT_SUFFIXES:
+    """``UNSUPPORTED_CONTENT`` when ``path`` is a .txt, .md or .odt: read, never written."""
+    if path.suffix.lower() in READ_ONLY_SUFFIXES:
         raise DocControlError(
             ErrorCode.UNSUPPORTED_CONTENT,
-            f"{path} is plain text: only read operations accept it; write to a .docx",
+            f"{path} is {path.suffix.lower()[1:]}: only read operations accept it; "
+            "write to a .docx",
             path=str(path),
         )
 
@@ -342,23 +356,38 @@ def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]],
     return out, mode
 
 
-def _paragraph_xml(text: str, level: int | None) -> str:
-    ppr = f'<w:pPr><w:pStyle w:val="Heading{level}"/></w:pPr>' if level else ""
+def _paragraph_xml(text: str, style: str | None) -> str:
+    ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
     if not text:
         return f"<w:p>{ppr}</w:p>"
     runs = []
-    for i, part in enumerate(_CONTROL.sub("", text).split("\t")):
-        if i:
-            runs.append("<w:tab/>")
-        if part:
-            runs.append(f'<w:t xml:space="preserve">{escape(part)}</w:t>')
+    for k, line in enumerate(_CONTROL.sub("", text).split("\n")):
+        if k:
+            runs.append("<w:br/>")
+        for i, part in enumerate(line.split("\t")):
+            if i:
+                runs.append("<w:tab/>")
+            if part:
+                runs.append(f'<w:t xml:space="preserve">{escape(part)}</w:t>')
     return f"<w:p>{ppr}<w:r>{''.join(runs)}</w:r></w:p>"
 
 
 def package_bytes(text: str, markdown: bool) -> tuple[bytes, str]:
     """A .docx (zip bytes) whose paragraphs are those of ``text``, and the mode used."""
     paras, mode = paragraphs(text, markdown)
-    body = "".join(_paragraph_xml(t, level) for t, level in paras)
+    return build_docx([(t, level, None) for t, level in paras]), mode
+
+
+def build_docx(paras: list[Para]) -> bytes:
+    """A minimal .docx (zip bytes) holding ``paras`` (a line break in a text is ``w:br``)."""
+    custom: dict[str, str] = {}  # style name -> id
+    xml: list[str] = []
+    for text, level, name in paras:
+        style = f"Heading{level}" if level else None
+        if style is None and name:
+            style = custom.setdefault(name, f"Style{len(custom) + 1}")
+        xml.append(_paragraph_xml(text, style))
+    body = "".join(xml)
     document = (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{_W}"><w:body>{body}<w:sectPr/></w:body></w:document>'
@@ -369,5 +398,5 @@ def package_bytes(text: str, markdown: bool) -> tuple[bytes, str]:
         zf.writestr("_rels/.rels", _RELS)
         zf.writestr("word/document.xml", document)
         zf.writestr("word/_rels/document.xml.rels", _DOC_RELS)
-        zf.writestr("word/styles.xml", _styles())
-    return buf.getvalue(), mode
+        zf.writestr("word/styles.xml", _styles({sid: name for name, sid in custom.items()}))
+    return buf.getvalue()
