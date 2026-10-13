@@ -56,11 +56,13 @@ results.
 
 from __future__ import annotations
 
+import bisect
 import re
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Any, TypeVar, overload
 
 from doc_control.envelope import Reply
@@ -165,10 +167,71 @@ class FindPhrase:
     across: str | None = None  # "previous", "next" or "both": the phrase spans a mark
 
 
+class MarkIndex:
+    """Counts phrases that hold paragraph marks without scanning the text.
+
+    ``X\\rY`` (``X`` and ``Y`` without marks) occurs only where a paragraph ending in ``X``
+    is followed by one starting with ``Y`` (the last paragraph ends in a mark too), and
+    ``\\rT\\r`` only where a paragraph after the first is exactly ``T``. Paragraphs sorted
+    by text and by reversed text give each side as a range; the smaller side is checked
+    against the other, stopping at a second occurrence.
+    """
+
+    def __init__(self, texts: Sequence[str]) -> None:
+        self.folded = [t.casefold() for t in texts]
+        self._by_start = sorted(range(len(texts)), key=self.folded.__getitem__)
+        self._starts = [self.folded[i] for i in self._by_start]
+        backwards = [f[::-1] for f in self.folded]
+        self._by_end = sorted(range(len(texts)), key=backwards.__getitem__)
+        self._ends = [backwards[i] for i in self._by_end]
+        self._pairs = Counter(pairwise(self.folded))
+
+    def pair_repeats(self, j: int) -> bool:
+        """Paragraphs j and j + 1 recur as a pair elsewhere: every phrase across the mark
+        between them recurs too (in a run of identical paragraphs, for one)."""
+        return self._pairs[self.folded[j], self.folded[j + 1]] > 1
+
+    @staticmethod
+    def _span(keys: list[str], prefix: str) -> tuple[int, int]:
+        lo = bisect.bisect_left(keys, prefix)
+        hi = bisect.bisect_left(keys, prefix + "\U0010ffff", lo)
+        while hi < len(keys) and keys[hi].startswith(prefix):  # keys holding U+10FFFF
+            hi += 1
+        return lo, hi
+
+    def once(self, phrase: str) -> bool:
+        """``phrase`` (folded, one mark, or one paragraph between two) occurs exactly once."""
+        folded, n = self.folded, len(self.folded)
+        parts = phrase.split("\r")
+        if len(parts) == 3:
+            lo, hi = self._span(self._starts, parts[1])
+            hits = [q for q in self._by_start[lo:hi] if q >= 1 and folded[q] == parts[1]]
+            return len(hits) == 1
+        x, y = parts
+        elo, ehi = self._span(self._ends, x[::-1])
+        slo, shi = self._span(self._starts, y)
+        count = 0
+        if ehi - elo <= shi - slo:
+            for q in self._by_end[elo:ehi]:
+                if folded[q + 1].startswith(y) if q + 1 < n else not y:
+                    count += 1
+                    if count > 1:
+                        return False
+        else:
+            for p in self._by_start[slo:shi]:
+                if p >= 1 and folded[p - 1].endswith(x):
+                    count += 1
+                    if count > 1:
+                        return False
+            if not y and folded[n - 1].endswith(x):  # the last paragraph's own mark
+                count += 1
+        return count == 1
+
+
 def across_marks(
     texts: Sequence[str],
     spans: Callable[[int], list[tuple[int, int]]],
-    once: Callable[[str], bool],
+    marks: MarkIndex,
     i: int,
     crossable: Callable[[int], bool] = lambda j: True,
 ) -> FindPhrase | None:
@@ -196,8 +259,16 @@ def across_marks(
         return pieces
 
     # Only a plain paragraph mark is ^p: not one ending a table cell or a section.
-    before = neighbour_words(i - 1, tail=True) if i > 0 and crossable(i - 1) else []
-    after = neighbour_words(i + 1, tail=False) if i + 1 < len(texts) and crossable(i) else []
+    before = (
+        neighbour_words(i - 1, tail=True)
+        if i > 0 and crossable(i - 1) and not marks.pair_repeats(i - 1)
+        else []
+    )
+    after = (
+        neighbour_words(i + 1, tail=False)
+        if i + 1 < len(texts) and crossable(i) and not marks.pair_repeats(i)
+        else []
+    )
     for k in range(1, min(n, MAX_FIND_WORDS) + 1):
         head = text[: own[k - 1][1]]
         if before and runs[0] >= k - 1 and not _BREAK.search(head):
@@ -210,7 +281,7 @@ def across_marks(
     if before and after and n <= MAX_FIND_WORDS and not _BREAK.search(text):
         found.append((n, 2, 2, "\r" + text + "\r", 0, "both"))
     for words, _marks, _order, phrase, start, side in sorted(found, key=lambda c: c[:3]):
-        if word_find(phrase) is not None and once(phrase.casefold()):
+        if word_find(phrase) is not None and marks.once(phrase.casefold()):
             return FindPhrase(phrase, words, start, across=side)
     return None
 
@@ -409,6 +480,7 @@ class LazyIndexes:
         self._locators: dict[int, Locator] = {}
         self._finds: dict[int, FindPhrase] = {}
         self.spent = 0.0  # seconds spent answering (see _Phrases)
+        self._mark_index: MarkIndex | None = None
 
     def _keys(self, i: int) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
         text = self.texts[i]
@@ -480,6 +552,11 @@ class LazyIndexes:
             self._finds[i] = self._find(i)
         return self._finds[i]
 
+    def _marks(self) -> MarkIndex:
+        if self._mark_index is None:
+            self._mark_index = MarkIndex(self.texts)
+        return self._mark_index
+
     def _once(self, key: str) -> bool:
         """``key`` occurs exactly once in the document (occurrences may overlap)."""
         at = self.haystack.find(key)
@@ -495,7 +572,7 @@ class LazyIndexes:
         if self._copies_of(i) > 1:
             # Every run of a repeated paragraph recurs in its twin; only its marks differ.
             spanning = across_marks(
-                self.texts, lambda j: self._keys(j)[0], self._once, i, crossable
+                self.texts, lambda j: self._keys(j)[0], self._marks(), i, crossable
             )
             return spanning or FindPhrase(None, reason="duplicate")
         runs = FindIndex._run_ends(text, spans)
@@ -506,7 +583,7 @@ class LazyIndexes:
                 begin, end = spans[s][0], spans[s + length - 1][1]
                 if self._once(text[begin:end].casefold()):
                     return FindPhrase(text[begin:end], length, begin)
-        spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._once, i, crossable)
+        spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._marks(), i, crossable)
         return spanning or FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
 
 
@@ -518,12 +595,14 @@ def _indexes(
     locators = LocatorIndex(texts)
     finder = FindIndex(locators)
     found = finder.found
+    marks: MarkIndex | None = None
     for i, phrase in enumerate(found):
         if phrase.text is None and phrase.reason != "empty":
+            marks = marks or MarkIndex(texts)
             spanning = across_marks(
                 texts,
                 locators.spans.__getitem__,
-                finder.once,
+                marks,
                 i,
                 (lambda j: crossable[j]) if crossable is not None else (lambda j: True),
             )

@@ -13,7 +13,13 @@ from pathlib import Path
 
 from doc_control.model.document import Document
 from doc_control.model.wordfind import WORD_FIND_MAX, word_find
-from doc_control.ops.locate import LazyIndexes, _indexes, _plain_marks, across_marks
+from doc_control.ops.locate import (
+    LazyIndexes,
+    MarkIndex,
+    _indexes,
+    _plain_marks,
+    across_marks,
+)
 from tests.corpus.generator import KINDS, generate
 
 
@@ -28,7 +34,14 @@ def word_count(texts: list[str], phrase: str) -> int:
     return count
 
 
-_DECODE = (("^p", "\r"), ("^t", "\t"), ("^s", "\u00a0"), ("^~", "\u2011"), ("^-", "\u00ad"))
+_DECODE = (
+    ("^p", "\r"),
+    ("^l", "\n"),
+    ("^t", "\t"),
+    ("^s", "\u00a0"),
+    ("^~", "\u2011"),
+    ("^-", "\u00ad"),
+)
 
 
 def unword(text: str) -> str:
@@ -86,6 +99,6 @@ def test_no_phrase_spans_a_mark_that_is_not_plain() -> None:
     def spans(j: int) -> list[tuple[int, int]]:
         return [(0, 2), (3, 7)] if j < 2 else [(0, 1)]
 
-    found = across_marks(texts, spans, lambda key: True, 0)
+    found = across_marks(texts, spans, MarkIndex(texts), 0)
     assert found is not None and found.across == "next"
-    assert across_marks(texts, spans, lambda key: True, 0, lambda j: False) is None
+    assert across_marks(texts, spans, MarkIndex(texts), 0, lambda j: False) is None
