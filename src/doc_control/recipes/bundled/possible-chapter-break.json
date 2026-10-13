@@ -1,0 +1,17 @@
+{
+  "recipe": "possible-chapter-break",
+  "version": 1,
+  "description": "Flag a paragraph after three or more empty paragraphs: a chapter break typed as blank lines?",
+  "match": {
+    "where": {
+      "prev": [{"empty": true}, {"empty": true}, {"empty": true}]
+    }
+  },
+  "propose": [
+    {
+      "op": "comment.add",
+      "at": "$para",
+      "text": "Three or more empty paragraphs before this one: should it start a new chapter?"
+    }
+  ]
+}
