@@ -118,6 +118,60 @@ def test_other_failures_are_unavailable_with_words_reason(tmp_path: Path) -> Non
     assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
 
 
+class _Setting:
+    """An object of Word's whose named settings cannot be put back."""
+
+    def __init__(self, stuck: tuple[str, ...] = (), **values: Any) -> None:
+        self.__dict__.update(values, _stuck=stuck, _set=0)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        state = self.__dict__
+        state["_set"] += 1
+        if name in state["_stuck"] and state["_set"] > 1:
+            raise com_error(OTHER)
+        self.__dict__[name] = value
+
+
+def test_each_setting_is_put_back_though_another_fails(no_wait: list[float]) -> None:
+    app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
+    doc: Any = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app)
+    with pytest.raises(RuntimeError), Word(app)._as(doc, "Rev Iewer"):
+        assert (app.UserName, app.UserInitials, doc.TrackRevisions) == ("Rev Iewer", "RI", True)
+        raise RuntimeError("mid-edit")
+    assert (app.UserName, app.UserInitials) == ("Ana", "A")
+    assert app.Options.UseLocalUserInfo is False
+
+    # Tracking that cannot be turned on (it is locked) changes nothing of the writer's.
+    doc = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app)
+    doc._set = 1
+    adapter = Word(app)
+    with pytest.raises(com_error), adapter._as(doc, "Rev Iewer"):
+        pytest.fail("the edit ran")
+    assert (app.UserName, app.Options.UseLocalUserInfo, adapter._wrote) == ("Ana", False, False)
+
+
+class _Docs(list[Any]):
+    """Word's documents, where opening a file gives back one that is open already."""
+
+    @property
+    def Count(self) -> int:
+        return len(self)
+
+    def Open(self, *args: Any) -> Any:
+        return self[0]
+
+
+def test_open_never_closes_a_document_that_was_open(tmp_path: Path) -> None:
+    held: Any = _Doc("https://unmapped.example/a.docx", [])
+    held.ReadOnly, held.closed = True, False
+    held.Close = lambda save: setattr(held, "closed", True)
+    app: Any = _App(held, [])
+    app.__class__ = type("_Opening", (_App,), {"Documents": _Docs([held])})
+    with pytest.raises(LiveUnavailable, match="read-only"):
+        Word(app).open(make_docx(tmp_path / "a.docx", "One."))
+    assert held.closed is False
+
+
 def test_a_onedrive_name_is_the_local_file(tmp_path: Path) -> None:
     mounts = [
         ("https://contoso.sharepoint.com/sites/Books", str(tmp_path / "Books")),
@@ -126,7 +180,8 @@ def test_a_onedrive_name_is_the_local_file(tmp_path: Path) -> None:
     name = "https://d.docs.live.net/0123456789abcdef/dev/My%20novel.docx"
     assert tmp_path / "OneDrive" / "dev" / "My novel.docx" in local_paths(name, mounts)
     name = "https://contoso.sharepoint.com/sites/Books/Drafts/a.docx"
-    assert local_paths(name, mounts)[0] == tmp_path / "Books" / "Drafts" / "a.docx"
+    # Only there: not also the file of that name in the folder above.
+    assert local_paths(name, mounts) == [tmp_path / "Books" / "Drafts" / "a.docx"]
     assert local_paths("https://elsewhere.example/a.docx", mounts) == []
     assert local_paths(r"C:\Users\me\a.docx", mounts) == [Path(r"C:\Users\me\a.docx")]
 

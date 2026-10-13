@@ -19,6 +19,7 @@ from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live import word_com
 from doc_control.live.dispatch import using
+from doc_control.live.protocol import Span
 from doc_control.live.word_com import Word
 from doc_control.ooxml.zipio import sha256_file
 from tests.corpus.generator import KINDS, generate
@@ -401,6 +402,34 @@ def roundtrip(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def marks(word: Word, home: Path) -> list[str]:
+    """An edit beside a mark that shows no text (a footnote's reference) leaves the mark."""
+    bad = Failures()
+    texts = ["First paragraph here.", "Second paragraph stays.", "Last."]
+    doc = make_docx(home / "marks.docx", *texts)
+    with _opened(doc) as base:
+        live = word._doc(doc)
+        start = int(live.Paragraphs(2).Range.Start)
+        live.Footnotes.Add(live.Range(start, start), "", "A note.")
+        _run("live.save", base)
+        bad.check(word.paragraphs(doc) == texts, "text with a note", word.paragraphs(doc))
+        at = _run("live.select", {**base, "find_phrase": "Second"})["at"]
+        ops = [{"op": "text.replace", "at": f"{at}:0-6", "text": "2nd"}]
+        _run("batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
+        gone = "".join(str(r.Range.Text or "") for r in live.Revisions if int(r.Type) == 2)
+        bad.check(gone == "Second", "what the edit deleted", gone)
+        bad.check(int(live.Footnotes.Count) == 1, "the note", int(live.Footnotes.Count))
+        # Nothing to delete is nothing done: not the character after it.
+        before = word.paragraphs(doc)
+        word.tracked_replace(doc, Span(0, 0, 5, 5), "", AUTHOR)
+        word.tracked_replace(doc, Span(2, 2, 5, 5), "", AUTHOR)
+        bad.check(word.paragraphs(doc) == before, "an empty deletion", word.paragraphs(doc))
+        bad.check(int(live.Revisions.Count) == 2, "revisions", int(live.Revisions.Count))
+        _run("live.save", base)
+    bad.check(_texts(doc) == ["First paragraph here.", "2nd paragraph stays.", "Last."], "saved")
+    return bad
+
+
 def refused_batch(word: Word, home: Path) -> list[str]:
     """Refusals come before the first edit: the open document stays as it was."""
     bad = Failures()
@@ -433,6 +462,7 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     refusals,
     deletions,
     roundtrip,
+    marks,
     refused_batch,
 ]
 

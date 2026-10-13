@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.protocol import LiveUnavailable, Span
@@ -42,8 +42,9 @@ BUSY_TIMEOUT = 5.0
 TRUST = 0.25
 #: RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER: Word is busy, ask again.
 _BUSY = frozenset({-2147418111, -2147417846})
-#: RPC_S_SERVER_UNAVAILABLE, RPC_E_DISCONNECTED, CO_E_OBJNOTCONNECTED: Word has quit.
-_GONE = frozenset({-2147023174, -2147417848, -2147220995})
+#: RPC_S_SERVER_UNAVAILABLE, RPC_S_CALL_FAILED, RPC_E_DISCONNECTED, CO_E_OBJNOTCONNECTED:
+#: Word has quit.
+_GONE = frozenset({-2147023174, -2147023170, -2147417848, -2147220995})
 _PROGID = "Word.Application"
 _ONEDRIVE_KEY = r"Software\SyncEngines\Providers\OneDrive"
 
@@ -88,6 +89,7 @@ def _guard(method: _F) -> _F:
     def run(self: Word, *args: Any) -> Any:
         deadline = time.monotonic() + BUSY_TIMEOUT
         wait = 0.05
+        quit_once = False
         while True:
             self._wrote = False
             try:
@@ -105,7 +107,11 @@ def _guard(method: _F) -> _F:
                         "Word is busy (a dialog is open, or the writer is typing): try again"
                     ) from err
                 if code in _GONE:
+                    wrote = self._wrote
                     self._forget()
+                    if self._given is None and not wrote and not quit_once:
+                        quit_once = True  # the link was to a Word that quit: look again
+                        continue
                     raise LiveUnavailable("Word is not running any more") from err
                 raise LiveUnavailable(f"Word failed: {_why(err)}") from err
 
@@ -180,9 +186,10 @@ def local_paths(name: str, mounts: list[tuple[str, str]]) -> list[Path]:
         if not name.lower().startswith(prefix.lower().rstrip("/") + "/"):
             continue
         parts = [unquote(part) for part in name[len(prefix.rstrip("/")) + 1 :].split("/")]
+        url = urlsplit(prefix)
+        if (url.hostname or "").endswith("docs.live.net") and not url.path.strip("/"):
+            parts = parts[1:]  # a personal library's URL has the account id before the path
         found.append(Path(folder, *parts))
-        # A personal library's URL has the account id before the path.
-        found.append(Path(folder, *parts[1:]))
     return found
 
 
@@ -315,10 +322,12 @@ class Word:
         if self._find(path) is not None:
             return
         self._wrote = True
+        before = int(word.Documents.Count)
         # FileName, ConfirmConversions, ReadOnly, AddToRecentFiles
         doc = word.Documents.Open(str(path.resolve()), False, False, False)
         if doc.ReadOnly:
-            doc.Close(_NO_SAVE)
+            if int(word.Documents.Count) > before:  # never a document that was open already
+                doc.Close(_NO_SAVE)
             raise LiveUnavailable(
                 f"Word opened {path.name} read-only (another window or program holds it)"
             )
@@ -546,16 +555,46 @@ class Word:
     def _range(self, doc: Any, span: Span) -> tuple[Any, str]:
         """A Word range over ``span`` and the text it covers, deletions left out."""
         for fresh in (False, True):
+            if fresh:
+                self._models.clear()
             model = self._model(doc, fresh)
             rng, text = self._spanned(doc, model, span)
             start, end = int(rng.Start), int(rng.End)
             gaps = [(start, end)] if model.hidden else self._outside(model.deletions, start, end)
             seen = _clean("".join(self._read(doc, a, b) for a, b in gaps))
-            if _flat(seen) == _flat(text):
+            known = [
+                (max(a, start), min(b, end)) for a, b in model.deletions if a < end and b > start
+            ]
+            if _flat(seen) == _flat(text) and self._deleted(rng) == known:
                 return rng, text
         raise LiveUnavailable(
             f"paragraph {span.start + 1} of the open document changed while it was read: try again"
         )
+
+    @staticmethod
+    def _deleted(rng: Any) -> list[tuple[int, int]]:
+        """The tracked deletions inside ``rng``, as positions."""
+        revisions = rng.Revisions
+        if not int(revisions.Count):
+            return []
+        start, end = int(rng.Start), int(rng.End)
+        found = []
+        for revision in revisions:
+            if int(revision.Type) in _DELETED:
+                gone = revision.Range
+                if int(gone.Start) < end and int(gone.End) > start:
+                    found.append((max(int(gone.Start), start), min(int(gone.End), end)))
+        return sorted(found)
+
+    def _past_marks(self, doc: Any, at: int, stop: int) -> int:
+        """``at`` moved past the marks that show no text (a note's reference, a picture,
+        a page break), so that a range starting there leaves them alone."""
+        while at < stop:
+            raw = self._read(doc, at, at + 1)
+            if not raw or raw == "\r" or _clean(raw):
+                break
+            at += 1
+        return at
 
     def _spanned(self, doc: Any, model: _Model, span: Span) -> tuple[Any, str]:
         if not 0 <= span.start <= span.end < len(model.texts):
@@ -573,6 +612,7 @@ class Word:
         parts[0] = parts[0][span.a :]
         low, high, gaps = self._gaps(doc, model, span.start)
         start = self._position(doc, gaps, span.a) if span.a else low
+        start = self._past_marks(doc, start, high)
         if span.end != span.start:
             low, high, gaps = self._gaps(doc, model, span.end)
         end = high if span.b is None else self._position(doc, gaps, span.b)
@@ -601,10 +641,11 @@ class Word:
         start, end = int(chosen.Start), int(chosen.End)
         model = self._model(doc, fresh=True)
         last = int(doc.Content.End) - 1
-        numbers = model.of_word[self._index(doc, min(end, last))]
+        at = min(end - 1 if end > start else end, last)  # not the paragraph after its mark
+        numbers = model.of_word[self._index(doc, at)]
         if not numbers:
             raise LiveUnavailable("the selection is not text in the document body")
-        part = sum(1 for mark in model.marks if mark < end) if model.hidden else 0
+        part = sum(1 for mark in model.marks if mark < at) if model.hidden else 0
         first = model.where[numbers[0]][0]
         part -= sum(1 for mark in model.marks if mark < self._bounds(doc, first)[0]) if part else 0
         gaps = [(start, end)] if model.hidden else self._outside(model.deletions, start, end)
@@ -629,19 +670,42 @@ class Word:
         """
         word = doc.Application
         options = word.Options
-        name, initials = word.UserName, word.UserInitials
-        local, tracking = options.UseLocalUserInfo, doc.TrackRevisions
-        self._wrote = True
+        was = [
+            (doc, "TrackRevisions", doc.TrackRevisions),
+            (options, "UseLocalUserInfo", options.UseLocalUserInfo),
+            (word, "UserName", word.UserName),
+            (word, "UserInitials", word.UserInitials),
+        ]
+        now = [track, True, author, _initials(author)]
+        changed: list[tuple[Any, str, Any]] = []
         self._models.clear()  # the positions it holds are about to move
         try:
-            options.UseLocalUserInfo = True
-            word.UserName, word.UserInitials = author, _initials(author)
-            doc.TrackRevisions = track
+            for (owner, setting, old), new in zip(was, now, strict=True):
+                # Refused (tracking is locked, Word is busy) before anything of the
+                # writer's changed: the call may be made again.
+                setattr(owner, setting, new)
+                self._wrote = True
+                changed.append((owner, setting, old))
             yield
         finally:
-            doc.TrackRevisions = tracking
-            word.UserName, word.UserInitials = name, initials
-            options.UseLocalUserInfo = local
+            for owner, setting, old in reversed(changed):
+                self._put_back(owner, setting, old)
+
+    @staticmethod
+    def _put_back(owner: Any, setting: str, old: Any) -> None:
+        """One of the writer's settings as it was. Each on its own, and a busy Word is
+        asked again: a failure here must not leave the others as the edit set them."""
+        deadline = time.monotonic() + BUSY_TIMEOUT
+        wait = 0.05
+        while True:
+            try:
+                setattr(owner, setting, old)
+                return
+            except Exception as err:
+                if _hresult(err) not in _BUSY or time.monotonic() + wait >= deadline:
+                    return
+                time.sleep(wait)
+                wait = min(wait * 2, 1.0)
 
     @_guard
     def comment(self, path: Path, span: Span, text: str, author: str) -> None:
@@ -657,7 +721,7 @@ class Word:
         with self._as(doc, author):
             if text:
                 rng.Text = text
-            else:
+            elif int(rng.End) > int(rng.Start):  # Delete on no text takes the next character
                 rng.Delete()
 
     @_guard

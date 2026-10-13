@@ -113,7 +113,7 @@ Surface: **cloud** runs in a Linux cloud session (LibreOffice installed); **wind
 
 | T# | Gate | Measured | Command | SHA | Env | Date |
 |----|------|----------|---------|-----|-----|------|
-| T8 | `live_word_failures == 0` | 0 (7 tests passed; `live.select` by find phrase on the 2 033-paragraph novel: p95 328 ms, median 248 ms, reported and not gated). Microsoft 365: unmeasured, no such install on the test machine | `uv run pytest -q tests/live/test_word_com.py && uv run python scripts/live_word_check.py` | branch `t-9e24ff41-word-com` | Windows 11 Pro, Word 16.0 build 16.0.17932 (Spanish), Python 3.13, pywin32 312 | 2026-10-13 |
+| T8 | `live_word_failures == 0` | 0 (9 tests passed; `live.select` by find phrase on the 2 033-paragraph novel: p95 369 ms, median 269 ms, reported and not gated). Microsoft 365: unmeasured, no such install on the test machine | `uv run pytest -q tests/live/test_word_com.py && uv run python scripts/live_word_check.py` | branch `t-9e24ff41-word-com` | Windows 11 Pro, Word 16.0 build 16.0.17932 (Spanish), Python 3.13, pywin32 312 | 2026-10-13 |
 
 ---
 
