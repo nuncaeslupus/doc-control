@@ -132,6 +132,9 @@ review-bots = ["coderabbitai[bot]"]
 
 bot-triggers = ["coderabbitai[bot]=@coderabbitai review"]
 
+# New settings up to this bundle version were looked at; the defaults are kept.
+config-acknowledged = "5.7.0"
+
 [models]
 orchestrator = ""
 workers = "sonnet"
