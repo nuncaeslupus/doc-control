@@ -13,13 +13,11 @@ import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from doc_control.live.dispatch import using
 from doc_control.live.lo_uno import LibreOffice
-from doc_control.live.protocol import LiveAdapter
 
 
 @pytest.fixture(scope="session")
@@ -69,6 +67,5 @@ def libreoffice(lo_home: Path) -> Iterator[LibreOffice]:
 @pytest.fixture
 def live(libreoffice: LibreOffice) -> Iterator[LibreOffice]:
     """Live calls go to the test LibreOffice only."""
-    # Reading and editing arrive with T4 and T5; the session calls are all T3 routes.
-    with using(cast(LiveAdapter, libreoffice)):
+    with using(libreoffice):
         yield libreoffice

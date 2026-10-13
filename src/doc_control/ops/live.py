@@ -11,17 +11,26 @@ phrase from ``locate``; ``paragraphs_after`` moves that many paragraphs on from 
 
 from __future__ import annotations
 
+import os
 from bisect import bisect_right
-from itertools import accumulate
+from itertools import accumulate, pairwise
+from math import inf
 from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
-from doc_control.model.address import Address, fingerprint, parse_address
+from doc_control.model.address import Address, fingerprint, parse_address, parse_range
+from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author
+from doc_control.ops.comments import AddComment
+from doc_control.ops.tracked import InsertParagraph
 from doc_control.registry import operation
+from doc_control.safety.history import append_entry
 from doc_control.safety.lock import lock_info
+from doc_control.safety.store import DocStore
+
+LIVE_KINDS = ("comment.add", "text.replace", "para.insert")
 
 _DOC = {"type": "string", "minLength": 1, "description": "Path to the document."}
 _ENGINE = {"enum": ["live"], "description": "Always the live engine; may be left out."}
@@ -34,6 +43,19 @@ def _schema(required: bool = True, **extra: dict[str, Any]) -> dict[str, Any]:
         "required": ["doc"] if required else [],
         "additionalProperties": False,
     }
+
+
+def _fresh(adapter: LiveAdapter, path: Path, count: int, address: Address) -> str:
+    """The text of the paragraph at ``address``; ``STALE_ADDRESS`` when it reads otherwise."""
+    n = address.number - 1
+    text: str = guarded(adapter.text, path, Span(n, n)) if n < count else ""
+    if n >= count or fingerprint(text) != address.fp:
+        raise DocControlError(
+            ErrorCode.STALE_ADDRESS,
+            f"{address} does not match the open document",
+            address=str(address),
+        )
+    return text
 
 
 def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
@@ -170,12 +192,7 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
     if "at" in request:
         address = parse_address(request["at"])
         n = address.number - 1
-        if n >= len(texts) or fingerprint(guarded(adapter.text, path, Span(n, n))) != address.fp:
-            raise DocControlError(
-                ErrorCode.STALE_ADDRESS,
-                f"{address} does not match the open document",
-                address=str(address),
-            )
+        _fresh(adapter, path, len(texts), address)
     else:
         n = _found(texts, request["find_phrase"], request.get("find_phrase_across"))
     n += request.get("paragraphs_after", 0)
@@ -204,6 +221,82 @@ def selection(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def live_batch(request: dict[str, Any]) -> dict[str, Any]:
-    """``batch`` with ``engine: "live"``."""
-    held(request)
-    raise unavailable("operation not supported live")
+    """``batch`` with ``engine: "live"``: comments and tracked edits in the open document.
+
+    Addresses refer to the document as read, so the edits are applied from the end of
+    the document backwards. Each one is logged to history (``engine: live``) without a
+    backup: until the next save, taking one back is the app's own undo.
+    """
+    from doc_control.ops.batch import edits_from_request  # batch imports this module too
+
+    adapter, path = held(request)
+    for guard in ("dry_run", "expect"):
+        if request.get(guard):
+            raise unavailable(f"{guard} is not supported live")
+    ops = request["ops"]
+    for i, raw in enumerate(ops):
+        if raw.get("op") not in LIVE_KINDS:
+            raise unavailable("operation not supported live", op_index=i, op=raw.get("op"))
+    author = format_author(
+        request.get("author") or os.environ.get("DOC_CONTROL_LIVE_AUTHOR") or DEFAULT_AUTHOR,
+        request.get("tag"),
+    )
+    count = len(guarded(adapter.paragraphs, path))
+    # (start, end, index in the request, adapter call, where)
+    plan: list[tuple[tuple[float, float], tuple[float, float], int, Any, Any]] = []
+    for i, edit in enumerate(edits_from_request(ops)):
+        if isinstance(edit, InsertParagraph):
+            if (edit.after is None) == (edit.before is None):
+                raise DocControlError(
+                    ErrorCode.SCHEMA_INVALID, f"ops[{i}]: pass after or before, one of them"
+                )
+            address = parse_address(edit.after or edit.before or "")
+            _fresh(adapter, path, count, address)
+            after = address.number - (1 if edit.after else 2)
+            if any(step[4] == after for step in plan if step[3] == adapter.tracked_insert):
+                raise DocControlError(
+                    ErrorCode.BATCH_CONFLICT, f"ops[{i}] inserts where an earlier one does"
+                )
+            plan.append(((after, inf), (after, inf), i, adapter.tracked_insert, after))
+            continue
+        rng = parse_range(edit.at)
+        if rng.sentence is not None:
+            raise unavailable("sentence addresses are not supported live", op_index=i)
+        first = _fresh(adapter, path, count, rng.start)
+        last = first if rng.end == rng.start else _fresh(adapter, path, count, rng.end)
+        a, b = rng.start_offset or 0, rng.end_offset
+        if a > len(first) or (b is not None and b > len(last)):
+            raise DocControlError(
+                ErrorCode.ADDRESS_INVALID, f"ops[{i}]: {edit.at} runs past its paragraph"
+            )
+        span = Span(rng.start.number - 1, rng.end.number - 1, a, b)
+        if span.end != span.start:
+            guarded(adapter.text, path, span)  # refuses a span the app cannot hold as one range
+        call = adapter.comment if isinstance(edit, AddComment) else adapter.tracked_replace
+        plan.append(((span.start, a), (span.end, inf if b is None else b), i, call, span))
+    plan.sort(key=lambda step: (step[0], step[2]), reverse=True)
+    for later, earlier in pairwise(plan):
+        if earlier[1] > later[0]:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                f"ops[{earlier[2]}] and ops[{later[2]}] overlap: send them as separate batches",
+            )
+    store = DocStore.open(path)
+    op_ids: dict[int, str] = {}
+    # ponytail: not all-or-nothing. Every address and span is checked before the first
+    # edit, so a batch should stop half-way only when the app goes away; wrap it in the
+    # app's undo context if a writer is ever left with half a batch.
+    for _, _, i, call, where in plan:
+        guarded(call, path, where, ops[i]["text"], author)
+        entry = append_entry(
+            store,
+            {"kind": "batch", "engine": "live", "author": author, "request": [ops[i]]},
+            None,
+        )
+        op_ids[i] = entry["op_id"]
+    return {
+        "engine": "live",
+        "applied": len(plan),
+        "author": author,
+        "op_ids": [op_ids[i] for i in range(len(plan))],
+    }

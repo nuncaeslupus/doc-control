@@ -33,9 +33,12 @@ import sys
 import sysconfig
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.protocol import LiveUnavailable, Span
 
 _PROGRAM_DIRS = (
@@ -149,8 +152,9 @@ def _walk(text: Any) -> Iterator[Any]:
             yield item
 
 
-def _runs(paragraph: Any) -> Iterator[Any]:
+def _runs(paragraph: Any) -> list[Any]:
     """The portions holding the paragraph's visible text: tracked deletions left out."""
+    runs: list[Any] = []
     deleted = False
     portions = paragraph.createEnumeration()
     while portions.hasMoreElements():
@@ -158,9 +162,12 @@ def _runs(paragraph: Any) -> Iterator[Any]:
         kind = portion.TextPortionType
         if kind == "Redline":
             if portion.RedlineType == "Delete":
+                if not portion.IsStart and not deleted:
+                    runs.clear()  # the deletion began in an earlier paragraph
                 deleted = portion.IsStart
         elif kind in ("Text", "TextField") and not deleted:
-            yield portion
+            runs.append(portion)
+    return runs
 
 
 def _visible(paragraph: Any) -> str:
@@ -365,6 +372,13 @@ class LibreOffice:
         if not 0 <= span.start <= span.end < len(texts):
             raise LiveUnavailable(f"the open document has no paragraph {span.end + 1}")
         found = [self._paragraph(doc, texts, n) for n in range(span.start, span.end + 1)]
+        if any(paragraph.getText() != found[0].getText() for paragraph in found[1:]):
+            # As the file engine: one range does not run from the body into a table
+            # cell, or from one cell into the next.
+            raise DocControlError(
+                ErrorCode.UNSUPPORTED_CONTENT,
+                f"paragraphs {span.start + 1} and {span.end + 1} are not in the same container",
+            )
         parts = [_visible(paragraph) for paragraph in found]
         if span.b is not None:
             parts[-1] = parts[-1][: span.b]
@@ -382,18 +396,28 @@ class LibreOffice:
         # is matched against what the writer sees.
         # ponytail: several calls per tracked deletion; cache per document if a heavily
         # revised novel makes select slow.
+        done: set[str] = set()
         redlines = doc.Redlines.createEnumeration()
         while redlines.hasMoreElements():
             redline = redlines.nextElement()
             if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
                 continue
-            start = redline.RedlineStart
-            paragraph = _around(start.getText().createTextCursorByRange(start))
-            at = [n for n, text in enumerate(raw) if text == paragraph.getString()]
-            if len(at) != 1:
-                # A repeated paragraph cannot be placed: read them all, in order.
-                return [_visible(paragraph) for paragraph in _walk(doc.Text)]
-            texts[at[0]] = _visible(paragraph)
+            # ponytail: a paragraph wholly inside a deletion that spans three or more
+            # still reads with its deleted text; walk from start to end if that bites.
+            for edge in (redline.RedlineStart, redline.RedlineEnd):
+                paragraph = _around(edge.getText().createTextCursorByRange(edge))
+                whole = paragraph.getString()
+                if whole in done:
+                    continue  # read for another deletion (or the other end of this one)
+                done.add(whole)
+                seen = _visible(paragraph)
+                if seen == whole:
+                    continue  # the deletion only touches this paragraph's edge
+                at = [n for n, text in enumerate(raw) if text == whole]
+                if len(at) != 1:
+                    # A repeated paragraph cannot be placed: read them all, in order.
+                    return [_visible(paragraph) for paragraph in _walk(doc.Text)]
+                texts[at[0]] = seen
         return texts
 
     @_guard
@@ -434,6 +458,64 @@ class LibreOffice:
         while shown.hasMoreElements():
             parts.append(_visible(shown.nextElement()))
         return "\n".join(parts), at[0]
+
+    @contextmanager
+    def _as(self, doc: Any, author: str) -> Iterator[None]:
+        """Tracked changes on and ``author`` as the user's name, both put back after."""
+        profile = self._config("/org.openoffice.UserProfile/Data")
+        name, tracking = (profile.givenname, profile.sn), doc.RecordChanges
+        profile.givenname, profile.sn = author, ""
+        profile.commitChanges()
+        doc.RecordChanges = True
+        try:
+            yield
+        finally:
+            doc.RecordChanges = tracking
+            profile.givenname, profile.sn = name
+            profile.commitChanges()
+
+    @_guard
+    def comment(self, path: Path, span: Span, text: str, author: str) -> None:
+        doc = self._doc(path)
+        cursor, _ = self._range(doc, span)
+        note = doc.createInstance("com.sun.star.text.textfield.Annotation")
+        now = datetime.now(UTC)
+        stamp = _uno().createUnoStruct("com.sun.star.util.DateTime")
+        stamp.Year, stamp.Month, stamp.Day = now.year, now.month, now.day
+        stamp.Hours, stamp.Minutes, stamp.Seconds, stamp.IsUTC = (
+            now.hour,
+            now.minute,
+            now.second,
+            True,
+        )
+        note.Author, note.Content, note.DateTimeValue = author, text, stamp
+        cursor.getText().insertTextContent(cursor, note, True)
+
+    @_guard
+    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
+        doc = self._doc(path)
+        cursor, _ = self._range(doc, span)
+        with self._as(doc, author):
+            cursor.setString(text)
+
+    @_guard
+    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
+        doc = self._doc(path)
+        texts = self._texts(doc)
+        if not -1 <= after < len(texts):
+            raise LiveUnavailable(f"the open document has no paragraph {after + 1}")
+        anchor = self._paragraph(doc, texts, max(after, 0))
+        story = anchor.getText()
+        break_ = _uno().getConstantByName("com.sun.star.text.ControlCharacter.PARAGRAPH_BREAK")
+        with self._as(doc, author):
+            if after < 0:
+                cursor = story.createTextCursorByRange(anchor.getStart())
+                story.insertString(cursor, text, False)
+                story.insertControlCharacter(cursor, break_, False)
+            else:
+                cursor = story.createTextCursorByRange(anchor.getEnd())
+                story.insertControlCharacter(cursor, break_, False)
+                story.insertString(cursor, text, False)
 
     @_guard
     def save(self, path: Path) -> None:

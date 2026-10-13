@@ -149,3 +149,30 @@ def test_find_phrase_reads_past_tracked_deletions(live: LibreOffice, lo_home: Pa
             assert err.value.code is code, ask
     finally:
         _run("live.close", {**base, "discard": True})
+
+
+def test_deletion_across_a_paragraph_mark_reads_as_the_file_engine(
+    live: LibreOffice, lo_home: Path
+) -> None:
+    doc = make_docx(
+        lo_home / "crossing.docx",
+        "Lead.",
+        "Keep one gone tail",
+        "unicorn head stays two.",
+        "Third unicorn here.",
+    )
+    with api.open(doc) as handle:
+        at = [p["at"] for p in handle.paragraphs()]
+        cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[2]}:13", "text": ""}
+        handle.run("batch", {"ops": [cut]})
+        rows = handle.paragraphs()
+    assert [p["text"] for p in rows][1:3] == ["Keep one", "stays two."]
+    base = {"doc": str(doc)}
+    _run("live.open", base)
+    try:
+        assert _run("live.select", {**base, "find_phrase": "stays"})["at"] == rows[2]["at"]
+        assert _run("live.select", {**base, "at": rows[2]["at"]})["text"] == "stays two."
+        assert _run("live.select", {**base, "find_phrase": "unicorn"})["at"] == rows[3]["at"]
+        assert _run("live.select", {**base, "at": rows[1]["at"]})["text"] == "Keep one"
+    finally:
+        _run("live.close", {**base, "discard": True})

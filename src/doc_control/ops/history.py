@@ -327,7 +327,7 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
             for n, c in enumerate(changes)
             if _restorable(c) and c.get("deleted")
         ][:5]
-    for key in ("undoes", "restores", "sha256_after", "backup"):
+    for key in ("undoes", "restores", "sha256_after", "backup", "engine"):
         if entry.get(key) is not None:
             out[key] = entry[key]
     return out

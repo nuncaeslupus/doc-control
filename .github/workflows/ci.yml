@@ -98,6 +98,33 @@ jobs:
           DOC_CONTROL_KEEP_DOCS="$RUNNER_TEMP/kept-docs" uv run pytest -q tests/safety tests/ops
           uv run python scripts/ci_validate_docs.py --roundtrip "$RUNNER_TEMP/kept-docs"
 
+  live-libreoffice:
+    # The live engine driving a real LibreOffice over UNO. The bridge (python3-uno) is
+    # built for the distribution's Python, so this job runs on it, not on a uv Python.
+    # REQUIRE_LIVE_LO makes an app that cannot be driven a failure, never a silent skip.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOC_CONTROL_REQUIRE_LIVE_LO: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - name: Install LibreOffice Writer and its Python bridge
+        run: |
+          sudo apt-get update
+          # Not the -nogui build: it has no window for a comment, and crashes when a
+          # document with one is opened in a view.
+          sudo apt-get install -y --no-install-recommends libreoffice-writer python3-uno
+          soffice --version
+      - name: Environment on the system Python, seeing its packages
+        run: |
+          uv venv --python /usr/bin/python3 --system-site-packages
+          uv sync --locked --python /usr/bin/python3
+      - name: Live engine against LibreOffice
+        run: uv run --python /usr/bin/python3 pytest -q tests/live
+
   smoke-no-network:
     # The file engine runs in a Python 3.11 sandbox with no network: install the built
     # wheel into a clean venv and run the CLI with the network off.
