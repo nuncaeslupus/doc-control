@@ -4,6 +4,7 @@ title: "T40: Structure: chapter starts from style names, part level above chapte
 label: "parts, style chapters, front"
 priority: 5
 deps: []
+status: merged
 ---
 
 # T40: Structure detection for parts, style-marked chapters and front matter
