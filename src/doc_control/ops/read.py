@@ -517,3 +517,8 @@ def revisions_list(request: dict[str, Any]) -> Reply:
             row["truncated"] = True
         rows.append(row)
     return paged("revisions.list", doc, request, "revisions", rows)
+
+
+# Layout facts register themselves on the hooks above; operations loaded one at a time
+# (doc_control.registry.get_operation) must still see them.
+from doc_control.ops import layout as _layout  # noqa: E402, F401

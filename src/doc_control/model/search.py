@@ -39,6 +39,7 @@ Regular expressions
 from __future__ import annotations
 
 import bisect
+import functools
 import importlib
 import itertools
 import multiprocessing
@@ -72,10 +73,18 @@ def _mark_class() -> str:
 
 # Marks (Latin and Greek accents, Hebrew points, Arabic harakat, Indic vowel signs, ...) for
 # units and word boundaries: a letter and its marks go together.
-_MARKS = _mark_class()
-_WORD = rf"[\w{_MARKS}]"
-_HAS_MARK = re.compile(f"[{_MARKS}]")
-_UNIT = re.compile(rf"(?s:[^{_MARKS}][{_MARKS}]*|[{_MARKS}]+)")
+# Built on first use: scanning the code points costs ~40 ms, too much for every import.
+@functools.cache
+def _marks() -> tuple[str, re.Pattern[str], re.Pattern[str]]:
+    """The mark class, as (word class, has-a-mark pattern, unit pattern)."""
+    marks = _mark_class()
+    return (
+        rf"[\w{marks}]",
+        re.compile(f"[{marks}]"),
+        re.compile(rf"(?s:[^{marks}][{marks}]*|[{marks}]+)"),
+    )
+
+
 _UNBOUNDED = 65535  # re's MAXREPEAT is far above this; bounded repeats stay below
 
 
@@ -133,8 +142,9 @@ class _Folder:
     def _fold(self, text: str) -> tuple[str, list[str] | None]:
         if text.isascii():
             return (text.casefold() if self.case else text), None
-        if _HAS_MARK.search(text):
-            units = _UNIT.findall(text)
+        _, has_mark, unit = _marks()
+        if has_mark.search(text):
+            units = unit.findall(text)
             return "".join(map(self.unit, units)), units
         if not (self.case or self.accents) and unicodedata.is_normalized("NFC", text):
             return text, None  # folding would only apply NFC, a no-op here
@@ -175,7 +185,8 @@ class Matcher:
                 raise _invalid("query has no characters left after folding")
             pattern = re.escape(folded)
         if options.whole_word:
-            pattern = f"(?<!{_WORD})(?:{pattern})(?!{_WORD})"
+            word = _marks()[0]
+            pattern = f"(?<!{word})(?:{pattern})(?!{word})"
         try:
             self._pattern = re.compile(pattern, flags)
         except (re.error, RecursionError, OverflowError) as exc:

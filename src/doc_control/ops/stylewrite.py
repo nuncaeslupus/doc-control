@@ -20,7 +20,6 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape, unescape
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
@@ -36,6 +35,7 @@ from doc_control.ooxml.styledef import (
     new_style,
     set_child,
 )
+from doc_control.ooxml.xmltext import escape, unescape
 from doc_control.ooxml.zipio import Package
 from doc_control.registry import operation
 from doc_control.safety.lock import check_changed, check_unlocked

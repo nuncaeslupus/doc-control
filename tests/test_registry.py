@@ -248,3 +248,12 @@ def test_validate_rejects_invalid_values(value: Any, schema: dict[str, Any]) -> 
 def test_validate_accepts_valid_values(value: Any, schema: dict[str, Any]) -> None:
     """Enum matches respect bool vs number; finite numbers inside bounds pass."""
     validate(value, schema)
+
+
+def test_operation_modules_name_the_module_of_every_operation() -> None:
+    from doc_control.registry import OPERATION_MODULES, load_operations
+
+    registry = load_operations()
+    assert {name: op.handler.__module__.rsplit(".", 1)[1] for name, op in registry.items()} == (
+        OPERATION_MODULES
+    )

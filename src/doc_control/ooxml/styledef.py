@@ -17,10 +17,10 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any
-from xml.sax.saxutils import quoteattr, unescape
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.parts import W_NS, W
+from doc_control.ooxml.xmltext import quoteattr, unescape
 
 STYLES_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"
 _XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'

@@ -24,7 +24,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import uncapped
 from doc_control.model.document import Document, shared_documents
 from doc_control.ooxml.plaintext import TEXT_MODES, text_mode
-from doc_control.registry import REGISTRY, load_operations
+from doc_control.registry import get_operation
 from doc_control.safety.store import stores_in
 
 __all__ = ["OpenDocument", "open", "run"]
@@ -32,11 +32,11 @@ __all__ = ["OpenDocument", "open", "run"]
 
 def run(op: str, request: dict[str, Any]) -> Reply:
     """Run one operation uncapped; the reply carries ``result``, ``warnings`` and ``doc``."""
-    load_operations()
-    if op not in REGISTRY:
+    operation = get_operation(op)
+    if operation is None:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
     with uncapped():
-        out = REGISTRY[op].run(request)
+        out = operation.run(request)
     return out if isinstance(out, Reply) else Reply(out)
 
 
@@ -59,10 +59,9 @@ class OpenDocument:
             return self._reply(op, request)
 
     def _reply(self, op: str, request: dict[str, Any] | None) -> Reply:
-        load_operations()
-        if op not in REGISTRY:
+        operation = get_operation(op)
+        if operation is None:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
-        operation = REGISTRY[op]
         req = dict(request or {})
         if "doc" in operation.schema.get("properties", {}):
             req.setdefault("doc", self.path)
