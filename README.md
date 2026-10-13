@@ -17,7 +17,8 @@ Word document without a single silent change.
 ## Usage
 
 Install with `pip install doc-control` (or run it without installing: `uvx doc-control`).
-Python 3.11+, no other dependencies.
+Python 3.11+, no other dependencies. To drive the Word that is open on Windows, install
+`doc-control[live]` (it adds pywin32); LibreOffice needs no extra package.
 
 Command line, JSON in and JSON out:
 

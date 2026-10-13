@@ -12,7 +12,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable
 
 #: App name to the module (in ``doc_control.live``) whose ``adapter()`` builds its adapter.
-ADAPTER_MODULES: dict[str, str] = {"libreoffice": "lo_uno"}
+ADAPTER_MODULES: dict[str, str] = {"libreoffice": "lo_uno", "word": "word_com"}
 
 _override: list[LiveAdapter] | None = None
 
