@@ -44,13 +44,15 @@ TRACKED = (
 )
 
 
-def odt(body: str = BODY, *, mimetype: str = MIMETYPE, encrypted: bool = False) -> bytes:
+def odt(
+    body: str = BODY, *, mimetype: str = MIMETYPE, encrypted: bool = False, styles: str = ""
+) -> bytes:
     import io
 
     content = (
         f"<office:document-content {NS}><office:automatic-styles>"
         '<style:style style:name="P1" style:family="paragraph" '
-        'style:parent-style-name="Scene_20_break"/></office:automatic-styles>'
+        f'style:parent-style-name="Scene_20_break"/>{styles}</office:automatic-styles>'
         f"<office:body><office:text>{TRACKED}{body}</office:text></office:body>"
         "</office:document-content>"
     )
@@ -111,3 +113,55 @@ def test_writes_are_refused(tmp_path: Path) -> None:
         doc.run("open")
     assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
     assert not (tmp_path / "store").exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            "<text:p>a<draw:rect><text:p>RECT</text:p></draw:rect>b</text:p>"
+            "<draw:g><draw:rect><text:p>BODY</text:p></draw:rect></draw:g>",
+            [("ab", None, None)],
+        ),
+        (
+            "<text:p>x<text:ruby><text:ruby-base>base</text:ruby-base><text:ruby-text>gloss"
+            "</text:ruby-text></text:ruby>y</text:p>",
+            [("xbasey", None, None)],
+        ),
+        (
+            '<text:p>a<text:s text:c="2000000000"/>b</text:p>',
+            [("a" + " " * 1000 + "b", None, None)],
+        ),
+        ('<text:p>a<text:s text:c="x"/>b</text:p>', [("a b", None, None)]),
+        ('<text:h text:outline-level="²">T</text:h>', [("T", 1, None)]),
+    ],
+)
+def test_unusual_and_hostile_content(
+    body: str, expected: list[tuple[str, int | None, None]]
+) -> None:
+    assert paragraphs(odt(body)) == expected
+
+
+def test_deep_nesting_is_not_a_document(tmp_path: Path) -> None:
+    deep = "<text:span>" * 5000 + "x" + "</text:span>" * 5000
+    path = tmp_path / "deep.odt"
+    path.write_bytes(odt(f"<text:p>{deep}</text:p>"))
+    with api.open(path) as doc, pytest.raises(DocControlError) as err:
+        doc.run("info")
+    assert err.value.code is ErrorCode.NOT_A_DOCX
+    assert "nested" in str(err.value)
+
+
+def test_style_names_with_bad_characters_still_read(tmp_path: Path) -> None:
+    body = '<text:p text:style-name="P3">x</text:p><text:p text:style-name="P2">y</text:p>'
+    data = odt(
+        body,
+        styles='<style:style style:name="P2" style:family="paragraph" '
+        'style:parent-style-name="P1"/><style:style style:name="P3" style:family="paragraph" '
+        'style:parent-style-name="A_00_B"/>',
+    )
+    path = tmp_path / "names.odt"
+    path.write_bytes(data)
+    with api.open(path) as doc:
+        rows = doc.paragraphs()
+    assert [r["style_name"] for r in rows] == ["AB", "Scene break"]
