@@ -1,11 +1,22 @@
 {
   "recipe": "empty-headings",
   "version": 1,
-  "description": "Delete empty paragraphs that carry a heading style (they show up as blank entries in the navigation pane and table of contents)",
+  "description": "Delete empty paragraphs in a built-in Heading 1-9 style (they show up as blank entries in the navigation pane and table of contents); other styles with an outline level, such as a note style, are left alone",
   "match": {
     "where": {
       "empty": true,
-      "heading": true
+      "heading": true,
+      "style": [
+        "heading 1",
+        "heading 2",
+        "heading 3",
+        "heading 4",
+        "heading 5",
+        "heading 6",
+        "heading 7",
+        "heading 8",
+        "heading 9"
+      ]
     }
   },
   "propose": [
