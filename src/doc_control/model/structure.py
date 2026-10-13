@@ -13,12 +13,23 @@ Chapters
     ``section_name``    ``Prólogo``, ``Epílogo``, ``Introducción``
     ``numeral``         a bare number or Roman numeral, only when also centred, after a
                         page break or in a heading style (a lone ``3`` is often just text)
+    ``chapter_style``   a body paragraph whose style name holds a chapter word
+                        (``Normal inicio capítulo``): untitled chapters marked by style;
+                        the paragraph is the chapter's first text, not a heading
     ``override``        an override forced it
 
     Supporting signals ride along: ``centred``, ``page_break_before``, ``blank_lines``
     (empty paragraphs just before). A chapter whose text after the heading is shorter than
     ``profile.min_chapter_words`` is not a chapter (``suppressed``), unless it is forced or
     is a ``part`` heading, which holds chapters rather than text.
+
+Parts
+    A heading-like start (any primary signal but ``chapter_style``) is a *part* when
+    chapters start inside it before the next heading-like start: style-marked chapters,
+    or any chapter after a ``Parte II`` / ``Libro I`` heading. A part holds the chapters up
+    to the next part; it is listed in ``parts``, not ``chapters``, and each chapter names
+    its part. Text before the first part or chapter is the *front* matter (title page,
+    dedication), reported as ``front``.
 
 Scenes
     A scene starts at a chapter start, at a scene-break paragraph (``scene_marker``), or
@@ -46,6 +57,7 @@ Stable ids
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -58,6 +70,17 @@ from doc_control.model.segment import (
     is_scene_break,
     number_word,
     parse_chapter_heading,
+)
+
+#: Words that mark a chapter-opening paragraph style, matched in the style name folded to
+#: lower case without accents (any language: a style name rarely says "chapter" by chance).
+CHAPTER_STYLE_WORDS: tuple[str, ...] = (
+    "capitulo",
+    "chapter",
+    "chapitre",
+    "kapitel",
+    "capitolo",
+    "hoofdstuk",
 )
 
 Kind = Literal["chapter", "scene"]
@@ -79,6 +102,7 @@ class Para:
     page_break_before: bool = False
     blank_before: int | None = None  # empty paragraphs just above; None = count from the texts
     empty: bool | None = None  # None = no visible text
+    style_name: str | None = None  # the paragraph style's name, for ``chapter_style``
 
 
 @dataclass(frozen=True)
@@ -92,6 +116,8 @@ class Profile:
     chapter_patterns: bool = True
     scene_markers: bool = True
     language: str = "es"  # "es" accepts a lone "I" as a numeral; others need more signals
+    chapter_styles: bool = True
+    chapter_style_words: tuple[str, ...] = CHAPTER_STYLE_WORDS
 
 
 @dataclass(frozen=True)
@@ -109,8 +135,28 @@ class DetectedChapter:
     last: int
     kind: str  # chapter, part, prologue, epilogue, introduction, numeral
     number: int | None
-    words: int  # words after the heading
+    words: int  # words after the heading (with the first paragraph for ``chapter_style``)
     signals: tuple[str, ...]
+    part: str | None = None  # the id of the part that holds it
+
+
+@dataclass(frozen=True)
+class DetectedPart:
+    id: str  # ``pt-<8 hex>``
+    first: int  # its heading
+    last: int  # the last paragraph of its last chapter
+    kind: str  # part, or the heading's kind when a chapter-like heading holds chapters
+    number: int | None
+    words: int  # words between the heading and its first chapter
+    chapters: int
+    signals: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DetectedFront:
+    first: int
+    last: int
+    words: int
 
 
 @dataclass(frozen=True)
@@ -121,6 +167,7 @@ class DetectedScene:
     last: int
     words: int
     signals: tuple[str, ...]
+    part: str | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +176,8 @@ class Structure:
     scenes: tuple[DetectedScene, ...]
     suppressed: tuple[tuple[int, Kind, str], ...]  # (paragraph, kind, reason)
     unmatched_overrides: tuple[Override, ...] = field(default=())
+    parts: tuple[DetectedPart, ...] = field(default=())
+    front: DetectedFront | None = None
 
 
 def paragraphs_of(doc: Document) -> list[Para]:
@@ -142,6 +191,8 @@ def paragraphs_of(doc: Document) -> list[Para]:
         if level is not None:
             source = "outline_level" if props.outline_level is not None else "heading_style"
         empty = is_empty(doc, para)
+        style_id = doc.style_id(para)
+        style = doc.styles.get(style_id) if style_id is not None else None
         breaks = page_break_before(doc, para) or pending
         pending = empty and (breaks or _break_only(doc, para))
         out.append(
@@ -155,6 +206,7 @@ def paragraphs_of(doc: Document) -> list[Para]:
                 breaks,
                 blank_before(doc, para),
                 empty,
+                style.name if style is not None else style_id,
             )
         )
     return out
@@ -166,7 +218,8 @@ def _words(text: str) -> int:
 
 def _id(prefix: str, *parts: str | int) -> str:
     data = "\0".join(str(p) for p in (prefix, *parts)).encode()
-    return f"{'ch' if prefix == 'chapter' else 'sc'}-{hashlib.blake2s(data).hexdigest()[:8]}"
+    short = {"chapter": "ch", "part": "pt"}.get(prefix, "sc")
+    return f"{short}-{hashlib.blake2s(data).hexdigest()[:8]}"
 
 
 def _unique(prefix: str, key: tuple[str, ...], seen: dict[tuple[str, ...], int]) -> str:
@@ -207,34 +260,81 @@ def detect(
             suppressed.append((paras[i].number, "scene", "override"))
     scene_opener_signals = {i: s for i, s in scene_opener_signals.items() if "denied" not in s}
 
+    # A style-marked chapter starts at its first text paragraph, which is content.
+    body_start = {i for i, (signals, _) in chapters.items() if _style_only(signals)}
+
     def content(i: int) -> bool:
         text = paras[i].text
-        return bool(text.strip()) and i not in chapters and not is_scene_break(text)
+        return (
+            bool(text.strip())
+            and (i not in chapters or i in body_start)
+            and not is_scene_break(text)
+        )
 
     def words(lo: int, hi: int) -> int:
         return sum(_words(paras[i].text) for i in range(lo, hi) if content(i))
 
+    holders = _parts(starts, chapters, body_start)
     # Chapters below the minimum word count fall back into the text before them.
     kept: list[int] = []
     for pos, i in enumerate(starts):
         end = starts[pos + 1] if pos + 1 < len(starts) else n
         signals, heading = chapters[i]
-        body = words(i + 1, end)
+        body = words(i if i in body_start else i + 1, end)
         if (
             profile.min_chapter_words
             and body < profile.min_chapter_words
             and "override" not in signals
             and heading.kind != "part"
+            and i not in holders
         ):
             suppressed.append((paras[i].number, "chapter", "below_minimum_words"))
             continue
         kept.append(i)
     kept_set = set(kept)
+    held = _parts(kept, chapters, body_start)
+    part_starts = sorted(held)
+    part_set = set(part_starts)
+    owner_of = {k: i for i, children in held.items() for k in children}
+
+    def unit_end(i: int) -> int:
+        """Where the unit starting at kept start ``i`` ends (exclusive)."""
+        pos = kept.index(i)
+        return kept[pos + 1] if pos + 1 < len(kept) else n
+
+    detected_parts: list[DetectedPart] = []
+    part_ids: dict[int, str] = {}
+    seen_parts: dict[tuple[str, ...], int] = defaultdict(int)
+    for i in part_starts:
+        children = held[i]
+        end = unit_end(children[-1])
+        signals, heading = chapters[i]
+        pid = _unique("part", (paras[i].fp,), seen_parts)
+        part_ids[i] = pid
+        detected_parts.append(
+            DetectedPart(
+                pid,
+                paras[i].number,
+                paras[end - 1].number,
+                heading.kind,
+                heading.number,
+                words(i + 1, children[0]),
+                len(children),
+                tuple(signals),
+            )
+        )
+
+    def part_of(i: int) -> str | None:
+        if i in part_set:
+            return part_ids[i]
+        return part_ids[owner_of[i]] if i in owner_of else None
 
     detected_chapters: list[DetectedChapter] = []
     chapter_ids: dict[int, str] = {}
     seen_chapters: dict[tuple[str, ...], int] = defaultdict(int)
     for pos, i in enumerate(kept):
+        if i in part_set:
+            continue
         end = kept[pos + 1] if pos + 1 < len(kept) else n
         signals, heading = chapters[i]
         cid = _unique("chapter", (paras[i].fp,), seen_chapters)
@@ -246,8 +346,9 @@ def detect(
                 paras[end - 1].number,
                 heading.kind,
                 heading.number,
-                words(i + 1, end),
+                words(i if i in body_start else i + 1, end),
                 tuple(signals),
+                part_of(i),
             )
         )
 
@@ -255,10 +356,15 @@ def detect(
     regions: list[tuple[str | None, int, int]] = []
     first_text = next((i for i in range(n) if not blank[i]), n)
     lead_end = kept[0] if kept else n
+    front = None
     if first_text < lead_end:
         regions.append((None, first_text, lead_end))
+        if kept:
+            front = DetectedFront(
+                paras[first_text].number, paras[lead_end - 1].number, words(first_text, lead_end)
+            )
     for pos, i in enumerate(kept):
-        regions.append((chapter_ids[i], i, kept[pos + 1] if pos + 1 < len(kept) else n))
+        regions.append((chapter_ids.get(i), i, kept[pos + 1] if pos + 1 < len(kept) else n))
 
     scenes: list[DetectedScene] = []
     for owner, lo, hi in regions:
@@ -278,7 +384,11 @@ def detect(
             end = taken[pos + 1] if pos + 1 < len(taken) else hi
             if o == lo:
                 opening: tuple[str, ...] = (
-                    ("chapter_start",) if lo in kept_set else ("document_start",)
+                    ("document_start",)
+                    if lo not in kept_set
+                    else ("part_start",)
+                    if lo in part_set
+                    else ("chapter_start",)
                 )
             else:
                 opening = tuple(scene_opener_signals[o])
@@ -287,14 +397,68 @@ def detect(
             else:  # the first text of the scene, so adding scenes elsewhere moves no id
                 text_at = next((i for i in range(o, end) if content(i)), o)
                 key = paras[text_at].fp
-            sid = _unique("scene", (owner or "-", key), seen_scenes)
+            region_key = owner or (part_ids.get(lo) if lo in part_set else None) or "-"
+            sid = _unique("scene", (region_key, key), seen_scenes)
             scenes.append(
                 DetectedScene(
-                    sid, owner, paras[o].number, paras[end - 1].number, words(o, end), opening
+                    sid,
+                    owner,
+                    paras[o].number,
+                    paras[end - 1].number,
+                    words(o, end),
+                    opening,
+                    part_of(lo) if lo in kept_set else None,
                 )
             )
     suppressed.sort()
-    return Structure(tuple(detected_chapters), tuple(scenes), tuple(suppressed), unmatched)
+    return Structure(
+        tuple(detected_chapters),
+        tuple(scenes),
+        tuple(suppressed),
+        unmatched,
+        tuple(detected_parts),
+        front,
+    )
+
+
+def _style_only(signals: Sequence[str]) -> bool:
+    """A start whose only primary signal is ``chapter_style`` (overrides aside)."""
+    return "chapter_style" in signals and not any(s in _HEADING_SIGNALS for s in signals)
+
+
+_HEADING_SIGNALS = frozenset(
+    {"heading_style", "outline_level", "chapter_word", "section_name", "numeral"}
+)
+
+
+def _parts(
+    starts: Sequence[int],
+    chapters: dict[int, tuple[list[str], ChapterHeading]],
+    body_start: set[int],
+) -> dict[int, list[int]]:
+    """Each start that holds chapters, with the starts it holds.
+
+    A heading (not a section name like ``Prólogo``) holds the style-marked chapters that
+    follow it; a ``Parte``/``Libro`` heading holds the chapters up to the next part or
+    section (``Epílogo``).
+    """
+    out: dict[int, list[int]] = {}
+    for pos, i in enumerate(starts):
+        kind = chapters[i][1].kind
+        if i in body_start or kind not in ("chapter", "part", "numeral"):
+            continue
+        children: list[int] = []
+        for k in starts[pos + 1 :]:
+            if kind == "part":
+                # up to the next part, or a section such as an epilogue
+                if k not in body_start and chapters[k][1].kind not in ("chapter", "numeral"):
+                    break
+            elif k not in body_start:
+                break
+            children.append(k)
+        if children:
+            out[i] = children
+    return out
 
 
 def _resolve_overrides(
@@ -358,6 +522,10 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     if is_scene_break(para.text):
         return []
     signals: list[str] = []
+    if profile.chapter_styles and para.style_name and para.heading_level is None:
+        folded = _fold(para.style_name)
+        if any(word and _fold(word) in folded for word in profile.chapter_style_words):
+            signals.append("chapter_style")
     styled = (
         profile.heading_styles
         and para.heading_level is not None
@@ -381,6 +549,11 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     elif profile.chapter_patterns and laid_out and number_word(para.text) is not None:
         signals.append("numeral")  # Uno, Dos… Veinte; Primera…
     return signals
+
+
+def _fold(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text.lower())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
 def _scene_openers(

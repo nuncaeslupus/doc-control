@@ -158,7 +158,8 @@ def test_minimum_chapter_words_drops_short_chapters_but_not_parts_or_forced() ->
         "Breve.",
     )
     found = detect(paras, Profile(min_chapter_words=20))
-    assert [c.first for c in found.chapters] == [1, 2, 7]
+    assert [(p.first, p.chapters) for p in found.parts] == [(1, 2)]  # a part holds chapters
+    assert [c.first for c in found.chapters] == [2, 7]
     assert chapter_of(found, 2).last == 6  # the dropped chapter's text stays in the one above
     assert [(n, k, r) for n, k, r in found.suppressed if k == "chapter"] == [
         (5, "chapter", "below_minimum_words"),
@@ -167,9 +168,9 @@ def test_minimum_chapter_words_drops_short_chapters_but_not_parts_or_forced() ->
     forced = detect(
         paras, Profile(min_chapter_words=20), [Override(paras[9].fp, "chapter", "force")]
     )
-    assert [c.first for c in forced.chapters] == [1, 2, 7, 10]
+    assert [c.first for c in forced.chapters] == [2, 7, 10]
     assert "override" in chapter_of(forced, 10).signals
-    assert [c.first for c in detect(paras).chapters] == [1, 2, 5, 7, 10]
+    assert [c.first for c in detect(paras).chapters] == [2, 5, 7, 10]
 
 
 # ------------------------------------------------------------------------- stable ids

@@ -5,6 +5,8 @@ For each paragraph the result carries
 * ``chapter`` (id, title, number, kind) and ``scene`` (id, ordinal within its chapter), from
   :mod:`doc_control.model.structure` (same ``overrides`` and ``profile`` as `segment`, so the
   ids agree); ``null`` before the first chapter or scene;
+* ``part`` (id, title, number) when the paragraph lies in a part (see `segment` unit
+  ``parts``), else ``null``;
 * ``page`` and ``page_label`` from :mod:`doc_control.model.pages`: always an estimate;
 * a *locator phrase*: the shortest ``head … tail`` made of the paragraph's first N and last M
   words that no other paragraph of the document also has.
@@ -301,6 +303,10 @@ def locate(request: dict[str, Any]) -> Reply:
     for k, chapter in enumerate(found.chapters, 1):
         for n in range(chapter.first, chapter.last + 1):
             chapter_at[n] = k
+    part_at = [0] * (count + 2)
+    for k, part in enumerate(found.parts, 1):
+        for n in range(part.first, part.last + 1):
+            part_at[n] = k
     scene_at = [0] * (count + 2)
     ordinal: dict[str | None, int] = {}
     ordinals = [0]
@@ -321,6 +327,7 @@ def locate(request: dict[str, Any]) -> Reply:
         page = pages.rows[n - 1]
         chapter = found.chapters[chapter_at[n] - 1] if chapter_at[n] else None
         scene = found.scenes[scene_at[n] - 1] if scene_at[n] else None
+        part = found.parts[part_at[n] - 1] if part_at[n] else None
         loc = locators.locator(n - 1)
         out: dict[str, Any] = {
             "at": str(index.paragraph(n).address),
@@ -331,6 +338,13 @@ def locate(request: dict[str, Any]) -> Reply:
                 "title": " ".join(index.paragraph(chapter.first).text.split())[:_TITLE],
                 "number": chapter.number,
                 "kind": chapter.kind,
+            },
+            "part": None
+            if part is None
+            else {
+                "id": part.id,
+                "title": " ".join(index.paragraph(part.first).text.split())[:_TITLE],
+                "number": part.number,
             },
             "scene": None if scene is None else {"id": scene.id, "ordinal": ordinals[scene_at[n]]},
             "page": page.page,

@@ -65,7 +65,7 @@ Anchors and segmentation
 literary-critic indexing support (D-18)
 - [ ] `para.get` and `outline` report `empty`, `blank_before`, heading level, style, centred and page break before (`layout_fact_mismatches == 0` on the corpus).
 - [ ] A normalised-text view (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) with a two-way offset map to visible text (`offset_map_roundtrip_mismatches == 0`).
-- [ ] Structure detection returns stable chapter and scene ids, the signal behind each detection, accepts fingerprint-keyed overrides and per-profile settings such as minimum chapter words (`structure_override_failures == 0`).
+- [ ] Structure detection returns stable chapter and scene ids, the signal behind each detection, accepts fingerprint-keyed overrides and per-profile settings such as minimum chapter words (`structure_override_failures == 0`). Parts above chapters, untitled chapters marked by a chapter-opening paragraph style, and front matter are units of their own (`structure_part_chapter_errors == 0`, T40).
 - [ ] `anchor.resolve` with `mode: "exact"` never returns a fuzzy match and every response names its match kind (`exact_mode_fuzzy_matches == 0`).
 - [ ] `diff` aligns two versions of a document paragraph by paragraph (unchanged, modified, moved, split, merged) and returns a cross-version address map (`diff_alignment_errors == 0` on corpus pairs with known edits).
 - [ ] `compare` writes a new redline document from two versions, with every difference as a tracked change, so that accepting all yields the new text and rejecting all yields the old text (`compare_redline_text_mismatches == 0`).
