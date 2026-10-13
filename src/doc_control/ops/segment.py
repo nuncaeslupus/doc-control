@@ -8,6 +8,7 @@ about 8,000 bytes and continue with `next`.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from doc_control.envelope import Reply
@@ -146,7 +147,11 @@ PROFILE_SCHEMA: dict[str, Any] = {
             "range": {
                 "type": "string",
                 "minLength": 1,
-                "description": "sentences and dialogue only: paragraph address or range to cover.",
+                "description": (
+                    "sentences and dialogue only: what to cover — a paragraph address or "
+                    "range, a run of whole paragraphs (p24#fp..p60#fp), or a chapter, "
+                    "scene or part id (ch-…, sc-…, pt-…; same profile and overrides)."
+                ),
             },
             "language": {
                 "type": "string",
@@ -301,10 +306,38 @@ def _scenes(doc: Document, request: dict[str, Any], found: Structure) -> list[di
     ]
 
 
+_UNIT_ID = re.compile(r"(?:ch|sc|pt)-[0-9a-f]{8}")
+
+
 def _paragraphs_in(doc: Document, request: dict[str, Any]) -> range:
+    """The paragraphs ``range`` covers: an address or range, a run of whole paragraphs
+    (``p24#fp..p60#fp``), or a chapter, scene or part id (same profile and overrides)."""
     if "range" not in request:
         return range(1, len(doc.index) + 1)
-    resolved = doc.index.resolve_range(request["range"], request.get("language", DEFAULT_LANGUAGE))
+    value: str = request["range"]
+    if _UNIT_ID.fullmatch(value):
+        found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
+        spans = [(u.id, u.first, u.last) for u in found.chapters]
+        spans += [(u.id, u.first, u.last) for u in found.scenes]
+        spans += [(u.id, u.first, u.last) for u in found.parts]
+        for uid, first_n, last_n in spans:
+            if uid == value:
+                return range(first_n, last_n + 1)
+        raise DocControlError(
+            ErrorCode.ADDRESS_INVALID,
+            f"no chapter, scene or part {value!r} in this document; list them with segment",
+            address=value,
+        )
+    if ".." in value and ":" not in value:
+        head, _, tail = value.partition("..")
+        first = doc.index.resolve_address(head)
+        last = doc.index.resolve_address(tail)
+        if last.number < first.number:
+            raise DocControlError(
+                ErrorCode.ADDRESS_INVALID, f"{value!r} ends before it starts", address=value
+            )
+        return range(first.number, last.number + 1)
+    resolved = doc.index.resolve_range(value, request.get("language", DEFAULT_LANGUAGE))
     return range(resolved.first.number, resolved.last.number + 1)
 
 
