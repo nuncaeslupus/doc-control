@@ -73,3 +73,11 @@ def test_a_stray_mark_only_resyncs_the_model(tmp_path: Path) -> None:
     est = estimate_pages(Document(str(build(tmp_path, body))))
     assert est.rows[149].page > 10  # the model still pages the long text before it
     assert est.rows[150].page == est.rows[149].end_page + 1
+
+
+def test_table_rows_are_placed_by_the_pass_that_reports_them(tmp_path: Path) -> None:
+    cell = f"<w:tc>{para(words(20))}</w:tc>"
+    body = para(words(2000)) + f"<w:tbl><w:tr>{cell}</w:tr></w:tbl>"
+    body += para(words(20), before=MARK) + para(words(20))
+    rows = estimate_pages(Document(str(build(tmp_path, body)))).rows
+    assert [r.page for r in rows] == sorted(r.page for r in rows)

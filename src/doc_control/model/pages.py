@@ -352,9 +352,9 @@ def estimate_pages(doc: Document) -> PageEstimate:
         if pos is not None:
             members.setdefault(pos[0], []).append(i)
             shares[i] = (pos[1], pos[2])
-    placed: dict[int, tuple[int, int]] = {}  # row id -> (start page, end page)
 
     def simulate(trust: bool) -> tuple[list[ParaPage], _Sim]:
+        placed: dict[int, tuple[int, int]] = {}  # row id -> (start page, end page)
         sim = _Sim()
         sim.marks_ahead = marks if trust else 0
         rows: list[ParaPage] = []
