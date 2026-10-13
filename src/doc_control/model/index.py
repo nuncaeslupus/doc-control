@@ -347,7 +347,7 @@ def _paragraphs(spans: DocumentSpans, *, carry: bool) -> tuple[list[Paragraph], 
             continue
         if not carry:
             walker.fields.clear()
-        text, pieces = walker.paragraph(spans.parse_paragraph(span.index), span.scope)
+        text, pieces = walker.paragraph(spans.parsed(span.index), span.scope)
         number = len(paragraphs) + 1
         paragraphs.append(Paragraph(number, span.index, text, fingerprint(text), pieces))
     return paragraphs, bool(walker.fields)

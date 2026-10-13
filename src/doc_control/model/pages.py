@@ -170,7 +170,7 @@ def _facts(doc: Document) -> tuple[list[_Facts], float]:
     normal_rpr = {**base_rpr, **(doc.styles.effective(normal)[1] if normal else {})}
     out: list[_Facts] = []
     for para in doc.index.paragraphs:
-        elem = doc.index.spans.parse_paragraph(para.span_index)
+        elem = doc.paragraph_element(para)
         ppr_elem = elem.find(W + "pPr")
         style = doc.style_id(para)
         s_ppr, s_rpr = doc.styles.effective(style) if style is not None else ({}, {})

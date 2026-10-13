@@ -59,12 +59,14 @@ Limits
 
 from __future__ import annotations
 
+import functools
 import re
 import weakref
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from xml.parsers import expat
+from xml.sax.saxutils import quoteattr
 
 from doc_control.errors import DocControlError, ErrorCode
 
@@ -121,6 +123,16 @@ class ParagraphSpan:
         return out
 
 
+@functools.lru_cache(maxsize=256)
+def _wrapper_decls(scope: tuple[tuple[str, str], ...]) -> str:
+    """``xmlns`` attributes declaring ``scope`` (a paragraph's outer scope) on a wrapper."""
+    return " ".join(
+        ("xmlns" if not prefix else f"xmlns:{prefix}") + "=" + quoteattr(uri)
+        for prefix, uri in scope
+        if prefix != "xml"
+    )
+
+
 @dataclass(frozen=True)
 class DocumentSpans:
     """The paragraph spans of one ``word/document.xml``.
@@ -144,6 +156,35 @@ class DocumentSpans:
     def paragraph_bytes(self, index: int) -> bytes:
         p = self.paragraphs[index]
         return self.data[p.start : p.end]
+
+    def parsed(self, index: int) -> ET.Element:
+        """Paragraph ``index`` parsed once and shared: for readers, never to be changed
+        (a writer takes its own copy from :meth:`parse_paragraph`)."""
+        cache: dict[int, ET.Element] = self.__dict__.setdefault("_parsed", {})
+        elem = cache.get(index)
+        if elem is None:
+            elem = cache[index] = self._read_only(index)
+        return elem
+
+    def _read_only(self, index: int) -> ET.Element:
+        """ElementTree's C parser on the paragraph wrapped in its namespace scope: no
+        prefix bookkeeping (only :meth:`serialize` needs it). Anything it rejects goes
+        through :meth:`parse_paragraph`, which raises the precise error."""
+        p = self.paragraphs[index]
+        decls = _wrapper_decls(tuple(p.outer_scope.items()))
+        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True))
+        try:
+            parser.feed(f"<dc-read {decls}>".encode())
+            parser.feed(self.data[p.start : p.end])
+            parser.feed(b"</dc-read>")
+            root = parser.close()
+        except ET.ParseError:
+            return self.parse_paragraph(index)
+        if len(root) != 1:
+            return self.parse_paragraph(index)
+        elem = root[0]
+        elem.tail = None
+        return elem
 
     def parse_paragraph(self, index: int) -> ET.Element:
         """Parse paragraph ``index`` into an ElementTree element.

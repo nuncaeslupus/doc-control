@@ -33,6 +33,7 @@ nearest boundary before it, so both maps are monotonic and
 from __future__ import annotations
 
 import bisect
+import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -101,17 +102,32 @@ def normalized_text(original: str) -> str:
     Exact by construction: the shortcut applies only when the text without ignorables is
     already NFC and has no combining marks, so no chunk can compose; else the full path.
     """
-    kept = "".join(ch for ch in original if ch not in IGNORABLE)
-    if any(unicodedata.combining(ch) for ch in kept) or not unicodedata.is_normalized("NFC", kept):
+    kept = original.translate(_DROP_IGNORABLE)
+    if (not kept.isascii() and _COMBINING.search(kept)) or not unicodedata.is_normalized(
+        "NFC", kept
+    ):
         return normalize(original).text
+    return _SPACES.sub(" ", kept)
+
+
+def _combining_class() -> str:
+    """A regex class of every code point with a non-zero combining class."""
     out: list[str] = []
-    for ch in kept:
-        if ch.isspace():
-            if not out or out[-1] != " ":
-                out.append(" ")
-        else:
-            out.append(ch)
+    start = prev = -2
+    for cp in range(0x30000):  # none past the third plane (checked at test time)
+        if unicodedata.combining(chr(cp)):
+            if cp != prev + 1:
+                if start >= 0:
+                    out.append(f"{re.escape(chr(start))}-{re.escape(chr(prev))}")
+                start = cp
+            prev = cp
+    out.append(f"{re.escape(chr(start))}-{re.escape(chr(prev))}")
     return "".join(out)
+
+
+_DROP_IGNORABLE = {ord(ch): None for ch in IGNORABLE}
+_COMBINING = re.compile(f"[{_combining_class()}]")
+_SPACES = re.compile(r"\s+")  # str's whitespace, as ``str.isspace`` sees it
 
 
 def _chunks(original: str, kept: list[int]) -> list[list[int]]:

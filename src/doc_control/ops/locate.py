@@ -68,7 +68,7 @@ MAX_SIDE = 12
 SEPARATOR = " … "
 _TITLE = 160
 MAX_FIND_WORDS = 25
-LONG_WORD = 64  # longer words are kept out of the affix tables (see FindIndex)
+LONG_WORD = 24  # longer words are kept out of the affix tables (see FindIndex)
 _WORD = re.compile(r"\S+")
 _BREAK = re.compile(r"[\n\r\x0b\x0c]")
 

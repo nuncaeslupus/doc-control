@@ -100,11 +100,7 @@ class Document:
 
     def paragraph_element(self, para: Paragraph) -> ET.Element:
         """The parsed ``w:p`` of ``para``, parsed once per document; read it, never change it."""
-        cache: dict[int, ET.Element] = self.__dict__.setdefault("_elements", {})
-        elem = cache.get(para.span_index)
-        if elem is None:
-            elem = cache[para.span_index] = self.index.spans.parse_paragraph(para.span_index)
-        return elem
+        return self.index.spans.parsed(para.span_index)
 
     @cached_property
     def styles(self) -> StyleTable:
@@ -115,7 +111,7 @@ class Document:
         out: list[ParaProps] = []
         spans = self.index.spans
         for para in self.index.paragraphs:
-            elem = spans.parse_paragraph(para.span_index)
+            elem = spans.parsed(para.span_index)
             ppr = elem.find(W + "pPr")
             style = level = None
             if ppr is not None:
