@@ -5,7 +5,7 @@
 </p>
 
 > Status: **file engine working** (pre-1.0; the API may still change). The live engine
-> drives LibreOffice Writer; Word is next. See `status/specification.md` and `status/plan.md`.
+> drives LibreOffice Writer and Microsoft Word (Windows). See `status/specification.md` and `status/plan.md`.
 
 A deterministic tool that lets AI agents work on Word documents quickly,
 precisely and safely, ideally live in the Word window the writer has open.
