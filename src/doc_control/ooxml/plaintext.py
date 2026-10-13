@@ -10,11 +10,17 @@ Encoding
     ``source``: format, encoding (``utf-8+cp1252`` when lines mix them) and mode.
 
 Paragraphs (``.txt``), by mode
-    ``blocks`` (an empty line between two non-empty ones): a block of lines between empty lines is
-    a paragraph, its lines joined by one space (hard-wrapped prose, as in Project
-    Gutenberg files). One empty line separates two paragraphs; each further empty line
-    in a run is an empty paragraph, so ``chapter_blank_lines`` in ``segment`` counts the
-    extra ones. ``lines`` (otherwise): every line is a paragraph.
+    ``blocks``: a block of lines between empty lines is a paragraph, its lines joined by
+    one space (hard-wrapped prose, as in Project Gutenberg files). One empty line
+    separates two paragraphs; each further empty line in a run is an empty paragraph, so
+    ``chapter_blank_lines`` in ``segment`` counts the extra ones. ``lines``: every line is
+    a paragraph and every empty line an empty paragraph (a writer's export, verse).
+    ``auto`` (the default) picks ``blocks`` only when the text looks hard-wrapped: the
+    lines inside multi-line blocks mostly end within 10 % of one width from 50 to 120, or
+    the typical block has two lines or more and no line passes 120 characters (so verse in
+    short stanzas reads as ``blocks``: read verse with ``lines``). The mode is
+    set per document with ``api.open(path, text_mode=...)``, or by the
+    ``DOC_CONTROL_TEXT_MODE`` environment variable.
 
 Markdown (``.md``)
     Blocks as in ``blocks`` (soft-wrapped lines joined); a front matter block at the
@@ -32,8 +38,13 @@ Markdown (``.md``)
 from __future__ import annotations
 
 import io
+import os
 import re
+import statistics
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -209,6 +220,65 @@ def _front_matter(lines: list[str]) -> int:
     return 0
 
 
+TEXT_MODES = ("auto", "blocks", "lines")
+#: Hard-wrapped: lines inside blocks end within this share of a common width ...
+_WRAP_NEAR = 0.10
+_WRAP_MIN_WIDTH = 50
+#: ... or blocks run to 2+ lines with no line longer than this.
+_WRAP_MAX_LINE = 120
+
+_MODE: ContextVar[str | None] = ContextVar("doc_control_text_mode", default=None)
+
+
+@contextmanager
+def text_mode(mode: str) -> Iterator[None]:
+    """Read .txt files inside this block in ``mode`` (``auto``, ``blocks`` or ``lines``)."""
+    if mode not in TEXT_MODES:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, f"text_mode must be one of {', '.join(TEXT_MODES)}"
+        )
+    token = _MODE.set(mode)
+    try:
+        yield
+    finally:
+        _MODE.reset(token)
+
+
+def requested_mode() -> str:
+    """The text mode in force: :func:`text_mode`, else ``DOC_CONTROL_TEXT_MODE``, else auto."""
+    mode = _MODE.get() or os.environ.get("DOC_CONTROL_TEXT_MODE") or "auto"
+    if mode not in TEXT_MODES:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"DOC_CONTROL_TEXT_MODE must be one of {', '.join(TEXT_MODES)}, not {mode!r}",
+        )
+    return mode
+
+
+def _hard_wrapped(lines: list[str]) -> bool:
+    """Blank-line blocks of wrapped lines: the lines inside multi-line blocks mostly end
+    within 10 % of one width from 50 to 120, or the typical block has two lines or more and
+    no line is longer than 120 characters."""
+    blocks: list[list[int]] = [[]]
+    for line in lines:
+        if _blank(line):
+            if blocks[-1]:
+                blocks.append([])
+        else:
+            blocks[-1].append(len(line.rstrip(_BLANK)))
+    blocks = [b for b in blocks if b]
+    if len(blocks) < 2:
+        return False
+    inner = [n for b in blocks if len(b) > 1 for n in b[:-1]]
+    if inner:
+        width = sorted(inner)[int(len(inner) * 0.9)]
+        near = sum(abs(n - width) <= width * _WRAP_NEAR for n in inner)
+        if _WRAP_MIN_WIDTH <= width <= _WRAP_MAX_LINE and near * 2 > len(inner):
+            return True
+    longest = max(n for b in blocks for n in b)
+    return statistics.median(len(b) for b in blocks) >= 2 and longest <= _WRAP_MAX_LINE
+
+
 def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]], str]:
     """``(text, heading level or None)`` per paragraph, and the mode: ``markdown``,
     ``blocks`` or ``lines``; see the module docstring."""
@@ -219,9 +289,9 @@ def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]],
         lines = lines[_front_matter(lines) :]
         mode = "markdown"
     else:
-        inner = [n for n, line in enumerate(lines) if not _blank(line)]
-        between = lines[inner[0] : inner[-1] + 1] if inner else []
-        mode = "blocks" if any(_blank(line) for line in between) else "lines"
+        mode = requested_mode()
+        if mode == "auto":
+            mode = "blocks" if _hard_wrapped(lines) else "lines"
     out: list[tuple[str, int | None]] = []
     if mode == "lines":
         return [(line, None) for line in lines], mode

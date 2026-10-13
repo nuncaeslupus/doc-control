@@ -23,6 +23,7 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import uncapped
 from doc_control.model.document import Document, shared_documents
+from doc_control.ooxml.plaintext import TEXT_MODES, text_mode
 from doc_control.registry import REGISTRY, load_operations
 from doc_control.safety.store import stores_in
 
@@ -42,13 +43,22 @@ def run(op: str, request: dict[str, Any]) -> Reply:
 class OpenDocument:
     """A document held open for several operations; see the module docstring."""
 
-    def __init__(self, path: str | Path, store: str | Path | None = None) -> None:
+    def __init__(
+        self, path: str | Path, store: str | Path | None = None, text_mode: str | None = None
+    ) -> None:
         self.path = str(path)
         self.store = Path(store) if store is not None else None
+        self.text_mode = text_mode
         self._cache: dict[str, tuple[tuple[int, int, int], Document]] = {}
 
     def reply(self, op: str, request: dict[str, Any] | None = None) -> Reply:
         """Like :meth:`run`, with the warnings and the ``doc`` block."""
+        if self.text_mode is None:
+            return self._reply(op, request)
+        with text_mode(self.text_mode):
+            return self._reply(op, request)
+
+    def _reply(self, op: str, request: dict[str, Any] | None) -> Reply:
         load_operations()
         if op not in REGISTRY:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)
@@ -108,10 +118,19 @@ class OpenDocument:
         self.close()
 
 
-def open(path: str | Path, store: str | Path | None = None) -> OpenDocument:
+def open(
+    path: str | Path, store: str | Path | None = None, text_mode: str | None = None
+) -> OpenDocument:
     """Open ``path`` for several operations (nothing is read until the first one).
 
     ``store`` is the folder for backups and history (one subfolder per document), so
-    writes leave nothing next to the document but the document itself.
+    writes leave nothing next to the document but the document itself. ``text_mode``
+    (``auto``, ``blocks`` or ``lines``) says how a .txt file splits into paragraphs (see
+    :mod:`doc_control.ooxml.plaintext`); the ``DOC_CONTROL_TEXT_MODE`` environment
+    variable sets it for the CLI and the MCP server.
     """
-    return OpenDocument(path, store)
+    if text_mode is not None and text_mode not in TEXT_MODES:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, f"text_mode must be one of {', '.join(TEXT_MODES)}"
+        )
+    return OpenDocument(path, store, text_mode)
