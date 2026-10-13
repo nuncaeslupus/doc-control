@@ -78,8 +78,8 @@ References: [operations](docs/operations.md) · [errors](docs/errors.md).
     rewriting only the parts it touches. Read operations also take a `.txt`, `.md` or
     `.odt` file (hard-wrapped text detected; Markdown `#` headings and OpenDocument
     headings become Heading styles); writes refuse it.
-  - *Live engine*: controls the open document (LibreOffice Writer now; Word on
-    Windows/COM next, Mac later).
+  - *Live engine*: controls the open document (LibreOffice Writer, and Word on
+    Windows over COM; Mac later).
 - **Two front doors**: a CLI with JSON in/out, and an MCP server
   (`doc-control mcp`, stdio) for Claude Desktop / Cowork and other MCP clients.
 - **Safety first**: lock-file and on-disk change detection, backup before every
@@ -103,6 +103,9 @@ same response envelope as the CLI. It needs nothing beyond the package itself:
   }
 }
 ```
+
+To drive the Word a writer has open on Windows, the server needs the `live` extra:
+`"args": ["--from", "doc-control[live]", "doc-control", "mcp"]`.
 
 ## Documents
 
