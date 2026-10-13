@@ -24,8 +24,9 @@ source of truth.
     The paragraph starts a page: ``w:pageBreakBefore`` (direct wins over the style
     chain), a page break (``w:br w:type="page"``) before any visible content, the
     previous paragraph (same cell or body level) ending in a page break or being only
-    one, or a section break of type nextPage, oddPage, evenPage or none (not
-    continuous or nextColumn) ending the previous paragraph.
+    one, or a section break ending the previous paragraph when the section it opens
+    starts a page: that section's own closing ``w:sectPr`` (the next one, else the
+    body's) has type nextPage, oddPage, evenPage or none (not continuous or nextColumn).
 
 Alignment is resolved as direct, then style chain, then ``w:docDefaults``. Not covered:
 alignment from a table style or from numbering levels; ``w:lastRenderedPageBreak``.
@@ -128,6 +129,7 @@ def _section_break_before(doc: Document, prev: Paragraph) -> bool:
     """
     if _elem(doc, prev).find(f"{W}pPr/{W}sectPr") is None:
         return False
+    # prev.number is 1-based, so it indexes the paragraph after prev in the 0-based list.
     return _closer_types(doc)[prev.number] in _PAGE_SECTIONS
 
 
