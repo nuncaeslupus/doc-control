@@ -40,7 +40,8 @@ Find phrase
     spanned (not ones in table cells or ending a section), and uniqueness counts the mark
     Word puts after the last paragraph too. ``find_phrase_word`` is the same
     phrase as typed in Word's Find box (``^p`` mark, ``^t`` tab, ``^s`` no-break space,
-    ``^~`` no-break hyphen, ``^-`` soft hyphen, ``^^`` caret), None past 255 characters.
+    ``^^`` caret), None past 255 characters or when the phrase holds a soft or no-break
+    hyphen (Word keeps two forms of each and no one Find string matches both).
     When none is unique ``find_phrase_unique`` is false with ``find_phrase_reason``
     (``empty``, ``duplicate`` or ``none_within_25_words``), and a non-empty paragraph gets
     ``context``: the find phrase (and ``after_word``) of the nearest earlier paragraph that

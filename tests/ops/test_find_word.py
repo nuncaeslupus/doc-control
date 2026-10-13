@@ -19,10 +19,9 @@ QUERIES = [
     "x\ty",
     "line\nbreak",
     "no\u00a0break",
-    "non\u2011breaking",
-    "soft\u00adhyphen",
     "plain",
 ]
+TWO_FORMS = ["non\u2011breaking", "soft\u00adhyphen"]  # no Find string matches both forms
 
 
 def test_find_word_gate(tmp_path: Path) -> None:
@@ -34,6 +33,9 @@ def test_find_word_gate(tmp_path: Path) -> None:
             checks += 1
             word = result.get("query_word")
             mismatches += word is None or across.unword(word) != query
+        for query in TWO_FORMS:
+            checks += 1
+            mismatches += doc.run("find", {"query": query})["query_word"] is not None
         checks += 1
         mismatches += "query_word" in doc.run("find", {"query": "a.b", "regex": True})
         options = doc.run("find", {"query": "plain", "ignore_case": True, "whole_word": True})

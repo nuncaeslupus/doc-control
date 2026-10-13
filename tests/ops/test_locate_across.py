@@ -40,8 +40,6 @@ _DECODE = (
     ("^l", "\n"),
     ("^t", "\t"),
     ("^s", "\u00a0"),
-    ("^~", "\u2011"),
-    ("^-", "\u00ad"),
 )
 
 
@@ -81,7 +79,11 @@ def test_find_phrase_gate(tmp_path: Path) -> None:
 
 
 def test_word_find_codes_and_limit() -> None:
-    assert word_find("a^b\r\tc\u00a0d\u2011e\u00adf") == "a^^b^p^tc^sd^~e^-f"
+    assert word_find("a^b\r\tc\u00a0d") == "a^^b^p^tc^sd"
+    # Word finds an optional hyphen with ^- and a literal U+00AD only with ^u173 (and the
+    # no-break hyphen likewise); the text does not say which the document holds.
+    assert word_find("co\u00adoperar") is None
+    assert word_find("e\u2011mail") is None
     assert word_find("x" * WORD_FIND_MAX) == "x" * WORD_FIND_MAX
     assert word_find("^" * 128) is None  # 256 characters once escaped
 
