@@ -6,7 +6,11 @@ Unlike an address it survives edits: :func:`resolve` looks the quote up again an
 where it is now, how well it matches, or that it cannot tell.
 
 Matching
-    Exact first: every place the quote occurs verbatim is a candidate. Only when no exact
+    Exact first: every place the quote occurs verbatim is a candidate, and so is every
+    place it occurs in the normalised text (``text.normalized``: soft hyphens and
+    zero-width characters removed, whitespace collapsed, NFC), mapped back to the
+    original offsets, so a quote copied from normalised text is found across a soft
+    hyphen, a tab or a double space. Only when no exact
     candidate is good enough does the fuzzy search run, over a short list of paragraphs
     (the paragraph with the anchor's fingerprint, the ones near the hint, and the ones
     sharing the most character runs of the quote, rare runs counting more). In each,
@@ -37,6 +41,7 @@ Quotes are limited to one paragraph.
 from __future__ import annotations
 
 import difflib
+import functools
 import itertools
 import math
 import re
@@ -47,6 +52,7 @@ from typing import Any, Literal
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex, Paragraph
+from doc_control.model.normalized import IGNORABLE, normalize, normalized_text
 from doc_control.model.segment import DEFAULT_LANGUAGE, split_sentences
 
 MIN_SCORE = 0.80
@@ -429,6 +435,32 @@ def _exact_spans(text: str, quote: str) -> list[tuple[int, int]]:
     return out
 
 
+#: Normalised text per paragraph text; a resolve looks at every paragraph, and the same
+#: texts come back on every call against an open document.
+_flat = functools.lru_cache(maxsize=1 << 16)(normalized_text)
+
+
+def _normalised_spans(text: str, plain: str) -> list[tuple[int, int]]:
+    """Occurrences of ``plain`` (a normalised quote) in the normalised ``text``, as
+    original offsets."""
+    if not plain.strip() or plain not in (flat := _flat(text)):
+        return []
+    if flat == text:  # nothing to map: the quote differed, not the text
+        return _exact_spans(text, plain)
+    mapped = normalize(text)
+    out: list[tuple[int, int]] = []
+    i = mapped.text.find(plain)
+    while i >= 0:
+        start = mapped.original_offset(i)
+        while start < len(text) and text[start] in IGNORABLE:
+            start += 1  # a removed character before the quote is not part of it
+        end = mapped.original_offset(i + len(plain))
+        if start < end:
+            out.append(_snap(text, start, end))
+        i = mapped.text.find(plain, i + 1)
+    return out
+
+
 def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -> Resolution:
     """Find ``anchor`` in ``index``.
 
@@ -439,10 +471,15 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
     quote = anchor.exact
     found: list[Candidate] = []
     taken: dict[int, list[tuple[int, int]]] = {}
+    plain = normalized_text(quote)
     for para in index.paragraphs:
-        if len(para.text) < len(quote):
-            continue
-        for start, end in _exact_spans(para.text, quote):
+        spans = _exact_spans(para.text, quote) if len(para.text) >= len(quote) else []
+        spans += [
+            span
+            for span in _normalised_spans(para.text, plain)
+            if not any(span[0] < e and s < span[1] for s, e in spans)
+        ]
+        for start, end in spans:
             taken.setdefault(para.number, []).append((start, end))
             found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
     short = len(_WORD.findall(quote)) <= SHORT_QUOTE_WORDS
