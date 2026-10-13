@@ -30,7 +30,7 @@ class ErrorCode(StrEnum):
 HINTS: dict[ErrorCode, str] = {
     ErrorCode.DOC_NOT_FOUND: "Check the path; it is resolved relative to the current directory.",
     ErrorCode.NOT_A_DOCX: "Pass a Word .docx file; .doc and other formats are not supported.",
-    ErrorCode.DOC_LOCKED: "Word has the file open: save and close it in Word, then retry.",
+    ErrorCode.DOC_LOCKED: "An editor (Word, LibreOffice) has the file open: close it, then retry.",
     ErrorCode.DOC_CHANGED_ON_DISK: "The file changed since you read it: re-read, then retry.",
     ErrorCode.SCHEMA_INVALID: "Run `doc-control help <op>` to see the request schema.",
     ErrorCode.ADDRESS_INVALID: "Use an address from a read result, e.g. p142#a7b2c3d4.",
