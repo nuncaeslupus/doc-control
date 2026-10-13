@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Iterator
+from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
 from doc_control.model.parts import W
@@ -57,6 +57,9 @@ def shared_documents(cache: dict[str, tuple[tuple[int, int, int], Document]]) ->
         _SHARED.reset(token)
 
 
+_T = TypeVar("_T")
+
+
 class Document:
     def __new__(cls, path: str) -> Document:
         cache = _SHARED.get()
@@ -85,6 +88,15 @@ class Document:
     def envelope_doc(self) -> dict[str, Any]:
         """The ``doc`` block of a response."""
         return {"path": self.path, "sha256": self.sha256, "paragraphs": len(self.index)}
+
+    def memo(self, key: Hashable, build: Callable[[], _T]) -> _T:
+        """``build()`` once per document and ``key``: derived tables shared by every
+        operation run on an open document (doc_control.api); never change what it returns."""
+        cache: dict[Hashable, Any] = self.__dict__.setdefault("_memo", {})
+        if key not in cache:
+            cache[key] = build()
+        value: _T = cache[key]
+        return value
 
     def paragraph_element(self, para: Paragraph) -> ET.Element:
         """The parsed ``w:p`` of ``para``, parsed once per document; read it, never change it."""

@@ -18,16 +18,14 @@ import hashlib
 import json
 import re
 import time
-from pathlib import Path
 from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
 from doc_control.model.address import Address
-from doc_control.model.index import DocumentIndex
+from doc_control.model.document import Document
 from doc_control.model.search import IsolatedScan, LocalScan, Matcher, SearchOptions
-from doc_control.ooxml.zipio import Package
 from doc_control.registry import operation
 
 DEFAULT_LIMIT = 20
@@ -101,8 +99,8 @@ def find(request: dict[str, Any]) -> Reply:
     matcher = Matcher(options)
     limit: int = list_limit(request, DEFAULT_LIMIT)
     context: int = request.get("context", DEFAULT_CONTEXT)
-    pkg = Package(Path(request["doc"]))
-    index = DocumentIndex.from_package(pkg)
+    shared = Document(request["doc"])  # one parse per open document (doc_control.api)
+    pkg, index = shared.pkg, shared.index
     token = _token(pkg.sha256, options)
     first, skip = _parse_cursor(request.get("cursor"), token)
 

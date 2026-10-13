@@ -187,7 +187,18 @@ class Structure:
 
 
 def paragraphs_of(doc: Document) -> list[Para]:
-    """The detection facts of every paragraph of ``doc``, from :mod:`doc_control.model.layout`."""
+    """The detection facts of every paragraph of ``doc``, from :mod:`doc_control.model.layout`
+    (computed once per open document)."""
+    return doc.memo("structure-paragraphs", lambda: _paragraphs_of(doc))
+
+
+def detect_in(doc: Document, profile: Profile, overrides: Sequence[Override]) -> Structure:
+    """:func:`detect` over ``doc``, once per open document, profile and overrides."""
+    key = ("structure", profile, tuple(overrides))
+    return doc.memo(key, lambda: detect(paragraphs_of(doc), profile, overrides))
+
+
+def _paragraphs_of(doc: Document) -> list[Para]:
     out: list[Para] = []
     pending = False  # a page break was seen and only empty paragraphs have followed
     for para in doc.index.paragraphs:

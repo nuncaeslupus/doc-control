@@ -339,6 +339,11 @@ def _row_height(
 
 
 def estimate_pages(doc: Document) -> PageEstimate:
+    """The estimate for ``doc``, computed once per open document."""
+    return doc.memo("pages", lambda: _estimate_pages(doc))
+
+
+def _estimate_pages(doc: Document) -> PageEstimate:
     facts, normal_pt = _facts(doc)
     marks = sum(1 for f in facts for e in f.events if e.kind == "lrpb")
     body = parse_part(doc.pkg, DOCUMENT_PART).find(W + "body")

@@ -54,7 +54,7 @@ from typing import Any, overload
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
-from doc_control.model.structure import detect, paragraphs_of
+from doc_control.model.structure import detect_in
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.ops.segment import (
     OVERRIDES_SCHEMA,
@@ -164,6 +164,28 @@ class FindIndex:
         self.texts = index.texts
         self.spans = index.spans
         self.haystack = "\r".join(t.casefold() for t in self.texts)
+        # A one-word phrase has no whitespace, so it can only occur inside words: searching
+        # the distinct words (once each) answers "elsewhere?" on a far shorter text.
+        distinct = dict.fromkeys(k for keys in index.keys for k in keys)
+        self.words = "\r".join(distinct)
+        # A window of 2+ words that occurs once word-aligned can only recur unaligned if its
+        # first word ends some longer word or its last word starts one (the words between
+        # sit between whitespace, so they recur whole). Without either, the count is proof.
+        self.suffixes = {w[n:] for w in distinct for n in range(1, len(w))}
+        self.prefixes = {w[:n] for w in distinct for n in range(1, len(w))}
+        # Any occurrence of a 2+ word phrase holds a word starting with its last word, so
+        # only the paragraphs holding such words need the substring search.
+        self.folded = [t.casefold() for t in self.texts]
+        self._paras_of: dict[str, set[int]] = {}
+        for i, keys in enumerate(index.keys):
+            for word in keys:
+                self._paras_of.setdefault(word, set()).add(i)
+        self._starting: dict[str, list[str]] = {}
+        self._ending: dict[str, list[str]] = {}
+        for w in distinct:
+            for n in range(1, len(w) + 1):
+                self._starting.setdefault(w[:n], []).append(w)
+                self._ending.setdefault(w[-n:], []).append(w)
         self._tokens = self._tokenise()
         self._runs = [self._run_ends(t, sp) for t, sp in zip(self.texts, self.spans, strict=True)]
         self._windows = sum(len(r) for r in index.spans)
@@ -227,6 +249,33 @@ class FindIndex:
                     self.found[i] = hit
             open_ = still
 
+    def _paras(self, words: list[str]) -> set[int]:
+        out: set[int] = set()
+        for word in words:
+            out |= self._paras_of[word]
+        return out
+
+    def _occurrences(self, key: str, words: tuple[str, ...]) -> int:
+        """Occurrences of ``key`` (the folded text of ``words``) in the document, up to 2.
+
+        Any occurrence holds a word ending with the first word, one starting with the last,
+        and the words between whole; the narrowest of those says which paragraphs to search.
+        """
+        options = [self._ending.get(words[0], []), self._starting.get(words[-1], [])]
+        options += [[w] for w in words[1:-1]]
+        narrowest = min(options, key=lambda ws: sum(len(self._paras_of[w]) for w in ws))
+        found = 0
+        paras = self._paras(narrowest)
+        for j in paras:
+            hay = self.folded[j]
+            at = hay.find(key)
+            while at >= 0:
+                found += 1
+                if found > 1:
+                    return found
+                at = hay.find(key, at + 1)
+        return found
+
     def _pick(
         self, i: int, length: int, seen: Counter[tuple[int, ...]] | None
     ) -> FindPhrase | None:
@@ -238,11 +287,24 @@ class FindIndex:
             begin, end = spans[s][0], spans[s + length - 1][1]
             if seen is not None and seen[tuple(self._tokens[i][2 * s : 2 * (s + length) - 1])] != 1:
                 continue
+            if seen is not None and length > 1:
+                words = self._keys[i]
+                if words[s] not in self.suffixes and words[s + length - 1] not in self.prefixes:
+                    return FindPhrase(text[begin:end], length, begin)
             key = text[begin:end].casefold()
-            first = self.haystack.find(key)
-            if first >= 0 and self.haystack.find(key, first + 1) < 0:
+            if length > 1:
+                if self._occurrences(key, self._keys[i][s : s + length]) == 1:
+                    return FindPhrase(text[begin:end], length, begin)
+                continue
+            first = self.words.find(key)
+            if first >= 0 and self.words.find(key, first + 1) < 0:
                 return FindPhrase(text[begin:end], length, begin)
         return None
+
+
+def _indexes(texts: list[str]) -> tuple[LocatorIndex, list[FindPhrase]]:
+    locators = LocatorIndex(texts)
+    return locators, FindIndex(locators).found
 
 
 class _Rows(Sequence[dict[str, Any]]):
@@ -294,10 +356,9 @@ def locate(request: dict[str, Any]) -> Reply:
     index = doc.index
     count = len(index)
     texts = [index.paragraph(n).text for n in range(1, count + 1)]
-    found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
+    found = detect_in(doc, profile_of(request), overrides_of(request))
     pages = estimate_pages(doc)
-    locators = LocatorIndex(texts)
-    finds = FindIndex(locators).found
+    locators, finds = doc.memo("locate-index", lambda: _indexes(texts))
 
     chapter_at = [0] * (count + 2)  # 1-based paragraph -> 1-based chapter, 0 for none
     for k, chapter in enumerate(found.chapters, 1):
