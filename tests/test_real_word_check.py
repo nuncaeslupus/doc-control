@@ -19,6 +19,7 @@ def test_build_then_verify_a_simulated_word_run(tmp_path: Path, capsys: Any) -> 
     module = runpy.run_path(str(SCRIPT))
     out = tmp_path / "t30"
     module["build"](out)
+    assert len(list(out.glob("*.docx"))) == len(module["KINDS"]) + 2  # none overwritten
     store = tmp_path / "store"
     assert module["verify"](out) == 1  # nothing saved from "Word" yet
     for name, op in (("edits-accepted", "revision.accept"), ("edits-rejected", "revision.reject")):
@@ -26,8 +27,8 @@ def test_build_then_verify_a_simulated_word_run(tmp_path: Path, capsys: Any) -> 
         target.write_bytes((out / "edits.docx").read_bytes())
         with api.open(target, store=store) as doc:
             doc.run("batch", {"ops": [{"op": op, "all": True}]})
-    replied = out / "comments-word.docx"
-    replied.write_bytes((out / "comments.docx").read_bytes())
+    replied = out / "commented-word.docx"
+    replied.write_bytes((out / "commented.docx").read_bytes())
     with api.open(replied, store=store) as doc:
         ops = [
             {"op": "comment.reply", "comment": "0", "text": "Done."},
