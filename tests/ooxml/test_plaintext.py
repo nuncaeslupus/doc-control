@@ -228,3 +228,14 @@ def test_text_source_gate(tmp_path: Path) -> None:
     mismatches = checks.count(False)
     print(f"text_source_mismatches == {mismatches} (of {len(checks)} checks)")
     assert mismatches == 0
+
+
+def test_edge_empty_lines_keep_line_mode() -> None:
+    paras, mode = paragraphs("\na\nb\nc\n\n", markdown=False)
+    assert mode == "lines"
+    assert [t for t, _ in paras] == ["", "a", "b", "c", ""]
+
+
+def test_emphasis_is_linear_and_unwinds_nesting() -> None:
+    paras, _ = paragraphs("a *b " * 60000 + "\n\n*a \\* b* and **a *b* c**\n", markdown=True)
+    assert paras[-1] == ("a * b and a b c", None)

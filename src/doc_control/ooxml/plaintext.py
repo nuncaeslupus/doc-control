@@ -10,11 +10,11 @@ Encoding
     ``source``: format, encoding (``utf-8+cp1252`` when lines mix them) and mode.
 
 Paragraphs (``.txt``), by mode
-    ``blocks`` (the text holds an empty line): a block of lines between empty lines is
+    ``blocks`` (an empty line between two non-empty ones): a block of lines between empty lines is
     a paragraph, its lines joined by one space (hard-wrapped prose, as in Project
     Gutenberg files). One empty line separates two paragraphs; each further empty line
     in a run is an empty paragraph, so ``chapter_blank_lines`` in ``segment`` counts the
-    extra ones. ``lines`` (no empty line at all): every line is a paragraph.
+    extra ones. ``lines`` (otherwise): every line is a paragraph.
 
 Markdown (``.md``)
     Blocks as in ``blocks`` (soft-wrapped lines joined); a front matter block at the
@@ -48,8 +48,14 @@ _FENCE = re.compile(r"^ {0,3}(`{3,})")
 _BULLET = re.compile(r"^ {0,3}[-*+][ \t]")
 _ORDERED = re.compile(r"^ {0,3}(\d{1,9})[.)][ \t]")
 _YAML_KEY = re.compile(r"^[A-Za-z_][\w-]*[ \t]*:")
-_STRONG = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*|(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)")
-_EMPH = re.compile(r"(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)")
+# A span holds no marker of its own kind, so an unmatched marker scans only to the next
+# one (linear time); nesting (``***x***``, ``**a *b* c**``) unwinds over passes.
+_STRONG = re.compile(
+    r"\*\*(?=[^\s*])([^*]+?)(?<=\S)\*\*|(?<!\w)__(?=[^\s_])([^_]+?)(?<=\S)__(?!\w)"
+)
+_EMPH = re.compile(
+    r"(?<![\w*])\*(?=[^\s*])([^*]+?)(?<=\S)\*(?![\w*])|(?<!\w)_(?=[^\s_])([^_]+?)(?<=\S)_(?!\w)"
+)
 _ESCAPE = re.compile(r"(\\[!-/:-@\[-`{-~])")
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
 _BLANK = " \t"
@@ -159,9 +165,22 @@ def _emphasis(text: str) -> str:
 
 
 def _inline(text: str) -> str:
-    """Emphasis markers dropped; a backslash-escaped character kept, bare and literal."""
-    parts = _ESCAPE.split(text)
-    return "".join(part[1] if i % 2 else _emphasis(part) for i, part in enumerate(parts))
+    """Emphasis markers dropped; a backslash-escaped character kept, bare and literal.
+
+    Escaped characters are hidden from the emphasis patterns as private-use characters
+    from a plane the text does not use, then put back.
+    """
+    planes = {ord(c) >> 16 for c in text if ord(c) >= 0xF0000}
+    plane = next((p for p in (0xF, 0x10) if p not in planes), None)
+    if plane is None:  # both private planes in use: escapes split the text instead
+        parts = _ESCAPE.split(text)
+        return "".join(part[1] if i % 2 else _emphasis(part) for i, part in enumerate(parts))
+    base = plane << 16
+    hidden = _ESCAPE.sub(lambda m: chr(base + ord(m.group(1)[1])), text)
+    shown = _emphasis(hidden)
+    return re.sub(
+        f"[{chr(base + 0x21)}-{chr(base + 0x7E)}]", lambda m: chr(ord(m.group()) - base), shown
+    )
 
 
 def _blank(line: str) -> bool:
@@ -200,7 +219,9 @@ def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]],
         lines = lines[_front_matter(lines) :]
         mode = "markdown"
     else:
-        mode = "blocks" if any(_blank(line) for line in lines) else "lines"
+        inner = [n for n, line in enumerate(lines) if not _blank(line)]
+        between = lines[inner[0] : inner[-1] + 1] if inner else []
+        mode = "blocks" if any(_blank(line) for line in between) else "lines"
     out: list[tuple[str, int | None]] = []
     if mode == "lines":
         return [(line, None) for line in lines], mode
