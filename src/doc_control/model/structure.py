@@ -388,6 +388,8 @@ def detect(
 
     scenes: list[DetectedScene] = []
     for owner, lo, hi in regions:
+        if lo in part_set and not any(content(i) for i in range(lo, hi)):
+            continue  # a part heading straight before its first chapter has no scene
         openers = [i for i in sorted(scene_opener_signals) if lo < i < hi and i not in kept_set]
         taken = [lo]
         for pos, o in enumerate(openers):
@@ -547,7 +549,8 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     signals: list[str] = []
     if profile.chapter_styles and para.style_name and para.heading_level is None:
         folded = _fold(para.style_name)
-        if any(word and _fold(word) in folded for word in profile.chapter_style_words):
+        words = (_fold(w.strip()) for w in profile.chapter_style_words)
+        if any(word and word in folded for word in words):
             signals.append("chapter_style")
     styled = (
         profile.heading_styles
