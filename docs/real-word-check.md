@@ -27,6 +27,22 @@ uv run python scripts/real_word_check.py build C:\t30
 
 `C:\t30` now holds 12 documents and `expected.json`. Use a new folder for each Word version.
 
+## Steps 2 to 5 by script
+
+`scripts/real_word_auto.ps1` does steps 2 to 5 in Word for you:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\real_word_auto.ps1 C:\t30
+```
+
+It opens each document in a Word window of its own and counts the ones that raise a
+dialog instead of opening; before that it opens a deliberately broken copy, which must
+raise a dialog, so a count of zero means something. Then it accepts all, rejects all,
+replies and resolves through Word's automation interface, saves the three files step 6
+reads, and prints `real_word_repair_prompts == <n>`. Other Word windows you have open are
+left alone. Continue at step 6. What the script cannot judge is still yours to check by
+eye: that each document looks normal (step 2) and how the tracked changes show (step 3).
+
 ## 2. Open every document
 
 Open each `.docx` in `C:\t30` in Word, one by one, and note for each:
