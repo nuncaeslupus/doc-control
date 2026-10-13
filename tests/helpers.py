@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 
@@ -43,8 +44,10 @@ def make_docx(path: Path, *paragraphs: str, extra: dict[str, bytes] | None = Non
 
 
 def symlink_or_skip(link: Path, target: Path) -> None:
-    """Point `link` at `target`; skip the test where the account may not (Windows)."""
+    """Point `link` at `target`; on Windows, skip the test if the account may not."""
     try:
         link.symlink_to(target)
     except OSError:
+        if sys.platform != "win32":
+            raise
         pytest.skip("symlinks not available")

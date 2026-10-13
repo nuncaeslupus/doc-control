@@ -7,7 +7,7 @@ Run it after `real_word_check.py build C:\t30` and before `... verify C:\t30`.
 
 Step 2 opens every built document the way a double click does, in a Word instance of its
 own (/n), and counts the ones that raise a dialog instead of a document window: that is
-"Word found unreadable content". Two controls run first, a broken copy that must raise the
+"Word found unreadable content". Two controls run first, a broken copy that must raise a
 dialog and a good file that must not, so a silent detector cannot report zero.
 Steps 3-5 (accept all, reject all, reply, resolve, save) go through Word's automation
 interface. Documents you have open in another Word window are left alone.
@@ -42,10 +42,14 @@ public static class T30Win {
 "@
 
 $Out = (Resolve-Path $Out).Path
-if (-not (Test-Path (Join-Path $Out 'expected.json'))) { throw "$Out has no expected.json; run the build step first" }
+$expected = Join-Path $Out 'expected.json'
+if (-not (Test-Path $expected)) { throw "$Out has no expected.json; run the build step first" }
+# One built document per top-level key of expected.json (written with a one-space indent).
+$built = @(Get-Content $expected -Encoding UTF8 | ForEach-Object { if ($_ -match '^ "(\w+)": ') { "$($Matches[1]).docx" } })
+if (-not $built.Count) { throw "no document names read from $expected" }
 $WM_CLOSE = 0x10
 $MAIN = 'OpusApp'  # class of a Word document window; anything else visible is a dialog
-$SAVED = 'edits-accepted.docx', 'edits-rejected.docx', 'comments-word.docx'
+$SETTLE_MS = 2500
 
 $winword = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Winword.exe').'(default)'
 
@@ -53,18 +57,23 @@ function Test-Open([string]$path) {
     $p = Start-Process $winword -ArgumentList '/n', '/q', "`"$path`"" -PassThru
     $leaf = [IO.Path]::GetFileNameWithoutExtension($path)
     $wins = @(); $state = 'timeout'
-    for ($i = 0; $i -lt $OpenTimeoutSeconds * 2; $i++) {
+    $deadline = (Get-Date).AddSeconds($OpenTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 500
         if ($p.HasExited) { $state = 'exited'; break }
         $wins = @([T30Win]::List([uint32]$p.Id))
         $dialog = @($wins | Where-Object { $_[0] -ne $MAIN }).Count -gt 0
         $shown = @($wins | Where-Object { $_[0] -eq $MAIN -and $_[1] -like "*$leaf*" }).Count -gt 0
         if (-not ($dialog -or $shown)) { continue }
-        # A prompt can follow the window by a moment: look once more before deciding.
-        Start-Sleep -Milliseconds 2500
+        # Look again after a pause: a prompt can follow the document window by a moment,
+        # and a window that is gone by then (a splash, a notice) was not a prompt.
+        Start-Sleep -Milliseconds $SETTLE_MS
+        if ($p.HasExited) { $state = 'exited'; break }
         $wins = @([T30Win]::List([uint32]$p.Id))
-        $state = if (@($wins | Where-Object { $_[0] -ne $MAIN }).Count) { 'dialog' } else { 'opened' }
-        break
+        $dialog = @($wins | Where-Object { $_[0] -ne $MAIN }).Count -gt 0
+        $shown = @($wins | Where-Object { $_[0] -eq $MAIN -and $_[1] -like "*$leaf*" }).Count -gt 0
+        if ($dialog) { $state = 'dialog'; break }
+        if ($shown) { $state = 'opened'; break }
     }
     $seen = ($wins | ForEach-Object { "[$($_[0])] $($_[1])" }) -join ' ; '
     if (-not $p.HasExited) {
@@ -80,7 +89,7 @@ function Test-Open([string]$path) {
 }
 
 function New-BrokenCopy([string]$src, [string]$dst) {
-    # A table row with no cell and a paragraph inside a paragraph: Word offers to recover it.
+    # A table row with no cell and a paragraph inside a paragraph: Word will not open it as is.
     [IO.File]::Copy($src, $dst, $true)
     $zip = [IO.Compression.ZipFile]::Open($dst, 'Update')
     try {
@@ -101,29 +110,30 @@ function Invoke-Com($obj, [string]$name, [object[]]$arguments) {
 }
 
 "== controls"
-$control = Join-Path ([IO.Path]::GetTempPath()) ("t30-control-{0}.docx" -f [guid]::NewGuid().ToString('N'))
+# Next to the documents under test, so both open under the same trust rules.
+$control = Join-Path $Out ("t30-control-{0}.docx" -f [guid]::NewGuid().ToString('N'))
 try {
     New-BrokenCopy (Join-Path $Out 'plain.docx') $control
     $broken = Test-Open $control
     $good = Test-Open (Join-Path $Out 'plain.docx')
-    "broken copy: $($broken.State); plain.docx: $($good.State)"
+    "broken copy: $($broken.State) -> $($broken.Seen)"
+    "plain.docx: $($good.State)"
     if ($broken.State -ne 'dialog' -or $good.State -ne 'opened') {
         throw "the repair-prompt detector does not work here (broken: $($broken.Seen); good: $($good.Seen))"
     }
-} finally { [IO.File]::Delete($control) }
+} finally { if (Test-Path $control) { [IO.File]::Delete($control) } }
 
 "== step 2: open every document"
 $prompts = 0
-foreach ($f in Get-ChildItem $Out -Filter *.docx | Where-Object { $SAVED -notcontains $_.Name } | Sort-Object Name) {
-    $r = Test-Open $f.FullName
+foreach ($name in $built | Sort-Object) {
+    $path = Join-Path $Out $name
+    if (-not (Test-Path $path)) { throw "$name is named in expected.json and missing from $Out" }
+    $r = Test-Open $path
     if ($r.State -ne 'opened') { $prompts++ }
     "{0}: {1} -> {2}" -f $r.Name, $r.State, $r.Seen
 }
+"opened $($built.Count) documents"
 
-$word = New-Object -ComObject Word.Application
-$word.Visible = $true
-$word.DisplayAlerts = 0
-"== Word $($word.Version), build $($word.Build)"
 function Open-Doc([string]$name) {
     # No conversion prompt, not read-only, not added to the recent files.
     return Invoke-Com $word.Documents 'Open' @((Join-Path $Out $name), $false, $false, $false)
@@ -132,7 +142,13 @@ function Save-As($doc, [string]$name) {
     Invoke-Com $doc 'SaveAs2' @((Join-Path $Out $name), 12) | Out-Null  # 12 = wdFormatXMLDocument
     Invoke-Com $doc 'Close' @(0) | Out-Null
 }
+$word = $null
 try {
+    # Hidden, so a document the user opens meanwhile does not land in this instance.
+    $word = New-Object -ComObject Word.Application
+    $word.DisplayAlerts = 0
+    "== Word $($word.Version), build $($word.Build)"
+
     "== step 3: edits.docx, accept all"
     $doc = Open-Doc 'edits.docx'
     foreach ($r in $doc.Revisions) {
@@ -140,12 +156,12 @@ try {
         if ($text.Length -gt 40) { $text = $text.Substring(0, 40) + '...' }
         "revision type={0} author='{1}' paragraphs={2} text='{3}'" -f $r.Type, $r.Author, $r.Range.Paragraphs.Count, $text
     }
-    $doc.Revisions.AcceptAll()
+    $doc.AcceptAllRevisions()
     Save-As $doc 'edits-accepted.docx'
 
     "== step 4: edits.docx, reject all"
     $doc = Open-Doc 'edits.docx'
-    $doc.Revisions.RejectAll()
+    $doc.RejectAllRevisions()
     Save-As $doc 'edits-rejected.docx'
 
     "== step 5: comments.docx, reply and resolve"
@@ -160,8 +176,10 @@ try {
     }
     Save-As $doc 'comments-word.docx'
 } finally {
-    Invoke-Com $word 'Quit' @(0) | Out-Null
-    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)
+    if ($word) {
+        Invoke-Com $word 'Quit' @(0) | Out-Null
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)
+    }
 }
 
 "real_word_repair_prompts == $prompts"
