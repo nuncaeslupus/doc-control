@@ -3,6 +3,7 @@ id: t-beae3d89
 title: "T41: Anchors: exact match on normalised text (soft hyphens, zero-width, tabs, double spaces)"
 label: "exact anchors on normalised"
 priority: 5
+status: merged
 ---
 
 `anchor.resolve` exact mode matches the quote against the normalised text (`text.normalized` rules: soft hyphens and zero-width removed, whitespace collapsed, NFC) and maps the hit back to original offsets through the offset map, so a quote an agent copied from normalised text is found across a soft hyphen, zero-width character, tab or double space. Fuzzy and best modes keep their behaviour. Requested by literary-critic (its edit path runs on doc-control).
