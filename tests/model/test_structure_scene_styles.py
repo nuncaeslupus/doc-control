@@ -32,7 +32,8 @@ def test_scene_style_opens_a_scene_except_after_a_heading_or_a_marker() -> None:
 
 
 def test_a_scene_style_on_a_third_of_the_text_is_a_body_style() -> None:
-    paras = build(*chapter("Capítulo 1", *[(BODY, AFTER), BODY] * 4))
+    pair: list[str | tuple[str, dict[str, Any]]] = [(BODY, AFTER), BODY]
+    paras = build(*chapter("Capítulo 1", *pair * 4))
     assert len(detect(paras).scenes) == 1
 
 
