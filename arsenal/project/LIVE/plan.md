@@ -4,7 +4,7 @@
 **Specification**: `arsenal/project/LIVE/spec.md`
 **Author**: Claude (doc-control session), for the owner
 **Revision**: 1
-**Status**: draft
+**Status**: approved (2026-10-13, revision 1) — without annotations
 **Revision log**:
 - r1 — first draft
 
@@ -118,5 +118,5 @@ Surface: **cloud** runs in a Linux cloud session (LibreOffice installed); **wind
 
 ## Sign-off
 
-- [ ] Plan approved by the owner
+- [x] Plan approved by the owner
 - [ ] Ready for execution
