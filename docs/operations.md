@@ -168,6 +168,7 @@ Chapter, scene, estimated page and the shortest unique first-and-last-words phra
 | `at` | string |  | Paragraph address or range (offsets ignored), e.g. p142#a7b2a7b2; default the whole document (empty paragraphs left out). |
 | `overrides` | array |  | Force or deny a chapter or scene at paragraphs by fingerprint. |
 | `profile` | object |  | Detection settings for this document. |
+| `structure` | boolean |  | false: skip chapter, part and scene detection (they come back null), for callers that keep their own structure; faster on a single paragraph. Default true. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 

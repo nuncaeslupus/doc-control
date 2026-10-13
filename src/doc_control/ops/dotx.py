@@ -14,12 +14,12 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape
 
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.styles import load_styles
 from doc_control.ooxml.styledef import STYLES_CONTENT_TYPE, invalid
+from doc_control.ooxml.xmltext import escape
 from doc_control.ooxml.zipio import Package
 from doc_control.ops.styleset import (
     _DOC,

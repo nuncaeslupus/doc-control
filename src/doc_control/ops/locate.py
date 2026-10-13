@@ -632,6 +632,12 @@ class _Rows(Sequence[dict[str, Any]]):
             },
             "overrides": OVERRIDES_SCHEMA,
             "profile": PROFILE_SCHEMA,
+            "structure": {
+                "type": "boolean",
+                "description": "false: skip chapter, part and scene detection (they come back "
+                "null), for callers that keep their own structure; faster on a single "
+                "paragraph. Default true.",
+            },
             **PAGING_PROPERTIES,
         },
         "required": ["doc"],
@@ -643,7 +649,11 @@ def locate(request: dict[str, Any]) -> Reply:
     index = doc.index
     count = len(index)
     texts = [index.paragraph(n).text for n in range(1, count + 1)]
-    found = detect_in(doc, profile_of(request), overrides_of(request))
+    if request.get("structure", True):
+        found = detect_in(doc, profile_of(request), overrides_of(request))
+        chapters, parts, scenes = found.chapters, found.parts, found.scenes
+    else:
+        chapters, parts, scenes = (), (), ()
     pages = estimate_pages(doc)
     if "at" in request:
         resolved = index.resolve_range(request["at"])
@@ -663,17 +673,17 @@ def locate(request: dict[str, Any]) -> Reply:
         find_of = finds.__getitem__
 
     chapter_at = [0] * (count + 2)  # 1-based paragraph -> 1-based chapter, 0 for none
-    for k, chapter in enumerate(found.chapters, 1):
+    for k, chapter in enumerate(chapters, 1):
         for n in range(chapter.first, chapter.last + 1):
             chapter_at[n] = k
     part_at = [0] * (count + 2)
-    for k, part in enumerate(found.parts, 1):
+    for k, part in enumerate(parts, 1):
         for n in range(part.first, part.last + 1):
             part_at[n] = k
     scene_at = [0] * (count + 2)
     ordinal: dict[str | None, int] = {}
     ordinals = [0]
-    for k, scene in enumerate(found.scenes, 1):
+    for k, scene in enumerate(scenes, 1):
         ordinal[scene.chapter] = ordinal.get(scene.chapter, 0) + 1
         ordinals.append(ordinal[scene.chapter])
         for n in range(scene.first, scene.last + 1):
@@ -683,9 +693,9 @@ def locate(request: dict[str, Any]) -> Reply:
 
     def row(n: int) -> dict[str, Any]:
         page = pages.rows[n - 1]
-        chapter = found.chapters[chapter_at[n] - 1] if chapter_at[n] else None
-        scene = found.scenes[scene_at[n] - 1] if scene_at[n] else None
-        part = found.parts[part_at[n] - 1] if part_at[n] else None
+        chapter = chapters[chapter_at[n] - 1] if chapter_at[n] else None
+        scene = scenes[scene_at[n] - 1] if scene_at[n] else None
+        part = parts[part_at[n] - 1] if part_at[n] else None
         loc = locator_of(n - 1)
         out: dict[str, Any] = {
             "at": str(index.paragraph(n).address),

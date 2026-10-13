@@ -6,13 +6,14 @@ from typing import Any
 
 from doc_control import API_VERSION, __version__
 from doc_control.errors import HINTS, DocControlError, ErrorCode
-from doc_control.registry import REGISTRY, operation
+from doc_control.registry import REGISTRY, load_operations, operation
 
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 @operation("capabilities", "read", "API version, engines and the list of operations.", _EMPTY)
 def capabilities(_: dict[str, Any]) -> dict[str, Any]:
+    load_operations()
     return {
         "api": API_VERSION,
         "version": __version__,
@@ -39,6 +40,7 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
     },
 )
 def help_(request: dict[str, Any]) -> dict[str, Any]:
+    load_operations()
     name = request.get("op")
     kinds = _batch_kinds()
     if name is None:

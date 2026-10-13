@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,30 +53,60 @@ def operation(
     return wrap
 
 
+#: The module (in ``doc_control.ops``) that registers each operation, so one operation
+#: can be loaded without importing them all (``tests/test_registry.py`` keeps it true).
+OPERATION_MODULES: dict[str, str] = {
+    "anchor.create": "anchor",
+    "anchor.resolve": "anchor",
+    "batch": "batch",
+    "capabilities": "meta",
+    "comments.list": "read",
+    "compare": "compare",
+    "diff": "diff",
+    "find": "find",
+    "help": "meta",
+    "history.list": "history",
+    "history.orphans": "history",
+    "history.purge": "history",
+    "history.search": "history",
+    "info": "read",
+    "locate": "locate",
+    "open": "history",
+    "outline": "read",
+    "page.estimate": "page",
+    "para.get": "read",
+    "paragraphs.list": "bulk",
+    "recipe.list": "recipe",
+    "recipe.run": "recipe",
+    "restore": "history",
+    "revisions.list": "read",
+    "segment": "segment",
+    "stats": "read",
+    "style.create": "stylewrite",
+    "style.get": "read",
+    "style.merge": "stylewrite",
+    "style.rename": "stylewrite",
+    "style.update": "stylewrite",
+    "styles.list": "read",
+    "styleset.export": "styleset",
+    "styleset.export-dotx": "dotx",
+    "styleset.import-dotx": "dotx",
+    "styleset.install": "styleset",
+    "term.rename": "rename",
+    "text.normalized": "text",
+    "undo": "history",
+}
+
+
+def get_operation(name: str) -> Operation | None:
+    """The operation ``name``, importing only the module that registers it; None if unknown."""
+    if name not in REGISTRY and name in OPERATION_MODULES:
+        importlib.import_module(f"doc_control.ops.{OPERATION_MODULES[name]}")
+    return REGISTRY.get(name)
+
+
 def load_operations() -> dict[str, Operation]:
     """Import every operation module so their decorators run."""
-    from doc_control.ops import (  # noqa: F401
-        anchor,
-        batch,
-        bulk,
-        comments,
-        compare,
-        diff,
-        dotx,
-        find,
-        history,
-        layout,
-        locate,
-        meta,
-        page,
-        read,
-        recipe,
-        rename,
-        revision,
-        segment,
-        styleset,
-        stylewrite,
-        text,
-    )
-
+    for module in sorted(set(OPERATION_MODULES.values())):
+        importlib.import_module(f"doc_control.ops.{module}")
     return REGISTRY

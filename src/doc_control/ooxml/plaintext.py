@@ -40,15 +40,14 @@ from __future__ import annotations
 import io
 import os
 import re
-import statistics
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.xmltext import escape
 
 TEXT_SUFFIXES = (".txt", ".md", ".markdown")
 
@@ -276,7 +275,10 @@ def _hard_wrapped(lines: list[str]) -> bool:
         if _WRAP_MIN_WIDTH <= width <= _WRAP_MAX_LINE and near * 2 > len(inner):
             return True
     longest = max(n for b in blocks for n in b)
-    return statistics.median(len(b) for b in blocks) >= 2 and longest <= _WRAP_MAX_LINE
+    sizes = sorted(len(b) for b in blocks)
+    middle = len(sizes) // 2
+    median = sizes[middle] if len(sizes) % 2 else (sizes[middle - 1] + sizes[middle]) / 2
+    return median >= 2 and longest <= _WRAP_MAX_LINE
 
 
 def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]], str]:

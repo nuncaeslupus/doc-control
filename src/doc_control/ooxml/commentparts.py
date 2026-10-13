@@ -38,7 +38,6 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Final
-from xml.sax.saxutils import escape, quoteattr
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.parts import (
@@ -50,6 +49,7 @@ from doc_control.model.parts import (
     W,
     related_part,
 )
+from doc_control.ooxml.xmltext import escape, quoteattr
 from doc_control.ooxml.zipio import Package
 
 NS: Final[dict[str, str]] = {

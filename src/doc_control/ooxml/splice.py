@@ -66,9 +66,9 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from xml.parsers import expat
-from xml.sax.saxutils import quoteattr
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.xmltext import quoteattr
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 XML_NS = "http://www.w3.org/XML/1998/namespace"
