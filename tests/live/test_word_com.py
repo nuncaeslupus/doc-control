@@ -183,7 +183,7 @@ def test_a_onedrive_name_is_the_local_file(tmp_path: Path) -> None:
     # Only there: not also the file of that name in the folder above.
     assert local_paths(name, mounts) == [tmp_path / "Books" / "Drafts" / "a.docx"]
     assert local_paths("https://elsewhere.example/a.docx", mounts) == []
-    assert local_paths(r"C:\Users\me\a.docx", mounts) == [Path(r"C:\Users\me\a.docx")]
+    assert local_paths(r"D:\Work\a.docx", mounts) == [Path(r"D:\Work\a.docx")]
 
     doc = make_docx(tmp_path / "a.docx", "One.")
     adapter = Word(_App(_Doc("https://d.docs.live.net/01/a.docx", []), []))
