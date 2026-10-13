@@ -78,6 +78,8 @@ OPERATION_MODULES: dict[str, str] = {
     "history.search": "history",
     "info": "read",
     "live.close": "live",
+    "live.select": "live",
+    "live.selection": "live",
     "live.open": "live",
     "live.save": "live",
     "live.status": "live",

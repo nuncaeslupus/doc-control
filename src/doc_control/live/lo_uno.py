@@ -375,7 +375,26 @@ class LibreOffice:
 
     @_guard
     def paragraphs(self, path: Path) -> list[str]:
-        return self._texts(self._doc(path))
+        doc = self._doc(path)
+        raw = self._texts(doc)
+        texts = list(raw)
+        # A paragraph holding a tracked deletion is re-read without it, so a find phrase
+        # is matched against what the writer sees.
+        # ponytail: several calls per tracked deletion; cache per document if a heavily
+        # revised novel makes select slow.
+        redlines = doc.Redlines.createEnumeration()
+        while redlines.hasMoreElements():
+            redline = redlines.nextElement()
+            if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
+                continue
+            start = redline.RedlineStart
+            paragraph = _around(start.getText().createTextCursorByRange(start))
+            at = [n for n, text in enumerate(raw) if text == paragraph.getString()]
+            if len(at) != 1:
+                # A repeated paragraph cannot be placed: read them all, in order.
+                return [_visible(paragraph) for paragraph in _walk(doc.Text)]
+            texts[at[0]] = _visible(paragraph)
+        return texts
 
     @_guard
     def text(self, path: Path, span: Span) -> str:
@@ -391,6 +410,13 @@ class LibreOffice:
     @_guard
     def selection(self, path: Path) -> tuple[str, int]:
         doc = self._doc(path)
+        try:
+            return self._selection(doc)
+        except (AttributeError, IndexError) as err:
+            # A table, a block of cells, a footnote: nothing a paragraph address names.
+            raise LiveUnavailable("the selection is not text in the document body") from err
+
+    def _selection(self, doc: Any) -> tuple[str, int]:
         chosen = doc.CurrentController.getSelection().getByIndex(0)
         story = chosen.getText()
         paragraph = _around(story.createTextCursorByRange(chosen.getEnd()))

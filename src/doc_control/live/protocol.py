@@ -46,8 +46,8 @@ class LiveAdapter(Protocol):
     def dirty(self, path: Path) -> bool: ...
 
     def paragraphs(self, path: Path) -> list[str]:
-        """The paragraph texts, for finding one: an app may leave tracked deletions and
-        note marks in them (``text`` is exact)."""
+        """The paragraph texts as the writer sees them (tracked deletions left out), for
+        finding one: an app may leave note marks in them (``text`` is exact)."""
 
     def text(self, path: Path, span: Span) -> str:
         """The text of ``span``, tracked deletions left out."""

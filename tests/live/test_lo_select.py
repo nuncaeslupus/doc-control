@@ -114,3 +114,38 @@ def test_stale_address_and_missing_phrase_are_refused(live: LibreOffice, lo_home
         assert got["at"].startswith("p4#")
     finally:
         _run("live.close", {**base, "discard": True})
+
+
+def test_find_phrase_reads_past_tracked_deletions(live: LibreOffice, lo_home: Path) -> None:
+    """A phrase is matched against what the writer sees, as ``locate`` builds it."""
+    doc = make_docx(
+        lo_home / "deleted.docx",
+        "Alpha bravo charlie.",
+        "Other text here.",
+        "Zed alpha charlie end.",
+        "Quiet hidden unicorn tail.",
+    )
+    with api.open(doc) as handle:
+        at = [p["at"] for p in handle.paragraphs()]
+        cuts = [(0, 5, 11), (2, 3, 17), (3, 5, 20)]
+        ops = [{"op": "text.replace", "at": f"{at[n]}:{a}-{b}", "text": ""} for n, a, b in cuts]
+        handle.run("batch", {"ops": ops})
+        rows = handle.run("locate", {})["paragraphs"]
+        assert [p["text"] for p in handle.paragraphs()][::2] == ["Alpha charlie.", "Zed end."]
+    base = {"doc": str(doc)}
+    _run("live.open", base)
+    try:
+        assert _run("live.select", {**base, "find_phrase": "alpha charlie"})["at"] == rows[0]["at"]
+        assert _run("live.select", {**base, "find_phrase": "Quiet tail"})["text"] == "Quiet tail."
+        for row in rows:
+            got = _run("live.select", {**base, "find_phrase": row["find_phrase"]})
+            assert got["at"] == row["at"]
+        for ask, code in [
+            ({"find_phrase": "hidden unicorn"}, ErrorCode.ANCHOR_NOT_FOUND),
+            ({"find_phrase": "Other", "find_phrase_across": "previous"}, ErrorCode.SCHEMA_INVALID),
+        ]:
+            with pytest.raises(DocControlError) as err:
+                _run("live.select", {**base, **ask})
+            assert err.value.code is code, ask
+    finally:
+        _run("live.close", {**base, "discard": True})

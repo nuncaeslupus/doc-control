@@ -122,6 +122,10 @@ def close(request: dict[str, Any]) -> dict[str, Any]:
 
 def _found(texts: list[str], phrase: str, across: str | None) -> int:
     """The paragraph (from 0) a find phrase names: its one match, under ``locate``'s rules."""
+    if across and "\r" not in phrase:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+        )
     folded = [text.casefold() for text in texts]
     joined, needle = "\r".join(folded) + "\r", phrase.casefold()
     at = joined.find(needle)
