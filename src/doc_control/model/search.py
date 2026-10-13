@@ -92,6 +92,9 @@ def _invalid(message: str) -> DocControlError:
     return DocControlError(ErrorCode.SCHEMA_INVALID, message, path="$.query")
 
 
+_FOLD_CACHE = 1 << 16  # paragraph texts whose folding is kept
+
+
 class _Folder:
     """Folds text unit by unit, remembering where each unit ends."""
 
@@ -99,6 +102,7 @@ class _Folder:
         self.accents = accents
         self.case = case
         self._cache: dict[str, str] = {}
+        self._folded: dict[str, tuple[str, list[str] | None]] = {}
 
     def unit(self, unit: str) -> str:
         out = self._cache.get(unit)
@@ -114,12 +118,26 @@ class _Folder:
         return out
 
     def fold(self, text: str) -> tuple[str, list[str] | None]:
-        """``(folded, units)``; ``units`` is ``None`` when each character is its own unit."""
+        """``(folded, units)``; ``units`` is ``None`` when each character is its own unit.
+
+        Results are kept per text (a document's paragraphs are searched again and again
+        when it is held open); callers must not change the returned list.
+        """
+        hit = self._folded.get(text)
+        if hit is None:
+            if len(self._folded) >= _FOLD_CACHE:
+                self._folded.clear()
+            hit = self._folded[text] = self._fold(text)
+        return hit
+
+    def _fold(self, text: str) -> tuple[str, list[str] | None]:
         if text.isascii():
             return (text.casefold() if self.case else text), None
         if _HAS_MARK.search(text):
             units = _UNIT.findall(text)
             return "".join(map(self.unit, units)), units
+        if not (self.case or self.accents) and unicodedata.is_normalized("NFC", text):
+            return text, None  # folding would only apply NFC, a no-op here
         return "".join(map(self.unit, text)), None
 
 

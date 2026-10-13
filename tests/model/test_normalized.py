@@ -271,3 +271,8 @@ def test_normalized_text_equals_normalize_text() -> None:
     for _ in range(3000):
         text = "".join(rng.choice(pieces) for _ in range(rng.randint(0, 12)))
         assert normalized_text(text) == normalize(text).text, repr(text)
+
+
+def test_no_combining_marks_past_the_third_plane() -> None:
+    """``normalized_text``'s mark class stops at U+30000; Unicode has none above it."""
+    assert not any(unicodedata.combining(chr(cp)) for cp in range(0x30000, 0x110000))

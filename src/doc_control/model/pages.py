@@ -170,7 +170,7 @@ def _facts(doc: Document) -> tuple[list[_Facts], float]:
     normal_rpr = {**base_rpr, **(doc.styles.effective(normal)[1] if normal else {})}
     out: list[_Facts] = []
     for para in doc.index.paragraphs:
-        elem = doc.index.spans.parse_paragraph(para.span_index)
+        elem = doc.paragraph_element(para)
         ppr_elem = elem.find(W + "pPr")
         style = doc.style_id(para)
         s_ppr, s_rpr = doc.styles.effective(style) if style is not None else ({}, {})
@@ -339,6 +339,11 @@ def _row_height(
 
 
 def estimate_pages(doc: Document) -> PageEstimate:
+    """The estimate for ``doc``, computed once per open document."""
+    return doc.memo("pages", lambda: _estimate_pages(doc))
+
+
+def _estimate_pages(doc: Document) -> PageEstimate:
     facts, normal_pt = _facts(doc)
     marks = sum(1 for f in facts for e in f.events if e.kind == "lrpb")
     body = parse_part(doc.pkg, DOCUMENT_PART).find(W + "body")

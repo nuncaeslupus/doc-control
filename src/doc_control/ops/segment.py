@@ -27,8 +27,7 @@ from doc_control.model.structure import (
     Override,
     Profile,
     Structure,
-    detect,
-    paragraphs_of,
+    detect_in,
 )
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
@@ -174,7 +173,7 @@ def segment(request: dict[str, Any]) -> Reply:
         return paged("segment", doc, request, "sentences", _sentences(doc, request, language))
     if unit == "dialogue":
         return paged("segment", doc, request, "dialogue", _dialogue(doc, request))
-    found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
+    found = detect_in(doc, profile_of(request), overrides_of(request))
     base: dict[str, Any] = {"unit": unit}
     if unit in ("chapters", "parts"):
         front = found.front
@@ -316,7 +315,7 @@ def _paragraphs_in(doc: Document, request: dict[str, Any]) -> range:
         return range(1, len(doc.index) + 1)
     value: str = request["range"]
     if _UNIT_ID.fullmatch(value):
-        found = detect(paragraphs_of(doc), profile_of(request), overrides_of(request))
+        found = detect_in(doc, profile_of(request), overrides_of(request))
         spans = [(u.id, u.first, u.last) for u in found.chapters]
         spans += [(u.id, u.first, u.last) for u in found.scenes]
         spans += [(u.id, u.first, u.last) for u in found.parts]

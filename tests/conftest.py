@@ -64,3 +64,13 @@ def _keep_written_documents(
 
     monkeypatch.setattr(zipio, "commit_bytes", recording)
     monkeypatch.setattr(verify, "commit_bytes", recording)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """A ``bench`` test named on the command line by its node id runs even under the
+    default ``-m 'not bench'`` (a task gate names its benchmark that way)."""
+    named = {arg for arg in config.args if "::" in arg}
+    for item in items:
+        if any(item.nodeid.endswith(arg.split("/", 1)[-1]) or item.nodeid == arg for arg in named):
+            item.own_markers = [m for m in item.own_markers if m.name != "bench"]

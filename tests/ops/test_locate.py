@@ -342,3 +342,20 @@ def test_find_phrase_limit_and_context_for_duplicates(run: Run, tmp_path: Path) 
     assert rows[3]["context"]["paragraphs_after"] == 3
     assert rows[4]["find_phrase"] is not None
     assert "context" not in rows[0]
+
+
+def test_long_words_out_of_the_affix_tables_change_no_phrase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Words past LONG_WORD are checked one by one; the phrases must not change."""
+    import random
+
+    from doc_control.ops import locate
+
+    rng = random.Random(47)
+    words = ["a" * n + "b" for n in (3, 20, 30, 50)] + ["de", "la", "casa", "ab"]
+    texts = [" ".join(rng.choice(words) for _ in range(rng.randint(1, 9))) for _ in range(300)]
+    short = [f.text for f in locate.FindIndex(locate.LocatorIndex(texts)).found]
+    monkeypatch.setattr(locate, "LONG_WORD", 10_000)
+    every = [f.text for f in locate.FindIndex(locate.LocatorIndex(texts)).found]
+    assert short == every
