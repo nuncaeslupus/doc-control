@@ -26,7 +26,7 @@ BUDGETS = {
     "first_parse": 0.6,
     "read_op_p95": 0.05,  # an op repeated on the open handle
     "paragraphs": 0.3,
-    "locate": 1.2,  # cold: builds the structure and page estimate too
+    "locate": 1.5,  # cold: builds the structure, page estimate and indexes (warm calls: read_op_p95)
     "batch_20_edits": 1.5,
     "term_rename": 2.0,
 }
