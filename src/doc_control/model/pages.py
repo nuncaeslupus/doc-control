@@ -5,9 +5,11 @@ The word-count model always runs; the marks and breaks correct it:
 * ``w:lastRenderedPageBreak`` marks, written by Word each time it laid the document out,
   are Word's own page starts and win: up to the last mark only marks and explicit breaks
   start pages (the model never overflows there), so a document Word laid out gets Word's
-  page count. Text after the last mark (added since the last layout, or a document without
-  marks) is paged by the model alone, restarting from the last mark's page. A mark that lands on a
-  page the model (or an explicit break) just started is not counted twice.
+  page count. Marks too sparse to be a layout (the model, resynced at each mark, needs
+  more than ``MARKS_TRUST_RATIO`` times their pages up to the last one) only resync the
+  model. Text after the last mark (added since the last layout, or a document without
+  marks) is paged by the model alone, restarting from the last mark's page. A mark that
+  lands on a page the model (or an explicit break) just started is not counted twice.
 * Explicit page starts: ``w:br w:type="page"``, ``pageBreakBefore`` (direct or from the style
   chain) and section breaks that start a new page (``nextPage``, ``oddPage``, ``evenPage``;
   ``continuous`` does not).
@@ -51,6 +53,7 @@ DEFAULT_FONT_PT = 10.0  # the OOXML default when nothing sets a size
 CHAR_EM = 0.5  # average character width as a fraction of the font size
 WORD_CHARS = 6  # characters per word, space included
 LINE_FACTOR = 1.15  # single line height as a multiple of the font size
+MARKS_TRUST_RATIO = 2.0  # marks win when the model needs at most this many times their pages
 
 NOTES = (
     "Run-level font sizes are ignored: only paragraph, style and document defaults count.",
@@ -351,59 +354,71 @@ def estimate_pages(doc: Document) -> PageEstimate:
             shares[i] = (pos[1], pos[2])
     placed: dict[int, tuple[int, int]] = {}  # row id -> (start page, end page)
 
-    sim = _Sim()
-    sim.marks_ahead = marks
-    rows: list[ParaPage] = []
-    section = 0
-    opens_section = False
-    offset = 0  # printed page number minus physical page
-    for number, f in enumerate(facts, start=1):
-        sect = closing[section]
-        geo = _Geometry.of(sect)
-        starts_section = number == 1 or opens_section
-        if opens_section and _section_type(sect) != "continuous":
-            sim.new_page(explicit=True)
-            sim.parity(_section_type(sect))
-        if f.ppr.get("page_break_before") and not sim.empty:
-            sim.new_page(explicit=True)
-        # A mark or a break before any text moves this paragraph; one after only the next.
-        early = [e.before == 0 and (e.kind == "lrpb" or f.chars > 0) for e in f.events]
-        for ev, is_early in zip(f.events, early, strict=True):
-            if is_early:
+    def simulate(trust: bool) -> tuple[list[ParaPage], _Sim]:
+        sim = _Sim()
+        sim.marks_ahead = marks if trust else 0
+        rows: list[ParaPage] = []
+        section = 0
+        opens_section = False
+        offset = 0  # printed page number minus physical page
+        for number, f in enumerate(facts, start=1):
+            sect = closing[section]
+            geo = _Geometry.of(sect)
+            starts_section = number == 1 or opens_section
+            if opens_section and _section_type(sect) != "continuous":
+                sim.new_page(explicit=True)
+                sim.parity(_section_type(sect))
+            if f.ppr.get("page_break_before") and not sim.empty:
+                sim.new_page(explicit=True)
+            # A mark or a break before any text moves this paragraph; one after only the next.
+            early = [e.before == 0 and (e.kind == "lrpb" or f.chars > 0) for e in f.events]
+            for ev, is_early in zip(f.events, early, strict=True):
+                if is_early:
+                    sim.event(ev)
+            first_label = _page_start(sect)
+            new_numbering = number == 1 or (starts_section and _section_type(sect) != "continuous")
+            if first_label is not None and new_numbering:
+                offset = first_label - sim.page
+            broke = sim.empty and sim.broke  # first on a page that an explicit break started
+            pos = where[number - 1]
+            if pos is not None and pos[0] in placed:
+                start = placed[pos[0]][0]
+            elif pos is not None:
+                height = _row_height(members[pos[0]], facts, shares, geo.width_pt)
+                start = sim.place(height, _line_height(f.font_pt, f.ppr), geo)
+            else:
+                height, line_h = _height(f, geo.width_pt)
+                start = sim.place(height, line_h, geo)
+            sim.empty = False
+            for ev, is_early in zip(f.events, early, strict=True):
+                if is_early:
+                    continue
                 sim.event(ev)
-        first_label = _page_start(sect)
-        new_numbering = number == 1 or (starts_section and _section_type(sect) != "continuous")
-        if first_label is not None and new_numbering:
-            offset = first_label - sim.page
-        broke = sim.empty and sim.broke  # first on a page that an explicit break started
-        pos = where[number - 1]
-        if pos is not None and pos[0] in placed:
-            start = placed[pos[0]][0]
-        elif pos is not None:
-            height = _row_height(members[pos[0]], facts, shares, geo.width_pt)
-            start = sim.place(height, _line_height(f.font_pt, f.ppr), geo)
-        else:
-            height, line_h = _height(f, geo.width_pt)
-            start = sim.place(height, line_h, geo)
-        sim.empty = False
-        for ev, is_early in zip(f.events, early, strict=True):
-            if is_early:
-                continue
-            sim.event(ev)
-            left = (f.chars - ev.before) / f.chars if f.chars else 0.0
-            sim.used = _height(f, geo.width_pt)[0] * left
-            sim.empty = left == 0.0
-        if f.chars:
-            sim.pending = False
-        if pos is not None and pos[0] not in placed:
-            placed[pos[0]] = (start, sim.page)
-        end = placed[pos[0]][1] if pos is not None else sim.page
-        has_mark = any(e.kind == "lrpb" for e in f.events)
-        source = "break" if broke else "rendered" if has_mark else "model"
-        rows.append(ParaPage(number, start, end, source, start + offset, end + offset))
-        opens_section = f.sect is not None
-        if opens_section:
-            section += 1
+                left = (f.chars - ev.before) / f.chars if f.chars else 0.0
+                sim.used = _height(f, geo.width_pt)[0] * left
+                sim.empty = left == 0.0
+            if f.chars:
+                sim.pending = False
+            if pos is not None and pos[0] not in placed:
+                placed[pos[0]] = (start, sim.page)
+            end = placed[pos[0]][1] if pos is not None else sim.page
+            has_mark = any(e.kind == "lrpb" for e in f.events)
+            source = "break" if broke else "rendered" if has_mark else "model"
+            rows.append(ParaPage(number, start, end, source, start + offset, end + offset))
+            opens_section = f.sect is not None
+            if opens_section:
+                section += 1
+        return rows, sim
+
+    rows, sim = simulate(False)
+    if marks:
+        last = max(
+            n for n, f in enumerate(facts, start=1) if any(e.kind == "lrpb" for e in f.events)
+        )
+        # Trust the marks when they are dense enough to be Word's layout, not a stray one:
+        # the model alone (resynced at each mark) must not need far more pages up to there.
+        if rows[last - 1].end_page <= MARKS_TRUST_RATIO * (marks + 1):
+            rows, sim = simulate(True)
     first = _Geometry.of(closing[0])
     line_h = normal_pt * LINE_FACTOR
     words_per_page = int(first.height_pt / line_h * _words_per_line(first.width_pt, normal_pt))

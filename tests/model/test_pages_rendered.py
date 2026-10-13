@@ -25,7 +25,7 @@ def _doc(rng: random.Random, tmp: Path, name: str) -> tuple[Path, list[int], int
     page = 1
     last = 0
     for k in range(rng.randint(20, 80)):
-        size = rng.choice([5, 40, 120, 400, 1500])
+        size = rng.choice([5, 40, 120, 250])  # Word marks every page it lays out
         where = rng.random()
         if k and where < 0.25:  # Word started a page at this paragraph
             page += 1
@@ -66,3 +66,10 @@ def test_page_count_is_marks_plus_one_when_marks_cover(tmp_path: Path) -> None:
     est = estimate_pages(Document(str(build(tmp_path, body))))
     # each paragraph is longer than the model's page, but Word put each on its own page
     assert [r.page for r in est.rows] == [1, 2, 3, 4, 5]
+
+
+def test_a_stray_mark_only_resyncs_the_model(tmp_path: Path) -> None:
+    body = "".join(para(words(300)) for _ in range(150)) + para(words(5), before=MARK)
+    est = estimate_pages(Document(str(build(tmp_path, body))))
+    assert est.rows[149].page > 10  # the model still pages the long text before it
+    assert est.rows[150].page == est.rows[149].end_page + 1
