@@ -2,8 +2,9 @@
 
 LibreOffice takes connections only when started with ``--accept``, so ``open`` starts a
 listening instance when none answers on the port; a window the writer opened without it
-cannot be attached to. ``uno`` ships with LibreOffice, not PyPI: it is imported on first
-use, from LibreOffice's program directory when this Python does not have it.
+cannot be attached to. ``uno`` ships with LibreOffice, not PyPI: it is imported on the
+first call that drives the app (never by ``probe``), from LibreOffice's program directory
+when this Python does not have it and can load it.
 
 Environment: ``DOC_CONTROL_LO_PORT`` (default 2002), ``DOC_CONTROL_LO_PROGRAM`` (the
 directory holding ``uno.py``), ``DOC_CONTROL_LO_ARGS`` (extra ``soffice`` arguments,
@@ -12,12 +13,16 @@ e.g. ``--headless``).
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import functools
 import importlib
+import importlib.util
 import os
+import re
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import sysconfig
@@ -34,42 +39,72 @@ _PROGRAM_DIRS = (
     "/opt/libreoffice/program",
 )
 START_TIMEOUT = 90.0
+_LIBPYTHON = re.compile(rb"libpython3\.(\d+)[a-z]*\.so")
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def _port() -> int:
-    return int(os.environ.get("DOC_CONTROL_LO_PORT", "2002"))
+    raw = os.environ.get("DOC_CONTROL_LO_PORT", "2002")
+    if not raw.isdigit():
+        raise LiveUnavailable(f"DOC_CONTROL_LO_PORT is not a port number: {raw!r}")
+    return int(raw)
 
 
 def _soffice() -> str | None:
     return shutil.which("soffice") or shutil.which("libreoffice")
 
 
-@functools.cache
-def _uno() -> Any:
-    """The ``uno`` module, or ``LiveUnavailable`` with why this Python cannot load it."""
-    reason = "LibreOffice is not installed"
-    try:
-        return importlib.import_module("uno")
-    except ImportError:
-        pass
-    # pyuno links libpython, which a uv or pyenv Python does not put on the loader path.
-    lib = Path(sysconfig.get_config_var("LIBDIR") or "") / (
-        sysconfig.get_config_var("INSTSONAME") or "-"
-    )
+def _bridge() -> str | None:
+    """Where ``uno`` can be imported from: None for this Python's own path, else
+    LibreOffice's program directory. Decided without importing anything: pyuno aborts the
+    whole process when loaded into a Python it was not built for."""
+    if "uno" in sys.modules or importlib.util.find_spec("uno") is not None:
+        return None
+    here = f"Python {sys.version_info.major}.{sys.version_info.minor}"
+    reason = "LibreOffice's Python bridge (uno.py) was not found"
     for program in (os.environ.get("DOC_CONTROL_LO_PROGRAM"), *_PROGRAM_DIRS):
         if not program or not Path(program, "uno.py").is_file():
             continue
         try:
-            if lib.is_file():
-                ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
-            os.environ.setdefault("URE_BOOTSTRAP", f"vnd.sun.star.pathname:{program}/fundamentalrc")
-            sys.path.append(program)
-            return importlib.import_module("uno")
-        except (ImportError, OSError) as err:
+            wants = _LIBPYTHON.search(Path(program, "libpyuno.so").read_bytes())
+        except OSError:
+            wants = None
+        if wants is None:
+            reason = f"{program} has no libpyuno.so naming the Python it needs"
+        elif int(wants[1]) != sys.version_info.minor:
+            reason = f"the bridge in {program} needs Python 3.{int(wants[1])}; this is {here}"
+        elif not _libpython().is_file():
+            reason = f"this {here} has no shared libpython for the bridge in {program}"
+        else:
+            return program
+    raise LiveUnavailable(f"LibreOffice cannot be driven from this Python: {reason}")
+
+
+def _libpython() -> Path:
+    # ponytail: only a libpython in LIBDIR counts (uv, pyenv, conda). A distro Python uses
+    # its own python3-uno package, found on the import path before this is asked.
+    return Path(sysconfig.get_config_var("LIBDIR") or "") / (
+        sysconfig.get_config_var("INSTSONAME") or "-"
+    )
+
+
+@functools.cache
+def _uno() -> Any:
+    """The ``uno`` module, or ``LiveUnavailable`` with why this Python cannot load it."""
+    program = _bridge()
+    if program is not None:
+        # pyuno links libpython, which a uv or pyenv Python does not put on the loader path.
+        ctypes.CDLL(str(_libpython()), mode=ctypes.RTLD_GLOBAL)
+        os.environ["URE_BOOTSTRAP"] = f"vnd.sun.star.pathname:{program}/fundamentalrc"
+        sys.path.append(program)
+    try:
+        return importlib.import_module("uno")
+    except (ImportError, OSError) as err:
+        if program is not None:
             sys.path.remove(program)
-            reason = f"{err} (Python {sys.version_info.major}.{sys.version_info.minor})"
-    raise LiveUnavailable(f"LibreOffice's Python bridge (uno) cannot be imported: {reason}")
+        raise LiveUnavailable(
+            f"LibreOffice's Python bridge (uno) cannot be imported: {err}"
+        ) from err
 
 
 def _from_uno(err: Exception) -> bool:
@@ -161,6 +196,7 @@ class LibreOffice:
         )
 
     def probe(self) -> dict[str, Any]:
+        """Never imports ``uno``: a file-engine ``capabilities`` call must not load the bridge."""
         out: dict[str, Any] = {
             "app": self.app,
             "available": _soffice() is not None,
@@ -169,23 +205,16 @@ class LibreOffice:
             "version": None,
         }
         try:
-            _uno()
-            try:
-                version = self._version()
-            except LiveUnavailable:
-                if not out["available"]:
-                    raise
-                # Not running, but ``open`` can start it.
-                return {**out, "reachable": True}
-            return {
-                **out,
-                "available": True,
-                "reachable": True,
-                "listening": True,
-                "version": version,
-            }
+            _bridge()
+            with contextlib.suppress(OSError), socket.create_connection(("localhost", _port()), 1):
+                out["listening"] = True
+            if self._desk is not None:
+                out["version"] = self._version()
         except LiveUnavailable as err:
             return {**out, "reason": str(err)}
+        if not (out["listening"] or out["available"]):
+            return {**out, "reason": "LibreOffice is not installed"}
+        return {**out, "reachable": True}  # not running yet: ``open`` starts it
 
     @_guard
     def _version(self) -> str:

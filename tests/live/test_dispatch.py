@@ -113,4 +113,12 @@ def test_a_broken_app_is_reported_not_raised(doc: Path) -> None:
 
     with using(Broken()):
         apps = api.run("live.status", {}).result["apps"]
-    assert apps == [{"app": "fake", "reachable": False, "reason": "no such program"}]
+    assert apps == [
+        {
+            "app": "fake",
+            "available": False,
+            "reachable": False,
+            "version": None,
+            "reason": "no such program",
+        }
+    ]

@@ -44,7 +44,15 @@ def apps() -> list[dict[str, Any]]:
         try:
             found.append(a.probe())
         except Exception as err:  # a broken install must not take `capabilities` down
-            found.append({"app": a.app, "reachable": False, "reason": str(err)})
+            found.append(
+                {
+                    "app": a.app,
+                    "available": False,
+                    "reachable": False,
+                    "version": None,
+                    "reason": str(err),
+                }
+            )
     return found
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -85,3 +86,27 @@ def test_no_instance_and_no_soffice_is_engine_unavailable(
         with pytest.raises(DocControlError) as err:
             _run("live.open", {"doc": str(doc)})
     assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
+
+
+def test_probe_never_loads_the_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """pyuno aborts the process in a Python it was not built for: the probe only looks."""
+
+    def loaded() -> None:
+        raise AssertionError("probe imported uno")
+
+    monkeypatch.setattr(lo_uno, "_uno", loaded)
+    with using(cast(LiveAdapter, LibreOffice())):
+        assert api.run("capabilities", {}).result["live"]["apps"][0]["app"] == "libreoffice"
+
+    # A bridge built for another Python is a reason, found without importing it.
+    (tmp_path / "uno.py").write_text("raise SystemExit('imported')\n")
+    (tmp_path / "libpyuno.so").write_bytes(b"\0libpython3.99.so.1.0\0")
+    monkeypatch.setenv("DOC_CONTROL_LO_PROGRAM", str(tmp_path))
+    monkeypatch.setattr(lo_uno, "_PROGRAM_DIRS", ())
+    monkeypatch.setattr(lo_uno.importlib.util, "find_spec", lambda name: None)
+    monkeypatch.delitem(sys.modules, "uno", raising=False)
+    probe = LibreOffice().probe()
+    assert probe["reachable"] is False and "needs Python 3.99" in probe["reason"]
+    monkeypatch.setenv("DOC_CONTROL_LO_PORT", "soon")
+    monkeypatch.setattr(lo_uno, "_bridge", lambda: None)
+    assert "not a port number" in LibreOffice().probe()["reason"]
