@@ -1,0 +1,17 @@
+{
+  "recipe": "empty-paragraph-runs",
+  "version": 1,
+  "description": "Collapse each run of empty paragraphs to one (delete an empty paragraph that follows another)",
+  "match": {
+    "where": {
+      "empty": true,
+      "prev": [{"empty": true}]
+    }
+  },
+  "propose": [
+    {
+      "op": "para.delete",
+      "at": "$para"
+    }
+  ]
+}

@@ -266,7 +266,7 @@ A non-dry-run response adds to `result` `"op_id": "h-000123"`, `"backup": ".doc-
              {"op": "format.apply", "at": "$para", "align": "center"}],
  "repeat_until_stable": true, "max_passes": 4}
 ```
-Allowed keys only; no code, no file paths, no network; `$match`, `$para`, `$1…$9` are the only substitutions. Bundled recipes may be Python modules in `doc_control/recipes/bundled/` exposing `propose(doc, params) -> Batch` and use only the public API.
+Allowed keys only; no code, no file paths, no network; `$match`, `$para`, `$1…$9` are the only substitutions. Context (T38): `match.where` admits a paragraph by its own `style` / `not_style` (ids or names, any case), `heading` and `empty`, and by `prev` / `next` neighbours (up to 3 each, `prev[0]` adjacent; each `{missing | empty, heading, style, not_style, text (regex)}`; `skip_empty` skips empty neighbours). Empty paragraphs are scanned only with `where.empty: true`; without `find` the whole paragraph is `$match`. Example: `{"match": {"where": {"prev": [{"empty": true}, {"empty": true}, {"empty": false}]}}, "propose": [{"op": "style.apply", "at": "$para", "style": "AfterPause"}]}`. Bundled recipes may be Python modules in `doc_control/recipes/bundled/` exposing `propose(doc, params) -> Batch` and use only the public API.
 
 #### Style set (JSON, user side; source of truth)
 

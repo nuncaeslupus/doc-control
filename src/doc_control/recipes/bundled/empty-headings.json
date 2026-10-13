@@ -1,0 +1,17 @@
+{
+  "recipe": "empty-headings",
+  "version": 1,
+  "description": "Delete empty paragraphs that carry a heading style (they show up as blank entries in the navigation pane and table of contents)",
+  "match": {
+    "where": {
+      "empty": true,
+      "heading": true
+    }
+  },
+  "propose": [
+    {
+      "op": "para.delete",
+      "at": "$para"
+    }
+  ]
+}

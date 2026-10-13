@@ -15,10 +15,11 @@ from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.model.annotations import read_revisions
 from doc_control.model.document import Document
 from doc_control.model.layout import centred
 from doc_control.ops.tracked import apply_edits, edit_from_dict
-from doc_control.recipes.engine import propose
+from doc_control.recipes.engine import Context, propose
 from doc_control.recipes.schema import validate_recipe
 from doc_control.recipes.store import MAX_RECIPE_BYTES, catalogue
 from doc_control.registry import operation
@@ -114,6 +115,21 @@ def _refusal(path: Path, ops: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _context(doc: Document) -> dict[int, Context]:
+    """Each paragraph's style id and name (lower-case) and whether it is a heading."""
+    out: dict[int, Context] = {}
+    for para in doc.index.paragraphs:
+        style_id = doc.style_id(para)
+        names: set[str] = set()
+        if style_id:
+            names.add(style_id.lower())
+            style = doc.styles.get(style_id)
+            if style is not None:
+                names.add(style.name.lower())
+        out[para.number] = Context(frozenset(names), doc.heading_level(para) is not None)
+    return out
+
+
 @operation(
     "recipe.run",
     "write",
@@ -141,8 +157,18 @@ def recipe_run(request: dict[str, Any]) -> Reply:
             )
         recipe = found[1]
     doc = Document(Path(request["doc"]).as_posix())
-    paragraphs = [(p.address, p.text) for p in doc.index.paragraphs if p.text]
-    proposal = propose(recipe, paragraphs)
+    if "where" in recipe["match"]:
+        # An empty paragraph whose deletion is already tracked is gone for the reader.
+        gone = {r.at for r in read_revisions(doc) if r.type == "mark_delete"}
+        paragraphs = [
+            (p.address, p.text)
+            for p in doc.index.paragraphs
+            if p.text or str(p.address) not in gone
+        ]
+        proposal = propose(recipe, paragraphs, context=_context(doc))
+    else:
+        paragraphs = [(p.address, p.text) for p in doc.index.paragraphs if p.text]
+        proposal = propose(recipe, paragraphs)
     ops, skipped = _prune(doc, Path(request["doc"]), proposal.ops)
     warnings = [*proposal.warnings, *(f"SKIPPED: {s['at']} {s['reason']}" for s in skipped)]
     result: dict[str, Any] = {
