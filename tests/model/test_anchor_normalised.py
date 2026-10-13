@@ -70,7 +70,7 @@ def test_exact_quotes_match_on_normalised_text(tmp_path: Path) -> None:
             missed += 1
             continue
         m = AT.fullmatch(found["at"])
-        assert m is not None and found["match"] == "exact"
+        assert m is not None and found["match"] == "normalized"
         para, lo, hi = int(m[1]), int(m[2]), int(m[3])
         if para != n or normalized_text(text[lo:hi]) != quote:
             print(para, n, repr(normalized_text(text[lo:hi])[:60]), repr(quote[:60]))

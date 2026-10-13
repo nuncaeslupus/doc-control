@@ -7,7 +7,8 @@ where it is now, how well it matches, or that it cannot tell.
 
 Matching
     Exact first: every place the quote occurs verbatim is a candidate; when there is none,
-    every place it occurs in the normalised text (``text.normalized``: soft hyphens and
+    every place it occurs in the normalised text (match kind ``normalized``: the range's
+    own text normalises to the quote but is not equal to it) (``text.normalized``: soft hyphens and
     zero-width characters removed, whitespace collapsed, NFC), mapped back to the
     original offsets, so a quote copied from normalised text is found across a soft
     hyphen, a tab or a double space. Only when no exact
@@ -77,7 +78,7 @@ _WORD = re.compile(r"\w+")
 _GRAM = 5  # characters in a run used to shortlist paragraphs
 _GRAM_SHARE = 0.25  # share of the quote's runs a shortlisted paragraph must hold
 
-MatchKind = Literal["exact", "fuzzy"]
+MatchKind = Literal["exact", "normalized", "fuzzy"]
 
 
 @dataclass(frozen=True)
@@ -482,7 +483,7 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
         for para in index.paragraphs:
             for start, end in _normalised_spans(para.text, plain):
                 taken.setdefault(para.number, []).append((start, end))
-                found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
+                found.append(_candidate(index, anchor, para, start, end, 1.0, "normalized"))
     short = len(_WORD.findall(quote)) <= SHORT_QUOTE_WORDS
 
     def accepted_of(pool: list[Candidate]) -> list[Candidate]:

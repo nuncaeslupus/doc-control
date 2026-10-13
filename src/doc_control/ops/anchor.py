@@ -81,8 +81,8 @@ def anchor_create(request: dict[str, Any]) -> Reply:
 @operation(
     "anchor.resolve",
     "read",
-    "Find an anchor's passage now: its range, score and match kind (exact or fuzzy), or the"
-    " ambiguous candidates. mode exact never returns a fuzzy match.",
+    "Find an anchor's passage now: its range, score and match kind (exact, normalized or"
+    " fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match.",
     {
         "type": "object",
         "properties": {
