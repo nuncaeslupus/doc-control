@@ -86,7 +86,9 @@ CASES: list[tuple[str, dict[str, Any]]] = [
         {"page_break_before": False},
     ),
     (p("", "<w:sectPr><w:pgSz/></w:sectPr>"), {"empty": True, "page_break_before": True}),
-    (p("After section"), {"page_break_before": True, "blank_before": 1}),
+    # A sectPr's type is how the section it closes starts: this paragraph's section is
+    # closed by the continuous sectPr below, so it starts no page (T48).
+    (p("After section"), {"page_break_before": False, "blank_before": 1}),
     (p("", '<w:sectPr><w:type w:val="continuous"/></w:sectPr>'), {"empty": True}),
     (p("After continuous"), {"page_break_before": False, "blank_before": 1}),
     (BREAK_ONLY, {"empty": True, "blank_before": 0, "page_break_before": True}),
@@ -94,7 +96,9 @@ CASES: list[tuple[str, dict[str, Any]]] = [
     (TRAILING_BREAK, {"empty": False, "page_break_before": False}),
     (p("Chapter Three", style("Chapter")), {"page_break_before": True, "blank_before": 0}),
     (p("", '<w:sectPr><w:type w:val="nextColumn"/></w:sectPr>'), {"empty": True}),
-    (p("After column"), {"page_break_before": False, "blank_before": 1}),
+    # The last section here has no closing sectPr (no body one): Word's default start, a
+    # new page (T48). The nextColumn type above is how the section it closes starts.
+    (p("After column"), {"page_break_before": True, "blank_before": 1}),
     (IMAGE_ONLY, {"empty": False, "blank_before": 0}),
     (p(""), {"empty": True, "blank_before": 0}),
     (IMAGE_ONLY, {"empty": False, "blank_before": 1}),

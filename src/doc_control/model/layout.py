@@ -24,8 +24,9 @@ source of truth.
     The paragraph starts a page: ``w:pageBreakBefore`` (direct wins over the style
     chain), a page break (``w:br w:type="page"``) before any visible content, the
     previous paragraph (same cell or body level) ending in a page break or being only
-    one, or a section break of type nextPage, oddPage, evenPage or none (not
-    continuous or nextColumn) ending the previous paragraph.
+    one, or a section break ending the previous paragraph when the section it opens
+    starts a page: that section's own closing ``w:sectPr`` (the next one, else the
+    body's) has type nextPage, oddPage, evenPage or none (not continuous or nextColumn).
 
 Alignment is resolved as direct, then style chain, then ``w:docDefaults``. Not covered:
 alignment from a table style or from numbering levels; ``w:lastRenderedPageBreak``.
@@ -33,6 +34,7 @@ alignment from a table style or from numbering levels; ``w:lastRenderedPageBreak
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 
@@ -117,12 +119,60 @@ def centred(doc: Document, para: Paragraph) -> bool:
     return alignment == "center"
 
 
-def _section_break_before(prev: ET.Element) -> bool:
-    sect = prev.find(f"{W}pPr/{W}sectPr")
-    if sect is None:
+def _section_break_before(doc: Document, prev: Paragraph) -> bool:
+    """Whether the section that starts after ``prev`` (which closes one) starts a page.
+
+    A ``w:sectPr`` describes the section it closes, ``w:type`` included: how that
+    section starts. So the section after ``prev`` starts as its own closer says: the next
+    paragraph-level ``w:sectPr``, else the body's (``nextPage`` when it has no type or
+    there is no closer at all, Word's default).
+    """
+    if _elem(doc, prev).find(f"{W}pPr/{W}sectPr") is None:
         return False
-    kind = sect.find(W + "type")
-    return (kind.get(W + "val", "nextPage") if kind is not None else "nextPage") in _PAGE_SECTIONS
+    # prev.number is 1-based, so it indexes the paragraph after prev in the 0-based list.
+    return _closer_types(doc)[prev.number] in _PAGE_SECTIONS
+
+
+def _closer_types(doc: Document) -> list[str]:
+    """Per paragraph index (0-based), the start type of that paragraph's section."""
+
+    def build() -> list[str]:
+        out = ["nextPage"] * len(doc.index.paragraphs)
+        pending: list[int] = []
+        for i, para in enumerate(doc.index.paragraphs):
+            pending.append(i)
+            sect = _elem(doc, para).find(f"{W}pPr/{W}sectPr")
+            if sect is not None:
+                kind = sect.find(W + "type")
+                value = kind.get(W + "val", "nextPage") if kind is not None else "nextPage"
+                for k in pending:
+                    out[k] = value
+                pending = []
+        body = _body_sect_type(doc)
+        for k in pending:
+            out[k] = body
+        return out
+
+    return doc.memo("section-types", build)
+
+
+_SECT_OPEN = re.compile(rb"<(?:[\w.-]+:)?sectPr[\s/>]")
+_SECT_CHANGE = re.compile(rb"<((?:[\w.-]+:)?)sectPrChange\b.*?</\1sectPrChange>", re.S)
+_TYPE = re.compile(rb'<(?:[\w.-]+:)?type\b[^>]*?\bval\s*=\s*["\']([^"\']*)["\']')
+
+
+def _body_sect_type(doc: Document) -> str:
+    """The start type of the last section, from the body-level ``w:sectPr``, read by
+    pattern (it may carry ``r:id`` references whose namespace a fragment parse lacks);
+    a tracked ``w:sectPrChange`` inside it holds the old properties and is skipped."""
+    data = doc.index.spans.data
+    after = doc.index.spans.paragraphs[-1].end if doc.index.spans.paragraphs else 0
+    opening = _SECT_OPEN.search(data, after)
+    if opening is None:
+        return "nextPage"
+    fragment = _SECT_CHANGE.sub(b"", data[opening.start() :])
+    found = _TYPE.search(fragment)
+    return found.group(1).decode("ascii", "replace") if found else "nextPage"
 
 
 def page_break_before(doc: Document, para: Paragraph) -> bool:
@@ -140,7 +190,7 @@ def page_break_before(doc: Document, para: Paragraph) -> bool:
     if prev is None:
         return False
     prev_elem = _elem(doc, prev)
-    if _section_break_before(prev_elem):
+    if _section_break_before(doc, prev):
         return True
     last = None
     for item in _events(prev_elem):
