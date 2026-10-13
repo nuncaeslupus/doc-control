@@ -20,6 +20,7 @@ from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import limit as list_limit
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR
@@ -362,7 +363,7 @@ def history_list(request: dict[str, Any]) -> Reply:
             for e in rows
             if (history.op_number(e["op_id"]) or 0) < (history.op_number(cursor) or 0)
         ]
-    limit = request.get("limit", DEFAULT_LIMIT)
+    limit = list_limit(request, DEFAULT_LIMIT)
     page = rows[:limit]
     result: dict[str, Any] = {
         "entries": [_summary(e, undone) for e in page],
@@ -394,7 +395,7 @@ def history_list(request: dict[str, Any]) -> Reply:
 )
 def history_search(request: dict[str, Any]) -> Reply:
     log = _log(request)
-    limit = request.get("limit", DEFAULT_LIMIT)
+    limit = list_limit(request, DEFAULT_LIMIT)
     hits: list[dict[str, Any]] = []
     total = 0
     for entry in reversed(log.entries):

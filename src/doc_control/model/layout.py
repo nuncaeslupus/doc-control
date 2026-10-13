@@ -74,7 +74,7 @@ def _has_image(elem: ET.Element) -> bool:
 
 
 def _elem(doc: Document, para: Paragraph) -> ET.Element:
-    return doc.index.spans.parse_paragraph(para.span_index)
+    return doc.paragraph_element(para)
 
 
 def is_empty(doc: Document, para: Paragraph) -> bool:

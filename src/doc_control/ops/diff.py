@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_control.envelope import Reply, success
+from doc_control.inprocess import budget
 from doc_control.model.align import UNCHANGED, Alignment, Change, align
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex
@@ -159,7 +160,7 @@ def diff(request: dict[str, Any]) -> Reply:
         "address_map": {},
     }
     placeholder = make_cursor("diff", old, scoped, 10**12)
-    room = RESPONSE_BUDGET - size(
+    room = budget(RESPONSE_BUDGET) - size(
         success("diff", result, doc=old.envelope_doc(), next_cursor=placeholder)
     )
     taken: list[dict[str, Any]] = []

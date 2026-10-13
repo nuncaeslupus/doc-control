@@ -25,6 +25,8 @@ from typing import Any
 
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import budget
+from doc_control.inprocess import limit as list_limit
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex, Paragraph
 from doc_control.model.normalized import NormalizedText, encode_runs, normalize
@@ -111,10 +113,10 @@ def _page(op: str, doc: Document, request: dict[str, Any], rows: Sequence[Row]) 
     row, skip = divmod(read_cursor(op, doc, request), _STRIDE)
     if row > len(rows) or (row == len(rows) and rows):
         raise _invalid("cursor is past the end", path="$.cursor")
-    limit = request.get("limit", MAX_LIMIT)
+    limit = list_limit(request, MAX_LIMIT)
     head: dict[str, Any] = {"total": len(rows), "paragraphs": []}
     placeholder = make_cursor(op, doc, request, 10**12)
-    room = RESPONSE_BUDGET - size(
+    room = budget(RESPONSE_BUDGET) - size(
         success(op, head, doc=doc.envelope_doc(), next_cursor=placeholder)
     )
     taken: list[dict[str, Any]] = []

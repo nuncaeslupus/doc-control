@@ -16,6 +16,7 @@ from doc_control.model.normalized import (
     decode_runs,
     encode_runs,
     normalize,
+    normalized_text,
 )
 
 SEEDS = range(3000)
@@ -242,3 +243,31 @@ def test_runs_that_never_stabilise_under_nfc_stay_linear() -> None:
     started = time.perf_counter()
     normalize("\u0f71\u0f72" * 20000)
     assert time.perf_counter() - started < 1.0
+
+
+def test_normalized_text_equals_normalize_text() -> None:
+    """The bulk shortcut gives exactly ``normalize(...).text`` on mixed, tricky input."""
+    pieces = [
+        "a",
+        "é",
+        "e\u0301",
+        "\u00ad",
+        "\u200b",
+        " ",
+        "\t",
+        "\u00a0",
+        "Å",
+        "\u212b",
+        "가",
+        "가",
+        "ñ",
+        "n\u0303",
+        "\ufeff",
+        "\n",
+        "x",
+        "\u0301",
+    ]
+    rng = random.Random(7)
+    for _ in range(3000):
+        text = "".join(rng.choice(pieces) for _ in range(rng.randint(0, 12)))
+        assert normalized_text(text) == normalize(text).text, repr(text)
