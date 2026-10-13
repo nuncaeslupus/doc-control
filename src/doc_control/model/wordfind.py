@@ -5,7 +5,9 @@ Soft and no-break hyphens
     16.0.17932 with ``Range.Find``, no wildcards):
 
     * an optional hyphen (``w:softHyphen``) is found by ``^-``, and a search skips it: the
-      word typed without it finds the word that holds it; ``^u173`` does not find it;
+      word typed without it finds the word that holds it; ``^u173`` does not find it,
+      and it is skipped next to a paragraph mark too (``alpha^pbeta`` finds the mark after
+      ``alpha`` and an optional hyphen);
     * a literal U+00AD in the text is found by ``^u173`` only, and is not skipped;
     * a no-break hyphen (``w:noBreakHyphen``) is found by ``^~`` and by a plain ``-``;
       ``^u8209`` does not find it;

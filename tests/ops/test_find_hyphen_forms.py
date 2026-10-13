@@ -131,3 +131,10 @@ def test_a_paragraph_that_is_only_optional_hyphens_is_empty(tmp_path: Path) -> N
     path = make_docx(tmp_path / "only.docx", "one", TYPED_SOFT.join(("", "")), "two")
     whole, lazy = phrases(path)
     assert whole == lazy == [("one", "one"), (None, None), ("two", "two")]
+
+
+def test_an_optional_hyphen_beside_a_mark_is_left_out(tmp_path: Path) -> None:
+    # Word skips it there too: "alpha^pdup" finds the mark after "alpha" and the hyphen.
+    path = make_docx(tmp_path / "edge.docx", f"alpha{TYPED_SOFT}", "dup", "dup")
+    for rows in phrases(path):
+        assert rows[1] == ("alpha\rdup", "alpha^pdup")
