@@ -122,6 +122,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T44 | Writer safety: any-editor lock files, `term.rename` skipped locations, caller-chosen backup store | safety | M | T9, T10, T17, T39 | `writer_safety_failures == 0` | `test_locks_skips_and_store` in `tests/safety/test_writer_safety.py` |
 | T45 | API polish: unsplit `text.normalized` paragraphs, `find` total, `help` for batch kinds, documented nulls | api | S | T8, T32 | `api_polish_failures == 0` | `test_consumer_polish` in `tests/test_api_polish.py` |
 | T46 | Performance gate in CI on the 100k-word document through `api.open` | repo | M | T39 | `perf_budget_breaches == 0` | `test_perf_budgets_100k` in `tests/bench/test_perf_gate.py` |
+| T47 | Cold bulk read: one shared read-only parse per paragraph (C parser), faster normalised text | model | S | T39, T46 | `cold_bulk_read_regressions == 0` | `test_cold_bulk_read_same_rows_within_budget` in `tests/bench/test_cold_read.py` |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 

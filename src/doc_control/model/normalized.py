@@ -33,6 +33,7 @@ nearest boundary before it, so both maps are monotonic and
 from __future__ import annotations
 
 import bisect
+import functools
 import re
 import unicodedata
 from collections.abc import Sequence
@@ -103,7 +104,7 @@ def normalized_text(original: str) -> str:
     already NFC and has no combining marks, so no chunk can compose; else the full path.
     """
     kept = original.translate(_DROP_IGNORABLE)
-    if (not kept.isascii() and _COMBINING.search(kept)) or not unicodedata.is_normalized(
+    if (not kept.isascii() and _combining().search(kept)) or not unicodedata.is_normalized(
         "NFC", kept
     ):
         return normalize(original).text
@@ -126,7 +127,14 @@ def _combining_class() -> str:
 
 
 _DROP_IGNORABLE = {ord(ch): None for ch in IGNORABLE}
-_COMBINING = re.compile(f"[{_combining_class()}]")
+
+
+@functools.cache
+def _combining() -> re.Pattern[str]:
+    """Built on first use (about 50 ms), not at import."""
+    return re.compile(f"[{_combining_class()}]")
+
+
 _SPACES = re.compile(r"\s+")  # str's whitespace, as ``str.isspace`` sees it
 
 
