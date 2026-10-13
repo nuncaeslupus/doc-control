@@ -3,16 +3,24 @@
 ``live.open`` attaches to the window holding the document, or opens it; the others act
 on a document a live app already holds. Closing never drops the writer's unsaved work:
 a changed document closes only with ``save`` or ``discard``.
+
+``live.select`` puts the app's selection on a paragraph, named by address or by a find
+phrase from ``locate``; ``paragraphs_after`` moves that many paragraphs on from it (as in
+``locate``'s ``context``).
 """
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from itertools import accumulate
 from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable
+from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
+from doc_control.model.address import Address, fingerprint, parse_address
 from doc_control.registry import operation
 from doc_control.safety.lock import lock_info
 
@@ -111,6 +119,85 @@ def close(request: dict[str, Any]) -> dict[str, Any]:
         )
     guarded(adapter.close, path)
     return {"closed": True, "saved": save_first}
+
+
+def _found(texts: list[str], phrase: str, across: str | None) -> int:
+    """The paragraph (from 0) a find phrase names: its one match, under ``locate``'s rules."""
+    folded = [text.casefold() for text in texts]
+    joined, needle = "\r".join(folded) + "\r", phrase.casefold()
+    at = joined.find(needle)
+    if at < 0:
+        raise DocControlError(ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}")
+    if joined.find(needle, at + 1) >= 0:
+        raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
+    starts = list(accumulate((len(text) + 1 for text in folded), initial=0))
+    # A phrase that opens with the paragraph before (or with its mark) names the next one.
+    return bisect_right(starts, at) - 1 + (across in ("previous", "both") or needle[0] == "\r")
+
+
+@operation(
+    "live.select",
+    "write",
+    "Select a paragraph in the app's window, by address (`at`) or by a `locate` find "
+    "phrase, and return its text and address.",
+    _schema(
+        at={"type": "string", "description": "Paragraph address, e.g. `p142#a7b2a7b2`."},
+        find_phrase={
+            "type": "string",
+            "minLength": 1,
+            "description": "A phrase that occurs once in the document (`\\r` for a paragraph "
+            "mark), as `locate` gives it.",
+        },
+        find_phrase_across={
+            "enum": ["previous", "next", "both"],
+            "description": "`locate`'s `find_phrase_across`, for a phrase spanning a mark.",
+        },
+        paragraphs_after={
+            "type": "integer",
+            "minimum": 0,
+            "description": "Select the paragraph this many after the one named.",
+        },
+    ),
+)
+def select(request: dict[str, Any]) -> dict[str, Any]:
+    adapter, path = held(request)
+    if ("at" in request) == ("find_phrase" in request):
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "pass at or find_phrase, one of them")
+    texts = guarded(adapter.paragraphs, path)
+    if "at" in request:
+        address = parse_address(request["at"])
+        n = address.number - 1
+        if n >= len(texts) or fingerprint(guarded(adapter.text, path, Span(n, n))) != address.fp:
+            raise DocControlError(
+                ErrorCode.STALE_ADDRESS,
+                f"{address} does not match the open document",
+                address=str(address),
+            )
+    else:
+        n = _found(texts, request["find_phrase"], request.get("find_phrase_across"))
+    n += request.get("paragraphs_after", 0)
+    if n >= len(texts):
+        raise DocControlError(
+            ErrorCode.ANCHOR_NOT_FOUND, f"the open document has no paragraph {n + 1}"
+        )
+    text = guarded(adapter.select, path, Span(n, n))
+    return {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
+
+
+@operation(
+    "live.selection",
+    "read",
+    "The text selected in the app's window, and the paragraph the cursor is in.",
+    _schema(),
+)
+def selection(request: dict[str, Any]) -> dict[str, Any]:
+    adapter, path = held(request)
+    chosen, n = guarded(adapter.selection, path)
+    text = guarded(adapter.text, path, Span(n, n))
+    return {
+        "text": chosen,
+        "paragraph": {"at": str(Address(n + 1, fingerprint(text))), "text": text},
+    }
 
 
 def live_batch(request: dict[str, Any]) -> dict[str, Any]:

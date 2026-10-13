@@ -9,6 +9,11 @@ when this Python does not have it and can load it.
 Environment: ``DOC_CONTROL_LO_PORT`` (default 2002), ``DOC_CONTROL_LO_PROGRAM`` (the
 directory holding ``uno.py``), ``DOC_CONTROL_LO_ARGS`` (extra ``soffice`` arguments,
 e.g. ``--headless``).
+
+Reading: walking a document paragraph by paragraph costs LibreOffice about 30 ms each
+(a minute for a novel), so the paragraph texts come from one whole-text read and a
+paragraph is reached through LibreOffice's own search; only the paragraphs a call acts
+on are walked, to read their text without tracked deletions.
 """
 
 from __future__ import annotations
@@ -27,11 +32,11 @@ import subprocess
 import sys
 import sysconfig
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TypeVar
 
-from doc_control.live.protocol import LiveUnavailable
+from doc_control.live.protocol import LiveUnavailable, Span
 
 _PROGRAM_DIRS = (
     "/usr/lib/libreoffice/program",
@@ -40,6 +45,7 @@ _PROGRAM_DIRS = (
 )
 START_TIMEOUT = 90.0
 _LIBPYTHON = re.compile(rb"libpython3\.(\d+)[a-z]*\.so")
+NEEDLE = 80  # characters of a paragraph given to LibreOffice's search to reach it
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 
@@ -129,6 +135,60 @@ def _guard(method: _F) -> _F:
             ) from err
 
     return run  # type: ignore[return-value]
+
+
+def _walk(text: Any) -> Iterator[Any]:
+    """Paragraphs of a text in file-engine order: table cells in place, row by row."""
+    items = text.createEnumeration()
+    while items.hasMoreElements():
+        item = items.nextElement()
+        if item.supportsService("com.sun.star.text.TextTable"):
+            for name in item.getCellNames():
+                yield from _walk(item.getCellByName(name))
+        else:
+            yield item
+
+
+def _runs(paragraph: Any) -> Iterator[Any]:
+    """The portions holding the paragraph's visible text: tracked deletions left out."""
+    deleted = False
+    portions = paragraph.createEnumeration()
+    while portions.hasMoreElements():
+        portion = portions.nextElement()
+        kind = portion.TextPortionType
+        if kind == "Redline":
+            if portion.RedlineType == "Delete":
+                deleted = portion.IsStart
+        elif kind in ("Text", "TextField") and not deleted:
+            yield portion
+
+
+def _visible(paragraph: Any) -> str:
+    return "".join(run.getString() for run in _runs(paragraph))
+
+
+def _point(paragraph: Any, offset: int | None) -> Any:
+    """A collapsed cursor at ``offset`` of the visible text (None: the paragraph's end)."""
+    text = paragraph.getText()
+    if offset is None:
+        return text.createTextCursorByRange(paragraph.getEnd())
+    seen = 0
+    for run in _runs(paragraph):
+        piece = run.getString()
+        if offset <= seen + len(piece):
+            cursor = text.createTextCursorByRange(run.getStart())
+            # The cursor counts UTF-16 units.
+            cursor.goRight(len(piece[: offset - seen].encode("utf-16-le")) // 2, False)
+            return cursor
+        seen += len(piece)
+    return text.createTextCursorByRange(paragraph.getEnd())
+
+
+def _around(cursor: Any) -> Any:
+    """The whole paragraph the cursor is in."""
+    cursor.gotoStartOfParagraph(False)
+    cursor.gotoEndOfParagraph(True)
+    return cursor.createEnumeration().nextElement()
 
 
 class LibreOffice:
@@ -259,6 +319,94 @@ class LibreOffice:
     @_guard
     def dirty(self, path: Path) -> bool:
         return bool(self._doc(path).isModified())
+
+    # -- reading -----------------------------------------------------------------
+
+    def _texts(self, doc: Any) -> list[str]:
+        """Paragraph texts, for finding a paragraph: tracked deletions and note marks are
+        still in them (``text`` reads a paragraph without)."""
+        search = doc.createSearchDescriptor()
+        search.SearchRegularExpression, search.SearchString = True, "\\n"
+        if doc.findFirst(search) is None:
+            return str(doc.Text.getString()).replace("\r\n", "\n").split("\n")
+        # ponytail: a line break reads like a paragraph mark in the whole text, so a
+        # document with one is walked (30 ms a paragraph); split on the marks' positions
+        # if long documents with line breaks matter.
+        return [str(paragraph.getString()) for paragraph in _walk(doc.Text)]
+
+    def _paragraph(self, doc: Any, texts: list[str], n: int) -> Any:
+        """Paragraph ``n`` (from 0): the right one of the search hits for its first words."""
+        needle = texts[n][:NEEDLE]
+        search = doc.createSearchDescriptor()
+        search.SearchCaseSensitive = True
+        if needle:
+            search.SearchString = needle
+            earlier = "\n".join(texts[:n]).count(needle)
+            total = earlier + "\n".join(texts[n:]).count(needle)
+        else:
+            search.SearchRegularExpression, search.SearchString = True, "^$"
+            earlier, total = texts[:n].count(""), texts.count("")
+        hits = doc.findAll(search)
+        if hits.getCount() == total:
+            hit = hits.getByIndex(earlier)
+            cursor = hit.getText().createTextCursorByRange(hit.getStart())
+            if cursor.isStartOfParagraph():
+                paragraph = _around(cursor)
+                if paragraph.getString() == texts[n]:
+                    return paragraph
+        # ponytail: the search and the texts disagree (a field, a note mark, a hit outside
+        # the main text): walk to it, 5 ms a paragraph.
+        return next(p for i, p in enumerate(_walk(doc.Text)) if i == n)
+
+    def _range(self, doc: Any, span: Span) -> tuple[Any, str]:
+        """A cursor over ``span`` and the visible text it covers."""
+        texts = self._texts(doc)
+        if not 0 <= span.start <= span.end < len(texts):
+            raise LiveUnavailable(f"the open document has no paragraph {span.end + 1}")
+        found = [self._paragraph(doc, texts, n) for n in range(span.start, span.end + 1)]
+        parts = [_visible(paragraph) for paragraph in found]
+        if span.b is not None:
+            parts[-1] = parts[-1][: span.b]
+        parts[0] = parts[0][span.a :]
+        cursor = _point(found[0], span.a)
+        cursor.gotoRange(_point(found[-1], span.b), True)
+        return cursor, "\n".join(parts)
+
+    @_guard
+    def paragraphs(self, path: Path) -> list[str]:
+        return self._texts(self._doc(path))
+
+    @_guard
+    def text(self, path: Path, span: Span) -> str:
+        return self._range(self._doc(path), span)[1]
+
+    @_guard
+    def select(self, path: Path, span: Span) -> str:
+        doc = self._doc(path)
+        cursor, text = self._range(doc, span)
+        doc.CurrentController.select(cursor)
+        return text
+
+    @_guard
+    def selection(self, path: Path) -> tuple[str, int]:
+        doc = self._doc(path)
+        chosen = doc.CurrentController.getSelection().getByIndex(0)
+        story = chosen.getText()
+        paragraph = _around(story.createTextCursorByRange(chosen.getEnd()))
+        own = paragraph.getString()
+        at = [n for n, text in enumerate(self._texts(doc)) if text == own]
+        if len(at) != 1:
+            # ponytail: a repeated paragraph is told apart by walking to it.
+            at = [
+                n
+                for n, other in enumerate(_walk(doc.Text))
+                if other.getText() == story and story.compareRegionStarts(other, paragraph) == 0
+            ]
+        shown = story.createTextCursorByRange(chosen).createEnumeration()
+        parts = []
+        while shown.hasMoreElements():
+            parts.append(_visible(shown.nextElement()))
+        return "\n".join(parts), at[0]
 
     @_guard
     def save(self, path: Path) -> None:
