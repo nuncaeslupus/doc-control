@@ -89,12 +89,13 @@ def build(out: Path) -> None:
     expected["edits"] = {"original": original, "accepted": _texts(accepted)}
     accepted.unlink()
 
-    commented = out / "comments.docx"
+    # Not "comments": that is a corpus kind, whose document this would overwrite.
+    commented = out / "commented.docx"
     commented.write_bytes(generate("novel", 3))
     with api.open(commented, store=store) as doc:
         doc.run("batch", {"ops": _comments(commented), "author": AUTHOR})
         threads = doc.run("comments.list")["comments"]
-    expected["comments"] = {"count": len(threads), "texts": [t["text"] for t in threads]}
+    expected["commented"] = {"count": len(threads), "texts": [t["text"] for t in threads]}
     shutil.rmtree(store)
     (out / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1))
     print(f"Wrote {len(KINDS) + 2} documents to {out}. Now follow docs/real-word-check.md.")
@@ -127,9 +128,9 @@ def verify(out: Path) -> int:
                 left = doc.run("revisions.list")["revisions"]
             if left:
                 problems.append(f"{name}: {len(left)} tracked changes left; was {step} done?")
-    replied = out / "comments-word.docx"
+    replied = out / "commented-word.docx"
     if not replied.exists():
-        problems.append("comments-word.docx: missing (save it from Word as described)")
+        problems.append("commented-word.docx: missing (save it from Word as described)")
     else:
         with api.open(replied) as doc:
             threads = doc.run("comments.list")["comments"]
@@ -137,15 +138,15 @@ def verify(out: Path) -> int:
         first = next((t for t in roots.values() if t["text"].startswith("First")), None)
         second = next((t for t in roots.values() if t["text"].startswith("Second")), None)
         replied_to = {t["reply_to"] for t in threads if "reply_to" in t}
-        if len(roots) != expected["comments"]["count"] or first is None or second is None:
-            problems.append(f"comments-word.docx: {len(roots)} threads, expected First and Second")
+        if len(roots) != expected["commented"]["count"] or first is None or second is None:
+            problems.append(f"commented-word.docx: {len(roots)} threads, expected First and Second")
         else:
             if first["id"] not in replied_to:
-                problems.append("comments-word.docx: no reply read back on the First comment")
+                problems.append("commented-word.docx: no reply read back on the First comment")
             if not second["resolved"]:
-                problems.append("comments-word.docx: the Second comment reads as open")
+                problems.append("commented-word.docx: the Second comment reads as open")
             if first["resolved"]:
-                problems.append("comments-word.docx: the First comment reads as resolved")
+                problems.append("commented-word.docx: the First comment reads as resolved")
     for line in problems:
         print("MISMATCH", line)
     print(f"real_word_roundtrip_mismatches == {len(problems)}")

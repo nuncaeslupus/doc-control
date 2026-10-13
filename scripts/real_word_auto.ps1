@@ -164,8 +164,8 @@ try {
     $doc.RejectAllRevisions()
     Save-As $doc 'edits-rejected.docx'
 
-    "== step 5: comments.docx, reply and resolve"
-    $doc = Open-Doc 'comments.docx'
+    "== step 5: commented.docx, reply and resolve"
+    $doc = Open-Doc 'commented.docx'
     foreach ($c in @($doc.Comments)) {
         $body = $c.Range.Text
         if ($body.StartsWith('First')) { Invoke-Com $c.Replies 'Add' @($c.Scope, 'Reply written in Word.') | Out-Null }
@@ -174,7 +174,7 @@ try {
     foreach ($c in $doc.Comments) {
         "comment author='{0}' done={1} replies={2} text='{3}'" -f $c.Author, $c.Done, $c.Replies.Count, $c.Range.Text
     }
-    Save-As $doc 'comments-word.docx'
+    Save-As $doc 'commented-word.docx'
 } finally {
     if ($word) {
         Invoke-Com $word 'Quit' @(0) | Out-Null

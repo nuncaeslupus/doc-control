@@ -75,11 +75,11 @@ Write down the name of any file that asked to repair. Close each one **without s
 
 ## 5. Comments: reply and resolve
 
-1. Open `comments.docx`. Two comments from "doc-control T30" should be visible.
+1. Open `commented.docx`. Two comments from "doc-control T30" should be visible.
 2. On the comment that starts **"First"**, click **Reply** and type any text.
 3. On the comment that starts **"Second"**, click **Resolve** (in Word 2016: right-click
    the comment → **Mark Comment Done**).
-4. **Save As** `C:\t30\comments-word.docx`. Close.
+4. **Save As** `C:\t30\commented-word.docx`. Close.
 
 ## 6. Verify
 
