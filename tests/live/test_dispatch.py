@@ -104,3 +104,21 @@ def test_unknown_app_and_missing_file(doc: Path) -> None:
         with pytest.raises(DocControlError) as err:
             api.run("live.open", {"doc": str(doc.with_name("missing.docx"))})
         assert err.value.code is ErrorCode.DOC_NOT_FOUND
+
+
+def test_a_broken_app_is_reported_not_raised(doc: Path) -> None:
+    class Broken(FakeAdapter):
+        def probe(self) -> dict[str, object]:
+            raise OSError("no such program")
+
+    with using(Broken()):
+        apps = api.run("live.status", {}).result["apps"]
+    assert apps == [
+        {
+            "app": "fake",
+            "available": False,
+            "reachable": False,
+            "version": None,
+            "reason": "no such program",
+        }
+    ]

@@ -12,7 +12,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable
 
 #: App name to the module (in ``doc_control.live``) whose ``adapter()`` builds its adapter.
-ADAPTER_MODULES: dict[str, str] = {}
+ADAPTER_MODULES: dict[str, str] = {"libreoffice": "lo_uno"}
 
 _override: list[LiveAdapter] | None = None
 
@@ -39,7 +39,21 @@ def adapters() -> list[LiveAdapter]:
 
 def apps() -> list[dict[str, Any]]:
     """Every known app with whether it is installed and reachable; never raises."""
-    return [a.probe() for a in adapters()]
+    found = []
+    for a in adapters():
+        try:
+            found.append(a.probe())
+        except Exception as err:  # a broken install must not take `capabilities` down
+            found.append(
+                {
+                    "app": a.app,
+                    "available": False,
+                    "reachable": False,
+                    "version": None,
+                    "reason": str(err),
+                }
+            )
+    return found
 
 
 def unavailable(reason: str, **details: Any) -> DocControlError:
