@@ -22,7 +22,11 @@ def _properties(schema: dict[str, Any]) -> list[str]:
     required = set(schema.get("required", []))
     rows = []
     for name, spec in props.items():
-        kind = spec.get("type") or ("enum" if "enum" in spec else "object")
+        options = spec.get("anyOf") or spec.get("oneOf") or []
+        kind = spec.get("type") or " \\| ".join(
+            str(o.get("type", "?")) for o in options if isinstance(o, dict)
+        )
+        kind = kind or "any"
         if "enum" in spec:
             kind = " \\| ".join(f"`{v}`" for v in spec["enum"])
         text = " ".join(str(spec.get("description", "")).split()).replace("|", "\\|")

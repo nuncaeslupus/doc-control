@@ -329,7 +329,7 @@ Re-point every use of the 'from' styles to 'into' and delete them.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `from` | object | yes | Style id or name, or a list of them (they are removed). |
+| `from` | any | yes | Style id or name, or a list of them (they are removed). |
 | `into` | string | yes | Style id or name. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
@@ -591,7 +591,7 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | `style.merge` | yes |  |
-| `from` | object | yes | Style id or name, or a list of them (they are removed). |
+| `from` | any | yes | Style id or name, or a list of them (they are removed). |
 | `into` | string | yes | Style id or name. |
 
 ## `style.rename`
