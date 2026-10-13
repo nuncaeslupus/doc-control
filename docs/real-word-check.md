@@ -9,6 +9,16 @@ The gate is `real_word_repair_prompts == 0` (step 2) and
 
 ## 1. Build the test documents
 
+If `git` or `uv` is missing, install them once in PowerShell, then close and reopen
+PowerShell:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+```
+
+Then:
+
 ```powershell
 git clone https://github.com/nuncaeslupus/doc-control
 cd doc-control
@@ -28,13 +38,15 @@ Write down the name of any file that asked to repair. Close each one **without s
 
 ## 3. Tracked edits: accept all
 
-1. Open `edits.docx`. In **Review**, turn on **All Markup**.
+1. Open `edits.docx`. In **Review**, set the display to **All Markup** (in Word 2016:
+   **Review → Display for Review → All Markup**).
 2. Check that you see, marked as tracked changes by "doc-control T30":
    - a first word replaced by `REPLACED`;
    - a few characters deleted inside a paragraph;
    - an inserted paragraph "An inserted paragraph from doc-control.";
    - a deleted paragraph;
-   - a moved paragraph (shown as moved from / moved to);
+   - a moved paragraph: doc-control writes a move as the paragraph deleted in one place
+     and the same text inserted in another (not Word's green "moved" markup);
    - a paragraph changed to Heading 1, and one made bold italic (formatting changes).
 3. **Review → Accept → Accept All Changes**.
 4. **File → Save As** `C:\t30\edits-accepted.docx` (Word Document format). Close.
@@ -49,7 +61,8 @@ Write down the name of any file that asked to repair. Close each one **without s
 
 1. Open `comments.docx`. Two comments from "doc-control T30" should be visible.
 2. On the comment that starts **"First"**, click **Reply** and type any text.
-3. On the comment that starts **"Second"**, click **Resolve**.
+3. On the comment that starts **"Second"**, click **Resolve** (in Word 2016: right-click
+   the comment → **Mark Comment Done**).
 4. **Save As** `C:\t30\comments-word.docx`. Close.
 
 ## 6. Verify

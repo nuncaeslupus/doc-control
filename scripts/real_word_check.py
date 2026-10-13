@@ -119,21 +119,32 @@ def verify(out: Path) -> int:
 
     check("edits-accepted.docx", expected["edits"]["accepted"])
     check("edits-rejected.docx", expected["edits"]["original"])
+    steps = (("edits-accepted.docx", "Accept All"), ("edits-rejected.docx", "Reject All"))
+    for name, step in steps:
+        if (out / name).exists():
+            with api.open(out / name) as doc:
+                left = doc.run("revisions.list")["revisions"]
+            if left:
+                problems.append(f"{name}: {len(left)} tracked changes left; was {step} done?")
     replied = out / "comments-word.docx"
     if not replied.exists():
         problems.append("comments-word.docx: missing (save it from Word as described)")
     else:
         with api.open(replied) as doc:
             threads = doc.run("comments.list")["comments"]
-        roots = [t for t in threads if "reply_to" not in t]
-        replies = len(threads) - len(roots)
-        resolved = sum(1 for t in roots if t["resolved"])
-        if len(roots) != expected["comments"]["count"]:
-            problems.append(f"comments-word.docx: {len(roots)} threads, expected 2")
-        if replies < 1:
-            problems.append("comments-word.docx: the reply typed in Word was not read back")
-        if resolved < 1:
-            problems.append("comments-word.docx: the thread resolved in Word reads as open")
+        roots = {t["id"]: t for t in threads if "reply_to" not in t}
+        first = next((t for t in roots.values() if t["text"].startswith("First")), None)
+        second = next((t for t in roots.values() if t["text"].startswith("Second")), None)
+        replied_to = {t["reply_to"] for t in threads if "reply_to" in t}
+        if len(roots) != expected["comments"]["count"] or first is None or second is None:
+            problems.append(f"comments-word.docx: {len(roots)} threads, expected First and Second")
+        else:
+            if first["id"] not in replied_to:
+                problems.append("comments-word.docx: no reply read back on the First comment")
+            if not second["resolved"]:
+                problems.append("comments-word.docx: the Second comment reads as open")
+            if first["resolved"]:
+                problems.append("comments-word.docx: the First comment reads as resolved")
     for line in problems:
         print("MISMATCH", line)
     print(f"real_word_roundtrip_mismatches == {len(problems)}")
