@@ -41,7 +41,7 @@ Parts
 Scenes
     A scene starts at a chapter start, at a scene-break paragraph (``scene_marker``),
     after ``profile.scene_blank_lines`` or more empty paragraphs (``blank_lines``; off by
-    default), or at a paragraph whose style name has a word starting with a scene word
+    default), or at a paragraph whose style name holds a scene word as a whole word
     (``Normal tras pausa``: ``scene_style``) unless it follows a heading or a scene-break
     paragraph, or the style is a body style (as for ``chapter_style``). A break with no
     text on one side of it (next to a heading, another break or the end of the chapter)
@@ -107,6 +107,7 @@ SUBTITLE_WORDS = 8
 _DECORATION = "-\u2013\u2014[]()*\u00b7~ \t"  # around a decorated numeral: -I-, — 3 —, [IV]
 _CLOSERS = "\"'\u00bb\u201d\u2019)]"
 _TERMINAL = ".,;:!?\u2026"
+_TITLED_KINDS = ("chapter", "part", "numeral")  # a Prólogo's next line is a dateline, say
 _DIALOGUE = '-\u2013\u2014\u00ab"\u201c'
 
 Kind = Literal["chapter", "scene"]
@@ -608,7 +609,7 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
         if heading.kind in ("chapter", "part"):
             signals.append("chapter_word")
         elif heading.kind == "numeral":
-            lone_i = para.text.strip().rstrip(".)") == "I"
+            lone_i = para.text.strip().strip(_DECORATION).rstrip(".)") == "I"
             if lone_i and profile.language != "es":  # "I" is a pronoun in English
                 laid_out = styled or (para.centred and para.page_break_before)
             if laid_out:
@@ -715,7 +716,7 @@ def _scene_styled(paras: Sequence[Para], blank: Sequence[bool], profile: Profile
     words = [w for w in (_fold(w.strip()) for w in profile.scene_style_words) if w]
     if not words:
         return set()
-    pattern = re.compile("|".join(rf"\b{re.escape(w)}" for w in words))
+    wanted = set(words)
     marking: dict[str, bool] = {}
     by_style: dict[str, list[int]] = defaultdict(list)
     for i, para in enumerate(paras):
@@ -723,7 +724,8 @@ def _scene_styled(paras: Sequence[Para], blank: Sequence[bool], profile: Profile
         if blank[i] or not name or para.heading_level is not None:
             continue
         if name not in marking:
-            marking[name] = pattern.search(_fold(name)) is not None
+            split = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)  # AfterBreak: After Break
+            marking[name] = not wanted.isdisjoint(re.findall(r"[a-z0-9]+", _fold(split)))
         if marking[name]:
             by_style[name].append(i)
     text = sum(1 for b in blank if not b)
@@ -757,7 +759,9 @@ def _subtitles(
             continue
         text = paras[i].text
         parsed = _parse_heading(text)
-        untitled = (parsed is not None and not parsed.title) or number_word(text) is not None
+        untitled = (
+            parsed is not None and not parsed.title and parsed.kind in _TITLED_KINDS
+        ) or number_word(text) is not None
         if untitled and _is_subtitle(paras[j].text):
             out[i] = j
     return out

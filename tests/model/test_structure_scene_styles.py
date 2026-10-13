@@ -36,12 +36,12 @@ def test_a_scene_style_on_a_third_of_the_text_is_a_body_style() -> None:
     assert len(detect(paras).scenes) == 1
 
 
-def test_scene_style_words_match_at_a_word_start() -> None:
-    extra = {"style_name": "Extras"}
-    paras = build(*chapter("Capítulo 1", *[BODY] * 9, (BODY, extra), BODY))
-    assert len(detect(paras).scenes) == 1
-    custom = Profile(scene_style_words=("extra",))
-    assert len(detect(paras, custom).scenes) == 2
+def test_scene_style_words_match_whole_words() -> None:
+    for style, scenes in [("Extras", 1), ("Afterword", 1), ("AfterBreak", 2), ("Después", 2)]:
+        paras = build(*chapter("Capítulo 1", *[BODY] * 9, (BODY, {"style_name": style}), BODY))
+        assert len(detect(paras).scenes) == scenes, style
+    paras = build(*chapter("Capítulo 1", *[BODY] * 9, (BODY, {"style_name": "Extras"}), BODY))
+    assert len(detect(paras, Profile(scene_style_words=("extras",))).scenes) == 2
 
 
 def test_subtitle_joins_an_untitled_heading() -> None:
@@ -59,6 +59,7 @@ def test_no_subtitle_when_titled_long_punctuated_or_dialogue() -> None:
         ("Capítulo 3", "Era de noche."),
         ("Capítulo 3", "—Ven aquí"),
         ("La partida", "El camino"),
+        ("Prólogo", "Madrid, 1936"),
     ]:
         found = detect(build(*chapter(heading, line, BODY)))
         assert found.chapters[0].heading_last == 1, (heading, line)
@@ -70,3 +71,8 @@ def test_decorated_numerals_are_headings_when_laid_out() -> None:
         found = detect(build((text, centred), BODY, BODY))
         assert [c.kind for c in found.chapters] == ["numeral"], text
     assert detect(build("[IV]", BODY)).chapters == ()
+
+
+def test_a_decorated_lone_i_needs_more_in_english() -> None:
+    centred = {"centred": True}
+    assert detect(build(("-I-", centred), BODY), Profile(language="en")).chapters == ()

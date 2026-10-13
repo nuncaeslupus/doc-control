@@ -101,7 +101,7 @@ PROFILE_PROPERTIES: dict[str, Any] = {
         "type": "array",
         "items": {"type": "string", "minLength": 1},
         "description": (
-            "Words that mark a scene-opening style name, at the start of a word, any case "
+            "Words that mark a scene-opening style name, as whole words, any case "
             "and accents (default after, tras, después)."
         ),
     },
