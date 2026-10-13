@@ -160,7 +160,12 @@ def find(request: dict[str, Any]) -> Reply:
         )
     return Reply(
         {"matches": matches, **total},
-        doc={"path": request["doc"], "sha256": pkg.sha256, "paragraphs": len(index)},
+        doc={
+            "path": request["doc"],
+            "sha256": pkg.sha256,
+            "paragraphs": len(index),
+            **({"source": pkg.text_source} if pkg.text_source is not None else {}),
+        },
         warnings=warnings,
         next_cursor=next_cursor,
     )

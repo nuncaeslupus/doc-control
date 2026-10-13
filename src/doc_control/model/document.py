@@ -87,7 +87,14 @@ class Document:
 
     def envelope_doc(self) -> dict[str, Any]:
         """The ``doc`` block of a response."""
-        return {"path": self.path, "sha256": self.sha256, "paragraphs": len(self.index)}
+        doc: dict[str, Any] = {
+            "path": self.path,
+            "sha256": self.sha256,
+            "paragraphs": len(self.index),
+        }
+        if self.pkg.text_source is not None:
+            doc["source"] = self.pkg.text_source
+        return doc
 
     def memo(self, key: Hashable, build: Callable[[], _T]) -> _T:
         """``build()`` once per document and ``key``: derived tables shared by every

@@ -6,7 +6,7 @@ priority: 10
 status: merged
 ---
 
-Requested by literary-critic (drops a .txt/.md → .docx re-conversion per run). A `.txt`, `.md` or `.markdown` path is read as a minimal in-memory document: blank-line blocks are paragraphs (wrapped lines joined), each further empty line in a run is an empty paragraph, a text with no empty line has one paragraph per line; Markdown `#`..`######` lines are Heading 1-6, thematic breaks keep their characters, emphasis markers and escapes are dropped. Write operations refuse it with `UNSUPPORTED_CONTENT` before any store is made.
+Requested by literary-critic (drops a .txt/.md → .docx re-conversion per run). A `.txt`, `.md` or `.markdown` path is read as a minimal in-memory document. Text: UTF-8 (BOM or not), UTF-16 with BOM, else cp1252; BOM-less UTF-16 refused. `.txt` mode is detected: `wrapped` (blank-line blocks joined; each extra empty line an empty paragraph) or `lines` (every line a paragraph). Markdown: front matter skipped, `#`..`######` → Heading 1-6, break lines kept as text, emphasis/escapes handled, code fences literal. The reply's `doc.source` names format, encoding and mode. Write operations (and a text `compare` output) are refused with `UNSUPPORTED_CONTENT` before anything is written.
 
 ## Acceptance gate
 `text_source_mismatches == 0`, recorded in the plan's Evidence log (`status/plan.md`).

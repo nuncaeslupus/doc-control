@@ -54,8 +54,9 @@ References: [operations](docs/operations.md) · [errors](docs/errors.md).
 
 - **One core, two engines, one API**
   - *File engine*: edits a closed `.docx` with the Python standard library only,
-    rewriting only the parts it touches. Read operations also take a UTF-8 `.txt`
-    or `.md` file (Markdown `#` headings become Heading 1-6); writes refuse it.
+    rewriting only the parts it touches. Read operations also take a `.txt` or `.md`
+    file (hard-wrapped text detected; Markdown `#` headings become Heading 1-6); writes
+    refuse it.
   - *Live engine*: controls the open Word (Windows/COM first, Mac later).
 - **Two front doors**: a CLI with JSON in/out, and an MCP server
   (`doc-control mcp`, stdio) for Claude Desktop / Cowork and other MCP clients.

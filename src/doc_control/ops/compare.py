@@ -55,6 +55,7 @@ from doc_control.model.align import (
     align,
 )
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
+from doc_control.ooxml.plaintext import refuse_write
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     ParagraphEditor,
@@ -460,6 +461,7 @@ def _accepted_texts(data: bytes, ids: set[str]) -> tuple[list[str], bool]:
 
 
 def _check_output(output: Path, inputs: list[Path]) -> None:
+    refuse_write(output)
     for source in inputs:
         same = output.exists() and source.exists() and output.samefile(source)
         if same or output.resolve() == source.resolve():

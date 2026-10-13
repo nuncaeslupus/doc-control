@@ -11,45 +11,78 @@ from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.plaintext import decode, paragraphs
 
+_WRAPPED = (
+    "Title\n\n\n\nCHAPTER I\n\n\n"
+    "It was a dark and stormy night; the rain fell in\n"
+    "torrents, except at occasional intervals, when it\n"
+    "was checked by a violent gust of wind which swept\n"
+    "up the streets.\n\nNext.\n"
+)
 
-def test_blocks_join_wrapped_lines_and_keep_extra_blank_lines() -> None:
-    text = "Title\n\n\n\nCHAPTER I\n\n\nIt was a dark\nand stormy night.\n\nNext.\n"
-    assert paragraphs(text, markdown=False) == [
-        ("Title", None),
-        ("", None),
-        ("", None),
-        ("CHAPTER I", None),
-        ("", None),
-        ("It was a dark and stormy night.", None),
-        ("Next.", None),
+
+def test_wrapped_text_joins_blocks_and_keeps_extra_blank_lines() -> None:
+    paras, mode = paragraphs(_WRAPPED, markdown=False)
+    assert mode == "wrapped"
+    assert [t for t, _ in paras] == [
+        "Title",
+        "",
+        "",
+        "CHAPTER I",
+        "",
+        "It was a dark and stormy night; the rain fell in torrents, except at occasional "
+        "intervals, when it was checked by a violent gust of wind which swept up the streets.",
+        "Next.",
     ]
 
 
-def test_without_empty_lines_each_line_is_a_paragraph() -> None:
-    assert paragraphs(decode(b"One.\nTwo.\r\nThree.\rFour."), markdown=False) == [
-        ("One.", None),
-        ("Two.", None),
-        ("Three.", None),
-        ("Four.", None),
-    ]
+def test_unwrapped_text_has_a_paragraph_per_line() -> None:
+    text, encoding = decode(b"One.\nTwo, a much longer line.\r\n\r\nThree.\rFour.\n")
+    assert encoding == "utf-8"
+    paras, mode = paragraphs(text, markdown=False)
+    assert mode == "lines"
+    assert [t for t, _ in paras] == ["One.", "Two, a much longer line.", "", "Three.", "Four."]
 
 
-def test_leading_empty_line_is_a_paragraph() -> None:
-    assert paragraphs("\nA\n\nB", markdown=False) == [("", None), ("A", None), ("B", None)]
+@pytest.mark.parametrize(
+    ("raw", "encoding"),
+    [
+        (b"\xef\xbb\xbfa\xc3\xb1o", "utf-8-sig"),
+        ("﻿año".encode("utf-16-le"), "utf-16"),
+        ("año".encode("cp1252"), "cp1252"),
+    ],
+)
+def test_encodings(raw: bytes, encoding: str) -> None:
+    assert decode(raw) == ("año", encoding)
+
+
+def test_utf16_without_bom_is_refused() -> None:
+    with pytest.raises(ValueError, match="UTF-16"):
+        decode("año".encode("utf-16-le"))
 
 
 def test_markdown_headings_breaks_and_inline_markers() -> None:
     text = (
-        "# Part *One* #\n\n## 1\nShe *said* **no**, \\*really\\*.\n"
-        "snake_case and_this stay.\n\n* * *\n\n---\n\n***x***\n#nospace\n"
+        "---\ntitle: x\n---\n# Part *One* #\n\n## 1\nShe *said* **no**, \\*really\\*.\n"
+        "snake_case stays.\n\n* * *\n\n---\n\n~~~\n\n***x***\n# C#\n"
+        "- item one\n- item two\n\n```\n# not a heading *x*\n```\nA \\_b\\_ \U000f0041.\n"
     )
-    assert paragraphs(text, markdown=True) == [
+    paras, mode = paragraphs(text, markdown=True)
+    assert mode == "markdown"
+    assert paras == [
         ("Part One", 1),
         ("1", 2),
-        ("She said no, *really*. snake_case and_this stay.", None),
+        ("She said no, *really*. snake_case stays.", None),
         ("* * *", None),
         ("---", None),
-        ("x #nospace", None),
+        ("~~~", None),
+        ("x", None),
+        ("C#", 1),
+        ("- item one", None),
+        ("- item two", None),
+        ("```", None),
+        ("# not a heading *x*", None),
+        ("```", None),
+        ("A _b_ \U000f0041.", None),
     ]
 
 
@@ -117,9 +150,9 @@ def test_writes_are_refused_and_leave_nothing(
     assert not (tmp_path / "store").exists()
 
 
-def test_non_utf8_text_is_not_a_document(tmp_path: Path) -> None:
-    path = tmp_path / "latin.txt"
-    path.write_bytes("año".encode("latin-1"))
+def test_bomless_utf16_is_not_a_document(tmp_path: Path) -> None:
+    path = tmp_path / "wide.txt"
+    path.write_bytes("año".encode("utf-16-le"))
     with api.open(path) as d, pytest.raises(DocControlError) as err:
         d.run("info")
     assert err.value.code is ErrorCode.NOT_A_DOCX
@@ -129,7 +162,7 @@ def test_text_source_gate(tmp_path: Path) -> None:
     """The gate ``text_source_mismatches == 0``: reads of .txt/.md agree with the rules."""
     path = _novel(tmp_path)
     txt = tmp_path / "plain.txt"
-    txt.write_text("TITLE\n\n\n\nCHAPTER I\n\n\nIt was a dark\nand stormy night.\n", "utf-8")
+    txt.write_text(_WRAPPED, "utf-8")
     checks: list[bool] = []
     with api.open(path) as d:
         rows = d.paragraphs()
@@ -150,11 +183,22 @@ def test_text_source_gate(tmp_path: Path) -> None:
     with api.open(txt) as d:
         texts = [r["text"] for r in d.paragraphs()]
         found = d.run("segment", {"unit": "chapters", "profile": {"chapter_blank_lines": 2}})
+        doc = d.reply("info").doc or {}
         checks += [
-            texts == ["TITLE", "", "", "CHAPTER I", "", "It was a dark and stormy night."],
+            texts == [t for t, _ in paragraphs(_WRAPPED, markdown=False)[0]],
+            texts[3] == "CHAPTER I" and texts[5].endswith("swept up the streets."),
             [c["text"] for c in found["chapters"]] == ["CHAPTER I"],
+            doc.get("source") == {"format": "txt", "encoding": "utf-8", "mode": "wrapped"},
         ]
-    checks.append(sorted(p.name for p in tmp_path.iterdir()) == ["novel.md", "plain.txt"])
+    # compare reads text sources; its output is never a text file, and none is left behind.
+    api.run("compare", {"old": str(txt), "new": str(path), "output": str(tmp_path / "r.docx")})
+    checks.append((tmp_path / "r.docx").is_file())
+    try:
+        api.run("compare", {"old": str(path), "new": str(txt), "output": str(tmp_path / "r.md")})
+        checks.append(False)
+    except DocControlError as exc:
+        checks.append(exc.code is ErrorCode.UNSUPPORTED_CONTENT)
+    checks.append(sorted(p.name for p in tmp_path.iterdir()) == ["novel.md", "plain.txt", "r.docx"])
     mismatches = checks.count(False)
     print(f"text_source_mismatches == {mismatches} (of {len(checks)} checks)")
     assert mismatches == 0
