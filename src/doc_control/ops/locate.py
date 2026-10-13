@@ -70,7 +70,7 @@ from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
 from doc_control.model.structure import detect_in
-from doc_control.model.wordfind import word_find
+from doc_control.model.wordfind import two_forms, word_find
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.ops.segment import (
     OVERRIDES_SCHEMA,
@@ -240,7 +240,8 @@ def across_marks(
     meets once: words ending the previous paragraph (or none), the mark, the paragraph's
     first words; or its last words, the mark, words opening the next one (or none); or the
     whole paragraph between both marks. Fewest words first, then fewest marks, then the
-    paragraph's start first. None when no such phrase fits in Word's Find box."""
+    paragraph's start first. None when no such phrase fits in Word's Find box (too long, or
+    holding a soft or no-break hyphen)."""
     text, own = texts[i], spans(i)
     if not own:
         return None
@@ -436,10 +437,13 @@ class FindIndex:
     ) -> FindPhrase | None:
         text, spans, runs = self.texts[i], self.spans[i], self._runs[i]
         starts = range(len(spans) - length + 1)  # the paragraph's start comes first
+        risky = two_forms(text)
         for s in starts:
             if runs[s] < s + length - 1:
                 continue
             begin, end = spans[s][0], spans[s + length - 1][1]
+            if risky and two_forms(text[begin:end]):
+                continue  # Word's Find has no one string for it (see wordfind)
             if seen is not None and seen[tuple(self._tokens[i][2 * s : 2 * (s + length) - 1])] != 1:
                 continue
             if seen is not None and length > 1:
@@ -576,11 +580,14 @@ class LazyIndexes:
             )
             return spanning or FindPhrase(None, reason="duplicate")
         runs = FindIndex._run_ends(text, spans)
+        risky = two_forms(text)
         for length in range(1, MAX_FIND_WORDS + 1):
             for s in range(len(spans) - length + 1):
                 if runs[s] < s + length - 1:
                     continue
                 begin, end = spans[s][0], spans[s + length - 1][1]
+                if risky and two_forms(text[begin:end]):
+                    continue  # as FindIndex._pick
                 if self._once(text[begin:end].casefold()):
                     return FindPhrase(text[begin:end], length, begin)
         spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._marks(), i, crossable)

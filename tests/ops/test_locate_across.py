@@ -88,6 +88,14 @@ def test_word_find_codes_and_limit() -> None:
     assert word_find("^" * 128) is None  # 256 characters once escaped
 
 
+def test_find_phrase_avoids_soft_and_no_break_hyphens() -> None:
+    # "co\u00adoperation" alone is unique, but Word's Find has no one string for it.
+    texts = ["The co\u00adoperation was good here", "The other thing was good", "e\u2011mail"]
+    for finds in (_indexes(texts)[1], [LazyIndexes(texts).find(i) for i in range(3)]):
+        assert finds[0].text == "here"
+        assert finds[2].text is None  # nothing in it Word can be asked for
+
+
 def test_a_mark_ends_the_last_paragraph_too() -> None:
     # "b^p" occurs twice in Word: after "b" and after the last paragraph "a b".
     texts = ["b", "a b"]
