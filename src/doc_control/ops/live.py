@@ -18,7 +18,6 @@ from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
-from doc_control.live.protocol import LiveAdapter, LiveUnavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
 from doc_control.model.address import Address, fingerprint, parse_address
 from doc_control.registry import operation
