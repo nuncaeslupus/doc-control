@@ -82,7 +82,7 @@ Paragraph alignment between two versions of a document, with a cross-version add
 
 ## `find` (read)
 
-Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count).
+Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^~, ^-, ^^; null past 255 characters; not for a regex).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

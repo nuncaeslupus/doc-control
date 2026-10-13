@@ -33,8 +33,9 @@ Find phrase
     whitespace is not collapsed), occurrences counted in the joined text (paragraph marks
     included, overlaps counted). A line break inside a paragraph ends a phrase. Text outside
     the main story (footnotes, headers) is not searched. When no run inside the paragraph is
-    unique, the shortest one across a paragraph mark is taken (``find_phrase_across``:
-    ``previous``, ``next`` or ``both``; the mark is ``\\r`` in ``find_phrase``), e.g. the last
+    unique (a repeated paragraph included), the shortest one across a paragraph mark is
+    taken (``find_phrase_across``: ``previous``, ``next`` or ``both``; the mark is ``\\r`` in
+    ``find_phrase``), e.g. the last
     words of the paragraph before, the mark, and ``-I-``. Only plain paragraph marks are
     spanned (not ones in table cells or ending a section), and uniqueness counts the mark
     Word puts after the last paragraph too. ``find_phrase_word`` is the same
@@ -66,6 +67,7 @@ from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
 from doc_control.model.structure import detect_in
+from doc_control.model.wordfind import word_find
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.ops.segment import (
     OVERRIDES_SCHEMA,
@@ -161,27 +163,6 @@ class FindPhrase:
     start: int = 0  # character offset in the paragraph
     reason: str | None = None
     across: str | None = None  # "previous", "next" or "both": the phrase spans a mark
-
-
-#: Characters Word's Find box needs written as codes (``^`` itself first).
-_WORD_CODES = (
-    ("^", "^^"),
-    ("\r", "^p"),
-    ("\t", "^t"),
-    ("\u00a0", "^s"),
-    ("\u2011", "^~"),
-    ("\u00ad", "^-"),
-)
-WORD_FIND_MAX = 255  # characters Word's Find box takes
-
-
-def word_find(text: str) -> str | None:
-    """``text`` as typed in Word's Find box (``^p`` a paragraph mark, ``^t`` a tab, ``^s`` a
-    no-break space, ``^~`` a no-break hyphen, ``^-`` a soft hyphen, ``^^`` a caret); None
-    when that is longer than the box takes."""
-    for char, code in _WORD_CODES:
-        text = text.replace(char, code)
-    return text if len(text) <= WORD_FIND_MAX else None
 
 
 def across_marks(
@@ -509,8 +490,14 @@ class LazyIndexes:
         spans, key = self._keys(i)
         if not key:
             return FindPhrase(None, reason="empty")
+        marks = self.crossable
+        crossable = (lambda j: marks[j]) if marks is not None else (lambda j: True)
         if self._copies_of(i) > 1:
-            return FindPhrase(None, reason="duplicate")
+            # Every run of a repeated paragraph recurs in its twin; only its marks differ.
+            spanning = across_marks(
+                self.texts, lambda j: self._keys(j)[0], self._once, i, crossable
+            )
+            return spanning or FindPhrase(None, reason="duplicate")
         runs = FindIndex._run_ends(text, spans)
         for length in range(1, MAX_FIND_WORDS + 1):
             for s in range(len(spans) - length + 1):
@@ -519,14 +506,7 @@ class LazyIndexes:
                 begin, end = spans[s][0], spans[s + length - 1][1]
                 if self._once(text[begin:end].casefold()):
                     return FindPhrase(text[begin:end], length, begin)
-        marks = self.crossable
-        spanning = across_marks(
-            self.texts,
-            lambda j: self._keys(j)[0],
-            self._once,
-            i,
-            (lambda j: marks[j]) if marks is not None else (lambda j: True),
-        )
+        spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._once, i, crossable)
         return spanning or FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
 
 
@@ -539,7 +519,7 @@ def _indexes(
     finder = FindIndex(locators)
     found = finder.found
     for i, phrase in enumerate(found):
-        if phrase.text is None and phrase.reason != "empty" and phrase.reason != "duplicate":
+        if phrase.text is None and phrase.reason != "empty":
             spanning = across_marks(
                 texts,
                 locators.spans.__getitem__,

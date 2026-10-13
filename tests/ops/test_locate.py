@@ -287,8 +287,9 @@ def test_find_phrase_keeps_document_characters_and_case_rules(run: Run, tmp_path
     by = {r["at"].split("#")[0]: r for r in rows}
     assert by["p1"]["find_phrase"] == "caf\u00e9"  # accent-sensitive
     assert by["p2"]["find_phrase"] == "cafe"
-    assert by["p3"]["find_phrase"] is None  # case-insensitive twins
-    assert by["p3"]["find_phrase_reason"] == "duplicate"
+    # Case-insensitive twins: only a phrase across a mark tells them apart.
+    assert by["p3"]["find_phrase"] == "noir\rHello"
+    assert by["p3"]["find_phrase_across"] == "previous"
     assert by["p5"]["find_phrase"] == "a\u00a0b"  # no-break space stays
     assert by["p6"]["find_phrase"] == "a b"
     assert by["p5"]["reason"] == "duplicate"  # same words; the find phrase tells them apart
@@ -331,21 +332,32 @@ def test_find_phrase_limit_and_context_for_duplicates(run: Run, tmp_path: Path) 
         long + " extra",
     )
     rows = all_rows(run, path)
-    assert rows[1]["find_phrase"] is None
-    assert rows[1]["find_phrase_unique"] is False
-    assert rows[1]["context"] == {
-        "after": rows[0]["find_phrase"],
-        "after_word": rows[0]["find_phrase_word"],
-        "at": rows[0]["at"],
-        "paragraphs_after": 1,
-    }
-    assert rows[2]["context"]["paragraphs_after"] == 2
+    # Repeated short replies are told apart by their neighbours, across a mark.
+    assert rows[1]["find_phrase"] == "paragraph\r\u2014S\u00ed."
+    assert rows[2]["find_phrase"] == "\u2014S\u00ed.\r\u2014S\u00ed."
+    assert "context" not in rows[1] and "context" not in rows[2]
     # Every 25-word window of the long one recurs in the next; its end before the mark does not.
     assert rows[3]["find_phrase"] == "w29\r"
     assert rows[3]["find_phrase_across"] == "next"
     assert "context" not in rows[3]
     assert rows[4]["find_phrase"] is not None
     assert "context" not in rows[0]
+
+
+def test_context_when_no_phrase_is_unique(run: Run, tmp_path: Path) -> None:
+    path = make_docx(tmp_path / "d.docx", "A unique opening here", "x", "x", "x", "x")
+    rows = all_rows(run, path)
+    assert rows[1]["find_phrase"] == "here\rx"
+    assert rows[2]["find_phrase"] is None
+    assert rows[2]["find_phrase_unique"] is False
+    assert rows[2]["find_phrase_reason"] == "duplicate"
+    assert rows[2]["context"] == {
+        "after": rows[1]["find_phrase"],
+        "after_word": rows[1]["find_phrase_word"],
+        "at": rows[1]["at"],
+        "paragraphs_after": 1,
+    }
+    assert rows[3]["context"]["paragraphs_after"] == 2
 
 
 def test_long_words_out_of_the_affix_tables_change_no_phrase(

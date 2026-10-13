@@ -54,7 +54,7 @@ def test_duplicate_and_affix_cases() -> None:
     for i in range(len(texts)):
         assert lazy.locator(i) == locators.locator(i)
         assert lazy.find(i) == finds[i]
-    assert lazy.find(0).reason == "duplicate"
+    assert lazy.find(0).across == "next"  # a repeated paragraph, told apart across its mark
 
 
 def test_over_budget_switches_to_the_indexes(

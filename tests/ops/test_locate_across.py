@@ -1,10 +1,10 @@
 """Find phrases across paragraph marks and in Word's Find syntax (T54).
 
 The gate ``find_phrase_gaps == 0`` over every corpus kind and the 100k-word novel counts:
-non-empty, non-repeated paragraphs left without a find phrase although a plain paragraph
-mark is next to them, phrases that do not occur exactly once in the text as Word searches
-it (paragraphs joined by marks, the last one ending in a mark too), and Word Find strings
-that do not decode back to their phrase.
+non-empty paragraphs (repeated ones too, since T58) left without a find phrase although a
+plain paragraph mark is next to them, phrases that do not occur exactly once in the text as
+Word searches it (paragraphs joined by marks, the last one ending in a mark too), and Word
+Find strings that do not decode back to their phrase.
 """
 
 from __future__ import annotations
@@ -12,14 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from doc_control.model.document import Document
-from doc_control.ops.locate import (
-    WORD_FIND_MAX,
-    LazyIndexes,
-    _indexes,
-    _plain_marks,
-    across_marks,
-    word_find,
-)
+from doc_control.model.wordfind import WORD_FIND_MAX, word_find
+from doc_control.ops.locate import LazyIndexes, _indexes, _plain_marks, across_marks
 from tests.corpus.generator import KINDS, generate
 
 
@@ -63,7 +57,7 @@ def test_find_phrase_gate(tmp_path: Path) -> None:
             checks += 1
             if found.text is None:
                 beside = (i > 0 and marks[i - 1]) or (i + 1 < len(texts) and marks[i])
-                gaps += found.reason not in ("empty", "duplicate") and beside
+                gaps += found.reason != "empty" and beside  # repeated ones too (T58)
                 continue
             gaps += word_count(texts, found.text) != 1
             word = word_find(found.text)
