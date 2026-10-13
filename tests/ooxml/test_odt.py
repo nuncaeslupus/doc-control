@@ -178,3 +178,67 @@ def test_long_automatic_style_chains_stay_linear() -> None:
     start = time.perf_counter()
     paragraphs(odt('<text:p text:style-name="S0">x</text:p>', styles=chain))
     assert time.perf_counter() - start < 2.0
+
+
+LAYOUT_STYLES = (
+    '<style:style style:name="Title_20_centre" style:family="paragraph" '
+    'style:parent-style-name="Scene_20_break"/>'
+    '<style:style style:name="C1" style:family="paragraph" style:parent-style-name="Centred">'
+    "</style:style>"
+    '<style:style style:name="B1" style:family="paragraph" style:parent-style-name="Breaks"/>'
+    '<style:style style:name="A1" style:family="paragraph">'
+    '<style:paragraph-properties fo:break-after="page"/></style:style>'
+)
+
+
+def _layout_odt(body: str) -> bytes:
+    named = (
+        '<style:style style:name="Centred" style:family="paragraph">'
+        '<style:paragraph-properties fo:text-align="center"/></style:style>'
+        '<style:style style:name="Breaks" style:family="paragraph">'
+        '<style:paragraph-properties fo:break-before="page"/></style:style>'
+    )
+    data = odt(body, styles=LAYOUT_STYLES)
+    import io
+
+    src = zipfile.ZipFile(io.BytesIO(data))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for item in src.infolist():
+            raw = src.read(item.filename)
+            if item.filename == "styles.xml":
+                raw = raw.replace(b"</office:styles>", named.encode() + b"</office:styles>")
+            if item.filename in ("styles.xml", "content.xml"):
+                raw = raw.replace(
+                    b'xmlns:dc="',
+                    b'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:'
+                    b'xsl-fo-compatible:1.0" xmlns:dc="',
+                )
+            zf.writestr(item, raw)
+    return buf.getvalue()
+
+
+def test_layout_reads_page_marks_breaks_and_centring(tmp_path: Path) -> None:
+    body = (
+        '<text:p text:style-name="C1">Title</text:p>'
+        "<text:soft-page-break/>"
+        "<text:p>starts page two</text:p>"
+        "<text:p>long<text:soft-page-break/> paragraph</text:p>"
+        '<text:p text:style-name="B1">broken before</text:p>'
+        '<text:p text:style-name="A1">breaks after</text:p>'
+        "<text:p>after the break</text:p>"
+    )
+    path = tmp_path / "layout.odt"
+    path.write_bytes(_layout_odt(body))
+    with api.open(path) as doc:
+        rows = doc.paragraphs()
+        pages = doc.run("page.estimate", {})
+    assert [r["centred"] for r in rows] == [True, False, False, False, False, False]
+    assert [r["page_break_before"] for r in rows] == [False, False, False, True, False, True]
+    assert [p["page"] for p in pages["paragraphs"]] == [1, 2, 2, 4, 4, 5]
+    assert pages["rendered_marks"] == 2
+
+
+def test_undefined_style_keeps_its_raw_name() -> None:
+    body = '<text:p text:style-name="Chapter_20_Title">x</text:p>'
+    assert paragraphs(odt(body)) == [("x", None, "Chapter Title")]

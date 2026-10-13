@@ -2,7 +2,9 @@
 and doc-control's read of each must match its read of the .docx.
 
 Gate: ``odt_parity_mismatches == 0`` over every corpus kind: the non-empty paragraphs
-(texts, heading levels, style names) and the novel's chapters agree. Digits are masked in
+(texts, heading levels, style names, centring) and the novel's chapters agree, and the
+.odt's estimated page count is within one page of LibreOffice's own (``meta.xml``), as its
+soft page breaks are LibreOffice's layout (T59). Digits are masked in
 texts, because LibreOffice recalculates field results (page numbers, dates) on conversion;
 empty paragraphs are left out, because a paragraph deleted as a tracked change stays an
 empty paragraph in a .docx but is gone from an .odt.
@@ -12,6 +14,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -24,15 +27,25 @@ from tests.corpus.validator import soffice_path
 _DIGITS = re.compile(r"\d")
 
 
-def _facts(path: Path) -> tuple[list[tuple[Any, ...]], list[str]]:
+_PAGES = re.compile(rb'meta:page-count="([0-9]+)"')
+
+
+def _facts(path: Path) -> tuple[list[tuple[Any, ...]], list[str], int]:
     with api.open(path) as doc:
         rows = [
-            (_DIGITS.sub("#", r["text"]), r["heading_level"], r["style_name"])
+            (_DIGITS.sub("#", r["text"]), r["heading_level"], r["style_name"], r["centred"])
             for r in doc.paragraphs()
             if r["text"]
         ]
         chapters = [c["text"] for c in doc.run("segment", {"unit": "chapters"})["chapters"]]
-    return rows, chapters
+        pages = doc.run("page.estimate", {})["page_count"]
+    return rows, chapters, pages
+
+
+def _libreoffice_pages(path: Path) -> int:
+    match = _PAGES.search(zipfile.ZipFile(path).read("meta.xml"))
+    assert match is not None
+    return int(match.group(1))
 
 
 def test_odt_parity_gate(tmp_path: Path) -> None:
@@ -59,9 +72,10 @@ def test_odt_parity_gate(tmp_path: Path) -> None:
     )
     mismatches = checks = 0
     for kind in KINDS:
-        docx_rows, docx_chapters = _facts(tmp_path / f"{kind}.docx")
-        odt_rows, odt_chapters = _facts(tmp_path / f"{kind}.odt")
-        checks += len(docx_rows) + 1
+        docx_rows, docx_chapters, _ = _facts(tmp_path / f"{kind}.docx")
+        odt_rows, odt_chapters, odt_pages = _facts(tmp_path / f"{kind}.odt")
+        checks += len(docx_rows) + 2
+        mismatches += abs(odt_pages - _libreoffice_pages(tmp_path / f"{kind}.odt")) > 1
         mismatches += abs(len(docx_rows) - len(odt_rows))
         mismatches += sum(a != b for a, b in zip(docx_rows, odt_rows, strict=False))
         mismatches += docx_chapters != odt_chapters

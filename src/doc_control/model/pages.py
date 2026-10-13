@@ -7,7 +7,8 @@ The word-count model always runs; the marks and breaks correct it:
   start pages (the model never overflows there), so a document Word laid out gets Word's
   page count. Marks too sparse to be a layout (the model, resynced at each mark, needs
   more than ``MARKS_TRUST_RATIO`` times their pages up to the last one) only resync the
-  model. Text after the last mark (added since the last layout, or a document without
+  model; the marks of an ``.odt`` (LibreOffice's soft page breaks) are always trusted.
+  Text after the last mark (added since the last layout, or a document without
   marks) is paged by the model alone, restarting from the last mark's page. A mark that
   lands on a page the model (or an explicit break) just started is not counted twice.
 * Explicit page starts: ``w:br w:type="page"``, ``pageBreakBefore`` (direct or from the style
@@ -422,7 +423,9 @@ def _estimate_pages(doc: Document) -> PageEstimate:
         )
         # Trust the marks when they are dense enough to be Word's layout, not a stray one:
         # the model alone (resynced at each mark) must not need far more pages up to there.
-        if rows[last - 1].end_page <= MARKS_TRUST_RATIO * (marks + 1):
+        # An .odt's marks are LibreOffice's soft page breaks, written for every page.
+        laid_out = (doc.pkg.text_source or {}).get("format") == "odt"
+        if laid_out or rows[last - 1].end_page <= MARKS_TRUST_RATIO * (marks + 1):
             rows, sim = simulate(True)
     first = _Geometry.of(closing[0])
     line_h = normal_pt * LINE_FACTOR

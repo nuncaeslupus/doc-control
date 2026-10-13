@@ -45,6 +45,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from typing import NamedTuple
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.xmltext import escape
@@ -356,19 +357,43 @@ def paragraphs(text: str, markdown: bool) -> tuple[list[tuple[str, int | None]],
     return out, mode
 
 
-def _paragraph_xml(text: str, style: str | None) -> str:
-    ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
-    if not text:
-        return f"<w:p>{ppr}</w:p>"
-    runs = []
-    for k, line in enumerate(_CONTROL.sub("", text).split("\n")):
+class Layout(NamedTuple):
+    """What a source format knows of a paragraph's layout (``.odt``; plain text has none)."""
+
+    centred: bool = False
+    break_before: bool = False
+    #: Offsets in the text where the source app started a page (``w:lastRenderedPageBreak``).
+    page_marks: tuple[int, ...] = ()
+
+
+_NO_LAYOUT = Layout()
+
+
+def _runs(text: str) -> str:
+    out = []
+    for k, line in enumerate(text.split("\n")):
         if k:
-            runs.append("<w:br/>")
+            out.append("<w:br/>")
         for i, part in enumerate(line.split("\t")):
             if i:
-                runs.append("<w:tab/>")
-            if part:
-                runs.append(f'<w:t xml:space="preserve">{escape(part)}</w:t>')
+                out.append("<w:tab/>")
+            if part := _CONTROL.sub("", part):
+                out.append(f'<w:t xml:space="preserve">{escape(part)}</w:t>')
+    return "".join(out)
+
+
+def _paragraph_xml(text: str, style: str | None, layout: Layout = _NO_LAYOUT) -> str:
+    props = f'<w:pStyle w:val="{style}"/>' if style else ""
+    props += "<w:pageBreakBefore/>" if layout.break_before else ""
+    props += '<w:jc w:val="center"/>' if layout.centred else ""
+    ppr = f"<w:pPr>{props}</w:pPr>" if props else ""
+    if not text and not layout.page_marks:
+        return f"<w:p>{ppr}</w:p>"
+    runs, start = [], 0
+    for mark in sorted({min(max(m, 0), len(text)) for m in layout.page_marks}):
+        runs.append(_runs(text[start:mark]) + "<w:lastRenderedPageBreak/>")
+        start = mark
+    runs.append(_runs(text[start:]))
     return f"<w:p>{ppr}<w:r>{''.join(runs)}</w:r></w:p>"
 
 
@@ -378,15 +403,16 @@ def package_bytes(text: str, markdown: bool) -> tuple[bytes, str]:
     return build_docx([(t, level, None) for t, level in paras]), mode
 
 
-def build_docx(paras: list[Para]) -> bytes:
-    """A minimal .docx (zip bytes) holding ``paras`` (a line break in a text is ``w:br``)."""
+def build_docx(paras: list[Para], layouts: list[Layout] | None = None) -> bytes:
+    """A minimal .docx (zip bytes) holding ``paras`` (a line break in a text is ``w:br``),
+    with ``layouts[k]`` applied to paragraph ``k`` when given."""
     custom: dict[str, str] = {}  # style name -> id
     xml: list[str] = []
-    for text, level, name in paras:
+    for k, (text, level, name) in enumerate(paras):
         style = f"Heading{level}" if level else None
         if style is None and name:
             style = custom.setdefault(name, f"Style{len(custom) + 1}")
-        xml.append(_paragraph_xml(text, style))
+        xml.append(_paragraph_xml(text, style, layouts[k] if layouts else _NO_LAYOUT))
     body = "".join(xml)
     document = (
         f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
