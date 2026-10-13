@@ -3,10 +3,11 @@
 **Date**: 2026-10-13
 **Ticket / PR**: — (workspace `LIVE`)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: draft
+**Revision**: 2
+**Status**: approved (2026-10-13, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft
+- r2 — owner answered the 4 open questions (all as recommended); D-L3..D-L6 added
 - r1 (pre-review) — adversarial-review risks folded in: text-level `unintended_text_changes`, fingerprints vs tracked deletions, `uno` not on PyPI, LibreOffice attach limits, lock-file kinds, global author name, Word Find limits, index access for latency, COM retry, build order vs D-2
 
 > Review record. Each round of reviewer notes makes a new revision: bump
@@ -96,20 +97,71 @@ doc-control's file engine only edits a closed `.docx`: while the writer has the 
 4. Word COM adapter for 1–3 (owner's Windows session), `live_word_failures == 0`.
 5. Mac Word (AppleScript/JXA) — separate later spec (D-2).
 
-**Open questions**:
-- [ ] LibreOffice attach: LibreOffice accepts connections only when started with a listening socket (`--accept`), so a window the writer opened normally cannot be attached to (Word has no such limit). May doc-control start LibreOffice itself that way when asked to open a file, or must the writer always start it with a launcher (script / desktop shortcut)? Recommended: doc-control starts a listening instance when asked to open a file, and `live.status` explains how to relaunch for an already-open window.
-- [ ] Which Word versions must pass: 2016, 2019, 2021, Microsoft 365 (current channel)? Recommended: 2016+ and M365, as for T30.
-- [ ] Should live edits be recorded in doc-control's history log (with the app's own undo as rollback), or only in the app? Recommended: logged, marked `engine: live`, no byte backup until the next save.
-- [ ] Author name on live comments and tracked changes: the app's user name, or a configured agent name (e.g. "Claude")? Recommended: configurable, default "Claude", as in the file engine.
+**Open questions** (answered 2026-10-13, see D-L3..D-L6):
+- [x] LibreOffice attach: LibreOffice accepts connections only when started with a listening socket (`--accept`), so a window the writer opened normally cannot be attached to (Word has no such limit). May doc-control start LibreOffice itself that way when asked to open a file, or must the writer always start it with a launcher (script / desktop shortcut)? Recommended: doc-control starts a listening instance when asked to open a file, and `live.status` explains how to relaunch for an already-open window.
+- [x] Which Word versions must pass: 2016, 2019, 2021, Microsoft 365 (current channel)? Recommended: 2016+ and M365, as for T30.
+- [x] Should live edits be recorded in doc-control's history log (with the app's own undo as rollback), or only in the app? Recommended: logged, marked `engine: live`, no byte backup until the next save.
+- [x] Author name on live comments and tracked changes: the app's user name, or a configured agent name (e.g. "Claude")? Recommended: configurable, default "Claude", as in the file engine.
 
 **Decisions log** (from the core spec, carried unchanged):
 
 | ID | Decision | Status | Date |
 |----|----------|--------|------|
 | D-2 | Live engine: Windows first, Mac later | agreed | 2026-10-12 |
-| D-L1 | LibreOffice Writer (UNO) is a supported live app alongside Word, so the engine is testable on Linux CI | proposed | 2026-10-13 |
-| D-L2 | Live dependencies are imported lazily and the core stays stdlib-only: `pywin32` as an optional extra (`doc-control[live]`); `uno` comes with LibreOffice (not installable from PyPI), so the LibreOffice adapter runs on a Python that can import it and reports `ENGINE_UNAVAILABLE` otherwise | proposed | 2026-10-13 |
+| D-L1 | LibreOffice Writer (UNO) is a supported live app alongside Word, so the engine is testable on Linux CI | agreed | 2026-10-13 |
+| D-L2 | Live dependencies are imported lazily and the core stays stdlib-only: `pywin32` as an optional extra (`doc-control[live]`); `uno` comes with LibreOffice (not installable from PyPI), so the LibreOffice adapter runs on a Python that can import it and reports `ENGINE_UNAVAILABLE` otherwise | agreed | 2026-10-13 |
+| D-L3 | doc-control starts a listening LibreOffice when asked to open a file; `live.status` explains relaunch for an already-open window | agreed | 2026-10-13 |
+| D-L4 | Word versions that must pass: 2016, 2019, 2021 and Microsoft 365 current channel | agreed | 2026-10-13 |
+| D-L5 | Live edits are logged in history, marked `engine: live`; rollback is the app's undo; no byte backup until the next save | agreed | 2026-10-13 |
+| D-L6 | Author on live comments and tracked changes is configurable, default "Claude" | agreed | 2026-10-13 |
 
 ---
 
 > Sections 5–6 (contracts, risks) are appended by `design`.
+
+## 5. Contracts
+
+### API contracts (Python API, CLI and MCP share them)
+
+- **Engine field**: every live-capable operation (`comment.add`, `text.replace`, `para.insert`, `live.*`) takes `"engine": "file" | "live"` (default `file`). Any other operation called with `engine: "live"` fails with `ENGINE_UNAVAILABLE`, `detail.reason = "operation not supported live"`.
+- **`api.open(path, engine="live", app=None)`**: attaches to the window holding `path` (Word via COM; LibreOffice via a listening socket). If no app holds it, it opens the file. For LibreOffice that means starting an instance that listens (D-L3). `app` is one of `"word"` or `"libreoffice"`; `None` picks the one that has the file open, otherwise the first one available.
+- **`live.status`** → `{"apps": [{"app": "libreoffice", "available": true, "reachable": true, "version": "7.6"}], "open_in": {"app": "libreoffice", "controlled": true, "lock": ".~lock.x.docx#"} | null, "dirty": false}`.
+- **`live.select`** `{"at": "p142#a7b2", "paragraphs_after": 0}` or `{"find_phrase": "…", "paragraphs_after": 2}` → `{"text": "<selected text, tracked deletions excluded>", "at": "p142#…"}`. A stale address fails with `STALE_ADDRESS`. A find with no match, or with a match outside the expected paragraph, fails with `NOT_FOUND`.
+- **`live.selection`** `{}` → `{"text": "…", "paragraph": {"at": "p142#…", "text": "…"}}`. This is the selection, plus the paragraph at the cursor.
+- **`comment.add` / `text.replace` / `para.insert`** with `engine: "live"`: the same schemas as the file engine.
+  - Edits are always tracked.
+  - The author is `author` from the request, otherwise the configured name (default `"Claude"`, D-L6). The app's global author setting and its track-changes state are restored afterwards.
+  - Each edit is logged to history as `{"engine": "live", "op": …, "at": …}`, with no byte backup (D-L5).
+- **`live.save`** `{}` → `{"saved": true}`.
+- **`live.close`** `{"save": bool, "discard": bool}`: closing a dirty document with neither flag fails with `UNSAVED_CHANGES`, and the document stays open.
+- **`live.open`** `{"path": …}`: reopens a document after `live.close`.
+- **`capabilities`**: `engines: ["file", "live"]`, `live.apps` as in `live.status`. It never raises when no app is installed.
+- **Errors**: `ENGINE_UNAVAILABLE` (no app, the app is not reachable, or the dependency is missing; `detail.reason` says which), `UNSAVED_CHANGES`, `STALE_ADDRESS`, `NOT_FOUND`, `DOC_LOCKED`. The `DOC_LOCKED` lock check now recognises LibreOffice's lock file as well as Word's, and names the app.
+- **Backwards compatible**: yes. All of it is additive, and `engine` defaults to `file`.
+
+### Inter-process contracts
+
+| Caller | Callee | Protocol | Contract | Failure handling |
+|--------|--------|----------|----------|-----------------|
+| `live/lo_uno.py` | LibreOffice (soffice) | UNO over `socket,host=localhost,port=<p>;urp` | Desktop → component by URL; `XTextDocument` enumeration; `XTextRange` comments/redlines; `TrackChanges`, `RecordChanges` properties | Connect timeout 10 s, then `ENGINE_UNAVAILABLE`; a dead connection is reported, not retried silently |
+| `live/word_com.py` | Word | COM (`pywin32`, `Word.Application`) | `Documents`, `Range`, `Comments.Add`, `TrackRevisions`, `Application.UserName` | `RPC_E_CALL_REJECTED` retried with backoff up to 5 s, then `ENGINE_UNAVAILABLE` |
+
+### Configuration
+
+- `doc-control[live]` extra: `pywin32; sys_platform == "win32"`. `uno` is not installable from PyPI: the LibreOffice adapter works on a Python that can import it (system `python3-uno` or LibreOffice's bundled Python).
+- `live.author` in config / `DOC_CONTROL_LIVE_AUTHOR` (default `Claude`). `DOC_CONTROL_LO_PORT` (default 2002).
+
+## 6. Risks & Validation
+
+| Risk | Likelihood | Impact | Mitigation | Validation |
+|------|-----------|--------|------------|------------|
+| Live paragraph numbering drifts from the file engine (tables, frames, notes, tracked deletions) | High | High | Enumerate with the same exclusions; read text without deletions; fingerprint check before every write | `live_select_mismatches == 0` over every corpus kind (integration, LibreOffice in CI) |
+| An edit lands on the wrong range after the writer typed | Med | High | Re-check the fingerprint immediately before the write; refuse with `STALE_ADDRESS` | integration test that edits between select and write |
+| Unsaved work lost on close | Low | High | `close` refuses a dirty document unless `save` or `discard` is set; never `Close(SaveChanges=False)` implicitly | `unsaved_work_lost == 0` (CI + Word script) |
+| The app's global author or track-changes setting is left changed after an error | Med | Med | Restore it in `finally`; a test injects a failure mid-edit | unit + integration |
+| `uno` / `pywin32` import breaks the stdlib-only core | Low | High | Lazy imports inside the adapters only | existing `smoke-no-network` job |
+| Word Find differs from LibreOffice (255-char limit, `^p`, deleted text) | Med | Med | Use `find_phrase_word` for Word; check the found range against the expected paragraph; fall back to the address | `scripts/live_word_check.py` (manual, Windows) |
+| COM busy / LibreOffice socket dies | Med | Low | Bounded retry, then `ENGINE_UNAVAILABLE` with the reason | unit with a fake adapter |
+| CI LibreOffice job is slow or flaky | Med | Low | One soffice per test module, reused; bounded timeouts | CI duration watched (+2–4 min) |
+
+Rollback: everything is additive behind `engine: "live"`; reverting the `live/` package and the dispatch hook restores the file-engine-only behaviour.
