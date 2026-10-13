@@ -231,13 +231,16 @@ def case_quote_attribution(tmp: Path) -> None:
 
 
 def case_empty_headings(tmp: Path) -> None:
-    """Empty paragraphs with a heading style go; empty body paragraphs stay."""
+    """Empty Heading N paragraphs go; empty body paragraphs and empty paragraphs in other
+    outline-level styles (a work note, a part title) stay."""
     doc = styled_docx(
         tmp / "headings.docx",
         ("Heading1", "Chapter one"),
         ("Heading1", ""),
         ("Body", PROSE),
         ("Body", ""),
+        ("WorkNote", ""),
+        ("PartTitle", ""),
         ("Body", PROSE),
     )
     run(doc, "empty-headings")
@@ -245,6 +248,8 @@ def case_empty_headings(tmp: Path) -> None:
         ("Heading1", "Chapter one"),
         ("Body", PROSE),
         ("Body", ""),
+        ("WorkNote", ""),
+        ("PartTitle", ""),
         ("Body", PROSE),
     ]
 
