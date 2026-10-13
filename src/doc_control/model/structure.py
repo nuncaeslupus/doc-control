@@ -15,7 +15,10 @@ Chapters
                         page break or in a heading style (a lone ``3`` is often just text)
     ``chapter_style``   a body paragraph whose style name holds a chapter word
                         (``Normal inicio capítulo``): untitled chapters marked by style;
-                        the paragraph is the chapter's first text, not a heading
+                        the paragraph is the chapter's first text. A style on more than
+                        a third of the text paragraphs is a body style and marks none;
+                        so does one that only ever follows a heading, once per heading
+                        (it opens titled chapters)
     ``override``        an override forced it
 
     Supporting signals ride along: ``centred``, ``page_break_before``, ``blank_lines``
@@ -82,6 +85,9 @@ CHAPTER_STYLE_WORDS: tuple[str, ...] = (
     "capitolo",
     "hoofdstuk",
 )
+
+#: A chapter-word style marking more than one text paragraph in this many is a body style.
+BODY_STYLE_SHARE = 3
 
 Kind = Literal["chapter", "scene"]
 Action = Literal["force", "deny"]
@@ -252,6 +258,7 @@ def detect(
     actions, unmatched = _resolve_overrides(paras, blank, overrides)
     suppressed: list[tuple[int, Kind, str]] = []
     chapters = _chapter_starts(paras, blank, blank_before, profile, actions, suppressed)
+    _drop_style_openers(paras, blank, chapters, suppressed)
     starts = sorted(chapters)
 
     scene_opener_signals = _scene_openers(paras, blank, blank_before, profile, actions, chapters)
@@ -291,8 +298,21 @@ def detect(
             suppressed.append((paras[i].number, "chapter", "below_minimum_words"))
             continue
         kept.append(i)
-    kept_set = set(kept)
     held = _parts(kept, chapters, body_start)
+    # A heading exempted as a part whose chapters were all dropped is a chapter again.
+    for i in [i for i in kept if i in holders and i not in held]:
+        signals, heading = chapters[i]
+        end = next((k for k in kept if k > i), n)
+        if (
+            profile.min_chapter_words
+            and words(i + 1, end) < profile.min_chapter_words
+            and "override" not in signals
+            and heading.kind != "part"
+        ):
+            suppressed.append((paras[i].number, "chapter", "below_minimum_words"))
+            kept.remove(i)
+    held = _parts(kept, chapters, body_start)
+    kept_set = set(kept)
     part_starts = sorted(held)
     part_set = set(part_starts)
     owner_of = {k: i for i, children in held.items() for k in children}
@@ -443,9 +463,10 @@ def _parts(
     section (``Epílogo``).
     """
     out: dict[int, list[int]] = {}
-    for pos, i in enumerate(starts):
+    inside_part: set[int] = set()  # held by a Parte heading, so not a part itself
+    for pos, i in sorted(enumerate(starts), key=lambda e: (chapters[e[1]][1].kind != "part", e[0])):
         kind = chapters[i][1].kind
-        if i in body_start or kind not in ("chapter", "part", "numeral"):
+        if i in body_start or i in inside_part or kind not in ("chapter", "part", "numeral"):
             continue
         children: list[int] = []
         for k in starts[pos + 1 :]:
@@ -458,7 +479,9 @@ def _parts(
             children.append(k)
         if children:
             out[i] = children
-    return out
+            if kind == "part":
+                inside_part.update(children)
+    return dict(sorted(out.items()))
 
 
 def _resolve_overrides(
@@ -549,6 +572,44 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     elif profile.chapter_patterns and laid_out and number_word(para.text) is not None:
         signals.append("numeral")  # Uno, Dos… Veinte; Primera…
     return signals
+
+
+def _drop_style_openers(
+    paras: Sequence[Para],
+    blank: Sequence[bool],
+    chapters: dict[int, tuple[list[str], ChapterHeading]],
+    suppressed: list[tuple[int, Kind, str]],
+) -> None:
+    """Drop ``chapter_style`` starts that are really a titled chapter's opening paragraph.
+
+    When every style-marked start comes right after a heading start (blank lines aside)
+    and no heading is followed by two of them, the style is the house style for a
+    chapter's first paragraph, not a chapter marker.
+    """
+    styled = sorted(i for i, (signals, _) in chapters.items() if _style_only(signals))
+    if not styled:
+        return
+    text = sum(1 for b in blank if not b)
+    if len(styled) >= 3 and len(styled) * BODY_STYLE_SHARE > text:  # a body style
+        for i in styled:
+            if "override" not in chapters[i][0]:
+                del chapters[i]
+                suppressed.append((paras[i].number, "chapter", "body_style"))
+        return
+    headed: dict[int, int] = defaultdict(int)  # heading start -> styled starts after it
+    directly = True
+    for i in styled:
+        prev = next((k for k in range(i - 1, -1, -1) if not blank[k]), None)
+        if prev is None or prev not in chapters or prev in styled:
+            directly = False
+        owner = max((k for k in chapters if k < i and k not in styled), default=None)
+        if owner is not None:
+            headed[owner] += 1
+    if directly and all(count == 1 for count in headed.values()):
+        for i in styled:
+            if "override" not in chapters[i][0]:
+                del chapters[i]
+                suppressed.append((paras[i].number, "chapter", "opening_paragraph_style"))
 
 
 def _fold(text: str) -> str:

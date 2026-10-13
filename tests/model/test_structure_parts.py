@@ -36,7 +36,8 @@ def _book(rng: random.Random) -> tuple[list[Para], dict[str, Any]]:
         )
         part_at = len(rows)
         want["parts"].append(part_at)
-        for _ in range(rng.randint(1, 6)):
+        # one chapter under every heading reads as titled chapters with an opening style
+        for _ in range(rng.randint(2 if part == 1 else 1, 6)):
             n += 1
             if word_parts:
                 rows.append((f"Capítulo {n}", {**HEADING, "page_break_before": True}))
@@ -84,38 +85,84 @@ def test_parts_and_style_chapters_found_exactly() -> None:
     assert errors == 0
 
 
+def styled(n: int, text: str, style: str = OPEN_STYLE) -> Para:
+    return Para(n, text, fingerprint(text), style_name=style, page_break_before=True)
+
+
 def test_style_chapter_counts_its_first_paragraph() -> None:
     paras = [
         Para(1, "Mar", fingerprint("Mar"), **HEADING),
-        Para(2, BODY, fingerprint(BODY), style_name=OPEN_STYLE),
-        Para(3, BODY + ".", fingerprint(BODY + "."), style_name="Normal"),
+        styled(2, BODY),
+        styled(3, BODY + "!"),
+        Para(4, BODY + ".", fingerprint(BODY + "."), style_name="Normal"),
     ]
     found = detect(paras)
-    (chapter,) = found.chapters
+    chapter = found.chapters[1]
     assert chapter.signals[0] == "chapter_style"
     assert chapter.words == 2 * len(BODY.split())
-    assert found.parts[0].words == 0 and found.parts[0].chapters == 1
+    assert found.parts[0].words == 0 and found.parts[0].chapters == 2
     assert chapter.part == found.parts[0].id and found.parts[0].id.startswith("pt-")
 
 
 def test_style_words_are_configurable_and_can_be_off() -> None:
-    paras = [
-        Para(n, f"{BODY} {n}", fingerprint(f"{BODY} {n}"), style_name="Apertura") for n in (1, 2)
-    ]
+    paras = [styled(n, f"{BODY} {n}", "Apertura") for n in (1, 2)]
     assert detect(paras).chapters == ()
     assert len(detect(paras, Profile(chapter_style_words=("apertura",))).chapters) == 2
-    marked = [Para(1, BODY, fingerprint(BODY), style_name=OPEN_STYLE)]
+    marked = [styled(1, BODY)]
     assert detect(marked, Profile(chapter_styles=False)).chapters == ()
 
 
 def test_a_prologue_heading_is_not_a_part() -> None:
-    texts = ["Prólogo", BODY, BODY + " 1", BODY + " 2"]
-    styles = [None, "Normal", OPEN_STYLE, OPEN_STYLE]
     paras = [
-        Para(i, t, fingerprint(t), style_name=s, **(HEADING if i == 1 else {}))
-        for i, (t, s) in enumerate(zip(texts, styles, strict=True), 1)
+        Para(1, "Prólogo", fingerprint("Prólogo"), **HEADING),
+        Para(2, BODY, fingerprint(BODY), style_name="Normal"),
+        styled(3, BODY + " 1"),
+        styled(4, BODY + " 2"),
     ]
     found = detect(paras)
     assert found.parts == ()
     assert [c.first for c in found.chapters] == [1, 3, 4]
     assert found.front is None
+
+
+def test_titled_chapters_with_an_opening_style_stay_chapters() -> None:
+    """``Capítulo N`` headings, each followed by one paragraph in the opener style."""
+    rows: list[Para] = []
+    for n in (1, 2, 3):
+        rows.append(Para(len(rows) + 1, f"Capítulo {n}", fingerprint(f"c{n}"), **HEADING))
+        rows.append(styled(len(rows) + 1, f"{BODY} {n}"))
+        rows.append(Para(len(rows) + 1, BODY, fingerprint(f"x{n}")))
+    found = detect(rows)
+    assert found.parts == ()
+    assert [c.first for c in found.chapters] == [1, 4, 7]
+    assert {r for _, _, r in found.suppressed} == {"opening_paragraph_style"}
+
+
+def test_a_body_style_naming_chapters_marks_none() -> None:
+    rows = [
+        Para(n, f"{BODY} {n}", fingerprint(f"t{n}"), style_name="Texto capítulo")
+        for n in range(1, 6)
+    ]
+    found = detect(rows)
+    assert found.chapters == ()
+    assert {r for _, _, r in found.suppressed} == {"body_style"}
+
+
+def test_a_parte_holds_its_chapters_and_their_styled_chapters_flat() -> None:
+    rows = [
+        Para(1, "Parte I", fingerprint("p1"), **HEADING),
+        Para(2, "Capítulo 1", fingerprint("c1"), **HEADING),
+        styled(3, BODY),
+        styled(4, BODY + "!"),
+        Para(5, "Parte II", fingerprint("p2"), **HEADING),
+        styled(6, BODY + "?"),
+        *(Para(n, f"{BODY} {n}", fingerprint(f"b{n}")) for n in range(7, 11)),
+    ]
+    found = detect(rows)
+    assert [p.first for p in found.parts] == [1, 5]
+    assert [(c.first, c.part) for c in found.chapters] == [
+        (2, found.parts[0].id),
+        (3, found.parts[0].id),
+        (4, found.parts[0].id),
+        (6, found.parts[1].id),
+    ]
