@@ -8,8 +8,8 @@ Chapters
     A non-blank paragraph starts a chapter when it carries a *primary* signal:
 
     ``heading_style``   a heading style of level ``<= profile.chapter_level`` (``auto``:
-                        the shallowest level in use, or the next when the shallowest has
-                        at most ``AUTO_FEW`` headings over twice as many)
+                        the shallowest level in use, or the next when the shallowest holds
+                        only part headings or a single title)
     ``outline_level``   a direct outline level of level ``<= profile.chapter_level``
     ``chapter_word``    ``Capítulo 3``, ``CHAPTER IV. Title``, ``Parte II``
     ``section_name``    ``Prólogo``, ``Epílogo``, ``Introducción``
@@ -793,10 +793,6 @@ def _is_subtitle(text: str) -> bool:
 #: A heading found by blank lines alone has at most this many words.
 ISOLATED_WORDS = 12
 
-#: ``chapter_level: "auto"`` skips a shallowest level with at most this many headings when
-#: the next level used has at least twice as many (parts above chapters, a title).
-AUTO_FEW = 5
-
 
 def _isolated(
     paras: Sequence[Para],
@@ -808,7 +804,9 @@ def _isolated(
     """A short line set off by ``profile.chapter_blank_lines`` empty paragraphs above and one
     below (or below its subtitle line): a plain-text heading."""
     need = profile.chapter_blank_lines
-    if not need or blank_before[i] < need or is_scene_break(paras[i].text):
+    if not need or blank_before[i] < need or paras[i].heading_level is not None:
+        return False  # a heading style already says what it is
+    if is_scene_break(paras[i].text):
         return False
     text = paras[i].text.strip()
     if len(text.split()) > ISOLATED_WORDS:
@@ -824,15 +822,16 @@ def _isolated(
 
 def _auto_level(paras: Sequence[Para], blank: Sequence[bool]) -> int:
     """The shallowest heading level in use, or the next one used when the shallowest holds
-    only a few headings over many (``AUTO_FEW``)."""
-    counts: dict[int, int] = defaultdict(int)
+    only part headings (``Parte I``) or a single heading (a title)."""
+    texts: dict[int, list[str]] = defaultdict(list)
     for i, para in enumerate(paras):
         if para.heading_level is not None and para.text.strip() and not blank[i]:
-            counts[para.heading_level] += 1
-    levels = sorted(counts)
+            texts[para.heading_level].append(para.text)
+    levels = sorted(texts)
     if not levels:
         return 1
-    few = len(levels) > 1 and counts[levels[0]] <= AUTO_FEW
-    if few and counts[levels[1]] >= 2 * counts[levels[0]]:
+    top = texts[levels[0]]
+    parts = all((h := _parse_heading(t)) is not None and h.kind == "part" for t in top)
+    if len(levels) > 1 and (parts or len(top) == 1):
         return levels[1]
     return levels[0]

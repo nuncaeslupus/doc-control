@@ -52,8 +52,8 @@ PROFILE_PROPERTIES: dict[str, Any] = {
         "enum": [*range(1, 10), "auto"],
         "description": (
             "Deepest heading or outline level that starts a chapter (default 1). `auto`: "
-            "the shallowest level in use, or the next one when the shallowest has only a "
-            "few headings (parts, a title) over many."
+            "the shallowest level in use, or the next one when the shallowest holds only "
+            "part headings (`Parte I`) or a single title."
         ),
     },
     "chapter_blank_lines": {
@@ -61,8 +61,9 @@ PROFILE_PROPERTIES: dict[str, Any] = {
         "minimum": 0,
         "maximum": 50,
         "description": (
-            "Empty paragraphs above a short line (at most 12 words, no final punctuation) "
-            "with one below that make it a heading, for plain text; 0 = never (default)."
+            "Empty paragraphs above an unstyled short line (at most 12 words, no final "
+            "punctuation, not dialogue) with one below that make it a heading, for plain "
+            "text; 0 = never (default)."
         ),
     },
     "scene_blank_lines": {

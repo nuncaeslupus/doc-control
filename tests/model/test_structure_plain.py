@@ -10,7 +10,7 @@ from tests.model.test_structure import BODY, build
 PLAIN = Profile(chapter_blank_lines=2)
 
 
-def plain_book(headings: list[list[str]]) -> list[Any]:
+def plain_book(headings: list[list[Any]]) -> list[Any]:
     """Unstyled paragraphs as converted from a .txt: headings set off by blank lines."""
     rows: list[Any] = []
     for lines in headings:
@@ -40,3 +40,32 @@ def test_chapter_level_auto() -> None:
     parts = [("Primera parte", h1), *[r for n in range(4) for r in ((f"Cap {n}", h2), BODY)]]
     found = detect(build(*parts), Profile(chapter_level="auto"))
     assert (len(found.parts), len(found.chapters)) == (1, 4)
+
+
+def test_what_blank_lines_do_not_make_a_heading() -> None:
+    h2 = {"heading_level": 2, "heading_source": "heading_style"}
+    long = "uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece"
+    cases: list[list[Any]] = [
+        ["Era tarde."],
+        ["—Ven aquí"],
+        ["Dijo así:"],
+        [long],
+        [("Interludio", h2)],
+    ]
+    for lines in cases:
+        paras = build(*plain_book([["STORY OF THE DOOR"], lines]))
+        assert len(detect(paras, PLAIN).chapters) == 1, lines
+    one_above = build("", "Uno", "", BODY, "", "", "Dos", "", BODY)
+    assert [c.first for c in detect(one_above, PLAIN).chapters] == [7]
+    none_below = build("", "", "Uno", BODY, "", "", "Dos", "", BODY)
+    assert [c.first for c in detect(none_below, PLAIN).chapters] == [7]
+
+
+def test_chapter_level_auto_keeps_few_chapters_over_many_subheads() -> None:
+    h1 = {"heading_level": 1, "heading_source": "heading_style"}
+    h2 = {"heading_level": 2, "heading_source": "heading_style"}
+    rows = [r for n in range(3) for r in ((f"Cap {n}", h1), ("A", h2), BODY, ("B", h2), BODY)]
+    found = detect(build(*rows), Profile(chapter_level="auto"))
+    assert len(found.chapters) == 3
+    titled = [("La novela", h1), *[r for n in range(3) for r in ((f"Cap {n}", h2), BODY)]]
+    assert len(detect(build(*titled), Profile(chapter_level="auto")).chapters) >= 3
