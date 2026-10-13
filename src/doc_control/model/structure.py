@@ -21,6 +21,10 @@ Chapters
                         (it opens titled chapters)
     ``override``        an override forced it
 
+    Numerals may be decorated (``-I-``, ``— 3 —``, ``[IV]``). An untitled heading (a
+    numeral, ``Capítulo 3``) takes the short line right under it as its title
+    (``heading_last``): at most ``SUBTITLE_WORDS`` words, no final punctuation, no dialogue.
+
     Supporting signals ride along: ``centred``, ``page_break_before``, ``blank_lines``
     (empty paragraphs just before). A chapter whose text after the heading is shorter than
     ``profile.min_chapter_words`` is not a chapter (``suppressed``), unless it is forced or
@@ -35,10 +39,13 @@ Parts
     dedication), reported as ``front``.
 
 Scenes
-    A scene starts at a chapter start, at a scene-break paragraph (``scene_marker``), or
+    A scene starts at a chapter start, at a scene-break paragraph (``scene_marker``),
     after ``profile.scene_blank_lines`` or more empty paragraphs (``blank_lines``; off by
-    default). A break with no text on one side of it (next to a heading, another break or
-    the end of the chapter) opens no scene.
+    default), or at a paragraph whose style name holds a scene word as a whole word
+    (``Normal tras pausa``: ``scene_style``) unless it follows a heading or a scene-break
+    paragraph, or the style is a body style (as for ``chapter_style``). A break with no
+    text on one side of it (next to a heading, another break or the end of the chapter)
+    opens no scene.
 
 Overrides
     ``{fp, kind, action, nth}``: ``force`` or ``deny`` a ``chapter`` or ``scene`` at every
@@ -60,6 +67,7 @@ Stable ids
 from __future__ import annotations
 
 import hashlib
+import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Sequence
@@ -86,8 +94,21 @@ CHAPTER_STYLE_WORDS: tuple[str, ...] = (
     "hoofdstuk",
 )
 
+#: Words that mark a scene-opening paragraph style (``Normal tras pausa``, ``After break``),
+#: matched at the start of a word of the style name folded like ``CHAPTER_STYLE_WORDS``.
+SCENE_STYLE_WORDS: tuple[str, ...] = ("after", "tras", "despues")
+
 #: A chapter-word style marking more than one text paragraph in this many is a body style.
 BODY_STYLE_SHARE = 3
+
+#: A heading subtitle's most words.
+SUBTITLE_WORDS = 8
+
+_DECORATION = "-\u2013\u2014[]()*\u00b7~ \t"  # around a decorated numeral: -I-, — 3 —, [IV]
+_CLOSERS = "\"'\u00bb\u201d\u2019)]"
+_TERMINAL = ".,;:!?\u2026"
+_TITLED_KINDS = ("chapter", "part", "numeral")  # a Prólogo's next line is a dateline, say
+_DIALOGUE = '-\u2013\u2014\u00ab"\u201c'
 
 Kind = Literal["chapter", "scene"]
 Action = Literal["force", "deny"]
@@ -124,6 +145,9 @@ class Profile:
     language: str = "es"  # "es" accepts a lone "I" as a numeral; others need more signals
     chapter_styles: bool = True
     chapter_style_words: tuple[str, ...] = CHAPTER_STYLE_WORDS
+    scene_styles: bool = True
+    scene_style_words: tuple[str, ...] = SCENE_STYLE_WORDS
+    heading_subtitles: bool = True
 
 
 @dataclass(frozen=True)
@@ -144,6 +168,7 @@ class DetectedChapter:
     words: int  # words after the heading (with the first paragraph for ``chapter_style``)
     signals: tuple[str, ...]
     part: str | None = None  # the id of the part that holds it
+    heading_last: int | None = None  # the heading's last paragraph (its subtitle); None: no heading
 
 
 @dataclass(frozen=True)
@@ -156,6 +181,7 @@ class DetectedPart:
     words: int  # words between the heading and its first chapter
     chapters: int
     signals: tuple[str, ...]
+    heading_last: int | None = None
 
 
 @dataclass(frozen=True)
@@ -271,8 +297,12 @@ def detect(
     chapters = _chapter_starts(paras, blank, blank_before, profile, actions, suppressed)
     _drop_style_openers(paras, blank, chapters, suppressed)
     starts = sorted(chapters)
+    subtitles = _subtitles(paras, blank, chapters) if profile.heading_subtitles else {}
+    subtitle_set = set(subtitles.values())
 
-    scene_opener_signals = _scene_openers(paras, blank, blank_before, profile, actions, chapters)
+    scene_opener_signals = _scene_openers(
+        paras, blank, blank_before, profile, actions, chapters, subtitle_set
+    )
     for i in scene_opener_signals:
         if "denied" in scene_opener_signals[i]:
             suppressed.append((paras[i].number, "scene", "override"))
@@ -286,6 +316,7 @@ def detect(
         return (
             bool(text.strip())
             and (i not in chapters or i in body_start)
+            and i not in subtitle_set
             and not is_scene_break(text)
         )
 
@@ -352,6 +383,7 @@ def detect(
                 words(i + 1, children[0]),
                 len(children),
                 tuple(signals),
+                paras[subtitles.get(i, i)].number,
             )
         )
 
@@ -380,6 +412,7 @@ def detect(
                 words(i if i in body_start else i + 1, end),
                 tuple(signals),
                 part_of(i),
+                None if i in body_start else paras[subtitles.get(i, i)].number,
             )
         )
 
@@ -546,7 +579,7 @@ def _chapter_starts(
             signals.append("page_break_before")
         if blank_before[i]:
             signals.append("blank_lines")
-        heading = parse_chapter_heading(para.text)
+        heading = _parse_heading(para.text)
         if heading is None and (value := number_word(para.text)) is not None:
             heading = ChapterHeading("numeral", value, "")
         heading = heading or ChapterHeading("chapter", None, "")
@@ -570,13 +603,13 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
     )
     if styled and para.heading_source:
         signals.append(para.heading_source)
-    heading = parse_chapter_heading(para.text) if profile.chapter_patterns else None
+    heading = _parse_heading(para.text) if profile.chapter_patterns else None
     laid_out = styled or para.centred or para.page_break_before
     if heading is not None:
         if heading.kind in ("chapter", "part"):
             signals.append("chapter_word")
         elif heading.kind == "numeral":
-            lone_i = para.text.strip().rstrip(".)") == "I"
+            lone_i = para.text.strip().strip(_DECORATION).rstrip(".)") == "I"
             if lone_i and profile.language != "es":  # "I" is a pronoun in English
                 laid_out = styled or (para.centred and para.page_break_before)
             if laid_out:
@@ -638,17 +671,27 @@ def _scene_openers(
     profile: Profile,
     actions: dict[tuple[str, int], str],
     chapters: dict[int, tuple[list[str], ChapterHeading]],
+    subtitles: set[int],
 ) -> dict[int, list[str]]:
     """Paragraphs that would open a scene; one a deny override removed carries ``denied``."""
+    styled = _scene_styled(paras, blank, profile)
     out: dict[int, list[str]] = {}
     for i, para in enumerate(paras):
-        if blank[i] or i in chapters:
+        if blank[i] or i in chapters or i in subtitles:
             continue
         signals: list[str] = []
         if profile.scene_markers and is_scene_break(para.text):
             signals.append("scene_marker")
         elif profile.scene_blank_lines and blank_before[i] >= profile.scene_blank_lines:
             signals.append("blank_lines")
+        elif i in styled:
+            prev = next((k for k in range(i - 1, -1, -1) if not blank[k]), None)
+            heading = prev is not None and (
+                (prev in chapters and not _style_only(chapters[prev][0])) or prev in subtitles
+            )
+            marked = prev is not None and profile.scene_markers and is_scene_break(paras[prev].text)
+            if prev is not None and not heading and not marked:
+                signals.append("scene_style")
         action = actions.get(("scene", i))
         if action == "deny":
             if signals:
@@ -664,3 +707,71 @@ def _scene_openers(
             signals.append("blank_lines")
         out[i] = signals
     return out
+
+
+def _scene_styled(paras: Sequence[Para], blank: Sequence[bool], profile: Profile) -> set[int]:
+    """Text paragraphs whose style name marks a scene start, unless it is a body style."""
+    if not profile.scene_styles:
+        return set()
+    words = [w for w in (_fold(w.strip()) for w in profile.scene_style_words) if w]
+    if not words:
+        return set()
+    wanted = set(words)
+    marking: dict[str, bool] = {}
+    by_style: dict[str, list[int]] = defaultdict(list)
+    for i, para in enumerate(paras):
+        name = para.style_name
+        if blank[i] or not name or para.heading_level is not None:
+            continue
+        if name not in marking:
+            split = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name)  # AfterBreak: After Break
+            marking[name] = not wanted.isdisjoint(re.findall(r"[a-z0-9]+", _fold(split)))
+        if marking[name]:
+            by_style[name].append(i)
+    text = sum(1 for b in blank if not b)
+    out: set[int] = set()
+    for found in by_style.values():
+        if not (len(found) >= 3 and len(found) * BODY_STYLE_SHARE > text):
+            out.update(found)
+    return out
+
+
+def _parse_heading(text: str) -> ChapterHeading | None:
+    """:func:`parse_chapter_heading`, also through a decorated numeral (``-I-``, ``— 3 —``)."""
+    heading = parse_chapter_heading(text)
+    if heading is None:
+        core = text.strip().strip(_DECORATION)
+        if core and core != text.strip():
+            heading = parse_chapter_heading(core)
+    return heading
+
+
+def _subtitles(
+    paras: Sequence[Para],
+    blank: Sequence[bool],
+    chapters: dict[int, tuple[list[str], ChapterHeading]],
+) -> dict[int, int]:
+    """Untitled headings (``-I-``, ``Capítulo 3``) with the short title line right under them."""
+    out: dict[int, int] = {}
+    for i, (signals, _) in chapters.items():
+        j = i + 1
+        if _style_only(signals) or j >= len(paras) or blank[j] or j in chapters:
+            continue
+        text = paras[i].text
+        parsed = _parse_heading(text)
+        untitled = (
+            parsed is not None and not parsed.title and parsed.kind in _TITLED_KINDS
+        ) or number_word(text) is not None
+        if untitled and _is_subtitle(paras[j].text):
+            out[i] = j
+    return out
+
+
+def _is_subtitle(text: str) -> bool:
+    words = text.split()
+    if not 1 <= len(words) <= SUBTITLE_WORDS or is_scene_break(text):
+        return False
+    tail = text.rstrip().rstrip(_CLOSERS)
+    if not tail or tail[-1] in _TERMINAL or text.lstrip()[0] in _DIALOGUE:
+        return False
+    return _parse_heading(text) is None

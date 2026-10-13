@@ -90,6 +90,28 @@ PROFILE_PROPERTIES: dict[str, Any] = {
             "(default capítulo, chapter, chapitre, kapitel, capitolo, hoofdstuk)."
         ),
     },
+    "scene_styles": {
+        "type": "boolean",
+        "description": (
+            "A paragraph whose style name holds a scene word (`Normal tras pausa`, "
+            "`After break`) starts a scene, unless it follows a heading (default true)."
+        ),
+    },
+    "scene_style_words": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": (
+            "Words that mark a scene-opening style name, as whole words, any case "
+            "and accents (default after, tras, después)."
+        ),
+    },
+    "heading_subtitles": {
+        "type": "boolean",
+        "description": (
+            "A short line (at most 8 words, no final punctuation) right under an untitled "
+            "heading (`-I-`, `Capítulo 3`) is the heading's title, not text (default true)."
+        ),
+    },
 }
 
 
@@ -219,8 +241,9 @@ def _address(doc: Document, number: int) -> Address:
 def profile_of(request: dict[str, Any]) -> Profile:
     language = request.get("language", DEFAULT_LANGUAGE)
     settings = dict(request.get("profile", {}))
-    if "chapter_style_words" in settings:
-        settings["chapter_style_words"] = tuple(settings["chapter_style_words"])
+    for key in ("chapter_style_words", "scene_style_words"):
+        if key in settings:
+            settings[key] = tuple(settings[key])
     return Profile(**{"language": language, **settings})
 
 
@@ -253,6 +276,7 @@ def _chapters(doc: Document, found: Structure) -> list[dict[str, Any]]:
                 "number": chapter.number,
                 "text": " ".join(para.text.split())[:_TEXT],
                 "first": chapter.first,
+                "heading_last": chapter.heading_last,
                 "last": chapter.last,
                 "words": chapter.words,
                 "scenes": scenes.get(chapter.id, 0),
@@ -275,6 +299,7 @@ def _parts(doc: Document, found: Structure) -> list[dict[str, Any]]:
                 "number": part.number,
                 "text": " ".join(para.text.split())[:_TEXT],
                 "first": part.first,
+                "heading_last": part.heading_last,
                 "last": part.last,
                 "words": part.words,
                 "chapters": part.chapters,
