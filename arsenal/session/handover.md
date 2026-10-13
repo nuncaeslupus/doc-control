@@ -2,27 +2,25 @@
 
 ## Last task
 
-- **ID**: T30 manual real word check (t-85df5159), run on the owner's Windows machine.
-- **Status at handover**: T30 measured on one Word version (16.0.17932, 64-bit): 0 repair prompts, 0 round-trip mismatches; its PR waits on CI and review.
+- **ID**: 0.5.0 release (with this handover), after T58 cross-mark phrases for repeated paragraphs + `find` `query_word` (t-d84922e5, #134).
+- **Status at handover**: all work merged; releases publish on merge of a version bump (no owner approval needed any more).
 
 ## What was done this session
 
-Merged: T38 context-aware recipes (#90), T39 in-process API (#93), T40 parts and style-marked chapters (#100), T41 normalised exact anchors + 0.1.0 (#101), T42 rendered page marks win (#102), T43 segment ranges (#103), T44 writer safety + T45 API polish (#105), T46 performance gate + T47 cold bulk read (#107), T48 page facts + 0.2.0 (#108), T29 references + coverage (#109), T49 scene styles + heading subtitles (#111), T50 plain-text headings + `chapter_level: auto` + uncapped in-process suppressed list (#113), T51 hard-wrapped headings (#114). T49-T50 were literary-critic's T6 asks; on a real manuscript `segment` now gives 156 scenes (literary-critic's own count), 54 chapters, 3 parts. literary-critic now runs all .docx handling on doc-control through `api.open`; it talks to this repo's sessions by send_message and files its needs as gated tasks.
+Merged since T51: empty-headings only Heading 1-9 (#117), T52 .txt/.md reads (#119), T53 lazy single-paragraph locate (#121), 0.4.0 (#122), T54 cross-mark find phrases + `find_phrase_word` (#124), T55 .txt `text_mode` auto/blocks/lines (#126), 0.4.1 (#127), live-engine spec draft + T30 real-Word script (#128), T56 cold path 0.32 s (lazy op imports, no xml.sax, `structure:false`) (#130), T57 .odt reads (#132), T58 (#134). All were literary-critic asks except the spec/T30 work. #132 and #134 used both review rounds; the last fix of each was self-reviewed at the owner's request ("Review yourself") and declared on the PR.
 
 ## What remains
 
-- literary-critic's open ask: read .txt/.md directly (spec open question 1) instead of re-converting to .docx.
-- Review notes declared on T49/T50: a subtitle under a chapter later suppressed by `min_chapter_words` stays out of word counts; decorated `(3)`/`[2]` laid out as headings parse as numerals; multi-word `scene_style_words` entries never match; a lone H1 is skipped under `chapter_level: auto`.
-- Rename `boundary`/`unsupported_structure` skip reasons untested.
-- T30 on Microsoft 365: not measured; rerun `scripts/real_word_auto.ps1` on a machine that has it (docs/real-word-check.md). The look of the tracked changes in step 3 was read through Word's revision list, not by eye.
+- **Live engine** (`arsenal/project/LIVE/spec.md`, draft r1): the owner answers its 4 open questions (or says "use the recommendations"), then `design` seeds tasks tagged by surface (LibreOffice first, testable here; Word on the owner's Windows session). The owner plans local Ubuntu+LibreOffice and Windows+Word sessions.
+- **T30** real-Word check: measured on the owner's Windows machine (Word 16.0.17932, 64-bit) with `scripts/real_word_auto.ps1`: 0 repair prompts, 0 round-trip mismatches (#136). Microsoft 365 not measured; the look of the tracked changes was read through Word's revision list, not by eye.
 - Windows sessions: the arsenal hooks and scripts call `python3` and `bash`; with neither on PATH the Edit/Write/Bash hook refuses every call. Put a real `python3` ahead of the Microsoft Store alias before starting a session there.
-- Performance still open against literary-critic's asks: cold `locate` ~1.0–1.2 s on 100k words (accepted; warm per-paragraph ≤ 50 ms is gated); first bulk read on a real 74k-word manuscript ~1.05 s (target 0.3–0.5 s): the next win is `splice.scan` (pure-Python byte scanner, ~0.4 s) and op-module import (~0.2 s).
-- Declared risks from reviews: per-paragraph parsed-element cache holds memory for an open document; process-wide caches (anchor normalised text LRU, find fold cache) are bounded by count, not bytes; `MARKS_TRUST_RATIO = 2.0` is uncalibrated; switching a document to a custom store hides its earlier history.
-- Earlier follow-ups (unchanged): zipio `_umask` thread safety and size cap; style batches not logged in history; T14 `w:bCs`; T15 reply order in one batch; T13 log-append atomicity; T21 stylesWithEffects retarget; T17 rename as batch kind; recipe engine edge cases (overlapping `$para`, deadline, OPS_CAP counting); GitHub Release for v0.0.1 not created.
+- literary-critic asks still open: find phrase for a range inside a paragraph (`at` with offsets), in-memory open of a draft (`.txt` path may already cover it).
+- Declared review notes (recent): Word's Find treats straight/curly quotes alike while uniqueness uses casefold; verse under `text_mode: auto` reads as blocks (use `lines`); changing `DOC_CONTROL_TEXT_MODE` mid-handle does not re-parse; `.txt/.md` styles.xml now lists Heading 7-9; hidden ODF text is read; `MAX_CONTENT` (.odt) untested; page estimation stays whole-document.
+- Older notes: see git history of this file (T49/T50 review notes, rename skip reasons untested, process-wide cache bounds, `MARKS_TRUST_RATIO` uncalibrated, zipio `_umask`, style batches not in history, T13-T21 follow-ups).
 
 ## How to continue
 
 1. Gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q`; benchmarks with `make bench` (a bench test named by node id also runs, see `tests/conftest.py`).
-2. Merge policy: CI green + adversarial review CLEAR (review-max-rounds = 2). `open_task_pr.sh` cuts its own branch from main when the work is already committed: instead archive the task file into `arsenal/tasks/_history/` by hand, push, open the PR, then post the marker from `adversarial_review.sh marker` (CI runs mypy over tests too: run plain `uv run mypy`).
+2. Merge policy: CI green + adversarial review CLEAR (review-max-rounds = 2; emit without `--reset` for round 2, record each reply with `adversarial_review.sh verdict` before editing the tree). `open_task_pr.sh` cuts its own branch from main when the work is already committed: instead archive the task file into `arsenal/tasks/_history/` by hand, push, open the PR, then post the marker from `adversarial_review.sh marker` (CI runs mypy over tests too: run plain `uv run mypy`).
 3. One designated branch per session: ship PRs in sequence; restart the branch from main after each merge (force-with-lease over merged history only).
 4. Private corpus only via `DOC_CONTROL_PRIVATE_CORPUS` or a gitignored `private/`; never commit or print names, paths or text from it.
