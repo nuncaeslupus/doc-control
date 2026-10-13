@@ -33,6 +33,8 @@ import sys
 import sysconfig
 import time
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -434,6 +436,64 @@ class LibreOffice:
         while shown.hasMoreElements():
             parts.append(_visible(shown.nextElement()))
         return "\n".join(parts), at[0]
+
+    @contextmanager
+    def _as(self, doc: Any, author: str) -> Iterator[None]:
+        """Tracked changes on and ``author`` as the user's name, both put back after."""
+        profile = self._config("/org.openoffice.UserProfile/Data")
+        name, tracking = (profile.givenname, profile.sn), doc.RecordChanges
+        profile.givenname, profile.sn = author, ""
+        profile.commitChanges()
+        doc.RecordChanges = True
+        try:
+            yield
+        finally:
+            doc.RecordChanges = tracking
+            profile.givenname, profile.sn = name
+            profile.commitChanges()
+
+    @_guard
+    def comment(self, path: Path, span: Span, text: str, author: str) -> None:
+        doc = self._doc(path)
+        cursor, _ = self._range(doc, span)
+        note = doc.createInstance("com.sun.star.text.textfield.Annotation")
+        now = datetime.now(UTC)
+        stamp = _uno().createUnoStruct("com.sun.star.util.DateTime")
+        stamp.Year, stamp.Month, stamp.Day = now.year, now.month, now.day
+        stamp.Hours, stamp.Minutes, stamp.Seconds, stamp.IsUTC = (
+            now.hour,
+            now.minute,
+            now.second,
+            True,
+        )
+        note.Author, note.Content, note.DateTimeValue = author, text, stamp
+        cursor.getText().insertTextContent(cursor, note, True)
+
+    @_guard
+    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
+        doc = self._doc(path)
+        cursor, _ = self._range(doc, span)
+        with self._as(doc, author):
+            cursor.setString(text)
+
+    @_guard
+    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
+        doc = self._doc(path)
+        texts = self._texts(doc)
+        if not -1 <= after < len(texts):
+            raise LiveUnavailable(f"the open document has no paragraph {after + 1}")
+        anchor = self._paragraph(doc, texts, max(after, 0))
+        story = anchor.getText()
+        break_ = _uno().getConstantByName("com.sun.star.text.ControlCharacter.PARAGRAPH_BREAK")
+        with self._as(doc, author):
+            if after < 0:
+                cursor = story.createTextCursorByRange(anchor.getStart())
+                story.insertString(cursor, text, False)
+                story.insertControlCharacter(cursor, break_, False)
+            else:
+                cursor = story.createTextCursorByRange(anchor.getEnd())
+                story.insertControlCharacter(cursor, break_, False)
+                story.insertString(cursor, text, False)
 
     @_guard
     def save(self, path: Path) -> None:
