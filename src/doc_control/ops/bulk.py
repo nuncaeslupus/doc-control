@@ -35,7 +35,10 @@ from doc_control.registry import operation
             },
             "pages": {
                 "type": "boolean",
-                "description": "Add the estimated `page` and `page_label` (see page.estimate).",
+                "description": (
+                    "Add the estimated `page` and `page_label` per paragraph, and "
+                    "`page_basis`, `rendered_marks` and `page_count` (see page.estimate)."
+                ),
             },
             **PAGING_PROPERTIES,
         },
@@ -45,7 +48,15 @@ from doc_control.registry import operation
 )
 def paragraphs_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
-    pages = estimate_pages(doc).rows if request.get("pages") else None
+    estimate = estimate_pages(doc) if request.get("pages") else None
+    pages = estimate.rows if estimate is not None else None
+    head: dict[str, Any] = {}
+    if estimate is not None:  # whether the pages are Word's own (rendered marks) or modelled
+        head = {
+            "page_basis": estimate.basis,
+            "rendered_marks": estimate.marks,
+            "page_count": estimate.pages,
+        }
     names: dict[str, str] = {}
     items: list[dict[str, Any]] = []
     for para in doc.index.paragraphs:
@@ -74,4 +85,4 @@ def paragraphs_list(request: dict[str, Any]) -> Reply:
             item["page"] = row.page
             item["page_label"] = row.label
         items.append(item)
-    return paged("paragraphs.list", doc, request, "paragraphs", items)
+    return paged("paragraphs.list", doc, request, "paragraphs", items, head)

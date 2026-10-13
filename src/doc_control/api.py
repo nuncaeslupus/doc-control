@@ -84,7 +84,11 @@ class OpenDocument:
         return reply.result
 
     def paragraphs(self, *, normalized: bool = False, pages: bool = False) -> list[dict[str, Any]]:
-        """Every paragraph with its address, text, style and layout facts (``paragraphs.list``)."""
+        """Every paragraph with its address, text, style and layout facts (``paragraphs.list``).
+
+        The page header (``page_basis``, ``rendered_marks``, ``page_count``) comes with
+        ``run("paragraphs.list", {"pages": True})``.
+        """
         result = self.run("paragraphs.list", {"normalized": normalized, "pages": pages})
         rows: list[dict[str, Any]] = result["paragraphs"]
         return rows

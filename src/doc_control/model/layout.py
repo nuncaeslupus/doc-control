@@ -33,6 +33,7 @@ alignment from a table style or from numbering levels; ``w:lastRenderedPageBreak
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 
@@ -117,12 +118,60 @@ def centred(doc: Document, para: Paragraph) -> bool:
     return alignment == "center"
 
 
-def _section_break_before(prev: ET.Element) -> bool:
-    sect = prev.find(f"{W}pPr/{W}sectPr")
-    if sect is None:
+def _section_break_before(doc: Document, prev: Paragraph) -> bool:
+    """Whether the section that starts after ``prev`` (which closes one) starts a page.
+
+    A ``w:sectPr`` describes the section it closes, ``w:type`` included: how that
+    section starts. So the section after ``prev`` starts as its own closer says: the next
+    paragraph-level ``w:sectPr``, else the body's.
+    """
+    if _elem(doc, prev).find(f"{W}pPr/{W}sectPr") is None:
         return False
-    kind = sect.find(W + "type")
+    closer = _closers(doc)[prev.number]  # the closer of the section after prev
+    if closer is None:
+        return True  # no closer read: Word's default section start is a new page
+    kind = closer.find(W + "type")
     return (kind.get(W + "val", "nextPage") if kind is not None else "nextPage") in _PAGE_SECTIONS
+
+
+_SECT_OPEN = re.compile(rb"<(?:[\w.-]+:)?sectPr[\s/>]")
+
+
+def _closers(doc: Document) -> list[ET.Element | None]:
+    """Per paragraph index (0-based), the ``w:sectPr`` closing that paragraph's section."""
+
+    def build() -> list[ET.Element | None]:
+        out: list[ET.Element | None] = [None] * len(doc.index.paragraphs)
+        pending: list[int] = []
+        for i, para in enumerate(doc.index.paragraphs):
+            pending.append(i)
+            sect = _elem(doc, para).find(f"{W}pPr/{W}sectPr")
+            if sect is not None:
+                for k in pending:
+                    out[k] = sect
+                pending = []
+        body = _body_sect(doc)
+        for k in pending:
+            out[k] = body
+        return out
+
+    return doc.memo("section-closers", build)
+
+
+def _body_sect(doc: Document) -> ET.Element | None:
+    """The body-level ``w:sectPr`` (the last section's), read without parsing the body."""
+    data = doc.index.spans.data
+    after = doc.index.spans.paragraphs[-1].end if doc.index.spans.paragraphs else 0
+    opening = _SECT_OPEN.search(data, after)  # the body's; a tracked change nests another
+    close = data.rfind(b"sectPr>")
+    if opening is None or close < opening.start():
+        return None
+    fragment = data[opening.start() : close + len(b"sectPr>")]
+    try:
+        root = ET.fromstring(b'<r xmlns:w="' + W[1:-1].encode() + b'">' + fragment + b"</r>")
+    except ET.ParseError:
+        return None
+    return root[0] if len(root) else None
 
 
 def page_break_before(doc: Document, para: Paragraph) -> bool:
@@ -140,7 +189,7 @@ def page_break_before(doc: Document, para: Paragraph) -> bool:
     if prev is None:
         return False
     prev_elem = _elem(doc, prev)
-    if _section_break_before(prev_elem):
+    if _section_break_before(doc, prev):
         return True
     last = None
     for item in _events(prev_elem):
