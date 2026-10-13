@@ -63,8 +63,9 @@ PROFILE_PROPERTIES: dict[str, Any] = {
         "description": (
             "Empty paragraphs above an unstyled short line (at most 12 words, no final "
             "punctuation, not dialogue) with one below that make it a heading, for plain "
-            "text; a numeral or chapter-word line (`-XIV-`, `CAPÍTULO 3`) needs none below "
-            "and takes a title line under it of up to 14 words; 0 = never (default)."
+            "text; a chapter-word or decorated numeral line (`CAPÍTULO 3`, `-XIV-`) needs "
+            "none below and takes a title line under it of up to 14 words; 0 = never "
+            "(default)."
         ),
     },
     "scene_blank_lines": {

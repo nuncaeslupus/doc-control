@@ -57,8 +57,9 @@ def test_what_blank_lines_do_not_make_a_heading() -> None:
         assert len(detect(paras, PLAIN).chapters) == 1, lines
     one_above = build("", "Uno", "", BODY, "", "", "Dos", "", BODY)
     assert [c.first for c in detect(one_above, PLAIN).chapters] == [7]
-    none_below = build("", "", "Silencio", BODY, "", "", "Dos", "", BODY)
-    assert [c.first for c in detect(none_below, PLAIN).chapters] == [7]
+    for word in ("Silencio", "Uno", "3", "1.", "I"):
+        none_below = build("", "", word, BODY, "", "", "Dos", "", BODY)
+        assert [c.first for c in detect(none_below, PLAIN).chapters] == [7], word
 
 
 def test_chapter_level_auto_keeps_few_chapters_over_many_subheads() -> None:

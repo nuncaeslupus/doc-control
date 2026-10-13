@@ -24,8 +24,8 @@ Chapters
     ``isolated``        a short line (``ISOLATED_WORDS``, no final punctuation, not
                         dialogue) with ``profile.chapter_blank_lines`` or more empty
                         paragraphs above and one below (or below its subtitle line): a
-                        plain-text heading; off by default. A numeral or chapter-word
-                        line needs no empty paragraph below, and its title line under it
+                        plain-text heading; off by default. A chapter-word or decorated
+                        numeral line needs no empty paragraph below, and its title line under it
                         may run to ``PLAIN_SUBTITLE_WORDS``. It is also layout for numerals
     ``override``        an override forced it
 
@@ -806,8 +806,8 @@ def _isolated(
     profile: Profile,
 ) -> bool:
     """A short line set off by ``profile.chapter_blank_lines`` empty paragraphs above and one
-    below (or below its subtitle line): a plain-text heading. A line that names a heading
-    (``-XIV-``, ``CAPÍTULO 3``) needs only the empty paragraphs above."""
+    below (or below its subtitle line): a plain-text heading. A chapter word or a decorated
+    numeral (``-XIV-``, ``CAPÍTULO 3``) needs only the empty paragraphs above."""
     need = profile.chapter_blank_lines
     if not need or blank_before[i] < need or paras[i].heading_level is not None:
         return False  # a heading style already says what it is
@@ -816,15 +816,25 @@ def _isolated(
     text = paras[i].text.strip()
     if len(text.split()) > ISOLATED_WORDS:
         return False
-    named = _parse_heading(text) is not None or number_word(text) is not None
-    if named:
+    if _marked_heading(text):
         return True  # -XIV-, CAPÍTULO 3: hard-wrapped text puts its title right under it
-    if text.rstrip(_CLOSERS)[-1:] in tuple(_TERMINAL) or text[0] in _DIALOGUE:
+    named = _parse_heading(text) is not None or number_word(text) is not None
+    if not named and (text.rstrip(_CLOSERS)[-1:] in tuple(_TERMINAL) or text[0] in _DIALOGUE):
         return False  # a short sentence or a line of dialogue set apart
     after = i + 1
     if after < len(paras) and not blank[after] and _is_subtitle(paras[after].text):
         after += 1
     return after >= len(paras) or blank[after]
+
+
+def _marked_heading(text: str) -> bool:
+    """A chapter word (``CAPÍTULO 3``, ``Parte II``) or a decorated numeral (``-XIV-``), not
+    a bare ``3`` or ``Uno``, which open many a list or line of dialogue."""
+    parsed = parse_chapter_heading(text)
+    if parsed is not None:
+        return parsed.kind in ("chapter", "part")
+    core = text.strip().strip(_DECORATION)
+    return core != text.strip() and _parse_heading(text) is not None
 
 
 def _auto_level(paras: Sequence[Para], blank: Sequence[bool]) -> int:

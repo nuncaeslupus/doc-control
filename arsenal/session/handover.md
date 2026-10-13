@@ -16,7 +16,7 @@ Merged: T38 context-aware recipes (#90), T39 in-process API (#93), T40 parts and
 - Rename `boundary`/`unsupported_structure` skip reasons untested.
 - T30 manual real-Word check (needs Windows + Word 2016+/M365): the only task left in the queue.
 - Performance still open against literary-critic's asks: cold `locate` ~1.0–1.2 s on 100k words (accepted; warm per-paragraph ≤ 50 ms is gated); first bulk read on a real 74k-word manuscript ~1.05 s (target 0.3–0.5 s): the next win is `splice.scan` (pure-Python byte scanner, ~0.4 s) and op-module import (~0.2 s).
-- Declared risks from reviews: per-paragraph parsed-element cache holds memory for an open document; process-wide caches (anchor normalised text LRU, find fold cache) are bounded by count, not bytes; `MARKS_TRUST_RATIO = 2.0` is uncalibrated; switching a document to a custom store hides its earlier history; 
+- Declared risks from reviews: per-paragraph parsed-element cache holds memory for an open document; process-wide caches (anchor normalised text LRU, find fold cache) are bounded by count, not bytes; `MARKS_TRUST_RATIO = 2.0` is uncalibrated; switching a document to a custom store hides its earlier history.
 - Earlier follow-ups (unchanged): zipio `_umask` thread safety and size cap; style batches not logged in history; T14 `w:bCs`; T15 reply order in one batch; T13 log-append atomicity; T21 stylesWithEffects retarget; T17 rename as batch kind; recipe engine edge cases (overlapping `$para`, deadline, OPS_CAP counting); GitHub Release for v0.0.1 not created.
 
 ## How to continue
