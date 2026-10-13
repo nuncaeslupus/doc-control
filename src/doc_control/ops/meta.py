@@ -6,6 +6,7 @@ from typing import Any
 
 from doc_control import API_VERSION, __version__
 from doc_control.errors import HINTS, DocControlError, ErrorCode
+from doc_control.live.dispatch import apps
 from doc_control.registry import REGISTRY, load_operations, operation
 
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -17,7 +18,8 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
     return {
         "api": API_VERSION,
         "version": __version__,
-        "engines": ["file"],
+        "engines": ["file", "live"],
+        "live": {"apps": apps()},
         "operations": [
             {"name": op.name, "kind": op.kind, "summary": op.summary}
             for op in sorted(REGISTRY.values(), key=lambda o: o.name)
