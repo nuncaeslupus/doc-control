@@ -13,10 +13,10 @@ from doc_control.ooxml.plaintext import decode, paragraphs
 
 _WRAPPED = (
     "Title\n\n\n\nCHAPTER I\n\n\n"
-    "It was a dark and stormy night; the rain fell in\n"
-    "torrents, except at occasional intervals, when it\n"
-    "was checked by a violent gust of wind which swept\n"
-    "up the streets.\n\nNext.\n"
+    "It was a dark and stormy night; the rain fell in torrents, except at\n"
+    "occasional intervals, when it was checked by a violent gust of wind\n"
+    "which swept up the streets (for it is in London that our scene lies),\n"
+    "rattling along the housetops.\n\nNext.\n"
 )
 
 
@@ -30,7 +30,8 @@ def test_blocks_join_blocks_and_keeps_extra_blank_lines() -> None:
         "CHAPTER I",
         "",
         "It was a dark and stormy night; the rain fell in torrents, except at occasional "
-        "intervals, when it was checked by a violent gust of wind which swept up the streets.",
+        "intervals, when it was checked by a violent gust of wind which swept up the streets "
+        "(for it is in London that our scene lies), rattling along the housetops.",
         "Next.",
     ]
 
@@ -212,7 +213,7 @@ def test_text_source_gate(tmp_path: Path) -> None:
         doc = d.reply("info").doc or {}
         checks += [
             texts == [t for t, _ in paragraphs(_WRAPPED, markdown=False)[0]],
-            texts[3] == "CHAPTER I" and texts[5].endswith("swept up the streets."),
+            texts[3] == "CHAPTER I" and texts[5].endswith("along the housetops."),
             [c["text"] for c in found["chapters"]] == ["CHAPTER I"],
             doc.get("source") == {"format": "txt", "encoding": "utf-8", "mode": "blocks"},
         ]
