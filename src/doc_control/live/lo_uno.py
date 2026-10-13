@@ -98,15 +98,15 @@ def _libpython() -> Path:
 def _uno() -> Any:
     """The ``uno`` module, or ``LiveUnavailable`` with why this Python cannot load it."""
     program = _bridge()
-    if program is not None:
-        # pyuno links libpython, which a uv or pyenv Python does not put on the loader path.
-        ctypes.CDLL(str(_libpython()), mode=ctypes.RTLD_GLOBAL)
-        os.environ["URE_BOOTSTRAP"] = f"vnd.sun.star.pathname:{program}/fundamentalrc"
-        sys.path.append(program)
     try:
+        if program is not None:
+            # pyuno links libpython, which a uv or pyenv Python does not put on the loader path.
+            ctypes.CDLL(str(_libpython()), mode=ctypes.RTLD_GLOBAL)
+            os.environ["URE_BOOTSTRAP"] = f"vnd.sun.star.pathname:{program}/fundamentalrc"
+            sys.path.append(program)
         return importlib.import_module("uno")
     except (ImportError, OSError) as err:
-        if program is not None:
+        if program in sys.path:
             sys.path.remove(program)
         raise LiveUnavailable(
             f"LibreOffice's Python bridge (uno) cannot be imported: {err}"
@@ -268,10 +268,11 @@ class LibreOffice:
             _bridge()
             with contextlib.suppress(OSError), socket.create_connection(("localhost", _port()), 1):
                 out["listening"] = True
-            if self._desk is not None:
-                out["version"] = self._version()
         except LiveUnavailable as err:
             return {**out, "reason": str(err)}
+        if self._desk is not None:
+            with contextlib.suppress(LiveUnavailable):  # the writer quit it: ``open`` restarts
+                out["version"] = self._version()
         if not (out["listening"] or out["available"]):
             return {**out, "reason": "LibreOffice is not installed"}
         return {**out, "reachable": True}  # not running yet: ``open`` starts it

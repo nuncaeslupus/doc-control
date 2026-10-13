@@ -96,7 +96,8 @@ def test_probe_never_loads_the_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     monkeypatch.setattr(lo_uno, "_uno", loaded)
     with using(cast(LiveAdapter, LibreOffice())):
-        assert api.run("capabilities", {}).result["live"]["apps"][0]["app"] == "libreoffice"
+        found = api.run("capabilities", {}).result["live"]["apps"][0]
+    assert found["app"] == "libreoffice" and "probe imported uno" not in found.get("reason", "")
 
     # A bridge built for another Python is a reason, found without importing it.
     (tmp_path / "uno.py").write_text("raise SystemExit('imported')\n")
