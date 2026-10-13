@@ -359,7 +359,7 @@ def term_rename(request: dict[str, Any]) -> Reply:
         "to": new,
         "dry_run": dry_run,
         "counts": counts.to_dict(),
-        "skipped": sorted(plan.skipped, key=lambda s: _order(s["at"])),
+        "skipped": sorted(plan.skipped, key=lambda s: _order(s["at"]))[:limit],
         "preview": [
             {"at": c.at, "before": c.before, "after": c.after, "context": c.context}
             for c in plan.changes[:limit]

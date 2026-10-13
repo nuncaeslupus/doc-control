@@ -101,19 +101,25 @@ def stores_in(root: Path) -> Iterator[None]:
         _STORE_ROOT.reset(token)
 
 
+def custom_store_root(env: Mapping[str, str] | None = None) -> Path | None:
+    """The caller-chosen folder for all stores, if any (:func:`stores_in` wins)."""
+    env = os.environ if env is None else env
+    chosen = _STORE_ROOT.get()
+    if chosen is None and env.get("DOC_CONTROL_STORE_DIR"):
+        chosen = Path(env["DOC_CONTROL_STORE_DIR"]).expanduser()
+    return chosen
+
+
 def store_dir(doc_path: Path, env: Mapping[str, str] | None = None) -> Path:
     """Where the store for ``doc_path`` lives under the configured mode.
 
     A caller-chosen root (:func:`stores_in`, else ``DOC_CONTROL_STORE_DIR``) wins, laid out
-    like the app-data mode, so nothing but the document is written next to it.
+    like the app-data mode, so the store is not next to the document (atomic-write temp
+    files still are, during a write).
     """
     env = os.environ if env is None else env
     doc_path = doc_path.resolve()
-    root = _STORE_ROOT.get() or (
-        Path(env["DOC_CONTROL_STORE_DIR"]).expanduser()
-        if env.get("DOC_CONTROL_STORE_DIR")
-        else None
-    )
+    root = custom_store_root(env)
     canonical = os.path.normcase(str(doc_path))
     key = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
     if root is not None:

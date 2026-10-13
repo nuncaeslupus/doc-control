@@ -46,6 +46,7 @@ from doc_control.safety.store import (
     STORE_DIRNAME,
     DocStore,
     _write_text_atomic,
+    custom_store_root,
     store_dir,
     user_home,
 )
@@ -488,13 +489,18 @@ def find_orphans(
 ) -> dict[str, list[dict[str, Any]]]:
     """Stores whose document is gone (``orphans``) or unknown (``unknown``).
 
-    Looks in the app-data stores and, with ``folder``, in ``folder/.doc-control``.
+    Looks in the app-data stores, in a caller-chosen store root (``stores_in`` or
+    ``DOC_CONTROL_STORE_DIR``) and, with ``folder``, in ``folder/.doc-control``.
     Nothing is ever deleted here.
     """
     orphans: list[dict[str, Any]] = []
     unknown: list[dict[str, Any]] = []
+    roots = [user_home(env) / "stores"]
+    custom = custom_store_root(env)
+    if custom is not None:
+        roots.append(custom)
     candidates: list[tuple[Path, Path | None]] = [
-        (root, None) for root in _subdirs(user_home(env) / "stores")
+        (root, None) for base in roots for root in _subdirs(base)
     ]
     if folder is not None:
         candidates += [(root, folder / root.name) for root in _subdirs(folder / STORE_DIRNAME)]
