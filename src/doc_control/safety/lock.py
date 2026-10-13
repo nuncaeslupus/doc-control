@@ -14,7 +14,9 @@ LibreOffice writes ``.~lock.<name>#`` next to the document, which is checked too
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
+from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.zipio import sha256_file
@@ -42,15 +44,59 @@ def find_lock_file(doc_path: Path) -> Path | None:
     return None
 
 
-def check_unlocked(doc_path: Path) -> None:
-    """Raise ``DOC_LOCKED`` if Word's owner lock file sits next to the document."""
+def _libreoffice_running() -> bool | None:
+    """Whether a LibreOffice process runs on this machine; None where that cannot be told."""
+    proc = Path("/proc")
+    if not (proc / "self" / "comm").is_file():
+        return None  # ponytail: Linux only; a process list for Windows and macOS when needed
+    for comm in proc.glob("[0-9]*/comm"):
+        try:
+            if comm.read_text().strip() == "soffice.bin":
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def lock_info(doc_path: Path) -> dict[str, Any] | None:
+    """The editor holding ``doc_path`` by its lock file: ``{"app", "lock_file", "stale"}``.
+
+    ``stale`` is True only when the lock is provably left over: a LibreOffice lock written
+    on this machine while no LibreOffice runs here. It is None when that cannot be told:
+    Word's lock names no machine, so the document may be open over a shared folder.
+    """
     lock = find_lock_file(doc_path)
-    if lock is not None:
+    if lock is None:
+        return None
+    if not lock.name.startswith(".~lock."):
+        return {"app": "word", "lock_file": str(lock), "stale": None}
+    stale: bool | None = None
+    try:
+        # ``name,login,host,date,profile;``
+        fields = lock.read_text(encoding="utf-8", errors="replace").split(",")
+    except OSError:
+        fields = []
+    if len(fields) > 2 and fields[2] == socket.gethostname():
+        running = _libreoffice_running()
+        stale = None if running is None else not running
+    return {"app": "libreoffice", "lock_file": str(lock), "stale": stale}
+
+
+_APP_NAMES = {"word": "Word", "libreoffice": "LibreOffice"}
+
+
+def check_unlocked(doc_path: Path) -> None:
+    """Raise ``DOC_LOCKED`` if an editor's lock file sits next to the document."""
+    info = lock_info(doc_path)
+    if info is not None:
+        lock = Path(info["lock_file"])
+        left_over = " left over: no LibreOffice is running" if info["stale"] else ""
         raise DocControlError(
             ErrorCode.DOC_LOCKED,
-            f"an editor has {doc_path.name} open (lock file {lock.name})",
+            f"{_APP_NAMES[info['app']]} has {doc_path.name} open"
+            f" (lock file {lock.name}{left_over})",
             path=str(doc_path),
-            lock_file=str(lock),
+            **info,
         )
 
 

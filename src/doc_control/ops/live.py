@@ -14,6 +14,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter
 from doc_control.registry import operation
+from doc_control.safety.lock import lock_info
 
 _DOC = {"type": "string", "minLength": 1, "description": "Path to the document."}
 _ENGINE = {"enum": ["live"], "description": "Always the live engine; may be left out."}
@@ -53,6 +54,11 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
                 out["open_in"] = {"app": adapter.app, "controlled": True}
                 out["dirty"] = guarded(adapter.dirty, path)
                 break
+        else:
+            lock = lock_info(path)
+            if lock is not None:
+                # Open in a window this engine does not drive (or a lock left behind).
+                out["open_in"] = {"app": lock["app"], "controlled": False, "stale": lock["stale"]}
     return out
 
 
