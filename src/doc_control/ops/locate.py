@@ -40,7 +40,10 @@ Find phrase
 
 Cost: the indexes (prefix and suffix word tuples, up to ``MAX_SIDE`` long), the structure and
 the page estimates are built once per call, then each paragraph is a handful of set
-lookups. Whole-document mode is paged and each response builds only its own rows.
+lookups. Whole-document mode is paged and each response builds only its own rows. An
+``at`` of at most ``LAZY_MAX`` paragraphs skips the indexes (unless an open document
+already holds them): :class:`LazyIndexes` answers those paragraphs alone, with the same
+results.
 """
 
 from __future__ import annotations
@@ -69,6 +72,7 @@ SEPARATOR = " … "
 _TITLE = 160
 MAX_FIND_WORDS = 25
 LONG_WORD = 24  # longer words are kept out of the affix tables (see FindIndex)
+LAZY_MAX = 20  # at most this many paragraphs asked: answer them without the indexes
 _WORD = re.compile(r"\S+")
 _BREAK = re.compile(r"[\n\r\x0b\x0c]")
 
@@ -318,6 +322,116 @@ class FindIndex:
         return None
 
 
+class LazyIndexes:
+    """Locator and find phrases of a few paragraphs, without the whole-document indexes.
+
+    Gives what :class:`LocatorIndex` and :class:`FindIndex` give for the same paragraph
+    (the gate compares them on every paragraph of the corpus); each answer costs a scan of
+    the paragraphs' edges and substring counts in the document's folded text, which beats
+    building both indexes when a request asks about a handful of paragraphs.
+    """
+
+    def __init__(self, texts: list[str]) -> None:
+        self.texts = texts
+        self.haystack = "\r".join(t.casefold() for t in texts)
+        self._copies: Counter[str] | None = None  # folded text -> paragraphs holding it
+        self._edges: list[tuple[tuple[str, ...], tuple[str, ...], int]] | None = None
+        self._locators: dict[int, Locator] = {}
+        self._finds: dict[int, FindPhrase] = {}
+
+    def _keys(self, i: int) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
+        text = self.texts[i]
+        spans = word_spans(text)
+        return spans, tuple(text[s:e].casefold() for s, e in spans)
+
+    def _edge_table(self) -> list[tuple[tuple[str, ...], tuple[str, ...], int]]:
+        """Per paragraph: its first and last ``MAX_SIDE`` folded words and its word count."""
+        if self._edges is None:
+            edges = []
+            for text in self.texts:
+                words = text.casefold().split()
+                edges.append((tuple(words[:MAX_SIDE]), tuple(words[-MAX_SIDE:]), len(words)))
+            self._edges = edges
+        return self._edges
+
+    def _copies_of(self, i: int) -> int:
+        if self._copies is None:
+            self._copies = Counter(t.casefold() for t in self.texts)
+        return self._copies[self.texts[i].casefold()]
+
+    def locator(self, i: int) -> Locator:
+        if i not in self._locators:
+            self._locators[i] = self._locator(i)
+        return self._locators[i]
+
+    def _locator(self, i: int) -> Locator:
+        spans, key = self._keys(i)
+        count = len(key)
+        if count == 0:
+            return Locator(None, reason="empty")
+        edges = self._edge_table()
+        # Only paragraphs sharing the first and the last word can match any head/tail.
+        alike = [
+            j
+            for j, (head, tail, n) in enumerate(edges)
+            if n and head[0] == key[0] and tail[-1] == key[-1]
+        ]
+        if any(j != i and edges[j][2] == count and self._keys(j)[1] == key for j in alike):
+            return Locator(None, reason="duplicate")
+        text = self.texts[i]
+        for total in range(2, min(count, 2 * MAX_SIDE + 1)):
+            for head in range(min(total - 1, MAX_SIDE), 0, -1):
+                tail = total - head
+                if tail > MAX_SIDE:
+                    break
+                first, last = key[:head], key[-tail:]
+                hits = sum(
+                    1
+                    for j in alike
+                    if edges[j][2] >= total
+                    and edges[j][0][:head] == first
+                    and edges[j][1][-tail:] == last
+                )
+                if hits == 1:
+                    return Locator(
+                        text[spans[0][0] : spans[head - 1][1]]
+                        + SEPARATOR
+                        + text[spans[-tail][0] : spans[-1][1]],
+                        head,
+                        tail,
+                    )
+        if count <= 2 * MAX_SIDE:
+            return Locator(text[spans[0][0] : spans[-1][1]], count, 0, complete=True)
+        return Locator(None, reason="not_unique_within_limit")
+
+    def find(self, i: int) -> FindPhrase:
+        if i not in self._finds:
+            self._finds[i] = self._find(i)
+        return self._finds[i]
+
+    def _once(self, key: str) -> bool:
+        """``key`` occurs exactly once in the document (occurrences may overlap)."""
+        at = self.haystack.find(key)
+        return at >= 0 and self.haystack.find(key, at + 1) < 0
+
+    def _find(self, i: int) -> FindPhrase:
+        text = self.texts[i]
+        spans, key = self._keys(i)
+        if not key:
+            return FindPhrase(None, reason="empty")
+        if self._copies_of(i) > 1:
+            return FindPhrase(None, reason="duplicate")
+        runs = FindIndex._run_ends(text, spans)
+        for length in range(1, MAX_FIND_WORDS + 1):
+            for s in range(len(spans) - length + 1):
+                if runs[s] < s + length - 1:
+                    continue
+                begin, end = spans[s][0], spans[s + length - 1][1]
+                if self._once(text[begin:end].casefold()):
+                    return FindPhrase(text[begin:end], length, begin)
+        return FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
+
+
 def _indexes(texts: list[str]) -> tuple[LocatorIndex, list[FindPhrase]]:
     locators = LocatorIndex(texts)
     return locators, FindIndex(locators).found
@@ -374,7 +488,21 @@ def locate(request: dict[str, Any]) -> Reply:
     texts = [index.paragraph(n).text for n in range(1, count + 1)]
     found = detect_in(doc, profile_of(request), overrides_of(request))
     pages = estimate_pages(doc)
-    locators, finds = doc.memo("locate-index", lambda: _indexes(texts))
+    if "at" in request:
+        resolved = index.resolve_range(request["at"])
+        numbers = range(resolved.first.number, resolved.last.number + 1)
+    else:
+        numbers = range(1, count + 1)
+    memo: dict[Any, Any] = doc.__dict__.get("_memo", {})
+    if len(numbers) <= LAZY_MAX and "locate-index" not in memo:
+        # A few paragraphs: answer them alone, without the whole-document indexes.
+        lazy = doc.memo("locate-lazy", lambda: LazyIndexes(texts))
+        locator_of: Callable[[int], Locator] = lazy.locator
+        find_of: Callable[[int], FindPhrase] = lazy.find
+    else:
+        locators, finds = doc.memo("locate-index", lambda: _indexes(texts))
+        locator_of = locators.locator
+        find_of = finds.__getitem__
 
     chapter_at = [0] * (count + 2)  # 1-based paragraph -> 1-based chapter, 0 for none
     for k, chapter in enumerate(found.chapters, 1):
@@ -393,11 +521,6 @@ def locate(request: dict[str, Any]) -> Reply:
         for n in range(scene.first, scene.last + 1):
             scene_at[n] = k
 
-    if "at" in request:
-        resolved = index.resolve_range(request["at"])
-        numbers = range(resolved.first.number, resolved.last.number + 1)
-    else:
-        numbers = range(1, count + 1)
     wanted = [n for n in numbers if "at" in request or texts[n - 1].strip()]
 
     def row(n: int) -> dict[str, Any]:
@@ -405,7 +528,7 @@ def locate(request: dict[str, Any]) -> Reply:
         chapter = found.chapters[chapter_at[n] - 1] if chapter_at[n] else None
         scene = found.scenes[scene_at[n] - 1] if scene_at[n] else None
         part = found.parts[part_at[n] - 1] if part_at[n] else None
-        loc = locators.locator(n - 1)
+        loc = locator_of(n - 1)
         out: dict[str, Any] = {
             "at": str(index.paragraph(n).address),
             "chapter": None
@@ -428,17 +551,17 @@ def locate(request: dict[str, Any]) -> Reply:
             "page_label": page.label,
             "phrase": loc.phrase,
         }
-        find = finds[n - 1]
+        find = find_of(n - 1)
         out["find_phrase"] = find.text
         out["find_phrase_unique"] = find.text is not None
         if find.text is not None:
             out["find_phrase_words"] = find.words
         else:
             out["find_phrase_reason"] = find.reason
-            earlier = next((j for j in range(n - 2, -1, -1) if finds[j].text is not None), None)
+            earlier = next((j for j in range(n - 2, -1, -1) if find_of(j).text is not None), None)
             if earlier is not None and find.reason != "empty":
                 out["context"] = {
-                    "after": finds[earlier].text,
+                    "after": find_of(earlier).text,
                     "at": str(index.paragraph(earlier + 1).address),
                     "paragraphs_after": n - 1 - earlier,
                 }

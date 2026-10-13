@@ -1,0 +1,54 @@
+"""Lazy ``locate`` (T53): a few paragraphs answered without the whole-document indexes.
+
+The gate ``lazy_locate_mismatches == 0``: for every paragraph of every corpus kind and for
+every seventh paragraph of the 100k-word novel, the lazy locator and find phrase equal the
+whole-document indexes', and ``locate`` rows asked one by one equal the whole-document rows.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from doc_control import api
+from doc_control.model.document import Document
+from doc_control.ops.locate import LazyIndexes, _indexes
+from tests.corpus.generator import KINDS, generate
+
+
+def _texts(path: Path) -> list[str]:
+    index = Document(str(path)).index
+    return [index.paragraph(n).text for n in range(1, len(index) + 1)]
+
+
+def test_lazy_locate_gate(tmp_path: Path) -> None:
+    checks = mismatches = 0
+    for kind in (*KINDS, "novel"):
+        path = tmp_path / f"{kind}.docx"
+        path.write_bytes(generate(kind, 1))
+        texts = _texts(path)
+        locators, finds = _indexes(texts)
+        lazy = LazyIndexes(texts)
+        step = 7 if kind == "novel" else 1
+        for i in range(0, len(texts), step):
+            checks += 1
+            mismatches += lazy.locator(i) != locators.locator(i) or lazy.find(i) != finds[i]
+        if kind == "novel":
+            continue
+        with api.open(path) as doc:
+            whole = {row["at"]: row for row in doc.run("locate")["paragraphs"]}
+        for at, row in whole.items():
+            with api.open(path) as doc:  # a fresh handle: no whole-document index memoised
+                checks += 1
+                mismatches += doc.run("locate", {"at": at})["paragraphs"] != [row]
+    print(f"lazy_locate_mismatches == {mismatches} (of {checks} checks)")
+    assert mismatches == 0
+
+
+def test_duplicate_and_affix_cases() -> None:
+    texts = ["Uno dos tres.", "uno DOS tres.", "Straße hier", "strasse dort", "", "a b a b a"]
+    locators, finds = _indexes(texts)
+    lazy = LazyIndexes(texts)
+    for i in range(len(texts)):
+        assert lazy.locator(i) == locators.locator(i)
+        assert lazy.find(i) == finds[i]
+    assert lazy.find(0).reason == "duplicate"
