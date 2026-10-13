@@ -44,7 +44,7 @@ def make_docx(path: Path, *paragraphs: str, extra: dict[str, bytes] | None = Non
 
 
 def symlink_or_skip(link: Path, target: Path) -> None:
-    """Point `link` at `target`; on Windows, skip the test if the account may not."""
+    """Point ``link`` at ``target``; on Windows, skip the test if the account may not."""
     try:
         link.symlink_to(target)
     except OSError:

@@ -6,7 +6,7 @@ Two steps, run from a clone of the repository (``uv run python scripts/real_word
     verify OUT   read back what you saved from Word and report every mismatch
 
 Follow ``docs/real-word-check.md`` between the two. Nothing here needs Word itself; Word is
-driven by you, by hand, or by `scripts/real_word_auto.ps1`, to open, accept, reject, reply
+driven by you, by hand, or by ``scripts/real_word_auto.ps1``, to open, accept, reject, reply
 and resolve.
 """
 
