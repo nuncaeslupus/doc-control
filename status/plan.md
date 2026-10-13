@@ -127,7 +127,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T49 | `segment`: scenes opened by a paragraph style (`scene_style`); untitled headings take their subtitle line (`heading_last`); decorated numerals | model | S | T40 | `scene_heading_mismatches == 0` | `test_scene_styles_and_heading_subtitles` in `tests/ops/test_segment_scene_styles.py` |
 | T50 | `segment`: plain-text headings (`chapter_blank_lines`), `chapter_level: auto`, every suppressed break in-process | model | S | T49 | `plain_structure_mismatches == 0` | `test_plain_text_structure` in `tests/ops/test_segment_plain.py` |
 | T51 | Hard-wrapped plain-text headings: a numeral or chapter-word line needs no empty paragraph below and takes its title line (≤ 14 words) | model | S | T50 | `plain_structure_mismatches == 0` | `test_plain_text_structure` in `tests/ops/test_segment_plain.py` |
-| T52 | Read operations accept .txt/.md directly (hard-wrapped vs line-per-paragraph detected, Markdown headings as Heading 1-6, UTF-8/UTF-16 BOM/cp1252); writes refuse them | ooxml | S | — | `text_source_mismatches == 0` | `test_text_source_gate` in `tests/ooxml/test_plaintext.py` |
+| T52 | Read operations accept .txt/.md directly (blank-line blocks or one paragraph per line, Markdown headings as Heading 1-6, UTF-8/UTF-16/UTF-32 BOM, per-line cp1252 fallback); writes refuse them | ooxml | S | — | `text_source_mismatches == 0` | `test_text_source_gate` in `tests/ooxml/test_plaintext.py` |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 

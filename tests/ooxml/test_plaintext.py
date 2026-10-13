@@ -20,9 +20,9 @@ _WRAPPED = (
 )
 
 
-def test_wrapped_text_joins_blocks_and_keeps_extra_blank_lines() -> None:
+def test_blocks_join_blocks_and_keeps_extra_blank_lines() -> None:
     paras, mode = paragraphs(_WRAPPED, markdown=False)
-    assert mode == "wrapped"
+    assert mode == "blocks"
     assert [t for t, _ in paras] == [
         "Title",
         "",
@@ -35,12 +35,32 @@ def test_wrapped_text_joins_blocks_and_keeps_extra_blank_lines() -> None:
     ]
 
 
-def test_unwrapped_text_has_a_paragraph_per_line() -> None:
-    text, encoding = decode(b"One.\nTwo, a much longer line.\r\n\r\nThree.\rFour.\n")
+def test_text_without_empty_lines_has_a_paragraph_per_line() -> None:
+    verse = "".join(f"Line {n} of a poem whose lines are all alike\r\n" for n in range(14))
+    text, encoding = decode(verse.encode())
     assert encoding == "utf-8"
     paras, mode = paragraphs(text, markdown=False)
     assert mode == "lines"
-    assert [t for t, _ in paras] == ["One.", "Two, a much longer line.", "", "Three.", "Four."]
+    assert len(paras) == 14 and paras[13] == ("Line 13 of a poem whose lines are all alike", None)
+
+
+def test_markdown_lists_front_matter_and_fences() -> None:
+    text = (
+        "---\nnot: yaml? it is\n---\nIt began in\n1914. The war\n\n1. one\n2. two\n"
+        "\n```py\n```x\n# code\n```\n"
+    )
+    paras, _ = paragraphs(text, markdown=True)
+    assert [t for t, _ in paras] == [
+        "It began in 1914. The war",
+        "1. one",
+        "2. two",
+        "```py",
+        "```x",
+        "# code",
+        "```",
+    ]
+    kept, _ = paragraphs("---\nIntro text.\n\n---\nMore.\n", markdown=True)
+    assert [t for t, _ in kept] == ["---", "Intro text.", "---", "More."]
 
 
 @pytest.mark.parametrize(
@@ -49,10 +69,16 @@ def test_unwrapped_text_has_a_paragraph_per_line() -> None:
         (b"\xef\xbb\xbfa\xc3\xb1o", "utf-8-sig"),
         ("﻿año".encode("utf-16-le"), "utf-16"),
         ("año".encode("cp1252"), "cp1252"),
+        ("año".encode("utf-32"), "utf-32"),
     ],
 )
 def test_encodings(raw: bytes, encoding: str) -> None:
     assert decode(raw) == ("año", encoding)
+
+
+def test_one_stray_byte_garbles_only_its_line() -> None:
+    raw = "canción\n".encode() + "año\n".encode("cp1252") + b"x\x81\n"
+    assert decode(raw) == ("canción\naño\nx\x81\n", "utf-8+cp1252")
 
 
 def test_utf16_without_bom_is_refused() -> None:
@@ -188,7 +214,7 @@ def test_text_source_gate(tmp_path: Path) -> None:
             texts == [t for t, _ in paragraphs(_WRAPPED, markdown=False)[0]],
             texts[3] == "CHAPTER I" and texts[5].endswith("swept up the streets."),
             [c["text"] for c in found["chapters"]] == ["CHAPTER I"],
-            doc.get("source") == {"format": "txt", "encoding": "utf-8", "mode": "wrapped"},
+            doc.get("source") == {"format": "txt", "encoding": "utf-8", "mode": "blocks"},
         ]
     # compare reads text sources; its output is never a text file, and none is left behind.
     api.run("compare", {"old": str(txt), "new": str(path), "output": str(tmp_path / "r.docx")})
