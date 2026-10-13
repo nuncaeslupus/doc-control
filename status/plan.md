@@ -123,6 +123,7 @@ ooxml/  +  safety/           zip I/O (raw member copy), paragraph span tokenizer
 | T45 | API polish: unsplit `text.normalized` paragraphs, `find` total, `help` for batch kinds, documented nulls | api | S | T8, T32 | `api_polish_failures == 0` | `test_consumer_polish` in `tests/test_api_polish.py` |
 | T46 | Performance gate in CI on the 100k-word document through `api.open` | repo | M | T39 | `perf_budget_breaches == 0` | `test_perf_budgets_100k` in `tests/bench/test_perf_gate.py` |
 | T47 | Cold bulk read: one shared read-only parse per paragraph (C parser), faster normalised text | model | S | T39, T46 | `cold_bulk_read_regressions == 0` | `test_cold_bulk_read_same_rows_within_budget` in `tests/bench/test_cold_read.py` |
+| T48 | Bulk read reports page basis, marks and count; page-starting section breaks count as `page_break_before` | ops | S | T31, T39, T42 | `page_fact_mismatches == 0` | `test_bulk_page_header_and_section_breaks` in `tests/ops/test_page_facts.py` |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 
