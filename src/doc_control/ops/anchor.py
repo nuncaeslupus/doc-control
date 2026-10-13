@@ -95,8 +95,9 @@ def anchor_create(request: dict[str, Any]) -> Reply:
                 "enum": ["best", "exact"],
                 "default": "best",
                 "description": "best: verbatim matches first, then fuzzy ones (match says which)."
-                " exact: only places holding the quote verbatim; anything else is"
-                " ANCHOR_NOT_FOUND.",
+                " exact: only places holding the quote verbatim or, when none does, in the"
+                " normalised text (soft hyphens and zero-width characters ignored, whitespace"
+                " collapsed, as text.normalized); anything else is ANCHOR_NOT_FOUND.",
             },
         },
         "required": ["doc", "anchor"],
@@ -120,7 +121,7 @@ def anchor_resolve(request: dict[str, Any]) -> Reply:
         raise DocControlError(
             ErrorCode.ANCHOR_NOT_FOUND,
             (
-                "no verbatim occurrence of the quote"
+                "the quote occurs neither verbatim nor in the normalised text"
                 if exact_only
                 else f"no place scores {MIN_SCORE:.2f} or more against the anchor"
             ),

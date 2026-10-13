@@ -93,3 +93,9 @@ def test_small_cases(tmp_path: Path, text: str, quote: str) -> None:
     m = AT.fullmatch(found["at"])
     assert m is not None and int(m[1]) == 2
     assert normalized_text(text[int(m[2]) : int(m[3])]) == normalized_text(quote)
+
+
+def test_a_verbatim_match_wins_over_a_normalised_one(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "d.docx", "la casa  blanca", "la casa blanca")
+    found = run("anchor.resolve", doc=str(doc), anchor={"exact": "casa blanca"}, mode="exact")
+    assert found["at"].startswith("p2#")

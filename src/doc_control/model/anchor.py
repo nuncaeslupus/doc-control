@@ -6,8 +6,8 @@ Unlike an address it survives edits: :func:`resolve` looks the quote up again an
 where it is now, how well it matches, or that it cannot tell.
 
 Matching
-    Exact first: every place the quote occurs verbatim is a candidate, and so is every
-    place it occurs in the normalised text (``text.normalized``: soft hyphens and
+    Exact first: every place the quote occurs verbatim is a candidate; when there is none,
+    every place it occurs in the normalised text (``text.normalized``: soft hyphens and
     zero-width characters removed, whitespace collapsed, NFC), mapped back to the
     original offsets, so a quote copied from normalised text is found across a soft
     hyphen, a tab or a double space. Only when no exact
@@ -471,17 +471,18 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
     quote = anchor.exact
     found: list[Candidate] = []
     taken: dict[int, list[tuple[int, int]]] = {}
-    plain = normalized_text(quote)
     for para in index.paragraphs:
-        spans = _exact_spans(para.text, quote) if len(para.text) >= len(quote) else []
-        spans += [
-            span
-            for span in _normalised_spans(para.text, plain)
-            if not any(span[0] < e and s < span[1] for s, e in spans)
-        ]
-        for start, end in spans:
+        if len(para.text) < len(quote):
+            continue
+        for start, end in _exact_spans(para.text, quote):
             taken.setdefault(para.number, []).append((start, end))
             found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
+    if not found:  # verbatim wins; normalised text is the fallback, not a rival
+        plain = normalized_text(quote)
+        for para in index.paragraphs:
+            for start, end in _normalised_spans(para.text, plain):
+                taken.setdefault(para.number, []).append((start, end))
+                found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
     short = len(_WORD.findall(quote)) <= SHORT_QUOTE_WORDS
 
     def accepted_of(pool: list[Candidate]) -> list[Candidate]:
