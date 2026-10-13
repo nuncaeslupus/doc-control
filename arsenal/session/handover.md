@@ -2,8 +2,8 @@
 
 ## Last task
 
-- **ID**: T51 hard-wrapped plain-text headings (t-ba441550), PR #114 (with this handover).
-- **Status at handover**: all of this session's work is merged; 0.2.0 (and 0.1.0) PyPI releases wait on the owner's approval of the `pypi` environment.
+- **ID**: T30 manual real word check (t-85df5159), run on the owner's Windows machine.
+- **Status at handover**: T30 measured on one Word version (16.0.17932, 64-bit): 0 repair prompts, 0 round-trip mismatches; its PR waits on CI and review.
 
 ## What was done this session
 
@@ -14,7 +14,8 @@ Merged: T38 context-aware recipes (#90), T39 in-process API (#93), T40 parts and
 - literary-critic's open ask: read .txt/.md directly (spec open question 1) instead of re-converting to .docx.
 - Review notes declared on T49/T50: a subtitle under a chapter later suppressed by `min_chapter_words` stays out of word counts; decorated `(3)`/`[2]` laid out as headings parse as numerals; multi-word `scene_style_words` entries never match; a lone H1 is skipped under `chapter_level: auto`.
 - Rename `boundary`/`unsupported_structure` skip reasons untested.
-- T30 manual real-Word check (needs Windows + Word 2016+/M365): the only task left in the queue.
+- T30 on Microsoft 365: not measured; rerun `scripts/real_word_auto.ps1` on a machine that has it (docs/real-word-check.md). The look of the tracked changes in step 3 was read through Word's revision list, not by eye.
+- Windows sessions: the arsenal hooks and scripts call `python3` and `bash`; with neither on PATH the Edit/Write/Bash hook refuses every call. Put a real `python3` ahead of the Microsoft Store alias before starting a session there.
 - Performance still open against literary-critic's asks: cold `locate` ~1.0–1.2 s on 100k words (accepted; warm per-paragraph ≤ 50 ms is gated); first bulk read on a real 74k-word manuscript ~1.05 s (target 0.3–0.5 s): the next win is `splice.scan` (pure-Python byte scanner, ~0.4 s) and op-module import (~0.2 s).
 - Declared risks from reviews: per-paragraph parsed-element cache holds memory for an open document; process-wide caches (anchor normalised text LRU, find fold cache) are bounded by count, not bytes; `MARKS_TRUST_RATIO = 2.0` is uncalibrated; switching a document to a custom store hides its earlier history.
 - Earlier follow-ups (unchanged): zipio `_umask` thread safety and size cap; style batches not logged in history; T14 `w:bCs`; T15 reply order in one batch; T13 log-append atomicity; T21 stylesWithEffects retarget; T17 rename as batch kind; recipe engine edge cases (overlapping `$para`, deadline, OPS_CAP counting); GitHub Release for v0.0.1 not created.
