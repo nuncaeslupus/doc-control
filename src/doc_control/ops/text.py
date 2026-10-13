@@ -174,8 +174,10 @@ class _TextSource(Document):
 _RESULT = (
     "Result: `paragraphs`, each {at (absent for `text`), start, from, text, offset_map}. "
     "`start` is where the entry's text begins in the paragraph's visible text (non-zero "
-    "for a range cut); a long paragraph comes as several entries, `from` being the "
-    "normalised offset where each entry's `text` begins. offset_map.to_original maps "
+    "for a range cut); on the CLI and MCP a very long paragraph comes as several entries "
+    "marked `part` k of `parts`, `from` being the normalised offset where each entry's "
+    "`text` begins (in-process, through doc_control.api, a paragraph is always one entry). "
+    "offset_map.to_original maps "
     "normalised offsets to original ones and offset_map.to_normalized the reverse, both "
     "counted in code points from `start`, as runs: [index, value, count] means entry "
     "index+k is value+k for k < count, and [index, value, count, 0] means entry index+k "

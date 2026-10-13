@@ -85,7 +85,9 @@ SCHEMA: dict[str, Any] = {
 @operation(
     "find",
     "read",
-    "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor.",
+    "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. "
+    "The first page also gives `total` (or `total_at_least` and `more: true` when the time "
+    "budget stopped the count).",
     SCHEMA,
 )
 def find(request: dict[str, Any]) -> Reply:
@@ -129,9 +131,13 @@ def find(request: dict[str, Any]) -> Reply:
                 if len(matches) == limit:
                     if next_cursor is None:
                         next_cursor = f"c:find:{token}:{number}:{k}"
+                    if "cursor" in request:
+                        break  # a later page gives no total, so it need not count
                     remaining += 1
                     continue
                 matches.append(_match(para.address, para.text, start, end, context))
+            if next_cursor is not None and "cursor" in request:
+                break
     stopped = scan.stopped_at
     counted = len(matches) + remaining
     if stopped is not None and next_cursor is None:
