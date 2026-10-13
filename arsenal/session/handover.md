@@ -19,7 +19,6 @@ On the owner's Windows 11 machine (Word 16.0.17932, Spanish), a later session: n
 - **Owner's call, not decided**: LibreOffice is started listening on a localhost TCP port any local process can reach, and is left running after `live.close` (the snap build cannot use a pipe). Say yes to this, or ask for a token/pipe where the build allows.
 - Open review notes on the live engine: `loadComponentFromURL` has no timeout (a dialog in a visible LibreOffice could hang `live.open`); any service on the port counts as `listening`; a tracked deletion that crosses a whole table leaves the table's last cell reading with its deleted text (review of #166); the symlink fix in `_find` has no test; a paragraph with a date field reads stale; `live.selection` refuses a selection spanning a table as `ENGINE_UNAVAILABLE`; history keeps `engine: live` entries of edits later discarded; live `batch` is not all-or-nothing if the app dies mid-batch; a span over two paragraphs inside one table cell is untested; select by address reads the whole text three times (the raw p95 on the novel is 490-570 ms on the owner's PC, 99 ms in CI).
 - `tests/ops/test_odt_parity.py::test_odt_parity_gate` fails on the owner's PC (snap LibreOffice cannot read `/tmp`); it passes in CI.
-- `arsenal/config.toml`: new settings `bot-unavailable-notices` and `review.reviewer-identity` are not acknowledged.
 - literary-critic asks still open: find phrase for a range inside a paragraph, in-memory open of a draft.
 - Older notes: see git history of this file.
 
