@@ -124,6 +124,8 @@ jobs:
           uv sync --locked --python /usr/bin/python3
       - name: Live engine against LibreOffice
         run: uv run --python /usr/bin/python3 pytest -q tests/live
+      - name: Live select latency (p95 on the novel)
+        run: uv run --python /usr/bin/python3 pytest -q -s -m bench tests/bench/test_live_select.py
 
   smoke-no-network:
     # The file engine runs in a Python 3.11 sandbox with no network: install the built

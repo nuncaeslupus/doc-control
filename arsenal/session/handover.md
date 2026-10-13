@@ -2,25 +2,27 @@
 
 ## Last task
 
-- **ID**: 0.5.0 release (with this handover), after T58 cross-mark phrases for repeated paragraphs + `find` `query_word` (t-d84922e5, #134).
-- **Status at handover**: all work merged; releases publish on merge of a version bump (no owner approval needed any more).
+- **ID**: live CLI and MCP doors (t-1745e152, #144), LIVE T7, with this handover.
+- **Status at handover**: LIVE T1-T7 merged (T7 with this handover). Only `Word COM live adapter (t-9e24ff41, #145)` is left in the LIVE plan; it needs Windows with Word.
 
 ## What was done this session
 
-Merged since T51: empty-headings only Heading 1-9 (#117), T52 .txt/.md reads (#119), T53 lazy single-paragraph locate (#121), 0.4.0 (#122), T54 cross-mark find phrases + `find_phrase_word` (#124), T55 .txt `text_mode` auto/blocks/lines (#126), 0.4.1 (#127), live-engine spec draft + T30 real-Word script (#128), T56 cold path 0.32 s (lazy op imports, no xml.sax, `structure:false`) (#130), T57 .odt reads (#132), T58 (#134). All were literary-critic asks except the spec/T30 work. #132 and #134 used both review rounds; the last fix of each was self-reviewed at the owner's request ("Review yourself") and declared on the PR.
+The live engine on LibreOffice, on the owner's Ubuntu PC: protocol, fake adapter and dispatch (#152), lock awareness (#157), LibreOffice session open/save/close (#158), select by address and find phrase (#159), latency bench (#160), comments and tracked edits through `batch` with `engine: "live"` plus the `live-libreoffice` CI job (#161), CLI/MCP parity test and README (T7). Reviews were done by a second desktop session ("distinct-session"), since the headless `claude -p` login had expired and CodeRabbit skips this repository.
 
 ## What remains
 
-- **Live engine** (`arsenal/project/LIVE/spec.md`, draft r1): the owner answers its 4 open questions (or says "use the recommendations"), then `design` seeds tasks tagged by surface (LibreOffice first, testable here; Word on the owner's Windows session). The owner plans local Ubuntu+LibreOffice and Windows+Word sessions.
-- **T30** real-Word check: measured on the owner's Windows machine (Word 16.0.17932, 64-bit) with `scripts/real_word_auto.ps1`: 0 repair prompts, 0 round-trip mismatches (#136). Microsoft 365 not measured; the look of the tracked changes was read through Word's revision list, not by eye.
-- Windows sessions: the arsenal hooks and scripts call `python3` and `bash`. The owner's machine now has the Microsoft Store Python 3.13 as `python3`, so they run; without one the Edit/Write/Bash hook refuses every call. Install Python from a normal terminal, not from inside a Claude desktop session: the app's writes under `AppData\Roaming` stay private to it, and `uv python install --default` then leaves broken `python3` shims.
-- literary-critic asks still open: find phrase for a range inside a paragraph (`at` with offsets), in-memory open of a draft (`.txt` path may already cover it).
-- Declared review notes (recent): Word's Find treats straight/curly quotes alike while uniqueness uses casefold; verse under `text_mode: auto` reads as blocks (use `lines`); changing `DOC_CONTROL_TEXT_MODE` mid-handle does not re-parse; `.txt/.md` styles.xml now lists Heading 7-9; hidden ODF text is read; `MAX_CONTENT` (.odt) untested; page estimation stays whole-document.
-- Older notes: see git history of this file (T49/T50 review notes, rename skip reasons untested, process-wide cache bounds, `MARKS_TRUST_RATIO` uncalibrated, zipio `_umask`, style batches not in history, T13-T21 follow-ups).
+- **Word (T8)**: `live/word_com.py` against the same protocol (`src/doc_control/live/protocol.py`), `tests/live/test_word_com.py`, `scripts/live_word_check.py`; run on Word 2016+ and Microsoft 365. The LibreOffice tests in `tests/live/test_lo_*.py` show what each adapter method must do.
+- **Owner's call, not decided**: LibreOffice is started listening on a localhost TCP port any local process can reach, and is left running after `live.close` (the snap build cannot use a pipe). Say yes to this, or ask for a token/pipe where the build allows.
+- Open review notes on the live engine: `loadComponentFromURL` has no timeout (a dialog in a visible LibreOffice could hang `live.open`); any service on the port counts as `listening`; `_find` compares a resolved path with LibreOffice's URL (symlinked folders); a paragraph wholly inside a tracked deletion over three or more paragraphs reads with its deleted text; a paragraph with a date field reads stale; `live.selection` refuses a selection spanning a table as `ENGINE_UNAVAILABLE`; history keeps `engine: live` entries of edits later discarded; live `batch` is not all-or-nothing if the app dies mid-batch; a span over two paragraphs inside one table cell is untested; select by address reads the whole text three times (the raw p95 on the novel sits at the 500 ms line on the owner's PC).
+- `tests/ops/test_odt_parity.py::test_odt_parity_gate` fails on the owner's PC (snap LibreOffice cannot read `/tmp`); it passes in CI.
+- `arsenal/config.toml`: new settings `bot-unavailable-notices` and `review.reviewer-identity` are not acknowledged.
+- literary-critic asks still open: find phrase for a range inside a paragraph, in-memory open of a draft.
+- Older notes: see git history of this file.
 
 ## How to continue
 
-1. Gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q`; benchmarks with `make bench` (a bench test named by node id also runs, see `tests/conftest.py`).
-2. Merge policy: CI green + adversarial review CLEAR (review-max-rounds = 2; emit without `--reset` for round 2, record each reply with `adversarial_review.sh verdict` before editing the tree). `open_task_pr.sh` cuts its own branch from main when the work is already committed: instead archive the task file into `arsenal/tasks/_history/` by hand, push, open the PR, then post the marker from `adversarial_review.sh marker` (CI runs mypy over tests too: run plain `uv run mypy`).
-3. One designated branch per session: ship PRs in sequence; restart the branch from main after each merge (force-with-lease over merged history only).
-4. Private corpus only via `DOC_CONTROL_PRIVATE_CORPUS` or a gitignored `private/`; never commit or print names, paths or text from it.
+1. Gate: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q` (over 10 minutes here; run the tests of the area plus `tests/test_registry.py tests/test_docs.py tests/ci`, and let CI run the rest). A new operation goes in `OPERATION_MODULES` (`src/doc_control/registry.py`) and the docs are regenerated with `uv run python -m doc_control.reference`.
+2. Live tests on this PC: `uv run pytest -q tests/live` (about 6 minutes; starts its own headless LibreOffice). **Never run live code or `import uno` under the system Pythons here**: the snap's bridge is built for Python 3.12 and aborts the process in any other, which raises Ubuntu crash dialogs. `uv run` only.
+3. CI's `live-libreoffice` job needs the full `libreoffice-writer` package: the `-nogui` build crashes on a document with comments opened in a view.
+4. Merge policy: CI green + adversarial review CLEAR from another session (review-max-rounds = 2); `bash claude-arsenal/bin/merge_ready.sh <pr>` decides. Archive the task file into `arsenal/tasks/_history/` by hand in the task's PR.
+5. Private corpus only via `DOC_CONTROL_PRIVATE_CORPUS` or a gitignored `private/`; never commit or print names, paths or text from it.

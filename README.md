@@ -4,8 +4,8 @@
   <img src="docs/social-preview.png" width="100%" alt="doc-control: let AI agents edit Word documents safely. Deterministic .docx edits, every change a tracked change the writer can reject.">
 </p>
 
-> Status: **file engine working** (pre-1.0; the API may still change). The live Word
-> engine is not built yet. See `status/specification.md` and `status/plan.md`.
+> Status: **file engine working** (pre-1.0; the API may still change). The live engine
+> drives LibreOffice Writer; Word is next. See `status/specification.md` and `status/plan.md`.
 
 A deterministic tool that lets AI agents work on Word documents quickly,
 precisely and safely, ideally live in the Word window the writer has open.
@@ -48,6 +48,25 @@ with api.open("Novela.docx") as doc:
 Recipes propose batches of fixes (Spanish typography, quotes, dashes, spacing, empty
 paragraphs and more): `recipe.list`, then `recipe.run` returns a batch to review and apply.
 
+### Live: the document the writer has open
+
+With LibreOffice Writer installed, the same front doors work on the open window: the
+writer sees each comment and tracked change appear, and saves when they choose.
+
+```bash
+doc-control live.open --json '{"doc": "Novela.docx"}'
+doc-control live.select --json '{"doc": "Novela.docx", "find_phrase": "lluvia fina"}'
+doc-control batch --json '{"doc": "Novela.docx", "engine": "live", "ops": [
+  {"op": "comment.add", "at": "p40#c0ffee00", "text": "¿Seguro?"}]}'
+doc-control live.close --json '{"doc": "Novela.docx", "save": true}'
+```
+
+Live `batch` takes `comment.add`, `text.replace` and `para.insert`; anything else, or a
+machine with no app to drive, answers `ENGINE_UNAVAILABLE` with the reason
+(`live.status` lists the apps found). LibreOffice needs a Python its own bridge was
+built for: the system Python with `python3-uno` on Linux. Closing never drops unsaved
+work: a changed document needs `save` or `discard`.
+
 References: [operations](docs/operations.md) · [errors](docs/errors.md).
 
 ## Planned shape
@@ -57,7 +76,8 @@ References: [operations](docs/operations.md) · [errors](docs/errors.md).
     rewriting only the parts it touches. Read operations also take a `.txt`, `.md` or
     `.odt` file (hard-wrapped text detected; Markdown `#` headings and OpenDocument
     headings become Heading styles); writes refuse it.
-  - *Live engine*: controls the open Word (Windows/COM first, Mac later).
+  - *Live engine*: controls the open document (LibreOffice Writer now; Word on
+    Windows/COM next, Mac later).
 - **Two front doors**: a CLI with JSON in/out, and an MCP server
   (`doc-control mcp`, stdio) for Claude Desktop / Cowork and other MCP clients.
 - **Safety first**: lock-file and on-disk change detection, backup before every
