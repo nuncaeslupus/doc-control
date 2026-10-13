@@ -39,7 +39,13 @@ def adapters() -> list[LiveAdapter]:
 
 def apps() -> list[dict[str, Any]]:
     """Every known app with whether it is installed and reachable; never raises."""
-    return [a.probe() for a in adapters()]
+    found = []
+    for a in adapters():
+        try:
+            found.append(a.probe())
+        except Exception as err:  # a broken install must not take `capabilities` down
+            found.append({"app": a.app, "reachable": False, "reason": str(err)})
+    return found
 
 
 def unavailable(reason: str, **details: Any) -> DocControlError:
