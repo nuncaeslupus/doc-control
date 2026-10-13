@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="262508ec461506fc8636f78c49bbc25fcb465a0634e0e28ff3a68ec4ca4b981e">
+<title>doc-control live engine — Specification (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#9a4a0b}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">doc-control live engine — Specification<small>annotatable reader · 2026-10-13</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 8 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>doc-control live engine — Specification</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Spec</summary><ul>
+<li><a href="#s-spec-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-spec-1">§1 Problem statement</a></li>
+<li><a href="#s-spec-2">§2 Systems &amp; Impact</a></li>
+<li><a href="#s-spec-3">§3 Options</a></li>
+<li><a href="#s-spec-option-a-save-and-reload-bridge">Option A: Save-and-reload bridge (Conservative)</a></li>
+<li><a href="#s-spec-option-b-native-live-adapters-be">Option B: Native live adapters behind one protocol (Recommended)</a></li>
+<li><a href="#s-spec-option-c-hybrid-native-navigatio">Option C: Hybrid — native navigation, file-engine edits</a></li>
+<li><a href="#s-spec-comparison">Comparison</a></li>
+<li><a href="#s-spec-4">§4 Recommendation</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge spec">Specification</span>Spec</h2>
+<article class="sec l2" id="s-spec-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-13
+<strong>Ticket / PR</strong>: — (workspace <code>LIVE</code>)
+<strong>Author</strong>: Claude (doc-control session), for the owner
+<strong>Revision</strong>: 1
+<strong>Status</strong>: draft
+<strong>Revision log</strong>:
+- r1 — first draft</p>
+<blockquote>
+<p>Review record. Each round of reviewer notes makes a new revision: bump
+<strong>Revision</strong>, add a log line naming the export it applied, and commit that
+export beside this file in the same commit. On approval set <strong>Status</strong> to
+<code>approved (YYYY-MM-DD, revision N)</code> and, when the reviewer sent no notes for
+that revision, add <code>— without annotations</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-intro"><label class="note-head" for="n-s-spec-intro"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></label><textarea class="note-ta" data-key="s-spec-intro" id="n-s-spec-intro" data-label="Preamble &amp; scope" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-1">
+<h3 class="sec-h"><span class="chip">§1</span><span class="sec-title">Problem statement</span></h3>
+<div class="sec-body"><p>doc-control's file engine only edits a closed <code>.docx</code>: while the writer has the manuscript open in Word or LibreOffice, an agent can read the file on disk but cannot point at a passage on screen, add a comment the writer sees at once, or propose a tracked edit without asking the writer to save, close and reopen. literary-critic (<code>lc word</code>) has retired its own Word-control interface in favour of doc-control and falls back to computer-use clicks for this today. The core spec reserved room for a live engine (D-2: Windows first, Mac later; same operation names, engine chosen per call, <code>ENGINE_UNAVAILABLE</code> otherwise). This spec covers that engine: the same Python API and operation names, driving an already-open document in Microsoft Word on Windows (COM) and in LibreOffice Writer on any OS (UNO), so an agent can select a passage by Find string or address, read the selection, add comments and tracked insertions/replacements, and save, close and reopen — never losing the writer's unsaved work.</p>
+<p><strong>Success criteria (measurable)</strong>:</p>
+<ul>
+<li>[ ] <code>live_roundtrip_failures == 0</code> with LibreOffice (headless, in CI on Linux) over every corpus kind: open a corpus <code>.docx</code>; for sampled paragraphs, select by <code>find_phrase</code> (+ <code>paragraphs_after</code>) and by address, and the selected text equals the file engine's paragraph text; <code>comment.add</code> lands on that range; a tracked <code>text.replace</code> and <code>para.insert</code> appear as revisions; save, close, reopen keeps them; the file engine then reads the saved file and <code>comments.list</code> / <code>revisions.list</code> report exactly the live changes (<code>unintended_changes == 0</code> outside them).</li>
+<li>[ ] <code>live_word_failures == 0</code>: the same scripted round-trip run by the owner on Windows with Word 2016+ and Microsoft 365 (<code>scripts/live_word_check.py</code>, results recorded in the plan's evidence log).</li>
+<li>[ ] <code>unsaved_work_lost == 0</code>: <code>close</code> with unsaved changes and neither <code>save: true</code> nor <code>discard: true</code> is refused (<code>UNSAVED_CHANGES</code>) and the document stays open and dirty; tested on both apps.</li>
+<li>[ ] <code>capabilities</code> reports <code>engines: ["file", "live"]</code> with <code>live.apps</code> listing each app found and whether it is reachable (e.g. Word running, LibreOffice listening), and every live call on a machine without one returns <code>ENGINE_UNAVAILABLE</code> with the reason — never a traceback.</li>
+<li>[ ] Core stays stdlib-only: <code>import doc_control</code> and every file-engine operation work with neither <code>pywin32</code> nor <code>uno</code> installed (existing <code>smoke-no-network</code> job); live dependencies are an optional extra (<code>doc-control[live]</code>) imported lazily.</li>
+<li>[ ] <code>live_select_ms_p95 &lt;= 500</code> for select-by-find on the 100k-word corpus novel in LibreOffice headless (CI), and the same budget reported (not gated) for Word.</li>
+<li>[ ] <code>live_lock_misreports == 0</code>: <code>doc.status</code> reports <code>open_in</code> (app, and whether this engine controls that window) for a file open in Word or LibreOffice, and the file engine's existing <code>DOC_LOCKED</code> refusal names the app and suggests the live engine.</li>
+</ul></div>
+<div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-2">
+<h3 class="sec-h"><span class="chip">§2</span><span class="sec-title">Systems &amp; Impact</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>System</th>
+<th>Type</th>
+<th>Role</th>
+<th>Needs changes?</th>
+<th>Impact</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>doc_control.registry</code> / operation dispatch</td>
+<td>Primary</td>
+<td>Routes each call to the file or the live engine (<code>engine: "file" \| "live"</code>, default file)</td>
+<td>Yes</td>
+<td>New optional request field on the operations the live engine supports; others reject <code>engine: "live"</code> with <code>ENGINE_UNAVAILABLE</code></td>
+<td>Med</td>
+</tr>
+<tr>
+<td><code>doc_control.live</code> (new package)</td>
+<td>Primary</td>
+<td>Engine-neutral live protocol plus two adapters: <code>word_com</code> (pywin32) and <code>lo_uno</code> (LibreOffice UNO)</td>
+<td>Yes</td>
+<td>New code; no change to file-engine behaviour</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>Addresses and anchors (<code>model/address</code>, <code>model/anchor</code>)</td>
+<td>Dependent</td>
+<td>Map <code>p142#a7b2…</code> and quote anchors onto the live document's paragraphs (index + fingerprint check, else anchor resolve on the live text)</td>
+<td>Yes (adapter only)</td>
+<td>Live paragraph enumeration must match file-engine numbering (tables, text boxes, footnotes excluded) or be detected as <code>stale</code></td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>locate</code> find phrases (T54)</td>
+<td>Dependent</td>
+<td><code>find_phrase</code> / <code>find_phrase_word</code> / <code>paragraphs_after</code> drive select-by-find</td>
+<td>No (validation)</td>
+<td>Must behave identically in Word and LibreOffice Find (LibreOffice has no <code>^p</code>: the adapter searches paragraph by paragraph instead)</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>Safety layer (<code>safety/lock</code>, backups, history)</td>
+<td>Dependent</td>
+<td>Lock detection reused for <code>open_in</code>; live writes are logged to history with the app's undo as the rollback</td>
+<td>Yes</td>
+<td>Live edits cannot be byte-verified like file edits; verification is by re-reading the saved file</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>CLI, MCP server, <code>api.open</code></td>
+<td>UI</td>
+<td>Same front doors; <code>api.open(path, engine="live")</code> attaches to the open window</td>
+<td>Yes</td>
+<td>Additive</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>literary-critic <code>lc word</code></td>
+<td>Dependent consumer</td>
+<td>Selects passages, adds comments and tracked edits in the writer's open document</td>
+<td>No (validation)</td>
+<td>Replaces its computer-use fallback</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>CI</td>
+<td>Infrastructure</td>
+<td>LibreOffice headless job already exists (<code>libreoffice</code>); gains the live round-trip suite</td>
+<td>Yes</td>
+<td>+2–4 min per run</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Owner's Windows + Word machine</td>
+<td>Infrastructure</td>
+<td>Runs <code>scripts/live_word_check.py</code> and T30</td>
+<td>No</td>
+<td>Manual evidence only</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Impact dimensions</strong>: Data — live edits change the writer's open document, so every edit is tracked and every close refuses to drop unsaved work (High, mitigated by design). API — additive (<code>engine</code> field, <code>live.*</code> operations), no version bump. Performance — per-call IPC latency (COM/UNO) instead of file parsing; budget above. Operational — an optional extra and app setup (LibreOffice must listen on a socket). Risk of inaction — literary-critic keeps scripting computer-use clicks, which are slow and error-prone, and the writer must save/close/reopen to see agent changes.</p></div>
+<div class="note" data-for="s-spec-2"><label class="note-head" for="n-s-spec-2"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §2</span></label><textarea class="note-ta" data-key="s-spec-2" id="n-s-spec-2" data-label="§2 Systems &amp; Impact" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2 bare" id="s-spec-3">
+<h3 class="sec-h"><span class="chip">§3</span><span class="sec-title">Options</span></h3>
+</article>
+<article class="sec l3" id="s-spec-option-a-save-and-reload-bridge">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option A: Save-and-reload bridge (Conservative)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: The "live" engine only asks the app to save, runs the existing file engine on the saved file, then asks the app to reload it. Selection is done by the app's own Find with the find phrase.</li>
+<li><strong>Scope</strong>: <code>live/</code> with save/reload/select primitives per app; every edit reuses the file engine unchanged.</li>
+<li><strong>Effort</strong>: Small.</li>
+<li><strong>Tradeoffs</strong>: + every edit keeps file-engine guarantees (byte-identity, verification, undo log); + tiny per-app surface. − reload loses the writer's cursor, scroll position and app-level undo stack; − forces a save of the writer's in-progress work on every agent edit; − a reload while the writer types races with their edits.</li>
+<li><strong>Compatibility</strong>: Fully additive.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-a-save-and-reload-bridge"><label class="note-head" for="n-s-spec-option-a-save-and-reload-bridge"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option A: Save-and-reload bridge (Conservative)</span></label><textarea class="note-ta" data-key="s-spec-option-a-save-and-reload-bridge" id="n-s-spec-option-a-save-and-reload-bridge" data-label="Option A: Save-and-reload bridge (Conservative)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-b-native-live-adapters-be">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: Native live adapters behind one protocol (Recommended)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: A small engine-neutral protocol (<code>attach</code>, <code>paragraphs</code>, <code>select(range)</code>, <code>selection</code>, <code>find_select(phrase, paragraphs_after)</code>, <code>comment(range, text)</code>, <code>tracked_replace(range, text)</code>, <code>tracked_insert(after, text)</code>, <code>save</code>, <code>close(save|discard)</code>, <code>reopen</code>, <code>status</code>) implemented by a Word COM adapter and a LibreOffice UNO adapter. Registry operations (<code>comment.add</code>, <code>text.replace</code>, <code>para.insert</code>, and new <code>live.select</code>, <code>live.selection</code>, <code>live.save</code>, <code>live.close</code>, <code>live.open</code>, <code>live.status</code>) run on the live engine when <code>engine: "live"</code>. Track changes are switched on for the edit and restored after; addresses are checked against the live paragraph text (fingerprint) before any write.</li>
+<li><strong>Scope</strong>: <code>live/protocol.py</code>, <code>live/word_com.py</code>, <code>live/lo_uno.py</code>, dispatch in <code>registry.py</code>, schemas of the supported operations, <code>capabilities</code>, CLI/MCP flags, tests with LibreOffice headless, <code>scripts/live_word_check.py</code>.</li>
+<li><strong>Effort</strong>: Large (Medium per adapter).</li>
+<li><strong>Tradeoffs</strong>: + the writer keeps cursor, undo and unsaved state; edits appear instantly and are rejectable in the app; + the same operation names for agents; + LibreOffice adapter is testable in CI, Word adapter by script. − two IPC APIs to maintain; − no byte-level verification while the document is open (verified after save by re-reading); − paragraph numbering must be kept in step with the file engine's.</li>
+<li><strong>Compatibility</strong>: Additive; <code>engine</code> defaults to <code>file</code>.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-b-native-live-adapters-be"><label class="note-head" for="n-s-spec-option-b-native-live-adapters-be"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: Native live adapters behind one protocol (Recommended)</span></label><textarea class="note-ta" data-key="s-spec-option-b-native-live-adapters-be" id="n-s-spec-option-b-native-live-adapters-be" data-label="Option B: Native live adapters behind one protocol (Recommended)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-c-hybrid-native-navigatio">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option C: Hybrid — native navigation, file-engine edits</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: Native adapters for select/read/save/close/status (Option B's navigation half); every edit goes through Option A's save → file engine → reload.</li>
+<li><strong>Scope</strong>: Option B minus native edit primitives, plus Option A's reload path.</li>
+<li><strong>Effort</strong>: Medium.</li>
+<li><strong>Tradeoffs</strong>: + edits keep full file-engine guarantees; + navigation is live and cheap. − every edit still saves and reloads (cursor/undo lost, races with typing); − two code paths for one feature.</li>
+<li><strong>Compatibility</strong>: Additive.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-c-hybrid-native-navigatio"><label class="note-head" for="n-s-spec-option-c-hybrid-native-navigatio"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option C: Hybrid — native navigation, file-engine edits</span></label><textarea class="note-ta" data-key="s-spec-option-c-hybrid-native-navigatio" id="n-s-spec-option-c-hybrid-native-navigatio" data-label="Option C: Hybrid — native navigation, file-engine edits" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-comparison">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Comparison</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th></th>
+<th>Option A</th>
+<th>Option B</th>
+<th>Option C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Effort</td>
+<td>Small</td>
+<td>Large</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Risk to writer's work</td>
+<td>Med (forced saves, reload races)</td>
+<td>Low (tracked, no reload)</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>Completeness (literary-critic asks)</td>
+<td>Partial (no live selection state, reloads)</td>
+<td>Full</td>
+<td>Mostly</td>
+</tr>
+<tr>
+<td>Compatibility</td>
+<td>Additive</td>
+<td>Additive</td>
+<td>Additive</td>
+</tr>
+<tr>
+<td>Maintenance</td>
+<td>Low</td>
+<td>Med–High (two IPC adapters)</td>
+<td>Med</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-comparison"><label class="note-head" for="n-s-spec-comparison"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Comparison</span></label><textarea class="note-ta" data-key="s-spec-comparison" id="n-s-spec-comparison" data-label="Comparison" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-4">
+<h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
+<div class="sec-body"><p><strong>Recommended option</strong>: Option B — it is the only option that leaves the writer's cursor, undo history and unsaved work untouched while showing agent edits as rejectable tracked changes at once, which is the point of a live engine; the LibreOffice adapter makes most of it testable in CI on Linux, and the Word adapter shares the protocol and the test script.</p>
+<p><strong>Immediate next action</strong>: on owner approval, <code>design</code> the protocol and the LibreOffice adapter first (testable here and in CI), starting with <code>live.status</code> / <code>live.open</code> / <code>live.select</code> / <code>live.selection</code> / <code>live.close</code>; the Word adapter follows on the owner's Windows session using the same protocol tests run through <code>scripts/live_word_check.py</code>.</p>
+<p><strong>Phasing</strong> (proposed for <code>design</code>):
+1. Protocol, dispatch, <code>capabilities</code>, <code>live.status</code> (lock/<code>open_in</code>), LibreOffice attach/open/close/save with the unsaved-work guard.
+2. LibreOffice select by address and by find phrase + <code>paragraphs_after</code>, read selection / paragraph at cursor.
+3. LibreOffice <code>comment.add</code>, tracked <code>text.replace</code> / <code>para.insert</code>; round-trip gate in CI.
+4. Word COM adapter for 1–3 (owner's Windows session), <code>live_word_failures == 0</code>.
+5. Mac Word (AppleScript/JXA) — separate later spec (D-2).</p>
+<p><strong>Open questions</strong>:
+- [ ] LibreOffice attach: may doc-control start LibreOffice itself with a listening socket (<code>--accept</code>) when none is listening, or must the writer start it that way (a launcher script / desktop shortcut)? Recommended: doc-control starts a listening instance when asked to open a file, and <code>live.status</code> explains how to attach to an already-open window.
+- [ ] Which Word versions must pass: 2016, 2019, 2021, Microsoft 365 (current channel)? Recommended: 2016+ and M365, as for T30.
+- [ ] Should live edits be recorded in doc-control's history log (with the app's own undo as rollback), or only in the app? Recommended: logged, marked <code>engine: live</code>, no byte backup until the next save.
+- [ ] Author name on live comments and tracked changes: the app's user name, or a configured agent name (e.g. "Claude")? Recommended: configurable, default "Claude", as in the file engine.</p>
+<p><strong>Decisions log</strong> (from the core spec, carried unchanged):</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Decision</th>
+<th>Status</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-2</td>
+<td>Live engine: Windows first, Mac later</td>
+<td>agreed</td>
+<td>2026-10-12</td>
+</tr>
+<tr>
+<td>D-L1</td>
+<td>LibreOffice Writer (UNO) is a supported live app alongside Word, so the engine is testable on Linux CI</td>
+<td>proposed</td>
+<td>2026-10-13</td>
+</tr>
+<tr>
+<td>D-L2</td>
+<td>Live dependencies (<code>pywin32</code>, <code>uno</code>) are an optional extra imported lazily; the core stays stdlib-only</td>
+<td>proposed</td>
+<td>2026-10-13</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-4"><label class="note-head" for="n-s-spec-4"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></label><textarea class="note-ta" data-key="s-spec-4" id="n-s-spec-4" data-label="§4 Recommendation" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'doc-control-live-engine-spec-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Specification notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>
