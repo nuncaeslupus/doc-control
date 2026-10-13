@@ -293,7 +293,7 @@ Allowed keys only; no code, no file paths, no network; `$match`, `$para`, `$1…
 | Document store | `.doc-control/<file name>/` next to the document, keyed by the full file name (e.g. `Novela.docx`) so same-stem files such as `Novela.docx` and `Novela.dotx` never share a store (or app-data with `DOC_CONTROL_STORE=appdata`) | New: `id` (document UUID), `backups/<UTC-timestamp>-<sha8>.docx`, `log.jsonl` (append-only: op id, time, author, tag, request, footprint, before/after XML of each touched paragraph and entry, sha256 before/after), `config.json` | Yes (delete the folder) | Yes: every log line carries `"log_version": 1`; readers ignore unknown keys |
 | User store | `DOC_CONTROL_HOME` or the platform default (`%APPDATA%\doc-control`, `~/Library/Application Support/doc-control`, `~/.config/doc-control`) | New: `recipes/*.json`, `stylesets/*.json`, `config.json` | Yes | Yes: `version` field per file |
 
-Configuration: `DOC_CONTROL_HOME`, `DOC_CONTROL_STORE` (`adjacent` default, `appdata`), `DOC_CONTROL_AUTHOR` (default `Claude`), `DOC_CONTROL_PRIVATE_CORPUS` (tests only), retention `backups.keep = 20`, `backups.min_days = 30` in `config.json`.
+Configuration: `DOC_CONTROL_HOME`, `DOC_CONTROL_STORE` (`adjacent` default, `appdata`), `DOC_CONTROL_STORE_DIR` (a caller-chosen folder for all stores, laid out like app-data; also `api.open(path, store=…)`; wins over `DOC_CONTROL_STORE`), `DOC_CONTROL_AUTHOR` (default `Claude`), `DOC_CONTROL_PRIVATE_CORPUS` (tests only), retention `backups.keep = 20`, `backups.min_days = 30` in `config.json`.
 
 ## 6. Risks & Validation
 

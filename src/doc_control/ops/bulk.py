@@ -23,7 +23,8 @@ from doc_control.registry import operation
     "paragraphs.list",
     "read",
     "Every paragraph with its address, text, style and layout facts (optionally the "
-    "normalised text and the estimated page), in document order.",
+    "normalised text and the estimated page), in document order. heading_level is null for "
+    "a body paragraph.",
     {
         "type": "object",
         "properties": {

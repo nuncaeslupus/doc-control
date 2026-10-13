@@ -26,7 +26,9 @@ import re
 import sys
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -85,13 +87,44 @@ def user_home(env: Mapping[str, str] | None = None, platform: str | None = None)
     return (Path(xdg) if xdg else Path("~/.config").expanduser()) / APP_NAME
 
 
+#: A caller-chosen folder for every store, set by :func:`stores_in` (``api.open(store=…)``).
+_STORE_ROOT: ContextVar[Path | None] = ContextVar("doc_control_store_root", default=None)
+
+
+@contextmanager
+def stores_in(root: Path) -> Iterator[None]:
+    """Keep the stores (backups, history) of documents written inside under ``root``."""
+    token = _STORE_ROOT.set(Path(root).expanduser())
+    try:
+        yield
+    finally:
+        _STORE_ROOT.reset(token)
+
+
+def custom_store_root(env: Mapping[str, str] | None = None) -> Path | None:
+    """The caller-chosen folder for all stores, if any (:func:`stores_in` wins)."""
+    env = os.environ if env is None else env
+    chosen = _STORE_ROOT.get()
+    if chosen is None and env.get("DOC_CONTROL_STORE_DIR"):
+        chosen = Path(env["DOC_CONTROL_STORE_DIR"]).expanduser()
+    return chosen
+
+
 def store_dir(doc_path: Path, env: Mapping[str, str] | None = None) -> Path:
-    """Where the store for ``doc_path`` lives under the configured mode."""
+    """Where the store for ``doc_path`` lives under the configured mode.
+
+    A caller-chosen root (:func:`stores_in`, else ``DOC_CONTROL_STORE_DIR``) wins, laid out
+    like the app-data mode, so the store is not next to the document (atomic-write temp
+    files still are, during a write).
+    """
     env = os.environ if env is None else env
     doc_path = doc_path.resolve()
+    root = custom_store_root(env)
+    canonical = os.path.normcase(str(doc_path))
+    key = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+    if root is not None:
+        return root / f"{doc_path.name}-{key}"
     if env.get("DOC_CONTROL_STORE", "adjacent").strip().lower() == "appdata":
-        canonical = os.path.normcase(str(doc_path))
-        key = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
         return user_home(env) / "stores" / f"{doc_path.name}-{key}"
     return doc_path.parent / STORE_DIRNAME / doc_path.name
 

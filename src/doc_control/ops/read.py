@@ -317,7 +317,8 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
 @operation(
     "para.get",
     "read",
-    "One paragraph by address: text, style, direct formatting and formatted spans.",
+    "One paragraph by address: text, style, direct formatting and formatted spans, and layout "
+    "facts (heading_level is null for a body paragraph, 1-9 for a heading).",
     {
         "type": "object",
         "properties": {

@@ -85,7 +85,9 @@ SCHEMA: dict[str, Any] = {
 @operation(
     "find",
     "read",
-    "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor.",
+    "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. "
+    "The first page also gives `total` (or `total_at_least` and `more: true` when the time "
+    "budget stopped the count).",
     SCHEMA,
 )
 def find(request: dict[str, Any]) -> Reply:
@@ -118,6 +120,7 @@ def find(request: dict[str, Any]) -> Reply:
     matches: list[dict[str, Any]] = []
     warnings: list[str] = []
     next_cursor: str | None = None
+    remaining = 0  # matches after this page, counted so the reply can give a total
     with contextlib.closing(scan.__iter__()) as found:
         for number, spans in found:
             para = index.paragraph(number)
@@ -126,12 +129,17 @@ def find(request: dict[str, Any]) -> Reply:
                 if k < skipping:
                     continue
                 if len(matches) == limit:
-                    next_cursor = f"c:find:{token}:{number}:{k}"
-                    break
+                    if next_cursor is None:
+                        next_cursor = f"c:find:{token}:{number}:{k}"
+                    if "cursor" in request:
+                        break  # a later page gives no total, so it need not count
+                    remaining += 1
+                    continue
                 matches.append(_match(para.address, para.text, start, end, context))
-            if next_cursor is not None:
+            if next_cursor is not None and "cursor" in request:
                 break
     stopped = scan.stopped_at
+    counted = len(matches) + remaining
     if stopped is not None and next_cursor is None:
         if stopped == first and not matches:
             raise DocControlError(
@@ -146,8 +154,14 @@ def find(request: dict[str, Any]) -> Reply:
             " continue with `next`"
         )
         next_cursor = f"c:find:{token}:{stopped}:0"
+    # The document's total, on the first page only (a later page starts mid-document).
+    total: dict[str, Any] = {}
+    if "cursor" not in request:
+        total = (
+            {"total_at_least": counted, "more": True} if stopped is not None else {"total": counted}
+        )
     return Reply(
-        {"matches": matches},
+        {"matches": matches, **total},
         doc={"path": request["doc"], "sha256": pkg.sha256, "paragraphs": len(index)},
         warnings=warnings,
         next_cursor=next_cursor,
