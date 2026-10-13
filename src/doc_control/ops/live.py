@@ -12,8 +12,9 @@ from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
-from doc_control.live.protocol import LiveAdapter
+from doc_control.live.protocol import LiveAdapter, LiveUnavailable
 from doc_control.registry import operation
+from doc_control.safety.lock import lock_info
 
 _DOC = {"type": "string", "minLength": 1, "description": "Path to the document."}
 _ENGINE = {"enum": ["live"], "description": "Always the live engine; may be left out."}
@@ -48,11 +49,19 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"apps": apps(), "open_in": None, "dirty": False}
     if "doc" in request:
         path = Path(request["doc"])
-        for adapter in adapters():
-            if adapter.probe().get("reachable") and guarded(adapter.is_open, path):
-                out["open_in"] = {"app": adapter.app, "controlled": True}
-                out["dirty"] = guarded(adapter.dirty, path)
-                break
+        for adapter, probe in zip(adapters(), out["apps"], strict=True):
+            try:
+                if probe.get("reachable") and adapter.is_open(path):
+                    out["open_in"] = {"app": adapter.app, "controlled": True}
+                    out["dirty"] = adapter.dirty(path)
+                    break
+            except LiveUnavailable:
+                continue  # the app went away after its probe: not open there
+        else:
+            lock = lock_info(path)
+            if lock is not None:
+                # Open in a window this engine does not drive (or a lock left behind).
+                out["open_in"] = {"app": lock["app"], "controlled": False, "stale": lock["stale"]}
     return out
 
 
