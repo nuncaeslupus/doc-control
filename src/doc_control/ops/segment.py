@@ -13,6 +13,7 @@ from typing import Any
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.inprocess import is_uncapped
 from doc_control.model.address import FINGERPRINT_LENGTH, Address
 from doc_control.model.document import Document
 from doc_control.model.segment import (
@@ -47,10 +48,23 @@ PROFILE_PROPERTIES: dict[str, Any] = {
         ),
     },
     "chapter_level": {
+        "type": ["integer", "string"],
+        "enum": [*range(1, 10), "auto"],
+        "description": (
+            "Deepest heading or outline level that starts a chapter (default 1). `auto`: "
+            "the shallowest level in use, or the next one when the shallowest holds only "
+            "part headings (`Parte I`) or a single title."
+        ),
+    },
+    "chapter_blank_lines": {
         "type": "integer",
-        "minimum": 1,
-        "maximum": 9,
-        "description": "Deepest heading or outline level that starts a chapter (default 1).",
+        "minimum": 0,
+        "maximum": 50,
+        "description": (
+            "Empty paragraphs above an unstyled short line (at most 12 words, no final "
+            "punctuation, not dialogue) with one below that make it a heading, for plain "
+            "text; 0 = never (default)."
+        ),
     },
     "scene_blank_lines": {
         "type": "integer",
@@ -225,7 +239,7 @@ def segment(request: dict[str, Any]) -> Reply:
         base["suppressed_total"] = len(shown)
         base["suppressed"] = [
             {"at": str(_address(doc, n)), "kind": k, "reason": reason}
-            for n, k, reason in shown[:_SUPPRESSED_LIMIT]
+            for n, k, reason in (shown if is_uncapped() else shown[:_SUPPRESSED_LIMIT])
         ]
     if unit == "chapters":
         return paged("segment", doc, request, "chapters", _chapters(doc, found), base)

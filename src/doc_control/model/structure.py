@@ -7,7 +7,9 @@ document always gives the same structure and the layout facts can come from anyw
 Chapters
     A non-blank paragraph starts a chapter when it carries a *primary* signal:
 
-    ``heading_style``   a heading style of level ``<= profile.chapter_level``
+    ``heading_style``   a heading style of level ``<= profile.chapter_level`` (``auto``:
+                        the shallowest level in use, or the next when the shallowest holds
+                        only part headings or a single title)
     ``outline_level``   a direct outline level of level ``<= profile.chapter_level``
     ``chapter_word``    ``Capítulo 3``, ``CHAPTER IV. Title``, ``Parte II``
     ``section_name``    ``Prólogo``, ``Epílogo``, ``Introducción``
@@ -19,6 +21,10 @@ Chapters
                         a third of the text paragraphs is a body style and marks none;
                         so does one that only ever follows a heading, once per heading
                         (it opens titled chapters)
+    ``isolated``        a short line (``ISOLATED_WORDS``, no final punctuation, not
+                        dialogue) with ``profile.chapter_blank_lines`` or more empty
+                        paragraphs above and one below (or below its subtitle line): a
+                        plain-text heading; off by default. It is also layout for numerals
     ``override``        an override forced it
 
     Numerals may be decorated (``-I-``, ``— 3 —``, ``[IV]``). An untitled heading (a
@@ -71,7 +77,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from doc_control.model.document import Document
@@ -137,7 +143,8 @@ class Profile:
     """Per-document detection settings."""
 
     min_chapter_words: int = 0
-    chapter_level: int = 1
+    chapter_level: int | Literal["auto"] = 1
+    chapter_blank_lines: int = 0  # 0 = blank lines alone never make a heading
     scene_blank_lines: int = 0  # 0 = empty paragraphs never start a scene
     heading_styles: bool = True
     chapter_patterns: bool = True
@@ -292,6 +299,8 @@ def detect(
         elif para.blank_before is None:
             run = 0
 
+    if profile.chapter_level == "auto":
+        profile = replace(profile, chapter_level=_auto_level(paras, blank))
     actions, unmatched = _resolve_overrides(paras, blank, overrides)
     suppressed: list[tuple[int, Kind, str]] = []
     chapters = _chapter_starts(paras, blank, blank_before, profile, actions, suppressed)
@@ -493,7 +502,7 @@ def _style_only(signals: Sequence[str]) -> bool:
 
 
 _HEADING_SIGNALS = frozenset(
-    {"heading_style", "outline_level", "chapter_word", "section_name", "numeral"}
+    {"heading_style", "outline_level", "chapter_word", "section_name", "numeral", "isolated"}
 )
 
 
@@ -562,7 +571,7 @@ def _chapter_starts(
     for i, para in enumerate(paras):
         if blank[i]:
             continue
-        primary = _primary_signals(para, profile)
+        primary = _primary_signals(para, profile, _isolated(paras, blank, blank_before, i, profile))
         action = actions.get(("chapter", i))
         if action == "deny":
             if primary:
@@ -587,7 +596,7 @@ def _chapter_starts(
     return found
 
 
-def _primary_signals(para: Para, profile: Profile) -> list[str]:
+def _primary_signals(para: Para, profile: Profile, isolated: bool = False) -> list[str]:
     if is_scene_break(para.text):
         return []
     signals: list[str] = []
@@ -596,22 +605,26 @@ def _primary_signals(para: Para, profile: Profile) -> list[str]:
         words = (_fold(w.strip()) for w in profile.chapter_style_words)
         if any(word and word in folded for word in words):
             signals.append("chapter_style")
+    level = profile.chapter_level
     styled = (
         profile.heading_styles
         and para.heading_level is not None
-        and para.heading_level <= profile.chapter_level
+        and isinstance(level, int)
+        and para.heading_level <= level
     )
     if styled and para.heading_source:
         signals.append(para.heading_source)
+    if isolated and not styled:
+        signals.append("isolated")
     heading = _parse_heading(para.text) if profile.chapter_patterns else None
-    laid_out = styled or para.centred or para.page_break_before
+    laid_out = styled or isolated or para.centred or para.page_break_before
     if heading is not None:
         if heading.kind in ("chapter", "part"):
             signals.append("chapter_word")
         elif heading.kind == "numeral":
             lone_i = para.text.strip().strip(_DECORATION).rstrip(".)") == "I"
             if lone_i and profile.language != "es":  # "I" is a pronoun in English
-                laid_out = styled or (para.centred and para.page_break_before)
+                laid_out = styled or isolated or (para.centred and para.page_break_before)
             if laid_out:
                 signals.append("numeral")
         else:
@@ -775,3 +788,50 @@ def _is_subtitle(text: str) -> bool:
     if not tail or tail[-1] in _TERMINAL or text.lstrip()[0] in _DIALOGUE:
         return False
     return _parse_heading(text) is None
+
+
+#: A heading found by blank lines alone has at most this many words.
+ISOLATED_WORDS = 12
+
+
+def _isolated(
+    paras: Sequence[Para],
+    blank: Sequence[bool],
+    blank_before: Sequence[int],
+    i: int,
+    profile: Profile,
+) -> bool:
+    """A short line set off by ``profile.chapter_blank_lines`` empty paragraphs above and one
+    below (or below its subtitle line): a plain-text heading."""
+    need = profile.chapter_blank_lines
+    if not need or blank_before[i] < need or paras[i].heading_level is not None:
+        return False  # a heading style already says what it is
+    if is_scene_break(paras[i].text):
+        return False
+    text = paras[i].text.strip()
+    if len(text.split()) > ISOLATED_WORDS:
+        return False
+    named = _parse_heading(text) is not None or number_word(text) is not None
+    if not named and (text.rstrip(_CLOSERS)[-1:] in tuple(_TERMINAL) or text[0] in _DIALOGUE):
+        return False  # a short sentence or a line of dialogue set apart
+    after = i + 1
+    if after < len(paras) and not blank[after] and _is_subtitle(paras[after].text):
+        after += 1
+    return after >= len(paras) or blank[after]
+
+
+def _auto_level(paras: Sequence[Para], blank: Sequence[bool]) -> int:
+    """The shallowest heading level in use, or the next one used when the shallowest holds
+    only part headings (``Parte I``) or a single heading (a title)."""
+    texts: dict[int, list[str]] = defaultdict(list)
+    for i, para in enumerate(paras):
+        if para.heading_level is not None and para.text.strip() and not blank[i]:
+            texts[para.heading_level].append(para.text)
+    levels = sorted(texts)
+    if not levels:
+        return 1
+    top = texts[levels[0]]
+    parts = all((h := _parse_heading(t)) is not None and h.kind == "part" for t in top)
+    if len(levels) > 1 and (parts or len(top) == 1):
+        return levels[1]
+    return levels[0]
