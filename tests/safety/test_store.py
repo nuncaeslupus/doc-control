@@ -26,7 +26,7 @@ from doc_control.safety.store import (
     store_dir,
     user_home,
 )
-from tests.helpers import make_docx
+from tests.helpers import make_docx, symlink_or_skip
 
 NOW = datetime(2026, 10, 12, 11, 45, 0, tzinfo=UTC)
 
@@ -278,7 +278,7 @@ def test_appdata_key_resolves_dotdot_symlinks_and_relative(
     root = store_dir(doc)
     assert store_dir(docs / "x" / ".." / "Novela.docx") == root
     link = tmp_path / "link.docx"
-    link.symlink_to(doc)
+    symlink_or_skip(link, doc)
     assert store_dir(link) == root
     monkeypatch.chdir(docs)
     assert store_dir(Path("Novela.docx")) == root
@@ -446,7 +446,7 @@ def test_symlink_to_document_is_not_accepted_as_backup(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     store = DocStore.open(doc)
     squatter = _squatter_name(store, doc)
-    squatter.symlink_to(doc)
+    symlink_or_skip(squatter, doc)
     path = backup(doc, now=NOW)
     assert path != squatter
     _assert_real_copy(path, doc)
@@ -530,7 +530,7 @@ def test_dangling_id_symlink_is_internal_and_kept(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     store = DocStore.open(doc)
     store.id_path.unlink()
-    store.id_path.symlink_to(tmp_path / "gone")
+    symlink_or_skip(store.id_path, tmp_path / "gone")
     with pytest.raises(DocControlError) as exc:
         DocStore.open(doc)
     assert exc.value.code is ErrorCode.INTERNAL
@@ -543,7 +543,7 @@ def test_dangling_config_symlink_is_schema_invalid_and_kept(tmp_path: Path) -> N
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     store = DocStore.open(doc)
     store.config_path.unlink()
-    store.config_path.symlink_to(tmp_path / "gone")
+    symlink_or_skip(store.config_path, tmp_path / "gone")
     with pytest.raises(DocControlError) as exc:
         DocStore.open(doc)
     assert exc.value.code is ErrorCode.SCHEMA_INVALID

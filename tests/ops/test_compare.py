@@ -21,7 +21,7 @@ from doc_control.ops.compare import accepts_to, compare_documents, word_edits
 from doc_control.registry import REGISTRY, load_operations
 from tests.corpus import validator
 from tests.corpus.generator import KINDS, generate
-from tests.helpers import make_docx
+from tests.helpers import make_docx, symlink_or_skip
 from tests.ops import revsim
 
 AUTHOR = "Compare Bot"
@@ -276,7 +276,7 @@ def test_compare_never_modifies_an_input_and_refuses_bad_outputs(tmp_path: Path)
 
     existing = out.read_bytes()
     link = tmp_path / "link.docx"
-    link.symlink_to(old)
+    symlink_or_skip(link, old)
     for bad in (out, old, new, link, tmp_path / "x" / "r.docx", tmp_path / "." / "o.docx"):
         with pytest.raises(DocControlError) as err:
             compare_documents(old, new, bad)
