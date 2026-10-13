@@ -29,6 +29,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.plaintext import TEXT_SUFFIXES, decode, package_bytes, refuse_write
 
 REQUIRED_PARTS = ("[Content_Types].xml", "word/document.xml")
 
@@ -91,7 +92,12 @@ class Package:
             raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
         raw = path.read_bytes()
         self.sha256 = hashlib.sha256(raw).hexdigest()
+        #: For a .txt/.md file read as a document (readable, never written): its
+        #: ``format``, ``encoding`` and paragraph ``mode``; None for a .docx.
+        self.text_source: dict[str, str] | None = None
         try:
+            if path.suffix.lower() in TEXT_SUFFIXES:
+                raw, self.text_source = _text_package(path, raw)
             self._load(raw)
         except DocControlError:
             raise
@@ -199,6 +205,7 @@ def write_package(
     for name, data in replacements.items():
         if not isinstance(data, bytes):
             raise TypeError(f"replacement for {name} must be bytes")
+    refuse_write(dest)  # a text file is read as a document, never written
     payload = build_package(pkg, replacements)
     commit_bytes(payload, dest, stage)
     return hashlib.sha256(payload).hexdigest()
@@ -273,6 +280,18 @@ def _claim(tmp: Path, dest: Path) -> None:
             dest.unlink(missing_ok=True)
             raise
     tmp.unlink()
+
+
+def _text_package(path: Path, raw: bytes) -> tuple[bytes, dict[str, str]]:
+    try:
+        text, encoding = decode(raw)
+    except ValueError as exc:  # UnicodeDecodeError too
+        raise DocControlError(
+            ErrorCode.NOT_A_DOCX, f"{path} is not readable text: {exc}", path=str(path)
+        ) from exc
+    fmt = "txt" if path.suffix.lower() == ".txt" else "md"
+    data, mode = package_bytes(text, markdown=fmt == "md")
+    return data, {"format": fmt, "encoding": encoding, "mode": mode}
 
 
 def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:

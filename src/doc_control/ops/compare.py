@@ -55,6 +55,7 @@ from doc_control.model.align import (
     align,
 )
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
+from doc_control.ooxml.plaintext import refuse_write
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     ParagraphEditor,
@@ -460,6 +461,7 @@ def _accepted_texts(data: bytes, ids: set[str]) -> tuple[list[str], bool]:
 
 
 def _check_output(output: Path, inputs: list[Path]) -> None:
+    refuse_write(output)
     for source in inputs:
         same = output.exists() and source.exists() and output.samefile(source)
         if same or output.resolve() == source.resolve():
@@ -506,7 +508,11 @@ def compare_documents(
     index_new = DocumentIndex.from_package(pkg_new)
     alignment = align(index_old.paragraphs, index_new.paragraphs)
     info_old = {"path": str(old), "sha256": pkg_old.sha256, "paragraphs": len(index_old)}
+    if pkg_old.text_source is not None:
+        info_old["source"] = pkg_old.text_source
     info_new = {"path": str(new), "sha256": pkg_new.sha256, "paragraphs": len(index_new)}
+    if pkg_new.text_source is not None:
+        info_new["source"] = pkg_new.text_source
     plan = _plan(index_old, index_new, alignment)
     edits = _edits(plan)
 
