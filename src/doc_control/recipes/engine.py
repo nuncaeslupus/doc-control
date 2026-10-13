@@ -37,6 +37,7 @@ class Context:
 
     styles: frozenset[str] = frozenset()  # its style id and name, lower-case
     heading: bool = False
+    content: bool = False  # no text, but an image or a break: not an empty paragraph
 
 
 NO_CONTEXT = Context()
@@ -161,9 +162,13 @@ def _scan(
     return out, None
 
 
+def _empty(text: str, ctx: Context) -> bool:
+    return text == "" and not ctx.content
+
+
 def _meets(cond: dict[str, Any], text: str, ctx: Context) -> bool:
     """``cond``'s own-paragraph conditions (``text`` and ``missing`` are checked elsewhere)."""
-    if "empty" in cond and cond["empty"] != (text == ""):
+    if "empty" in cond and cond["empty"] != _empty(text, ctx):
         return False
     if "heading" in cond and cond["heading"] != ctx.heading:
         return False
@@ -200,14 +205,16 @@ def _eligible(
             if not 0 <= j < len(order):
                 out.append(None)
                 continue
-            if not skip or text[order[j]]:
+            if not skip or not _empty(text[order[j]], context.get(order[j], NO_CONTEXT)):
                 out.append(order[j])
             j += step
         return out
 
     admitted: list[int] = []
     for i, number in enumerate(order):
-        if (text[number] == "") != own_empty:
+        if own_empty and not _empty(text[number], context.get(number, NO_CONTEXT)):
+            continue
+        if not own_empty and not text[number]:
             continue
         if not _meets(where, text[number], context.get(number, NO_CONTEXT)):
             continue

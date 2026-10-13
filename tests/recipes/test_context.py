@@ -347,6 +347,20 @@ def test_style_conditions_use_id_or_name_case_insensitively() -> None:
     assert [o["at"] for o in propose(recipe, paragraphs, context=ctx).ops] == ["p4#00000000"]
 
 
+def test_image_or_break_paragraphs_are_not_empty() -> None:
+    recipe = validate_recipe(
+        {
+            "recipe": "r",
+            "version": 1,
+            "match": {"where": {"empty": True, "prev": [{"empty": True}]}},
+            "propose": [{"op": "para.delete", "at": "$para"}],
+        }
+    )
+    paragraphs = [(a(1), "x"), (a(2), ""), (a(3), ""), (a(4), "")]
+    ctx = {2: Context(content=True), 3: Context(content=True)}
+    assert [o["at"] for o in propose(recipe, paragraphs, context=ctx).ops] == []
+
+
 def test_format_on_empty_paragraph_is_rejected() -> None:
     raw = {
         "recipe": "r",

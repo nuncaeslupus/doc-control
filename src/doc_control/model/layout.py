@@ -81,6 +81,11 @@ def is_empty(doc: Document, para: Paragraph) -> bool:
     return not para.text.strip() and not _has_image(_elem(doc, para))
 
 
+def holds_content(doc: Document, para: Paragraph) -> bool:
+    """A paragraph without text that is still not blank: it holds an image or only breaks."""
+    return _has_image(_elem(doc, para)) or _break_only(doc, para)
+
+
 def _break_only(doc: Document, para: Paragraph) -> bool:
     items = list(_events(_elem(doc, para)))
     return bool(items) and all(items) and not para.text.strip()

@@ -17,7 +17,7 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.annotations import read_revisions
 from doc_control.model.document import Document
-from doc_control.model.layout import centred
+from doc_control.model.layout import centred, holds_content
 from doc_control.ops.tracked import apply_edits, edit_from_dict
 from doc_control.recipes.engine import Context, propose
 from doc_control.recipes.schema import validate_recipe
@@ -126,7 +126,9 @@ def _context(doc: Document) -> dict[int, Context]:
             style = doc.styles.get(style_id)
             if style is not None:
                 names.add(style.name.lower())
-        out[para.number] = Context(frozenset(names), doc.heading_level(para) is not None)
+        heading = doc.heading_level(para) is not None
+        content = not para.text and holds_content(doc, para)
+        out[para.number] = Context(frozenset(names), heading, content)
     return out
 
 
