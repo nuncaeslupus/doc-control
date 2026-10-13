@@ -57,8 +57,9 @@ def test_what_blank_lines_do_not_make_a_heading() -> None:
         assert len(detect(paras, PLAIN).chapters) == 1, lines
     one_above = build("", "Uno", "", BODY, "", "", "Dos", "", BODY)
     assert [c.first for c in detect(one_above, PLAIN).chapters] == [7]
-    none_below = build("", "", "Uno", BODY, "", "", "Dos", "", BODY)
-    assert [c.first for c in detect(none_below, PLAIN).chapters] == [7]
+    for word in ("Silencio", "Uno", "3", "1.", "I"):
+        none_below = build("", "", word, BODY, "", "", "Dos", "", BODY)
+        assert [c.first for c in detect(none_below, PLAIN).chapters] == [7], word
 
 
 def test_chapter_level_auto_keeps_few_chapters_over_many_subheads() -> None:
@@ -69,3 +70,16 @@ def test_chapter_level_auto_keeps_few_chapters_over_many_subheads() -> None:
     assert len(found.chapters) == 3
     titled = [("La novela", h1), *[r for n in range(3) for r in ((f"Cap {n}", h2), BODY)]]
     assert len(detect(build(*titled), Profile(chapter_level="auto")).chapters) >= 3
+
+
+def test_hard_wrapped_numeral_heading_takes_its_title_line() -> None:
+    title = "Donde se cuenta lo que pasó en la casa del molino"  # 11 words
+    paras = build("", "", "", "", "-XIV-", title, BODY, BODY, "", "", "CAPÍTULO 3", BODY, BODY)
+    found = detect(paras, PLAIN)
+    assert [(c.first, c.heading_last, c.kind) for c in found.chapters] == [
+        (5, 6, "numeral"),
+        (11, 11, "chapter"),
+    ]
+    assert detect(build("", "", "", "", "-XIV-", title, BODY)).chapters == ()
+    sentence = build("", "", "", "", "-XIV-", "Era tarde y llovía sobre el pueblo.", BODY)
+    assert detect(sentence, PLAIN).chapters[0].heading_last == 5

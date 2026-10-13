@@ -2,7 +2,8 @@
 
 Gate: ``plain_structure_mismatches == 0``: an unstyled .docx with headings set off by
 blank lines gives its chapters with ``chapter_blank_lines``; ``auto`` finds level-2
-chapters; the in-process API lists every suppressed scene break, the CLI the first 20.
+chapters; the in-process API lists every suppressed scene break, the CLI the first 20; a
+hard-wrapped ``-XIV-`` with its title line right under it is a heading with that title (T51).
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ def test_plain_text_structure(tmp_path: Path) -> None:
     capped = run({"doc": doc, "unit": "scenes", "profile": {"chapter_blank_lines": 2}})
     with api.open(doc) as opened:
         whole = opened.run("segment", {"unit": "scenes", "profile": {"chapter_blank_lines": 2}})
+    title = "Donde se cuenta lo que pasó en la casa del molino"
+    hard = [r for n in ("XII", "XIII", "XIV") for r in ("", "", "", f"-{n}-", title, BODY, BODY)]
+    wrapped = run({"doc": docx(tmp_path, hard), "profile": {"chapter_blank_lines": 2}})["chapters"]
     checks = [
         default == [],
         len(found) == 25,
@@ -64,6 +68,7 @@ def test_plain_text_structure(tmp_path: Path) -> None:
         auto["chapters"] == [],  # no heading styles in use: auto is level 1
         capped["suppressed_total"] == 25 and len(capped["suppressed"]) == 20,
         len(whole["suppressed"]) == 25,
+        [(c["kind"], c["heading_last"] - c["first"]) for c in wrapped] == [("numeral", 1)] * 3,
     ]
     mismatches = checks.count(False)
     print(f"plain_structure_mismatches == {mismatches} (of {len(checks)} checks)")
