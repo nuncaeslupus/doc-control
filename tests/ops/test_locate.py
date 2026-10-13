@@ -302,8 +302,10 @@ def test_find_phrase_never_crosses_a_line_break(run: Run, tmp_path: Path) -> Non
     rows = all_rows(run, path)
     texts = [p.text for p in Document(str(path)).index.paragraphs]
     assert texts[0] == "aa bb\ncc dd"
-    assert rows[0]["find_phrase"] is None
-    assert rows[0]["find_phrase_reason"] == "none_within_25_words"
+    # No window inside the paragraph is unique; one across its mark is.
+    assert rows[0]["find_phrase"] == "dd\raa"
+    assert rows[0]["find_phrase_across"] == "next"
+    assert rows[0]["find_phrase_word"] == "dd^paa"
     assert find_failures(texts, [r["find_phrase"] for r in rows]) == 0
 
 
@@ -311,7 +313,7 @@ def test_find_phrase_counts_overlaps_and_substrings(run: Run, tmp_path: Path) ->
     # "he went" is inside "she went": counting whole words only would call it unique.
     path = make_docx(tmp_path / "d.docx", "he went", "she went", "ha ha ha")
     rows = all_rows(run, path)
-    assert rows[0]["find_phrase"] is None
+    assert rows[0]["find_phrase"] == "went\rshe"  # only across the mark
     assert rows[1]["find_phrase"] == "she"
     texts = [p.text for p in Document(str(path)).index.paragraphs]
     assert find_failures(texts, [r["find_phrase"] for r in rows]) == 0
@@ -333,13 +335,15 @@ def test_find_phrase_limit_and_context_for_duplicates(run: Run, tmp_path: Path) 
     assert rows[1]["find_phrase_unique"] is False
     assert rows[1]["context"] == {
         "after": rows[0]["find_phrase"],
+        "after_word": rows[0]["find_phrase_word"],
         "at": rows[0]["at"],
         "paragraphs_after": 1,
     }
     assert rows[2]["context"]["paragraphs_after"] == 2
-    assert rows[3]["find_phrase"] is None
-    assert rows[3]["find_phrase_reason"] == "none_within_25_words"
-    assert rows[3]["context"]["paragraphs_after"] == 3
+    # Every 25-word window of the long one recurs in the next; its end before the mark does not.
+    assert rows[3]["find_phrase"] == "w29\r"
+    assert rows[3]["find_phrase_across"] == "next"
+    assert "context" not in rows[3]
     assert rows[4]["find_phrase"] is not None
     assert "context" not in rows[0]
 

@@ -32,11 +32,16 @@ Find phrase
     case-insensitive, accent-sensitive, the document's own characters (no-break spaces stay,
     whitespace is not collapsed), occurrences counted in the joined text (paragraph marks
     included, overlaps counted). A line break inside a paragraph ends a phrase. Text outside
-    the main story (footnotes, headers) is not searched. When none is unique
-    ``find_phrase_unique`` is false with ``find_phrase_reason`` (``empty``, ``duplicate`` or
-    ``none_within_25_words``), and a non-empty paragraph gets ``context``: the find phrase of
-    the nearest earlier paragraph that has one, the paragraph it is in, and how many
-    paragraphs after it this one comes.
+    the main story (footnotes, headers) is not searched. When no run inside the paragraph is
+    unique, the shortest one across a paragraph mark is taken (``find_phrase_across``:
+    ``previous``, ``next`` or ``both``; the mark is ``\\r`` in ``find_phrase``), e.g. the last
+    words of the paragraph before, the mark, and ``-I-``. ``find_phrase_word`` is the same
+    phrase as typed in Word's Find box (``^p`` mark, ``^t`` tab, ``^s`` no-break space,
+    ``^~`` no-break hyphen, ``^-`` soft hyphen, ``^^`` caret), None past 255 characters.
+    When none is unique ``find_phrase_unique`` is false with ``find_phrase_reason``
+    (``empty``, ``duplicate`` or ``none_within_25_words``), and a non-empty paragraph gets
+    ``context``: the find phrase (and ``after_word``) of the nearest earlier paragraph that
+    has one, the paragraph it is in, and how many paragraphs after it this one comes.
 
 Cost: the indexes (prefix and suffix word tuples, up to ``MAX_SIDE`` long), the structure and
 the page estimates are built once per call, then each paragraph is a handful of set
@@ -153,6 +158,76 @@ class FindPhrase:
     words: int = 0
     start: int = 0  # character offset in the paragraph
     reason: str | None = None
+    across: str | None = None  # "previous", "next" or "both": the phrase spans a mark
+
+
+#: Characters Word's Find box needs written as codes (``^`` itself first).
+_WORD_CODES = (
+    ("^", "^^"),
+    ("\r", "^p"),
+    ("\t", "^t"),
+    ("\u00a0", "^s"),
+    ("\u2011", "^~"),
+    ("\u00ad", "^-"),
+)
+WORD_FIND_MAX = 255  # characters Word's Find box takes
+
+
+def word_find(text: str) -> str | None:
+    """``text`` as typed in Word's Find box (``^p`` a paragraph mark, ``^t`` a tab, ``^s`` a
+    no-break space, ``^~`` a no-break hyphen, ``^-`` a soft hyphen, ``^^`` a caret); None
+    when that is longer than the box takes."""
+    for char, code in _WORD_CODES:
+        text = text.replace(char, code)
+    return text if len(text) <= WORD_FIND_MAX else None
+
+
+def across_marks(
+    texts: Sequence[str],
+    spans: Callable[[int], list[tuple[int, int]]],
+    once: Callable[[str], bool],
+    i: int,
+) -> FindPhrase | None:
+    """The shortest phrase spanning a paragraph mark next to paragraph ``i`` that Word's Find
+    meets once: words ending the previous paragraph (or none), the mark, the paragraph's
+    first words; or its last words, the mark, words opening the next one (or none); or the
+    whole paragraph between both marks. Fewest words first, then fewest marks, then the
+    paragraph's start first. None when no such phrase fits in Word's Find box."""
+    text, own = texts[i], spans(i)
+    if not own:
+        return None
+    n = len(own)
+    runs = FindIndex._run_ends(text, own)
+    found: list[tuple[int, int, int, str, int, str]] = []
+
+    def neighbour_words(j: int, tail: bool) -> list[str]:
+        """Text pieces of paragraph ``j`` next to its mark, by word count (0 words first)."""
+        other, sp = texts[j], spans(j)
+        pieces = [""]
+        for k in range(1, min(len(sp), MAX_FIND_WORDS) + 1):
+            piece = other[sp[-k][0] :] if tail else other[: sp[k - 1][1]]
+            if _BREAK.search(piece):
+                break
+            pieces.append(piece)
+        return pieces
+
+    before = neighbour_words(i - 1, tail=True) if i > 0 else []
+    after = neighbour_words(i + 1, tail=False) if i + 1 < len(texts) else []
+    for k in range(1, min(n, MAX_FIND_WORDS) + 1):
+        head = text[: own[k - 1][1]]
+        if before and runs[0] >= k - 1 and not _BREAK.search(head):
+            for j, piece in enumerate(before[: MAX_FIND_WORDS - k + 1]):
+                found.append((k + j, 1, 0, piece + "\r" + head, 0, "previous"))
+        tail = text[own[n - k][0] :]
+        if after and not _BREAK.search(tail):
+            for j, piece in enumerate(after[: MAX_FIND_WORDS - k + 1]):
+                found.append((k + j, 1, 1, tail + "\r" + piece, own[n - k][0], "next"))
+    if before and after and n <= MAX_FIND_WORDS and not _BREAK.search(text):
+        found.append((n, 2, 2, "\r" + text + "\r", 0, "both"))
+    for words, _marks, _order, phrase, start, side in sorted(found, key=lambda c: c[:3]):
+        if word_find(phrase) is not None and once(phrase.casefold()):
+            return FindPhrase(phrase, words, start, across=side)
+    return None
 
 
 class FindIndex:
@@ -260,6 +335,11 @@ class FindIndex:
                 else:
                     self.found[i] = hit
             open_ = still
+
+    def once(self, key: str) -> bool:
+        """``key`` (folded, may hold paragraph marks) occurs exactly once in the document."""
+        at = self.haystack.find(key)
+        return at >= 0 and self.haystack.find(key, at + 1) < 0
 
     def _paras(self, words: list[str]) -> set[int]:
         out: set[int] = set()
@@ -433,12 +513,19 @@ class LazyIndexes:
                 begin, end = spans[s][0], spans[s + length - 1][1]
                 if self._once(text[begin:end].casefold()):
                     return FindPhrase(text[begin:end], length, begin)
-        return FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
+        spanning = across_marks(self.texts, lambda j: self._keys(j)[0], self._once, i)
+        return spanning or FindPhrase(None, reason=f"none_within_{MAX_FIND_WORDS}_words")
 
 
 def _indexes(texts: list[str]) -> tuple[LocatorIndex, list[FindPhrase]]:
     locators = LocatorIndex(texts)
-    return locators, FindIndex(locators).found
+    finder = FindIndex(locators)
+    found = finder.found
+    for i, phrase in enumerate(found):
+        if phrase.text is None and phrase.reason != "empty" and phrase.reason != "duplicate":
+            spanning = across_marks(texts, locators.spans.__getitem__, finder.once, i)
+            found[i] = spanning or phrase
+    return locators, found
 
 
 class _Phrases:
@@ -591,12 +678,16 @@ def locate(request: dict[str, Any]) -> Reply:
         out["find_phrase_unique"] = find.text is not None
         if find.text is not None:
             out["find_phrase_words"] = find.words
+            out["find_phrase_word"] = word_find(find.text)
+            if find.across is not None:
+                out["find_phrase_across"] = find.across
         else:
             out["find_phrase_reason"] = find.reason
             earlier = next((j for j in range(n - 2, -1, -1) if find_of(j).text is not None), None)
             if earlier is not None and find.reason != "empty":
                 out["context"] = {
                     "after": find_of(earlier).text,
+                    "after_word": word_find(find_of(earlier).text or ""),
                     "at": str(index.paragraph(earlier + 1).address),
                     "paragraphs_after": n - 1 - earlier,
                 }
