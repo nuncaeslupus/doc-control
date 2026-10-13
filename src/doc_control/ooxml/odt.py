@@ -48,6 +48,7 @@ _SKIP_NAMESPACES = (
     "{urn:oasis:names:tc:opendocument:xmlns:chart:1.0}",
     "{http://www.w3.org/2000/svg}",
 )
+MAX_STYLE_CHAIN = 16  # automatic styles chained to automatic styles (one is usual)
 MAX_SPACES = 1000  # one text:s element; a larger text:c is a hostile or broken file
 MAX_CONTENT = 256 * 1024 * 1024  # bytes of content.xml once inflated
 _DIGITS = re.compile(r"[0-9]{1,12}")
@@ -96,10 +97,10 @@ def _style_names(content: ET.Element, styles: ET.Element | None) -> dict[str, st
                 )
     out = dict(named)
     for name in parents:
-        seen = {name}
         parent = parents[name]
-        while parent in parents and parent not in seen:  # an automatic parent: follow it
-            seen.add(parent)
+        for _ in range(MAX_STYLE_CHAIN):  # an automatic parent: follow it, a few steps at most
+            if parent not in parents or parent == name:
+                break
             parent = parents[parent]
         out[name] = (named.get(parent) or _display(parent)) if parent else ""
     return out

@@ -165,3 +165,16 @@ def test_style_names_with_bad_characters_still_read(tmp_path: Path) -> None:
     with api.open(path) as doc:
         rows = doc.paragraphs()
     assert [r["style_name"] for r in rows] == ["AB", "Scene break"]
+
+
+def test_long_automatic_style_chains_stay_linear() -> None:
+    import time
+
+    chain = "".join(
+        f'<style:style style:name="S{k}" style:family="paragraph" '
+        f'style:parent-style-name="S{k + 1}"/>'
+        for k in range(20000)
+    )
+    start = time.perf_counter()
+    paragraphs(odt('<text:p text:style-name="S0">x</text:p>', styles=chain))
+    assert time.perf_counter() - start < 2.0
