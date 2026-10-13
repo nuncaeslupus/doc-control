@@ -3,6 +3,7 @@ id: t-1c0bdf9c
 title: "T47: Cold bulk read: one shared parse per paragraph, C-accelerated reads, faster normalised text"
 label: "cold bulk read speed"
 priority: 5
+status: merged
 ---
 
 Requested by literary-critic: the first `paragraphs(normalized=True, pages=True)` on a real
