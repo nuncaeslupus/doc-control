@@ -64,8 +64,9 @@ doc-control live.close --json '{"doc": "Novela.docx", "save": true}'
 Live `batch` takes `comment.add`, `text.replace` and `para.insert`; anything else, or a
 machine with no app to drive, answers `ENGINE_UNAVAILABLE` with the reason
 (`live.status` lists the apps found). LibreOffice needs a Python its own bridge was
-built for: the system Python with `python3-uno` on Linux. Closing never drops unsaved
-work: a changed document needs `save` or `discard`.
+built for: the system Python with `python3-uno` for a distribution's package, the
+Python version the snap bundles for the snap (`live.status` names it). Closing never
+drops unsaved work: a changed document needs `save` or `discard`.
 
 References: [operations](docs/operations.md) · [errors](docs/errors.md).
 

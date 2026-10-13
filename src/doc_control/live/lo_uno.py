@@ -299,7 +299,8 @@ class LibreOffice:
         while components.hasMoreElements():
             component = components.nextElement()
             url = getattr(component, "URL", "")
-            if url.startswith("file:") and Path(_uno().fileUrlToSystemPath(url)) == want:
+            # Resolved on both sides: the writer may have opened it through a symlink.
+            if url.startswith("file:") and Path(_uno().fileUrlToSystemPath(url)).resolve() == want:
                 return component
         return None
 
@@ -366,6 +367,38 @@ class LibreOffice:
         # the main text): walk to it, 5 ms a paragraph.
         return next(p for i, p in enumerate(_walk(doc.Text)) if i == n)
 
+    def _index(self, doc: Any, texts: list[str], paragraph: Any) -> int:
+        """Where ``paragraph`` is in ``texts``."""
+        own, story = paragraph.getString(), paragraph.getText()
+        at = [n for n, text in enumerate(texts) if text == own]
+        if len(at) != 1:
+            # ponytail: a repeated paragraph is told apart by walking to it.
+            at = [
+                n
+                for n, other in enumerate(_walk(doc.Text))
+                if other.getText() == story and story.compareRegionStarts(other, paragraph) == 0
+            ]
+        return at[0]
+
+    def _buried(self, doc: Any, texts: list[str]) -> set[int]:
+        """The paragraphs wholly inside a tracked deletion: LibreOffice marks the
+        deletion's two ends only, so nothing in such a paragraph says it is deleted."""
+        out: set[int] = set()
+        redlines = doc.Redlines.createEnumeration()
+        while redlines.hasMoreElements():
+            redline = redlines.nextElement()
+            if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
+                continue
+            start = redline.RedlineStart
+            span = start.getText().createTextCursorByRange(start)
+            span.gotoRange(redline.RedlineEnd, True)
+            if span.getString().count("\n") < 2:
+                continue
+            inside = len(list(_walk(span))) - 2
+            first = self._index(doc, texts, _around(start.getText().createTextCursorByRange(start)))
+            out.update(range(first + 1, first + 1 + inside))
+        return out
+
     def _range(self, doc: Any, span: Span) -> tuple[Any, str]:
         """A cursor over ``span`` and the visible text it covers."""
         texts = self._texts(doc)
@@ -379,7 +412,11 @@ class LibreOffice:
                 ErrorCode.UNSUPPORTED_CONTENT,
                 f"paragraphs {span.start + 1} and {span.end + 1} are not in the same container",
             )
-        parts = [_visible(paragraph) for paragraph in found]
+        buried = self._buried(doc, texts)
+        parts = [
+            "" if n in buried else _visible(paragraph)
+            for n, paragraph in enumerate(found, span.start)
+        ]
         if span.b is not None:
             parts[-1] = parts[-1][: span.b]
         parts[0] = parts[0][span.a :]
@@ -397,13 +434,12 @@ class LibreOffice:
         # ponytail: several calls per tracked deletion; cache per document if a heavily
         # revised novel makes select slow.
         done: set[str] = set()
+        buried = self._buried(doc, raw)
         redlines = doc.Redlines.createEnumeration()
         while redlines.hasMoreElements():
             redline = redlines.nextElement()
             if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
                 continue
-            # ponytail: a paragraph wholly inside a deletion that spans three or more
-            # still reads with its deleted text; walk from start to end if that bites.
             for edge in (redline.RedlineStart, redline.RedlineEnd):
                 paragraph = _around(edge.getText().createTextCursorByRange(edge))
                 whole = paragraph.getString()
@@ -416,9 +452,12 @@ class LibreOffice:
                 at = [n for n, text in enumerate(raw) if text == whole]
                 if len(at) != 1:
                     # A repeated paragraph cannot be placed: read them all, in order.
-                    return [_visible(paragraph) for paragraph in _walk(doc.Text)]
+                    return [
+                        "" if n in buried else _visible(paragraph)
+                        for n, paragraph in enumerate(_walk(doc.Text))
+                    ]
                 texts[at[0]] = seen
-        return texts
+        return ["" if n in buried else text for n, text in enumerate(texts)]
 
     @_guard
     def text(self, path: Path, span: Span) -> str:
@@ -444,20 +483,12 @@ class LibreOffice:
         chosen = doc.CurrentController.getSelection().getByIndex(0)
         story = chosen.getText()
         paragraph = _around(story.createTextCursorByRange(chosen.getEnd()))
-        own = paragraph.getString()
-        at = [n for n, text in enumerate(self._texts(doc)) if text == own]
-        if len(at) != 1:
-            # ponytail: a repeated paragraph is told apart by walking to it.
-            at = [
-                n
-                for n, other in enumerate(_walk(doc.Text))
-                if other.getText() == story and story.compareRegionStarts(other, paragraph) == 0
-            ]
+        at = self._index(doc, self._texts(doc), paragraph)
         shown = story.createTextCursorByRange(chosen).createEnumeration()
         parts = []
         while shown.hasMoreElements():
             parts.append(_visible(shown.nextElement()))
-        return "\n".join(parts), at[0]
+        return "\n".join(parts), at
 
     @contextmanager
     def _as(self, doc: Any, author: str) -> Iterator[None]:
