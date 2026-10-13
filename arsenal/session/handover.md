@@ -2,12 +2,12 @@
 
 ## Last task
 
-- **ID**: T50 plain-text headings, chapter_level auto (t-536f43ad), PR #113, merged.
+- **ID**: T51 hard-wrapped plain-text headings (t-ba441550), PR #114 (with this handover).
 - **Status at handover**: all of this session's work is merged; 0.2.0 (and 0.1.0) PyPI releases wait on the owner's approval of the `pypi` environment.
 
 ## What was done this session
 
-Merged: T38 context-aware recipes (#90), T39 in-process API (#93), T40 parts and style-marked chapters (#100), T41 normalised exact anchors + 0.1.0 (#101), T42 rendered page marks win (#102), T43 segment ranges (#103), T44 writer safety + T45 API polish (#105), T46 performance gate + T47 cold bulk read (#107), T48 page facts + 0.2.0 (#108), T29 references + coverage (#109), T49 scene styles + heading subtitles (#111), T50 plain-text headings + `chapter_level: auto` + uncapped in-process suppressed list (#113). T49-T50 were literary-critic's T6 asks; on a real manuscript `segment` now gives 156 scenes (literary-critic's own count), 54 chapters, 3 parts. literary-critic now runs all .docx handling on doc-control through `api.open`; it talks to this repo's sessions by send_message and files its needs as gated tasks.
+Merged: T38 context-aware recipes (#90), T39 in-process API (#93), T40 parts and style-marked chapters (#100), T41 normalised exact anchors + 0.1.0 (#101), T42 rendered page marks win (#102), T43 segment ranges (#103), T44 writer safety + T45 API polish (#105), T46 performance gate + T47 cold bulk read (#107), T48 page facts + 0.2.0 (#108), T29 references + coverage (#109), T49 scene styles + heading subtitles (#111), T50 plain-text headings + `chapter_level: auto` + uncapped in-process suppressed list (#113), T51 hard-wrapped headings (#114). T49-T50 were literary-critic's T6 asks; on a real manuscript `segment` now gives 156 scenes (literary-critic's own count), 54 chapters, 3 parts. literary-critic now runs all .docx handling on doc-control through `api.open`; it talks to this repo's sessions by send_message and files its needs as gated tasks.
 
 ## What remains
 
