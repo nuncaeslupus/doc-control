@@ -17,7 +17,8 @@ Paragraphs (``.txt``), by mode
     a paragraph and every empty line an empty paragraph (a writer's export, verse).
     ``auto`` (the default) picks ``blocks`` only when the text looks hard-wrapped: the
     lines inside multi-line blocks mostly end within 10 % of one width from 50 to 120, or
-    the typical block has two lines or more and no line passes 120 characters. The mode is
+    the typical block has two lines or more and no line passes 120 characters (so verse in
+    short stanzas reads as ``blocks``: read verse with ``lines``). The mode is
     set per document with ``api.open(path, text_mode=...)``, or by the
     ``DOC_CONTROL_TEXT_MODE`` environment variable.
 
@@ -246,7 +247,12 @@ def text_mode(mode: str) -> Iterator[None]:
 def requested_mode() -> str:
     """The text mode in force: :func:`text_mode`, else ``DOC_CONTROL_TEXT_MODE``, else auto."""
     mode = _MODE.get() or os.environ.get("DOC_CONTROL_TEXT_MODE") or "auto"
-    return mode if mode in TEXT_MODES else "auto"
+    if mode not in TEXT_MODES:
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"DOC_CONTROL_TEXT_MODE must be one of {', '.join(TEXT_MODES)}, not {mode!r}",
+        )
+    return mode
 
 
 def _hard_wrapped(lines: list[str]) -> bool:

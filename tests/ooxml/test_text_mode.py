@@ -79,3 +79,19 @@ def test_unknown_mode_is_refused(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
         api.open(tmp_path / "x.txt", text_mode="words")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
+
+
+def test_unknown_environment_mode_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "x.txt"
+    path.write_text("a\nb\n", "utf-8")
+    monkeypatch.setenv("DOC_CONTROL_TEXT_MODE", "bogus")
+    with api.open(path) as doc, pytest.raises(DocControlError) as err:
+        doc.run("info")
+    assert err.value.code is ErrorCode.SCHEMA_INVALID
+
+
+def test_auto_reads_short_stanzas_as_blocks() -> None:
+    # Documented limit: verse in short stanzas looks wrapped; read it with text_mode="lines".
+    assert paragraphs(VERSE, markdown=False)[1] == "blocks"
