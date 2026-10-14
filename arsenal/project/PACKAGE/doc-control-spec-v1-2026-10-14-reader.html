@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="95531698473a8900d13d28d3a84aab78cf663fd5af59abc3ed51bfb0fadf5b70">
+<title>Doc Control — Specification (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#9a4a0b}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">Doc Control — Specification<small>annotatable reader · 2026-10-14</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 10 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Doc Control — Specification</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Spec</summary><ul>
+<li><a href="#s-spec-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-spec-1">§1 Problem statement</a></li>
+<li><a href="#s-spec-2">§2 Systems &amp; Impact</a></li>
+<li><a href="#s-spec-3">§3 Options</a></li>
+<li><a href="#s-spec-phases-shared-by-the-options">Phases (shared by the options)</a></li>
+<li><a href="#s-spec-option-a-windows-frozen-exe-plus">Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)</a></li>
+<li><a href="#s-spec-option-b-a-and-b-phases-with-lib">Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</a></li>
+<li><a href="#s-spec-option-c-run-the-whole-server-in">Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)</a></li>
+<li><a href="#s-spec-packaging-details">Packaging details</a></li>
+<li><a href="#s-spec-comparison">Comparison</a></li>
+<li><a href="#s-spec-4">§4 Recommendation</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge spec">Specification</span>Spec</h2>
+<article class="sec l2" id="s-spec-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-14
+<strong>Ticket / PR</strong>: — (workspace <code>PACKAGE</code>; answers literary-critic Q-2, unblocks their T6)
+<strong>Author</strong>: Claude (doc-control session), for the owner
+<strong>Revision</strong>: 1
+<strong>Status</strong>: draft
+<strong>Revision log</strong>:
+- r1 — first draft; the owner answered "yes, write it" to literary-critic's Q-2</p>
+<blockquote>
+<p>Review record. Each round of reviewer notes makes a new revision: bump
+<strong>Revision</strong>, add a log line naming the export it applied, and commit that
+export beside this file in the same commit. On approval set <strong>Status</strong> to
+<code>approved (YYYY-MM-DD, revision N)</code> and, when the reviewer sent no notes for
+that revision, add <code>— without annotations</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-intro"><label class="note-head" for="n-s-spec-intro"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></label><textarea class="note-ta" data-key="s-spec-intro" id="n-s-spec-intro" data-label="Preamble &amp; scope" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-1">
+<h3 class="sec-h"><span class="chip">§1</span><span class="sec-title">Problem statement</span></h3>
+<div class="sec-body"><p>literary-critic asked (Q-2): can the live engine be packaged so a writer installs it with a double-click, with no Python, on Windows and Mac? The owner said yes. Today a writer needs Python, <code>uv</code> or <code>pip</code>, and the <code>doc-control[live]</code> extra to drive Word. That blocks non-technical writers, and it blocks literary-critic's task T6.</p>
+<p>Facts from the code:</p>
+<ul>
+<li><code>live/word_com.py</code> imports only the standard library at module level. It loads <code>pythoncom</code> and <code>win32com.client</code> (from <code>pywin32</code>) with <code>importlib.import_module</code> on the first live call, and reads the registry through <code>winreg</code>. A freezer cannot see those imports, so they must be named explicitly.</li>
+<li><code>live/lo_uno.py</code> is also standard library (<code>ctypes</code>, <code>socket</code>, <code>subprocess</code>). It imports <code>uno</code> lazily. <code>uno</code> ships with LibreOffice, not PyPI, and needs the Python build that LibreOffice names (<code>libpyuno</code>). A frozen binary cannot load it from its own bundled Python.</li>
+<li>Word on Mac has no COM. The Mac live engine is therefore LibreOffice only.</li>
+<li>The core has no dependencies (<code>dependencies = []</code>). The MCP server is <code>doc-control mcp</code> over stdio; the CLI is <code>doc-control</code>.</li>
+<li>Releases go to PyPI from <code>.github/workflows/release.yml</code>. CI already runs on <code>ubuntu-latest</code> and <code>windows-latest</code>.</li>
+</ul>
+<p>What should be true: a writer downloads one file, double-clicks, and Claude Desktop (or the command line) can use doc-control. Windows gets Word live control. Mac gets the file engine and, as far as the platform allows, live control.</p>
+<p>Code signing is not required. Unsigned installs show a warning that the user can pass: on Windows, SmartScreen offers "More info → Run anyway". On macOS, "Privacy &amp; Security → Open Anyway". Paid signing (Windows certificate; Apple Developer Program, notarization) removes those warnings and is optional.</p>
+<p><strong>Success criteria (measurable)</strong>:</p>
+<ul>
+<li>[ ] <code>frozen_smoke_failures == 0</code> on <code>windows-latest</code> and <code>macos-latest</code>: the frozen binary runs <code>capabilities</code>, a file-engine <code>find</code> on a fixture <code>.docx</code>, and an MCP <code>initialize</code> plus <code>tools/list</code> over stdio, with no Python on <code>PATH</code>.</li>
+<li>[ ] <code>live_word_failures == 0</code> for the frozen Windows exe: <code>scripts/live_word_check.py</code> run against it on the owner's Windows machine (manual evidence).</li>
+<li>[ ] <code>install_steps_windows &lt;= 2</code> (download, double-click) for the <code>.mcpb</code> bundle and <code>&lt;= 3</code> for the plain installer; <code>install_steps_mac &lt;= 3</code> including "Open Anyway". Counted from a clean machine, recorded in the plan's evidence log.</li>
+<li>[ ] <code>frozen_exe_size_mb &lt;= 40</code> per OS (measured on the CI artifact).</li>
+<li>[ ] <code>core_runtime_dependencies == 0</code>: <code>pyproject.toml</code> <code>dependencies</code> stays empty. Packaging tools appear only in a build dependency group and the workflow.</li>
+<li>[ ] <code>release_artifacts_per_tag == expected</code>: a tagged release attaches the Windows exe, the Mac binary, and the <code>.mcpb</code> file(s), each with a SHA-256 in the release notes.</li>
+<li>[ ] <code>frozen_vs_python_result_diffs == 0</code> on the shared fixture corpus: <code>capabilities</code> and <code>find</code> output of the binary equals the pip-installed version.</li>
+<li>[ ] Judged, not measured: a writer with no Python installs it from the README alone and Claude Desktop lists the doc-control tools.</li>
+</ul></div>
+<div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-2">
+<h3 class="sec-h"><span class="chip">§2</span><span class="sec-title">Systems &amp; Impact</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>System</th>
+<th>Type</th>
+<th>Role</th>
+<th>Needs changes?</th>
+<th>Impact</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>live/word_com.py</code></td>
+<td>Primary (Windows)</td>
+<td>Drives Word over COM</td>
+<td>Small</td>
+<td>Freezer hints for <code>pythoncom</code>, <code>win32com.client</code>, <code>winreg</code>, <code>pywintypes</code>; frozen error text must not say "pip install"</td>
+<td>Med</td>
+</tr>
+<tr>
+<td><code>live/lo_uno.py</code></td>
+<td>Primary (Mac, Windows, Linux)</td>
+<td>Drives LibreOffice</td>
+<td>Option B/C: Yes</td>
+<td>Cannot import <code>uno</code> from a frozen interpreter; needs a bridge</td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>cli.py</code>, <code>mcp.py</code>, <code>__main__.py</code></td>
+<td>Dependent</td>
+<td>Entry points</td>
+<td>Small</td>
+<td>One frozen entry point serving <code>mcp</code> and CLI</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>New <code>packaging/</code> (spec file, <code>.mcpb</code> manifest, icons, installer script)</td>
+<td>Primary</td>
+<td>Build inputs</td>
+<td>Yes (new)</td>
+<td>Build-time only</td>
+<td>Med</td>
+</tr>
+<tr>
+<td><code>.github/workflows/</code> (new <code>package.yml</code>)</td>
+<td>Infrastructure</td>
+<td>Build, smoke test, attach artifacts</td>
+<td>Yes</td>
+<td>Runs on <code>windows-latest</code> and <code>macos-latest</code></td>
+<td>Med</td>
+</tr>
+<tr>
+<td><code>release.yml</code></td>
+<td>Dependent</td>
+<td>PyPI release on a version bump</td>
+<td>Maybe</td>
+<td>Packages build for the same tag</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>README, <code>docs/</code></td>
+<td>Docs</td>
+<td>Install instructions</td>
+<td>Yes</td>
+<td>Screenshots-free numbered steps</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Claude Desktop</td>
+<td>Consumer</td>
+<td>Installs <code>.mcpb</code>, runs the binary</td>
+<td>No</td>
+<td>Type <code>binary</code> manifest</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>literary-critic</td>
+<td>Consumer</td>
+<td>Task T6 waits on this</td>
+<td>No</td>
+<td>Unblocked at phase 1</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>Word (Windows), LibreOffice (Mac)</td>
+<td>Shared resources</td>
+<td>The apps driven</td>
+<td>No</td>
+<td>Must be installed by the writer</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Impact</strong>:
+- <strong>User</strong>: a writer installs without Python. The first run shows an OS warning (unsigned).
+- <strong>Operational</strong>: two more CI jobs and a release step. Binaries are rebuilt per release.
+- <strong>Performance</strong>: a one-file exe unpacks on start; expect 1–3 seconds of startup. A one-folder build avoids it.
+- <strong>API and data</strong>: none.
+- <strong>Risk of inaction</strong>: literary-critic's writers must install Python or use computer-use clicks. T6 stays blocked.</p></div>
+<div class="note" data-for="s-spec-2"><label class="note-head" for="n-s-spec-2"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §2</span></label><textarea class="note-ta" data-key="s-spec-2" id="n-s-spec-2" data-label="§2 Systems &amp; Impact" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2 bare" id="s-spec-3">
+<h3 class="sec-h"><span class="chip">§3</span><span class="sec-title">Options</span></h3>
+</article>
+<article class="sec l3" id="s-spec-phases-shared-by-the-options">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Phases (shared by the options)</span></h4>
+<div class="sec-body"><ol>
+<li><strong>Phase 1, Windows</strong>: frozen exe (PyInstaller or Nuitka) with <code>pywin32</code>, the <code>.mcpb</code> bundle (server type <code>binary</code>), a plain installer, CI smoke test.</li>
+<li><strong>Phase 2, Mac file engine</strong>: a frozen Mac binary (Apple silicon and Intel, or universal2), <code>.mcpb</code> for Mac, "Open Anyway" instructions. Live control is LibreOffice only, with the bridge below.</li>
+<li><strong>Phase 3, Mac Word</strong>: a new Word-for-Mac engine through AppleScript or JXA (<code>osascript</code>). It is a separate spec and not part of this one.</li>
+</ol></div>
+<div class="note" data-for="s-spec-phases-shared-by-the-options"><label class="note-head" for="n-s-spec-phases-shared-by-the-options"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Phases (shared by the options)</span></label><textarea class="note-ta" data-key="s-spec-phases-shared-by-the-options" id="n-s-spec-phases-shared-by-the-options" data-label="Phases (shared by the options)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-a-windows-frozen-exe-plus">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option A: Windows frozen exe plus <code>.mcpb</code>, Mac file engine only (Conservative)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: build one exe with PyInstaller (one-file or one-folder). Bundle <code>pywin32</code>'s <code>pythoncom</code>, <code>win32com</code> and <code>pywintypes</code> via hidden imports and a hook. Ship a <code>.mcpb</code> with <code>"server": {"type": "binary"}</code> that points to the exe, a plain installer (NSIS or Inno Setup) that puts it on <code>PATH</code>, and a zip for CLI use. On Mac, ship a frozen binary of the file engine; <code>lo_uno</code> reports <code>ENGINE_UNAVAILABLE</code> unless the writer has a Python with <code>uno</code>.</li>
+<li><strong>Scope</strong>: <code>packaging/</code>, workflow, README, small frozen-mode text changes in <code>word_com.py</code>.</li>
+<li><strong>Effort</strong>: Medium.</li>
+<li><strong>Tradeoffs</strong>: unblocks Windows writers, the main literary-critic audience. Mac live control is not offered. Fastest to evidence.</li>
+<li><strong>Compatibility</strong>: additive. The PyPI package is unchanged.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-a-windows-frozen-exe-plus"><label class="note-head" for="n-s-spec-option-a-windows-frozen-exe-plus"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)</span></label><textarea class="note-ta" data-key="s-spec-option-a-windows-frozen-exe-plus" id="n-s-spec-option-a-windows-frozen-exe-plus" data-label="Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-b-a-and-b-phases-with-lib">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: everything in Option A, plus Mac live control through LibreOffice. The frozen binary cannot import <code>uno</code>, so a small helper script runs in LibreOffice's bundled Python (<code>/Applications/LibreOffice.app/Contents/Resources/python</code>) and speaks the same protocol over a local socket or stdio. The frozen binary starts it when <code>uno</code> is not importable. The same route works on Windows and Linux for LibreOffice users. The file engine and MCP server stay in the frozen binary.</li>
+<li><strong>Scope</strong>: Option A plus a <code>lo_uno</code> bridge process (<code>live/lo_bridge.py</code>, standard library only, runs under LibreOffice's Python), tests with a fake bridge, and Mac CI smoke.</li>
+<li><strong>Effort</strong>: Medium–Large.</li>
+<li><strong>Tradeoffs</strong>: Mac writers get live control with LibreOffice and no Python. Adds a process and a protocol to keep in step with <code>live/protocol.py</code>. It does not give Word on Mac (phase 3).</li>
+<li><strong>Compatibility</strong>: additive. With a Python that already has <code>uno</code>, today's in-process path wins.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-b-a-and-b-phases-with-lib"><label class="note-head" for="n-s-spec-option-b-a-and-b-phases-with-lib"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</span></label><textarea class="note-ta" data-key="s-spec-option-b-a-and-b-phases-with-lib" id="n-s-spec-option-b-a-and-b-phases-with-lib" data-label="Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-c-run-the-whole-server-in">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: do not freeze on Mac. The installer drops the doc-control wheel's source into a folder and launches <code>doc-control mcp</code> with LibreOffice's own interpreter.</li>
+<li><strong>Scope</strong>: installer scripts, an <code>.mcpb</code> with a launcher.</li>
+<li><strong>Effort</strong>: Medium.</li>
+<li><strong>Tradeoffs</strong>: no freezer for Mac and <code>uno</code> just works. But it requires LibreOffice for any use, even file edits, which hurts writers who only want the file engine; the launcher is fragile across LibreOffice versions. The <code>.mcpb</code> type would be <code>binary</code> pointing at a shell launcher, which needs execute bits and is harder to sign.</li>
+<li><strong>Compatibility</strong>: additive.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-c-run-the-whole-server-in"><label class="note-head" for="n-s-spec-option-c-run-the-whole-server-in"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)</span></label><textarea class="note-ta" data-key="s-spec-option-c-run-the-whole-server-in" id="n-s-spec-option-c-run-the-whole-server-in" data-label="Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-packaging-details">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Packaging details</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Windows exe</strong>: PyInstaller is the default. It has mature <code>pywin32</code> hooks. Nuitka gives smaller, faster output but takes longer to build and needs a C compiler on the runner. Decide by measurement in phase 1 (size, startup, smoke test). Antivirus false positives are more common with one-file PyInstaller; one-folder or Nuitka reduces them.</li>
+<li><strong><code>.mcpb</code></strong>: a zip with <code>manifest.json</code> (server type <code>binary</code>, <code>entry_point</code> the exe, <code>mcp_config</code> command and args <code>mcp</code>) and the binary. Claude Desktop installs it by double-click. Windows and Mac get separate bundles because the binaries differ.</li>
+<li><strong>Plain installer</strong>: Windows <code>.exe</code> installer (Inno Setup) copies the exe, adds it to <code>PATH</code> and prints the <code>claude_desktop_config.json</code> snippet. Mac gets a <code>.pkg</code> or a signed-less zip with <code>doc-control</code> to drop on <code>/usr/local/bin</code>.</li>
+<li><strong>CLI use</strong>: the same binary. <code>doc-control capabilities</code> works from a terminal.</li>
+<li><strong>Mac Word</strong>: AppleScript/JXA through <code>osascript</code> is the route to Word on Mac. Phase 3, its own spec.</li>
+<li><strong>Signing</strong>: not required. Unsigned downloads show SmartScreen "More info → Run anyway" on Windows and "Privacy &amp; Security → Open Anyway" on macOS. Windows code signing costs a yearly certificate (cloud signing services are cheaper than hardware tokens); Apple's Developer Program is a yearly fee and adds notarization. Both remove the warnings. Add them later without changing the build, by signing in the workflow when secrets exist.</li>
+<li><strong>CI</strong>: a <code>package.yml</code> workflow on <code>windows-latest</code> and <code>macos-latest</code> (and <code>macos-13</code> for Intel, if needed). Build, run the smoke test on the built binary with <code>PATH</code> stripped of Python, upload artifacts, and on a release tag attach them to the GitHub release with checksums. Actions pins follow the existing workflows (commit SHAs).</li>
+<li><strong>Size</strong>: the standard-library-only core freezes small. Budget 40 MB per OS; <code>pywin32</code> on Windows is the largest part.</li>
+<li><strong>Stdlib-only rule</strong>: PyInstaller or Nuitka, hooks and installer tools are build-time only. They go in a <code>package</code> dependency group, never in <code>[project] dependencies</code>. The runtime stays <code>dependencies = []</code>; <code>pywin32</code> stays the <code>live</code> extra for pip users and is bundled in the Windows build only.</li>
+</ul></div>
+<div class="note" data-for="s-spec-packaging-details"><label class="note-head" for="n-s-spec-packaging-details"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Packaging details</span></label><textarea class="note-ta" data-key="s-spec-packaging-details" id="n-s-spec-packaging-details" data-label="Packaging details" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-comparison">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Comparison</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th></th>
+<th>Option A</th>
+<th>Option B</th>
+<th>Option C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Effort</td>
+<td>Medium</td>
+<td>Medium–Large</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Risk</td>
+<td>Low</td>
+<td>Medium (bridge process)</td>
+<td>Medium (fragile launcher)</td>
+</tr>
+<tr>
+<td>Windows live (Word)</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Needs LibreOffice</td>
+</tr>
+<tr>
+<td>Mac live</td>
+<td>No</td>
+<td>LibreOffice</td>
+<td>LibreOffice</td>
+</tr>
+<tr>
+<td>Mac file engine without LibreOffice</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Compatibility</td>
+<td>Additive</td>
+<td>Additive</td>
+<td>Additive</td>
+</tr>
+<tr>
+<td>Maintenance</td>
+<td>Low</td>
+<td>Medium (bridge + protocol)</td>
+<td>Medium (launcher per LO version)</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-comparison"><label class="note-head" for="n-s-spec-comparison"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Comparison</span></label><textarea class="note-ta" data-key="s-spec-comparison" id="n-s-spec-comparison" data-label="Comparison" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-4">
+<h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
+<div class="sec-body"><p><strong>Recommended option</strong>: Option B, built in phases. Phase 1 (Windows, Option A) delivers what literary-critic needs for T6 and can ship alone. Phase 2 adds the Mac binary and the LibreOffice bridge. Phase 3 (Word on Mac) stays a separate spec.</p>
+<p><strong>Immediate next action</strong>: after approval, <code>design</code> the plan, starting with a throwaway PyInstaller build in CI on <code>windows-latest</code> that runs the smoke test (<code>capabilities</code>), to settle PyInstaller against Nuitka by measured size and startup.</p>
+<p><strong>Open questions</strong>:
+- [ ] Q1. PyInstaller or Nuitka for Windows? Recommended: start with PyInstaller one-folder; switch only if antivirus flags or size miss the 40 MB budget.
+- [ ] Q2. Is Mac in scope for the first release, or Windows only (Option A) with Mac after? Recommended: Windows first, Mac in the same plan as phase 2.
+- [ ] Q3. Is shipping unsigned acceptable for the first release? Recommended: yes; revisit signing if writers drop out at the warning.
+- [ ] Q4. Should the LibreOffice bridge on Mac be part of this spec, or deferred with Word-for-Mac? Recommended: include it (Option B).
+- [ ] Q5. Which distribution channel: GitHub release assets only, or also a listing in Claude Desktop's extension directory? Recommended: GitHub release assets first.</p>
+<p><strong>Decisions log</strong>: none (the work did not start in <code>explore-idea</code>). Constraints carried: no signing required; the core stays stdlib-only; the owner answered Q-2 with yes.</p>
+<blockquote>
+<p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-4"><label class="note-head" for="n-s-spec-4"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></label><textarea class="note-ta" data-key="s-spec-4" id="n-s-spec-4" data-label="§4 Recommendation" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'doc-control-spec-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Specification notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>
