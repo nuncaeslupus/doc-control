@@ -495,6 +495,16 @@ Install a JSON style set into the document: new styles are added, existing ones 
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 
+## `table.get` (read)
+
+One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `table` | integer |  | Table number, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. |
+| `at` | string |  | Instead of `table`: any paragraph address in the table. |
+
 ## `term.rename` (write)
 
 Rename a term everywhere as one tracked batch: whole word, case, preserve case and inflections; dry_run previews with counts.
