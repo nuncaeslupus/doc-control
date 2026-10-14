@@ -97,3 +97,43 @@ Send back, per Word version (e.g. "Word 2019, build …" from **File → Account
 - the files that asked to repair in step 2 (or "none");
 - anything in step 3 that did not show as described;
 - the last line printed by step 6 and any `MISMATCH` lines.
+
+## Stories: notes, headers and table rows
+
+A second, shorter check for edits outside the body: a tracked footnote and endnote
+(`note.add`), a tracked edit inside a footnote and inside a header, and a tracked row
+inserted into and deleted from a table. Same setup as above (Windows, Word 2016 or later,
+`uv`, `git`); about 10 minutes. The gate is `real_word_stories_mismatches == 0`.
+
+```powershell
+uv run python scripts/real_word_stories.py build C:\stories
+```
+
+`C:\stories` now holds `notes.docx`, `headers.docx`, `tables.docx` and `expected.json`.
+For each of the three documents:
+
+1. Open it in Word. Did Word offer to repair it? (Must be no; close without saving if so
+   and write the name down.)
+2. Check the markup, with **All Markup** on, as tracked changes by "doc-control STORIES":
+   - `notes.docx`: the first footnote's first word changed to `EDITED`; a new footnote and
+     a new endnote, each with its reference mark in the body (look in the **Reviewing
+     Pane** if the note area is hidden);
+   - `headers.docx`: a header's first word changed to `EDITED` (double-click the page top
+     to see it);
+   - `tables.docx`: a new row of `Inserted row` cells after the first row, and the last row
+     struck through as deleted.
+3. **Review → Accept → Accept All Changes** and **Save As** `<name>-accepted.docx` in
+   `C:\stories` (for example `notes-accepted.docx`). Close.
+4. Open the original again, **Reject All Changes**, and **Save As** `<name>-rejected.docx`.
+   Close.
+
+Then:
+
+```powershell
+uv run python scripts/real_word_stories.py verify C:\stories
+```
+
+It reads back the six files, checks that no tracked change is left and that every
+paragraph of every story (body, notes, headers and footers) is what accepting or rejecting
+should leave, prints each `MISMATCH`, then `real_word_stories_mismatches == <n>`. Report
+it, and the names of any file that asked to repair, per Word version as in step 7.
