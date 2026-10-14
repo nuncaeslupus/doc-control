@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -99,6 +99,10 @@ class Footprint:
     #: The write is a layout write: also check what changed inside the touched paragraphs
     #: (:func:`doc_control.safety.layout.layout_problems`).
     layout: bool = False
+    #: Byte spans ``(start, end)`` of the original ``word/document.xml`` that may change as a
+    #: whole (``start == end``: something is inserted there): a table row, which is not a
+    #: paragraph. Every byte outside them and the paragraphs must stay.
+    spans: frozenset[tuple[int, int]] = frozenset()
 
     @property
     def story_parts(self) -> frozenset[str]:
@@ -189,6 +193,7 @@ def _document_problems(original: Package, result: Package, footprint: Footprint)
         result.read(DOCUMENT_PART),
         DOCUMENT_PART,
         [region],
+        sorted(footprint.spans),
         body_section=footprint.body_section,
     )
 
@@ -197,7 +202,13 @@ _Region = tuple[Container, frozenset[int], frozenset[int], frozenset[int]]
 
 
 def _part_problems(
-    old: bytes, new: bytes, part: str, regions: list[_Region], *, body_section: bool = False
+    old: bytes,
+    new: bytes,
+    part: str,
+    regions: list[_Region],
+    extra: Sequence[tuple[int, int]] = (),
+    *,
+    body_section: bool = False,
 ) -> list[str]:
     """Every byte of ``part`` outside the declared paragraphs of its ``regions`` (one per
     story it holds) must reappear, in order."""
@@ -207,7 +218,9 @@ def _part_problems(
         ET.fromstring(new)
     except (DocControlError, ET.ParseError) as exc:
         return [f"{part} does not parse: {exc}"]
-    cuts: list[tuple[int, int]] = []
+    if any(not 0 <= start <= end <= len(old) for start, end in extra):
+        return [f"footprint names a span outside {part}"]
+    cuts: list[tuple[int, int]] = list(extra)
     for container, replaced, inserted_after, inserted_before in regions:
         try:
             spans = scan(old, container, part)

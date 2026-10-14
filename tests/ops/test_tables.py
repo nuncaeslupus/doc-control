@@ -188,3 +188,69 @@ def test_table_get_columns_addresses_and_numbering(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
         api.run("table.get", {"doc": str(doc), "at": listed[-1]["at"]})  # "z" is in no table
     assert err.value.code == ErrorCode.ANCHOR_NOT_FOUND
+
+
+def _write_raw(path: Path, document: str) -> Path:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("[Content_Types].xml", CONTENT_TYPES)
+        zf.writestr("_rels/.rels", RELS)
+        zf.writestr("word/document.xml", document)
+    return path
+
+
+def test_table_get_reads_default_namespace_tags(tmp_path: Path) -> None:
+    """`<tbl>` with WordprocessingML as the default namespace is a table, not zero tables."""
+    document = (
+        f'<?xml version="1.0" encoding="UTF-8"?><document xmlns="{W_NS}" xmlns:w="{W_NS}"><body>'
+        '<tbl><tblPr/><tblGrid><gridCol w:w="1"/><gridCol w:w="1"/></tblGrid>'
+        '<tr><tc><tcPr><gridSpan w:val="2"/></tcPr><p><r><t>A</t></r></p></tc></tr>'
+        '<tr><tc><tcPr><vMerge w:val="restart"/></tcPr><p><r><t>B</t></r></p></tc>'
+        "<tc><p><r><t>C</t></r></p></tc></tr></tbl>"
+        "<p><r><t>z</t></r></p></body></document>"
+    )
+    doc = _write_raw(tmp_path / "d.docx", document)
+    rows = _grid(doc, 1)
+    assert [
+        [(c["col"], c["span"], c["vmerge"], len(c["paragraphs"])) for c in r] for r in rows
+    ] == [
+        [(1, 2, None, 1)],
+        [(1, 1, "restart", 1), (2, 1, None, 1)],
+    ]
+    listed = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    assert [r.get("cell", {}).get("table") for r in listed] == [1, 1, 1, None]
+
+
+def test_table_get_reads_gridbefore_after_tblprex_and_single_quotes(tmp_path: Path) -> None:
+    """A row's `w:tblPrEx` before its `w:trPr` does not hide `gridBefore`; single-quoted
+    attribute values are read like double-quoted ones."""
+    row = (
+        "<w:tr><w:tblPrEx><w:tblW w:w='0' w:type='auto'/></w:tblPrEx>"
+        "<w:trPr><w:gridBefore w:val='1'/></w:trPr>"
+        "<w:tc><w:tcPr><w:gridSpan w:val='2'/></w:tcPr><w:p/></w:tc>"
+        "<w:tc><w:tcPr><w:vMerge w:val='restart'/></w:tcPr><w:p/></w:tc></w:tr>"
+        "<w:tr><w:trPr><w:gridBefore w:val='3'/></w:trPr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/>"
+        "</w:tc></w:tr>"
+    )
+    doc = _write(tmp_path / "q.docx", f"<w:tbl><w:tblPr/><w:tblGrid/>{row}</w:tbl><w:p/>")
+    rows = _grid(doc, 1)
+    assert [[(c["col"], c["span"], c["vmerge"]) for c in r] for r in rows] == [
+        [(2, 2, None), (4, 1, "restart")],
+        [(4, 1, "continue")],
+    ]
+
+
+def test_empty_table_takes_a_number_and_has_no_rows(tmp_path: Path) -> None:
+    """An empty `w:tbl` is still a table of the numbering: later tables keep their numbers."""
+    body = (
+        "<w:tbl/><w:tbl></w:tbl>"
+        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"
+    )
+    doc = _write(tmp_path / "e.docx", body)
+    assert _grid(doc, 1) == []
+    assert _grid(doc, 2) == []
+    assert [len(r) for r in _grid(doc, 3)] == [1]
+    listed = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    assert listed[0]["cell"]["table"] == 3
+    with pytest.raises(DocControlError) as err:
+        _grid(doc, 4)
+    assert err.value.code == ErrorCode.ANCHOR_NOT_FOUND

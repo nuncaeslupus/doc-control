@@ -18,6 +18,10 @@ Concurrent writers to one store are not serialised: the lock check and the docum
 replace already make a second writer fail, so two entries racing for one id are not
 expected in practice.
 
+A table row is not a paragraph: a row operation logs a change of kind ``span`` whose
+``before`` and ``after`` are the whole ``w:tr`` (``before`` empty for an inserted row); undo
+swaps the one place the ``after`` row still stands in ``word/document.xml``.
+
 A change in a note, header or footer carries ``part`` and ``story`` (its address prefix,
 see :mod:`doc_control.model.stories`); undo finds its paragraph in that story and
 restores every part an entry touched in one verified write.
@@ -319,8 +323,26 @@ def undo_entry(
     swaps: dict[tuple[str, str], dict[int, bytes]] = {}
     reverted: list[dict[str, Any]] = []
     missing: list[int] = []
+    row_cuts: list[tuple[int, int, bytes]] = []  # whole-row swaps in the body
     for number, change in enumerate(entry.get("changes", [])):
         part, story = change.get("part", DOCUMENT_PART), change.get("story", "")
+        if change.get("kind") == "span":
+            data = pkg.read(DOCUMENT_PART)
+            after = to_bytes(change["after"])
+            at = data.find(after)
+            if not after or at < 0 or data.find(after, at + 1) >= 0:
+                missing.append(number)
+                continue
+            row_cuts.append((at, at + len(after), to_bytes(change["before"])))
+            reverted.append(
+                {
+                    "kind": "revert",
+                    "span": True,
+                    "before": change["after"],
+                    "after": change["before"],
+                }
+            )
+            continue
         if part != DOCUMENT_PART and not story:
             raise DocControlError(
                 ErrorCode.UNSUPPORTED_CONTENT, f"change {number} is in {change['part']}"
@@ -344,7 +366,7 @@ def undo_entry(
         )
     if missing:
         raise _conflict(entry, missing, "a paragraph it changed was edited since or is gone")
-    if not any(swaps.values()):
+    if not any(swaps.values()) and not row_cuts:
         raise DocControlError(
             ErrorCode.HISTORY_NOT_FOUND,
             f"{entry['op_id']} changed no paragraph",
@@ -357,13 +379,15 @@ def undo_entry(
         by_part.setdefault(part, []).extend(
             (spans[i].start, spans[i].end, b) for i, b in own.items()
         )
+    if row_cuts:
+        by_part.setdefault(DOCUMENT_PART, []).extend(row_cuts)
     replacements: dict[str, bytes] = {}
     for part, cuts in by_part.items():
         cuts.sort()
         for (_, end, _), (start, _, _) in itertools.pairwise(cuts):
             if start < end:
                 raise _conflict(entry, [], "its paragraphs are nested")
-        data = located[next(k for k in located if k[0] == part)][0]
+        data = pkg.read(part)
         out = bytearray()
         pos = 0
         for start, end, new in cuts:
@@ -374,6 +398,7 @@ def undo_entry(
     body = swaps.get((DOCUMENT_PART, ""), {})
     footprint = Footprint(
         replaced=frozenset(body),
+        spans=frozenset((start, end) for start, end, _ in row_cuts),
         stories=tuple(
             StoryFootprint(part, located[(part, story)][1][0], replaced=frozenset(own))
             for (part, story), own in swaps.items()

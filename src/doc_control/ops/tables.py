@@ -1,7 +1,10 @@
 """`table.get`: a table's grid, with merges and the paragraph addresses of each cell.
 
 Tables are numbered as the ``cell.table`` field of a paragraph row is (see
-:mod:`doc_control.model.tables`).
+:mod:`doc_control.model.tables`). ``table`` always names a table of the main story (the
+body); ``at`` works in any story, a paragraph of a note, header or footer finding the table
+that holds it, and the ``table`` number in the reply is then that story's own. An empty
+``w:tbl`` takes a number and has no rows.
 """
 
 from __future__ import annotations
@@ -20,7 +23,9 @@ from doc_control.registry import operation
     "read",
     "One table's grid: its rows of cells, each with its first grid column (`col`), `span` "
     '(w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own '
-    "paragraphs. A nested table is a table of its own, numbered after the one holding it.",
+    "paragraphs. A nested table is a table of its own, numbered after the one holding it; an "
+    "empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` "
+    "works in any story (a footnote's table is numbered within that footnote's story).",
     {
         "type": "object",
         "properties": {
@@ -29,14 +34,19 @@ from doc_control.registry import operation
                 "type": "integer",
                 "minimum": 1,
                 "description": (
-                    "Table number, 1-based in document order (the `cell.table` of a "
-                    "paragraph row); text-box and DrawingML tables are not counted."
+                    "Table number in the main story, 1-based in document order (the "
+                    "`cell.table` of a paragraph row); text-box and DrawingML tables are not "
+                    "counted. Tables of notes, headers and footers are reached with `at`."
                 ),
             },
             "at": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Instead of `table`: any paragraph address in the table.",
+                "description": (
+                    "Instead of `table`: any paragraph address in the table, in any story "
+                    "(`fn3/p1#…`, `hdr1.default/p1#…`); the reply's `table` is then numbered "
+                    "within that story."
+                ),
             },
         },
         "required": ["doc"],
