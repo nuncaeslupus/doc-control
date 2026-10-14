@@ -58,6 +58,45 @@ jobs:
         run: .venv/Scripts/python.exe scripts/frozen_smoke.py --exe build-out/doc-control/doc-control.exe --strip-python-path --frozen
       - name: Parity with in-process doc_control (capabilities, find over the corpus)
         run: .venv/Scripts/python.exe scripts/frozen_parity.py --exe build-out/doc-control/doc-control.exe
+      # The .mcpb bundle (T6): manifest from packaging/mcpb with version and tools filled,
+      # validated by the pinned mcpb CLI (gate `mcpb_manifest_errors == 0`), then the smoke
+      # test again against the exe the manifest names, unpacked from the bundle.
+      - name: Build the .mcpb bundle
+        run: |
+          version=$(.venv/Scripts/python.exe -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          mcpb="build-out/doc-control-${version}-windows-x64.mcpb"
+          .venv/Scripts/python.exe scripts/build_mcpb.py --dist build-out/doc-control --out "$mcpb"
+          rm -rf build-out/mcpb-unpacked
+          .venv/Scripts/python.exe -m zipfile -e "$mcpb" build-out/mcpb-unpacked
+          echo "MCPB_FILE=$mcpb" >> "$GITHUB_ENV"
+      - name: Validate the manifest with the pinned mcpb CLI
+        env:
+          MCPB_VERSION: "2.1.2"
+        run: |
+          set +e
+          out=$(npx --yes "@anthropic-ai/mcpb@${MCPB_VERSION}" validate build-out/mcpb-unpacked/manifest.json 2>&1)
+          status=$?
+          set -e
+          echo "$out"
+          # On failure, each error is a "  - " line (lines under a warnings heading excluded).
+          errors=0
+          if [ "$status" -ne 0 ]; then
+            errors=$(awk 'tolower($0) ~ /warning/ {w=1} /ERROR/ {w=0} /^  - / && !w {n++} END {print n+0}' <<<"$out")
+            [ "$errors" -gt 0 ] || errors=1
+          fi
+          echo "mcpb_manifest_errors == $errors"
+          echo "\`mcpb_manifest_errors == $errors\` (mcpb ${MCPB_VERSION})" >> "$GITHUB_STEP_SUMMARY"
+          [ "$errors" -eq 0 ]
+      - name: Smoke test the exe the bundle's manifest names
+        run: |
+          entry=$(.venv/Scripts/python.exe -c "import json; print(json.load(open('build-out/mcpb-unpacked/manifest.json'))['server']['entry_point'])")
+          .venv/Scripts/python.exe scripts/frozen_smoke.py --exe "build-out/mcpb-unpacked/$entry" --strip-python-path --frozen
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-mcpb
+          path: ${{ env.MCPB_FILE }}
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-frozen
