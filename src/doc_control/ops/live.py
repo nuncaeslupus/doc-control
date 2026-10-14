@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 from bisect import bisect_right
-from itertools import accumulate, pairwise
+from itertools import accumulate, islice, pairwise
 from math import inf
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,15 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
 from doc_control.model.address import Address, fingerprint, parse_address, parse_range
-from doc_control.model.loosefold import Hit, Level, first_hits, hits, ladder
+from doc_control.model.loosefold import (
+    LEVELS,
+    Hit,
+    Level,
+    exact_spans,
+    fold_phrase,
+    joined_hits,
+    ladder,
+)
 from doc_control.model.wordcodes import translate_codes
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author
 from doc_control.ops.comments import AddComment
@@ -225,36 +233,53 @@ def close(request: dict[str, Any]) -> dict[str, Any]:
     return {"closed": True, "saved": save_first}
 
 
+# Enough hits to tell one from several and to list five candidates.
+_HIT_LIMIT = 8
+
+
 def _found(
     texts: list[str], phrase: str, across: str | None, requested: Level = "default"
 ) -> tuple[int, Level, str]:
     """The paragraph (from 0) a find phrase names, the level it matched at and its text.
 
-    ``requested`` ``exact`` is ``locate``'s rule: one casefold match in the joined text.
-    Otherwise the ladder runs from ``exact`` to ``loose`` over the folded joined text, and
-    the first level with any hit must have exactly one. A phrase holding a caret is tried
-    raw, verbatim, before its Word codes are translated.
+    ``requested`` ``exact`` is ``locate``'s rule of today: one casefold match in the
+    joined text, the phrase taken as given. Otherwise the ladder runs from ``exact`` to
+    ``loose`` over the joined text, and the first level with any hit must have exactly
+    one. A phrase holding a caret is tried raw, verbatim, before its Word codes are
+    translated. The ``case`` level is today's casefold rule first, and the ``case`` fold
+    (format characters dropped, whitespace collapsed) only when that finds nothing.
     """
-    if across and "\r" not in translate_codes(phrase):
-        raise DocControlError(
-            ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
-        )
-    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
-    joined = "\r".join(texts) + "\r"
     if requested == "exact":
-        at, end = _casefold_match(joined, phrase)
-        level: Level = "exact" if phrase in joined else "case"
-        found = [Hit(0, at, end, level)]
+        if across and "\r" not in phrase:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+            )
+        spans = _casefold_spans(texts, phrase, 2)
+        if not spans:
+            raise DocControlError(
+                ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}", tried=["exact"]
+            )
+        if len(spans) > 1:
+            raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
+        joined = "\r".join(texts) + "\r"
+        start, end = spans[0]
+        level: Level = "exact" if joined[start:end] == phrase else "case"
+        found = [Hit(0, start, end, level)]
     else:
-        found = hits([joined], phrase, "exact") if "^" in phrase else []
-        if not found:
-            found = first_hits([joined], translate_codes(phrase), requested, retry=True)
+        translated = translate_codes(phrase)
+        if across and "\r" not in translated:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+            )
+        joined = "\r".join(texts) + "\r"
+        found = _ladder_hits(texts, joined, phrase, translated)
         if not found:
             raise DocControlError(
                 ErrorCode.ANCHOR_NOT_FOUND,
                 f"no match for {phrase!r}",
                 tried=list(ladder(requested, retry=True)),
             )
+    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
 
     def paragraph(hit: Hit) -> int:
         # A phrase that opens with the paragraph before (or with its mark) names the next one.
@@ -264,36 +289,87 @@ def _found(
             + (across in ("previous", "both") or joined[hit.start] == "\r")
         )
 
-    if len(found) > 1:
-        candidates = [
-            {"at": str(Address(n + 1, fingerprint(texts[n]))), "matched_text": text}
-            for hit in found[:5]
-            for n, text in [(paragraph(hit), joined[hit.start : hit.end])]
-            if n < len(texts)
-        ]
+    # A hit naming no paragraph (past the last mark) is no candidate.
+    named = [hit for hit in found if paragraph(hit) < len(texts)]
+    if len(named) > 1:
         raise DocControlError(
             ErrorCode.ANCHOR_AMBIGUOUS,
-            f"more than one match for {phrase!r} at match level {found[0].level!r}",
-            match_level=found[0].level,
-            candidates=candidates,
+            f"more than one match for {phrase!r} at match level {named[0].level!r}",
+            match_level=named[0].level,
+            candidates=[
+                {
+                    "at": str(Address(paragraph(hit) + 1, fingerprint(texts[paragraph(hit)]))),
+                    "matched_text": joined[hit.start : hit.end],
+                }
+                for hit in named[:5]
+            ],
         )
-    hit = found[0]
+    hit = named[0] if named else found[0]
     return paragraph(hit), hit.level, joined[hit.start : hit.end]
 
 
-def _casefold_match(joined: str, phrase: str) -> tuple[int, int]:
-    """The original span of the one casefold match of ``phrase`` in ``joined``."""
-    # casefold maps each character on its own, so each folded one keeps its source index.
-    source = [i for i, ch in enumerate(joined) for _ in ch.casefold()]
-    folded, needle = joined.casefold(), phrase.casefold()
-    at = folded.find(needle)
-    if at < 0:
-        raise DocControlError(
-            ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}", tried=["exact"]
-        )
-    if folded.find(needle, at + 1) >= 0:
-        raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
-    return source[at], source[at + len(needle) - 1] + 1
+def _ladder_hits(texts: list[str], joined: str, phrase: str, translated: str) -> list[Hit]:
+    """The hits of the first level of the ladder that has any, over ``joined``."""
+
+    def verbatim(needle: str) -> list[Hit]:
+        spans = exact_spans(joined, needle)
+        return [Hit(0, start, end, "exact") for start, end in islice(spans, _HIT_LIMIT)]
+
+    found = verbatim(phrase) if "^" in phrase else []
+    if not found:
+        fold_phrase(translated, "exact")
+        found = verbatim(translated)
+    if not found:
+        fold_phrase(translated, "case")
+        spans = _casefold_spans(texts, translated, _HIT_LIMIT)
+        found = [Hit(0, start, end, "case") for start, end in spans]
+    for level in LEVELS[1:]:
+        if found:
+            break
+        found = joined_hits(texts, translated, level, limit=_HIT_LIMIT)
+    return found
+
+
+def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int, int]]:
+    """Today's rule: the first ``limit`` casefold matches in the joined text, overlapping.
+
+    Spans are original offsets in ``"\\r".join(texts) + "\\r"``. casefold maps each
+    character on its own, so only the paragraphs a match starts and ends in are mapped
+    back, one character at a time, and only when casefold changed their length.
+    """
+    needle = phrase.casefold()
+    if not needle:
+        return []
+    raw = "\r".join(texts) + "\r"
+    whole = raw.casefold()
+    spans: list[tuple[int, int]] = []
+    if len(whole) == len(raw):  # every character casefolds to one: offsets are the same
+        at = whole.find(needle)
+        while at >= 0 and len(spans) < limit:
+            spans.append((at, at + len(needle)))
+            at = whole.find(needle, at + 1)
+        return spans
+    folded = [text.casefold() for text in texts]
+    joined = "\r".join(folded) + "\r"
+    fstarts = list(accumulate((len(text) + 1 for text in folded), initial=0))
+    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
+
+    def original(at: int) -> int:
+        n = bisect_right(fstarts, at) - 1
+        offset, text = at - fstarts[n], texts[n]
+        if offset >= len(folded[n]) or len(folded[n]) == len(text):
+            return starts[n] + min(offset, len(text))
+        for i, ch in enumerate(text):
+            offset -= len(ch.casefold())
+            if offset < 0:
+                return starts[n] + i
+        return starts[n] + len(text)  # pragma: no cover - offset is inside the text
+
+    at = joined.find(needle)
+    while at >= 0 and len(spans) < limit:
+        spans.append((original(at), original(at + len(needle) - 1) + 1))
+        at = joined.find(needle, at + 1)
+    return spans
 
 
 @operation(
