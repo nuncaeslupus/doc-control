@@ -39,7 +39,9 @@ UninstallDisplayIcon={app}\doc-control.exe
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{app}"
+; Only the frozen build's own folder: {app} itself is removed by the uninstaller once empty,
+; so a /DIR= pointed at a folder with other files never loses them.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Code]
 const

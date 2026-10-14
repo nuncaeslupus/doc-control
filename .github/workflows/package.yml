@@ -72,7 +72,9 @@ jobs:
           choco install innosetup --version $env:INNO_VERSION --allow-downgrade -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          $found = (Get-Item $iscc).VersionInfo.ProductVersion
+          if (-not (Test-Path $iscc)) { throw "no ISCC at $iscc" }
+          # ISCC.exe carries no file version (it reads 0.0.0.0); Chocolatey's record is the source.
+          $found = ((choco list --exact innosetup --limit-output) -split '\|')[1]
           Write-Host "ISCC $found at $iscc"
           if (-not $found.StartsWith($env:INNO_VERSION)) { throw "ISCC is $found, expected $env:INNO_VERSION" }
           "ISCC=$iscc" >> $env:GITHUB_ENV
