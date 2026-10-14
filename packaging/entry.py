@@ -4,9 +4,12 @@ The frozen `doc-control.exe` runs the same `doc_control.cli:main` as the pip ins
 the CLI envelope and `doc-control mcp` are unchanged (PACKAGE spec §5).
 """
 
+import multiprocessing
 import sys
 
 from doc_control.cli import main
 
 if __name__ == "__main__":
+    # The regex worker is a spawned child; frozen, it re-runs this exe and must stop here.
+    multiprocessing.freeze_support()
     sys.exit(main())
