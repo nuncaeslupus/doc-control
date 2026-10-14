@@ -1,0 +1,68 @@
+name: Package
+
+# The frozen Windows build (PACKAGE T2), as a reusable workflow: ci.yml calls it on changes
+# to packaging inputs, release.yml will call it when it releases (T8). It builds the
+# one-folder doc-control.exe with PyInstaller from packaging/doc-control.spec and fails
+# when the uncompressed folder is over 40 MiB (gate `frozen_exe_size_mb <= 40`).
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  MAX_FROZEN_MB: "40"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          python-version: "3.12"
+      - name: Environment with pywin32 and the freezer
+        run: uv sync --locked --no-dev --extra live --group package
+      - name: Build the one-folder exe
+        run: |
+          .venv/Scripts/pyinstaller.exe --noconfirm --distpath build-out --workpath build-tmp \
+            packaging/doc-control.spec
+          test -f build-out/doc-control/doc-control.exe
+      - name: Size of the uncompressed folder
+        run: |
+          .venv/Scripts/python.exe - <<'PY'
+          import os
+          from pathlib import Path
+
+          folder = Path("build-out/doc-control")
+          total = sum(p.stat().st_size for p in folder.rglob("*") if p.is_file())
+          mb = round(total / (1024 * 1024), 2)
+          limit = float(os.environ["MAX_FROZEN_MB"])
+          line = f"frozen_exe_size_mb={mb}"
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"`{line}` (limit {limit:g})\n")
+          if mb > limit:
+              raise SystemExit(f"the frozen build is {mb} MiB, over the {limit:g} MiB limit")
+          PY
+      - name: The exe starts and knows it is frozen
+        run: |
+          out=$(build-out/doc-control/doc-control.exe capabilities)
+          .venv/Scripts/python.exe -c "import json, sys
+          env = json.loads(sys.argv[1])
+          assert env['ok'] is True, env
+          assert env['result']['build'] == {'frozen': True, 'freezer': 'pyinstaller'}, env['result']['build']
+          print('capabilities ok:', len(env['result']['operations']), 'operations')" "$out"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-frozen
+          path: build-out/doc-control
+          retention-days: 7
+          if-no-files-found: error

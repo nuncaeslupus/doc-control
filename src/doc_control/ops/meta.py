@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from doc_control import API_VERSION, __version__
@@ -12,7 +13,12 @@ from doc_control.registry import REGISTRY, load_operations, operation
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
-@operation("capabilities", "read", "API version, engines and the list of operations.", _EMPTY)
+@operation(
+    "capabilities",
+    "read",
+    "API version, engines, the build (frozen or not) and the list of operations.",
+    _EMPTY,
+)
 def capabilities(_: dict[str, Any]) -> dict[str, Any]:
     load_operations()
     return {
@@ -25,7 +31,15 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
             for op in sorted(REGISTRY.values(), key=lambda o: o.name)
         ],
         "errors": sorted(code.value for code in HINTS),
+        "build": _build(),
     }
+
+
+def _build() -> dict[str, Any]:
+    """``{"frozen": false}`` for a pip install; a frozen binary also names its freezer."""
+    if not getattr(sys, "frozen", False):
+        return {"frozen": False}
+    return {"frozen": True, "freezer": "pyinstaller" if hasattr(sys, "_MEIPASS") else "unknown"}
 
 
 @operation(

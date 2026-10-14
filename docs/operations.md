@@ -43,7 +43,7 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 
 ## `capabilities` (read)
 
-API version, engines and the list of operations.
+API version, engines, the build (frozen or not) and the list of operations.
 
 ## `caption.add` (write)
 
