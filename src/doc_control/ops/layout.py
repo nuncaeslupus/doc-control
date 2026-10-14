@@ -19,11 +19,12 @@ from doc_control.model.document import Document
 from doc_control.model.layout import blank_before, centred, is_empty, page_break_before
 from doc_control.model.parts import W, parse_part
 from doc_control.model.stories import HF_KINDS, list_stories
+from doc_control.ooxml.hftext import free_part_names, free_rids
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR, unsupported
 from doc_control.ooxml.sections import BREAK_TYPES, check_props
 from doc_control.ops.read import OUTLINE_FACTS, PARA_FACTS, ParagraphContext
 from doc_control.ops.sections import SETTINGS_PART, flag, section_rows
-from doc_control.ops.sectionwrite import apply_layout_edits
+from doc_control.ops.sectionwrite import LayoutWriteResult, apply_layout_edits
 from doc_control.registry import operation
 
 
@@ -341,9 +342,13 @@ def _wanted_props(sect: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
     return {k: base[k] if v is _OMITTED else v for k, v in asked.items()}
 
 
-def _plan_edits(doc: Document, plan: dict[str, Any]) -> list[dict[str, Any]]:
+def _plan_edits(
+    doc: Document, plan: dict[str, Any]
+) -> tuple[list[dict[str, Any]], list[tuple[str, int]]]:
     """The section edits (as :func:`apply_layout_edits` takes them) that bring the
-    document's breaks and numbering to ``plan``."""
+    document's breaks and numbering to ``plan``, and per plan section where its properties
+    go: ``("section", n)`` for section ``n`` of the document as it is, ``("break", k)`` for
+    the break ``edits[k]`` ends it with."""
     rows = section_rows(doc)
     old_starts = _paragraph_starts(doc, len(rows))
     wanted = [(doc.index.resolve_address(s["from"]).number, s) for s in plan["sections"]]
@@ -359,6 +364,7 @@ def _plan_edits(doc: Document, plan: dict[str, Any]) -> list[dict[str, Any]]:
             + ", ".join(str(doc.index.paragraph(n).address) for n in gone)
         )
     edits: list[dict[str, Any]] = []
+    targets: list[tuple[str, int]] = []
     ends = [*old_starts[1:], len(doc.index) + 1]
     for number, (row, start, end) in enumerate(zip(rows, old_starts, ends, strict=True), 1):
         # The section's first part keeps its place; later parts are new breaks, and the
@@ -367,12 +373,15 @@ def _plan_edits(doc: Document, plan: dict[str, Any]) -> list[dict[str, Any]]:
         for k, sect in enumerate(parts):
             props = _wanted_props(sect, _row_props(row) if k == 0 else _NEW_SECTION)
             if len(parts) == 1:
+                targets.append(("section", number))
                 props = {key: v for key, v in props.items() if v != _row_props(row)[key]}
                 if props:
                     edits.append({"kind": "section.props", "section": number, "props": props})
             elif k + 1 == len(parts):
+                targets.append(("section", number))
                 edits.append({"kind": "section.props", "section": number, "props": props})
             else:
+                targets.append(("break", len(edits)))
                 following = parts[k + 1]
                 at = doc.index.resolve_address(following["from"]).number - 1
                 edits.append(
@@ -383,7 +392,7 @@ def _plan_edits(doc: Document, plan: dict[str, Any]) -> list[dict[str, Any]]:
                         "props": props,
                     }
                 )
-    return edits
+    return edits, targets
 
 
 def _differences(want: Any, got: Any, path: str = "plan") -> list[str]:
@@ -405,6 +414,256 @@ def _differences(want: Any, got: Any, path: str = "plan") -> list[str]:
     return [] if want == got else [f"{path}: {got!r}, not {want!r}"]
 
 
+# --- layout.apply: headers, footers, two-sided (LAYOUT T5) --------------------------------
+
+_Refs = dict[str, dict[str, str | None]]  # "header_refs"/"footer_refs" -> kind -> rId or None
+_GROUPS = (("header", "headers"), ("footer", "footers"))
+_Printed = list[dict[str, dict[str, str | None]]]  # per section: group -> kind -> text shown
+
+
+def _printed(doc: Document) -> _Printed:
+    """The header and footer text each section prints per kind, inheritance resolved
+    (None where it prints none)."""
+    pkg = doc.pkg
+    stories = {s.key: s for s in list_stories(pkg, ("headers",))}
+    texts: dict[str, str] = {}
+    out: _Printed = []
+    for row in section_rows(doc):
+        shown: dict[str, dict[str, str | None]] = {}
+        for group, which in _GROUPS:
+            shown[group] = {}
+            for kind in HF_KINDS:
+                key = row[which][kind]
+                if key is not None and key not in texts:
+                    texts[key] = _story_text(parse_part(pkg, stories[key].part))
+                shown[group][kind] = None if key is None else texts[key]
+        out.append(shown)
+    return out
+
+
+def _shown(plan: dict[str, Any], view: dict[str, Any]) -> list[set[tuple[str, str]]]:
+    """Per plan section, the (group, kind) it prints once ``plan`` is made (``view``, the
+    plan view now, for what the plan leaves out): default always, first with a different
+    first page, even when two-sided."""
+    two_sided = plan.get("two_sided", view["two_sided"])
+    out = []
+    for i, sect in enumerate(plan["sections"]):
+        now = view["sections"][i] if i < len(view["sections"]) else {}
+        first = sect.get("first_page_different", now.get("first_page_different", False))
+        kinds = {"default"} | ({"first"} if first else set()) | ({"even"} if two_sided else set())
+        out.append({(group, kind) for group, _ in _GROUPS for kind in kinds})
+    return out
+
+
+def _owned_view(
+    sect: dict[str, Any], i: int, owned: dict[str, Any], before: _Printed
+) -> dict[str, Any]:
+    """Plan section ``sect`` as the plan view must show it after the write: without from,
+    and with null for a kind asked the text the section already inherits (a no-op, so it
+    keeps inheriting)."""
+    out = {k: v for k, v in sect.items() if k != "from"}
+    if i >= len(owned["sections"]) or i >= len(before):
+        return out
+    for group, _ in _GROUPS:
+        if group not in sect:
+            continue
+        mine = owned["sections"][i][group]
+        out[group] = {
+            kind: None
+            if isinstance(value, str) and mine[kind] is None and before[i][group][kind] == value
+            else value
+            for kind, value in sect[group].items()
+        }
+    return out
+
+
+def _printed_differences(
+    plan: dict[str, Any], owned: dict[str, Any], before: _Printed, after: _Printed
+) -> list[str]:
+    """Where a section prints other header or footer text than ``plan`` asks: the text
+    given, else (key left out, or null on a kind it inherits) what it printed ``before``;
+    null on a kind it owned (``owned``, the plan view before) means the previous section's.
+    A kind the section does not print (first without a different first page, even when
+    not two-sided) is left out."""
+    sections = plan["sections"]
+    if not len(sections) == len(before) == len(after):
+        return []  # the section count differs; the plan comparison says so
+    shown = _shown(plan, owned)
+    out = []
+    for i, sect in enumerate(sections):
+        for group, _ in _GROUPS:
+            for kind in HF_KINDS:
+                value = sect.get(group, {}).get(kind, _OMITTED)
+                if (group, kind) not in shown[i] and not isinstance(value, str):
+                    continue
+                want: str | None
+                if isinstance(value, str):
+                    want = value
+                elif value is None and owned["sections"][i][group][kind] is not None:
+                    want = after[i - 1][group][kind] if i else None
+                else:
+                    want = before[i][group][kind]
+                got = after[i][group][kind]
+                if (got or None) != (want or None):  # an empty part prints nothing too
+                    out.append(f"sections[{i}].{group}.{kind} prints {got!r}, not {want!r}")
+    return out
+
+
+def _refuse_inherited_changes(
+    slots: list[tuple[int, str, str, Any, str | None, str | None]],
+    changed: dict[tuple[int, str, str], str | None],
+    keep: dict[str, str],
+    text_of: Any,
+    shown: list[set[tuple[str, str]]],
+) -> None:
+    """Refuse when a changed reference would change what a later section prints that
+    inherits the kind and was not asked to change (pinning it is not supported yet). A kind
+    the section does not print (see :func:`_shown`) is free to change."""
+    printed: dict[tuple[int, str, str], str | None] = {}  # slot -> text shown after
+    source: dict[tuple[str, str], int] = {}  # (group, kind) -> last section changed
+    for i, group, kind, _, own, part in slots:
+        slot, prev = (i, group, kind), printed.get((i - 1, group, kind))
+        before = text_of(part) if part is not None else None
+        if slot in changed:
+            text = changed[slot]
+            printed[slot] = prev if text is None else text
+            source[(group, kind)] = i
+        elif own is not None:
+            printed[slot] = keep[own]
+        else:
+            printed[slot] = prev
+            if (
+                (prev or None) != (before or None)
+                and (group, kind) in source
+                and (group, kind) in shown[i]
+            ):
+                edited = source[(group, kind)]
+                raise unsupported(
+                    f"changing sections[{edited}].{group}.{kind} would alter section "
+                    f"{i + 1} (sections[{i}]), which inherits this {group}: changing a "
+                    f"{group} that later sections inherit is not supported yet; nothing "
+                    "is written",
+                    section=i + 1,
+                    edited=edited + 1,
+                )
+
+
+def _header_edits(
+    after: Document, plan: dict[str, Any]
+) -> tuple[list[dict[str, Any]], dict[int, _Refs], list[str]]:
+    """What brings the header and footer text of ``after`` (the document with the plan's
+    breaks made) to ``plan``: part edits, the references per plan section, and why each
+    change that Word cannot track is needed.
+
+    A part is rewritten in place (tracked) only when no section that keeps using it would
+    change with it: every section referencing it asks the new text. A section asking other
+    text than its part keeps gets a new part of its own; one asking the text it already
+    shows (own or inherited) is left alone.
+
+    A section whose reference of a kind changes (a new part, or null dropping its own) would
+    change what a later section inheriting that kind prints; such a plan is refused
+    (UNSUPPORTED_CONTENT) before anything is written: changing a header or footer that
+    later sections inherit is not supported yet."""
+    pkg = after.pkg
+    rows = section_rows(after)
+    if len(rows) != len(plan["sections"]):
+        return [], {}, []  # the breaks went wrong; the comparison says how
+    stories = {s.key: s for s in list_stories(pkg, ("headers",))}
+    texts: dict[str, str] = {}
+
+    def text_of(part: str) -> str:
+        if part not in texts:
+            texts[part] = _story_text(parse_part(pkg, part))
+        return texts[part]
+
+    users: dict[str, list[Any]] = {}  # part -> what each section using it asks
+    slots: list[tuple[int, str, str, Any, str | None, str | None]] = []
+    for i, (row, sect) in enumerate(zip(rows, plan["sections"], strict=True)):
+        for group, which in _GROUPS:
+            asked = sect.get(group, {})
+            for kind in HF_KINDS:
+                key = row[which][kind]
+                part = stories[key].part if key is not None else None
+                own = key is not None and stories[key].section == row["section"]
+                value = asked.get(kind, _OMITTED)
+                if part is not None:
+                    # A section inheriting the part shows its text, whatever its plan says.
+                    users.setdefault(part, []).append(value if own else _OMITTED)
+                slots.append((i, group, kind, value, part if own else None, part))
+    keep: dict[str, str] = {}
+    for part, values in users.items():
+        current = text_of(part)
+        strings = [v for v in values if isinstance(v, str)]
+        keep[part] = (
+            current if _OMITTED in values or current in strings or not strings else strings[0]
+        )
+    edits: list[dict[str, Any]] = [
+        {"kind": "header.text", "part": part, "text": text}
+        for part, text in keep.items()
+        if text != text_of(part)
+    ]
+    names = {group: free_part_names(pkg, group) for group, _ in _GROUPS}
+    rids = free_rids(pkg)
+    refs: dict[int, _Refs] = {}
+    needs: list[str] = []
+    changed: dict[tuple[int, str, str], str | None] = {}  # slot -> new text, None if dropped
+    for i, group, kind, value, own, part in slots:
+        where = f"sections[{i}].{group}.{kind}"
+        if value is _OMITTED or (value is not None and part is not None and keep[part] == value):
+            continue
+        if value is None:
+            if own is not None:
+                refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = None
+                changed[(i, group, kind)] = None
+                needs.append(f"{where}: dropping the section's reference")
+            continue
+        default = rows[i][group + "s"]["default"]
+        like = part or (stories[default].part if default is not None else None)
+        like = like or next((s.part for s in stories.values() if s.kind == group), None)
+        name, rid = next(names[group]), next(rids)
+        edit = {"kind": "header.new", "part": name, "rid": rid, "group": group, "text": value}
+        edits.append({**edit, "like": like} if like is not None else edit)
+        refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = rid
+        changed[(i, group, kind)] = value
+        needs.append(f"{where}: a new {group} part")
+    _refuse_inherited_changes(slots, changed, keep, text_of, _shown(plan, page_plan(after)))
+    return edits, refs, needs
+
+
+def _attach_refs(edits: list[dict[str, Any]], target: tuple[str, int], refs: _Refs) -> None:
+    """Add ``refs`` to the props of the edit that sets up ``target`` (see :func:`_plan_edits`)."""
+    where, n = target
+    if where == "break":
+        props = edits[n].setdefault("props", {})
+    else:
+        found = next((e for e in edits if e["kind"] == "section.props" and e["section"] == n), None)
+        if found is None:
+            found = {"kind": "section.props", "section": n, "props": {}}
+            edits.append(found)
+        props = found["props"]
+    for key, values in refs.items():
+        props[key] = {**props.get(key, {}), **values}
+
+
+def _settings_edit(plan: dict[str, Any], now: dict[str, Any]) -> dict[str, Any] | None:
+    flags = {
+        setting: plan[key]
+        for key, setting in (
+            ("two_sided", "even_and_odd_headers"),
+            ("mirror_margins", "mirror_margins"),
+        )
+        if key in plan and plan[key] != now[key]
+    }
+    return {"kind": "settings", **flags} if flags else None
+
+
+def _read_back(package: bytes | None, scratch: str, name: str) -> Document:
+    assert package is not None
+    made = Path(scratch) / name
+    made.write_bytes(package)
+    return Document(str(made))
+
+
 def apply_plan(
     path: Path,
     plan: dict[str, Any],
@@ -415,45 +674,73 @@ def apply_plan(
     author: str = DEFAULT_AUTHOR,
     tag: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    """Bring the document to ``plan`` (breaks, numbering) in one write; the result and its
-    warnings. The write is checked before it is made: the plan read back from the resulting
-    file must equal ``plan``, else nothing is written."""
+    """Bring the document to ``plan`` in one write; the result and its warnings. The write
+    is checked before it is made: the plan read back from the resulting file must equal
+    ``plan`` (a header or footer asked the text the section already inherits reads back as
+    null: it keeps inheriting), else nothing is written."""
     _check_plan(plan)
     doc = Document(str(path))
-    edits = _plan_edits(doc, plan)
+    edits, targets = _plan_edits(doc, plan)
     write = partial(
         apply_layout_edits,
         path,
-        edits,
         untracked=untracked,
         author=author,
         tag=tag,
         expect_sha256=expect_sha256,
     )
-    after = page_plan(doc)
-    if edits:
-        probe = write(dry_run=True)
-        assert probe.package is not None
-        with tempfile.TemporaryDirectory() as scratch:
-            made = Path(scratch) / "after.docx"
-            made.write_bytes(probe.package)
-            after = page_plan(Document(str(made)))
+    now = page_plan(doc)
+    after = now
+    probe: LayoutWriteResult | None = None
+    blocked: list[str] = []
+    with tempfile.TemporaryDirectory() as scratch:
+        made = doc
+        if edits:
+            probe = write(edits, dry_run=True)
+            made = _read_back(probe.package, scratch, "breaks.docx")
+        owned, before = page_plan(made), _printed(made)
+        more, refs, needs = _header_edits(made, plan)
+        settings = _settings_edit(plan, now)
+        if settings is not None:
+            needs.append("two_sided, mirror_margins: a settings change")
+        if needs and not untracked:
+            blocked = needs
+        elif more or refs or settings is not None:
+            for i, section_refs in refs.items():
+                _attach_refs(edits, targets[i], section_refs)
+            edits += more
+            if settings is not None:
+                edits.append(settings)
+            probe = write(edits, dry_run=True)
+            made = _read_back(probe.package, scratch, "after.docx")
+        after = page_plan(made)
+        printed = _printed_differences(plan, owned, before, _printed(made))
+    # The header and footer text is checked twice: in the plan view (what each section owns)
+    # and as printed (inheritance resolved).
     want = {
         **plan,
-        "sections": [{k: v for k, v in s.items() if k != "from"} for s in plan["sections"]],
+        "sections": [_owned_view(s, i, owned, before) for i, s in enumerate(plan["sections"])],
     }
-    differences = _differences(want, after)
+    differences = _differences(want, after) + printed
+    if blocked:
+        raise unsupported(
+            "Word cannot track what the plan needs (D-L2): "
+            + "; ".join(blocked)
+            + "; pass untracked: true",
+            differences=differences,
+            needs=blocked,
+        )
     if differences:
         raise unsupported(
-            "the plan asks for more than breaks and numbering can reach: header and footer "
-            "text, shown, two-sided and mirror margins are not changed by this call",
+            "the plan asks for more than layout.apply can reach; nothing is written",
             differences=differences,
         )
     if not edits:
         return {"dry_run": dry_run, "changes": [], "plan": after}, []
     if dry_run:
+        assert probe is not None
         return {"dry_run": True, "changes": probe.changes, "plan": after}, []
-    done = write()
+    done = write(edits)
     result = {
         "dry_run": False,
         "changes": done.changes,
@@ -469,14 +756,23 @@ def apply_plan(
 @operation(
     "layout.apply",
     "write",
-    "Bring the document's section breaks and page numbering to a page plan (as layout.get "
-    "returns it): where each section starts (from), its break (nextPage, oddPage for a "
-    "right-hand start, evenPage, continuous), the page-number start and format, and a "
-    "different first page. Keys left out stay as they are. Changes are tracked; sections "
-    "already in the document must all be kept. All or nothing: the plan read back from the "
-    "result must equal the request, else nothing is written (UNSUPPORTED_CONTENT; header "
-    "and footer text, shown, two_sided and mirror_margins are checked, not changed). "
-    "dry_run lists the changes and the plan that would result.",
+    "Bring the document to a page plan (as layout.get returns it): where each section "
+    "starts (from), its break (nextPage, oddPage for a right-hand start, evenPage, "
+    "continuous), the page-number start and format, a different first page, the header and "
+    "footer text per kind (default, first, even; {PAGE}, {NUMPAGES} and {chapter} become "
+    "fields; null drops the section's own, so it inherits the previous section's; asking "
+    "the text a section already prints changes nothing; a new part or a dropped reference "
+    "that would change what a later section inheriting it prints is refused, as changing a "
+    "header or footer that later sections inherit is not supported yet), two_sided (even "
+    "and odd headers) and "
+    "mirror_margins. Keys left out stay as they are; shown is checked, not set. Breaks, "
+    "numbering and the text of a header or footer part are tracked changes; a part is "
+    "rewritten only when every section using it asks the same text, else the section gets "
+    "a new part. A new part, a dropped reference and two_sided or mirror_margins cannot be "
+    "tracked and need untracked: true (LAYOUT D-L2). Sections already in the document must "
+    "all be kept. All or nothing: the plan read back from the result must equal the "
+    "request, else nothing is written (UNSUPPORTED_CONTENT). dry_run lists the changes and "
+    "the plan that would result.",
     {
         "type": "object",
         "properties": {
