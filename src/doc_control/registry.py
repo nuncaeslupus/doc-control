@@ -106,6 +106,7 @@ OPERATION_MODULES: dict[str, str] = {
     "styleset.export-dotx": "dotx",
     "styleset.import-dotx": "dotx",
     "styleset.install": "styleset",
+    "table.get": "tables",
     "term.rename": "rename",
     "text.normalized": "text",
     "undo": "history",
