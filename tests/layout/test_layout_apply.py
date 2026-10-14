@@ -8,6 +8,7 @@ numbers in LibreOffice's PDF equal the plan.
 from __future__ import annotations
 
 import copy
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ import pytest
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
+from doc_control.ops import layout
 from doc_control.ops.sections import section_rows
 from tests.layout.label_fixtures import Scenario, Sec, build_docx, export_pdfs, label_failures
 from tests.layout.test_page_labels import _require_tools
@@ -403,3 +405,57 @@ def test_asking_the_inherited_text_changes_nothing(tmp_path: Path) -> None:
     out = api.run("layout.apply", {"doc": str(path), "plan": plan}).result
     assert out["changes"] == [] and path.read_bytes() == before
     assert out["plan"]["sections"][2]["header"]["default"] is None  # it keeps inheriting
+
+
+def test_a_split_part_keeps_the_number_format_of_its_section(tmp_path: Path) -> None:
+    path = build_docx(Scenario("roman", [Sec(4, fmt="lowerRoman")], []), tmp_path / "roman.docx")
+    # The plan splits the section and states no format: both parts keep lowerRoman.
+    out = api.run("layout.apply", {"doc": str(path), "plan": asked_plan(path, {}, {})}).result
+    sections = out["plan"]["sections"]
+    assert [s["numbering"]["format"] for s in sections] == ["lowerRoman", "lowerRoman"]
+    assert [s["numbering"]["start"] for s in sections] == [None, None]
+
+
+def test_the_write_is_pinned_to_the_bytes_the_dry_run_checked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = plain(tmp_path, 4)
+    real_write = layout.apply_layout_edits
+
+    def changed_in_between(doc_path: Path, edits: Any, **kwargs: Any) -> Any:
+        if not kwargs.get("dry_run"):
+            # The same document, other bytes: saved elsewhere between the check and the write.
+            with zipfile.ZipFile(doc_path, "a") as z:
+                z.comment = b"saved elsewhere"
+        return real_write(doc_path, edits, **kwargs)
+
+    monkeypatch.setattr(layout, "apply_layout_edits", changed_in_between)
+    with pytest.raises(DocControlError) as caught:
+        api.run("layout.apply", {"doc": str(path), "plan": asked_plan(path, *ROMAN_THEN_ARABIC)})
+    assert caught.value.code is ErrorCode.DOC_CHANGED_ON_DISK
+    assert len(section_rows(Document(str(path)))) == 1
+
+
+def test_expect_sha256_is_checked_when_the_plan_needs_no_edits(tmp_path: Path) -> None:
+    path = plain(tmp_path, 4)
+    request = {"doc": str(path), "plan": current(path), "expect": {"sha256": "0" * 64}}
+    with pytest.raises(DocControlError) as caught:
+        api.run("layout.apply", request)
+    assert caught.value.code is ErrorCode.DOC_CHANGED_ON_DISK
+    sha = Document(str(path)).sha256
+    assert api.run("layout.apply", {**request, "expect": {"sha256": sha}}).result["changes"] == []
+
+
+def test_an_unknown_top_level_plan_key_is_a_schema_error(tmp_path: Path) -> None:
+    path = plain(tmp_path, 4)
+    plan = {**asked_plan(path, *ROMAN_THEN_ARABIC), "margins": {"top": 720}}
+    assert "margins" in str(refused(path, plan, ErrorCode.SCHEMA_INVALID))
+
+
+def test_a_second_apply_is_refused_while_a_change_is_unaccepted(tmp_path: Path) -> None:
+    path = plain(tmp_path, 4)
+    api.run("layout.apply", {"doc": str(path), "plan": asked_plan(path, *ROMAN_THEN_ARABIC)})
+    plan = current(path)
+    # The section after the new break holds a tracked change of its setup (w:sectPrChange).
+    plan["sections"][1]["numbering"]["format"] = "upperRoman"
+    assert "unresolved" in str(refused(path, plan, ErrorCode.UNSUPPORTED_CONTENT))
