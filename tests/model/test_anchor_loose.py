@@ -225,3 +225,12 @@ def test_unknown_match_level_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
         run("anchor.resolve", doc=str(doc), anchor={"exact": "Uno."}, match_level="case")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
+
+
+@pytest.mark.parametrize("quote", ["—", "...", "¿?", "$"])
+@pytest.mark.parametrize("mode", ["best", "exact"])
+def test_symbol_only_quote_gone_is_not_found(tmp_path: Path, quote: str, mode: str) -> None:
+    doc = make_docx(tmp_path / "a.docx", "Uno.", "Dos y tres.")
+    with pytest.raises(DocControlError) as err:
+        run("anchor.resolve", doc=str(doc), anchor={"exact": quote}, mode=mode)
+    assert err.value.code is ErrorCode.ANCHOR_NOT_FOUND

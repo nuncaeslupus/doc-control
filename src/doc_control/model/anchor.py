@@ -499,7 +499,15 @@ def resolve(
                 found.append(_candidate(index, anchor, para, start, end, 1.0, "normalized", "case"))
     if not found and match_level != "exact":
         texts = [para.text for para in index.paragraphs]
-        for hit in first_hits(texts, quote, match_level, retry=True):
+        try:
+            folded_hits = first_hits(texts, quote, match_level, retry=True)
+        except DocControlError as exc:
+            # A quote of only dropped characters (``—``, ``$``) folds to nothing: it is
+            # matched verbatim only, so it is not found rather than refused.
+            if exc.code is not ErrorCode.SCHEMA_INVALID:
+                raise
+            folded_hits = []
+        for hit in folded_hits:
             para = index.paragraphs[hit.index]
             taken.setdefault(para.number, []).append((hit.start, hit.end))
             found.append(
