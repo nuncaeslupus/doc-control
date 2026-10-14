@@ -9,8 +9,8 @@ existed. Regenerate it on purpose with ``uv run python -m tests.ops.test_find_lo
 
 from __future__ import annotations
 
+import hashlib
 import json
-import re
 import sys
 import tempfile
 import zipfile
@@ -26,6 +26,7 @@ from tests.conftest import write_corpus_doc
 from tests.helpers import CONTENT_TYPES, RELS, document_xml
 
 GOLDEN = Path(__file__).parent / "data" / "find_golden.json"
+FLAGS = ("regex", "ignore_case", "ignore_accents", "whole_word")
 
 SPANISH = (
     "-¿Estás ahí? -dijo María.",
@@ -189,11 +190,23 @@ def test_phrase_empty_after_folding_refused(tmp_path: Path) -> None:
     assert run(doc, "--", match_level="exact")["total"] == 1
 
 
-def _portable(page: dict[str, Any]) -> dict[str, Any]:
-    # A cursor's token hashes the document's bytes, which differ by platform (zip
-    # metadata); the paragraph and skip after it are what the golden pins.
+def _reference_token(doc: Path, request: dict[str, Any]) -> str:
+    """The cursor token a body find without ``match_level`` has always carried."""
+    values = [
+        hashlib.sha256(doc.read_bytes()).hexdigest(),
+        request["query"],
+        *(request.get(flag, False) for flag in FLAGS),
+    ]
+    key = json.dumps(values, ensure_ascii=True)
+    return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
+
+
+def _portable(page: dict[str, Any], doc: Path, request: dict[str, Any]) -> dict[str, Any]:
+    # The token hashes the document's bytes, which differ by platform: the golden pins
+    # that it is still the reference token, then the paragraph and skip after it.
     if page["next"] is not None:
-        page["next"] = re.sub(r"^c:find:[0-9a-f]+:", "c:find:*:", page["next"])
+        token = _reference_token(doc, request)
+        page["next"] = page["next"].replace(f"c:find:{token}:", "c:find:ref:", 1)
     return page
 
 
@@ -212,7 +225,7 @@ def snapshot() -> dict[str, Any]:
             if pages[0]["next"] is not None:
                 pages.append(run(docs[kind], query, **options, cursor=pages[0]["next"]))
             out[f"{n}:{kind}:{json.dumps(request, ensure_ascii=False)}"] = [
-                _portable(page) for page in pages
+                _portable(page, docs[kind], request) for page in pages
             ]
     return out
 

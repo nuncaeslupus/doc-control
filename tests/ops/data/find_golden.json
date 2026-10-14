@@ -103,7 +103,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:3:8",
+   "next": "c:find:ref:3:8",
    "query_word": "the",
    "query_word_options": {
     "match_case": true,
@@ -200,7 +200,7 @@
      "text": "María"
     }
    ],
-   "next": "c:find:*:2:0",
+   "next": "c:find:ref:2:0",
    "query_word": null,
    "query_word_options": {
     "match_case": false,
@@ -245,7 +245,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:2:2",
+   "next": "c:find:ref:2:2",
    "query_word": "the",
    "query_word_options": {
     "match_case": true,
@@ -272,7 +272,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:2:5",
+   "next": "c:find:ref:2:5",
    "query_word": "the",
    "query_word_options": {
     "match_case": true,
@@ -295,7 +295,7 @@
      "text": "The"
     }
    ],
-   "next": "c:find:*:2:1",
+   "next": "c:find:ref:2:1",
    "query_word": "THE",
    "query_word_options": {
     "match_case": false,
@@ -317,7 +317,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:2:3",
+   "next": "c:find:ref:2:3",
    "query_word": "THE",
    "query_word_options": {
     "match_case": false,
@@ -350,7 +350,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:2:4",
+   "next": "c:find:ref:2:4",
    "query_word": "the",
    "query_word_options": {
     "match_case": true,
@@ -382,7 +382,7 @@
      "text": "the"
     }
    ],
-   "next": "c:find:*:2:8",
+   "next": "c:find:ref:2:8",
    "query_word": "the",
    "query_word_options": {
     "match_case": true,
@@ -410,7 +410,7 @@
      "text": "quick"
     }
    ],
-   "next": "c:find:*:3:1",
+   "next": "c:find:ref:3:1",
    "total": 14,
    "warnings": []
   },
@@ -432,7 +432,7 @@
      "text": "quick"
     }
    ],
-   "next": "c:find:*:4:0",
+   "next": "c:find:ref:4:0",
    "warnings": []
   }
  ],
@@ -465,7 +465,7 @@
      "text": "board"
     }
    ],
-   "next": "c:find:*:4:2",
+   "next": "c:find:ref:4:2",
    "query_word": "board",
    "query_word_options": {
     "match_case": true,
@@ -502,7 +502,7 @@
      "text": "board"
     }
    ],
-   "next": "c:find:*:11:0",
+   "next": "c:find:ref:11:0",
    "query_word": "board",
    "query_word_options": {
     "match_case": true,
@@ -615,7 +615,7 @@
      "text": "board"
     }
    ],
-   "next": "c:find:*:25:1",
+   "next": "c:find:ref:25:1",
    "query_word": "Board",
    "query_word_options": {
     "match_case": false,
