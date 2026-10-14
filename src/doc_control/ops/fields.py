@@ -1,4 +1,5 @@
-"""`fields.list`: every field in every story, read-only.
+"""`fields.list`: every field in every story, read-only (the write side is
+:mod:`doc_control.ops.fieldwrite`).
 
 Complex fields (``w:fldChar`` begin/separate/end, the code split across any number of
 ``w:instrText`` runs, nested fields, fields spanning paragraphs) and ``w:fldSimple`` are
@@ -11,6 +12,7 @@ to every write operation (D-L4).
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -53,7 +55,7 @@ def _type_of(code: str) -> str:
         return ""
     head = words[0].upper()
     if head == "ADDIN" and len(words) > 1:
-        return "ADDIN " + words[1]
+        return "ADDIN " + words[1].upper()  # Mendeley writes "ADDIN Mendeley Citation"
     return head
 
 
@@ -86,8 +88,9 @@ class _Scanner:
         code = "".join(frame.code).strip()
         kind = _type_of(code)
         result = "".join(frame.result)
-        stale = (
-            frame.dirty or not frame.separated or (not result.strip() and kind not in _NO_RESULT)
+        # A field with no visible result (XE, TC, SET, ...) has nothing to go stale.
+        stale = frame.dirty or (
+            kind not in _NO_RESULT and (not frame.separated or not result.strip())
         )
         frame.row.update(
             {
@@ -138,6 +141,36 @@ class _Scanner:
             self._close(self.stack.pop())
 
 
+def _story_paragraphs(node: ET.Element) -> Iterator[ET.Element]:
+    """The paragraphs of a comment in order, not those inside a text box (the paragraph
+    holding the box scans them)."""
+    for child in node:
+        if child.tag == W + "p":
+            yield child
+        elif child.tag != W + "txbxContent":
+            yield from _story_paragraphs(child)
+
+
+def collect_rows(doc: Document, kinds: Sequence[str]) -> list[dict[str, Any]]:
+    """Every field of the stories ``kinds``, as :func:`fields_list` returns them."""
+    rows: list[dict[str, Any]] = []
+    for story in list_stories(doc.pkg, tuple(k for k in kinds if k != "comments")):
+        view = doc.story_view(story.key)
+        scan = _Scanner(story.key or "body", rows)
+        for para in view.index.paragraphs:
+            scan.paragraph(view.paragraph_element(para), str(para.address))
+        scan.finish()
+    if "comments" in kinds:
+        name = related_part(doc.pkg, OFFICE_REL + "comments", "word/comments.xml")
+        if name is not None:
+            for comment in parse_part(doc.pkg, name).iter(W + "comment"):
+                scan = _Scanner("comments", rows)
+                for node in _story_paragraphs(comment):
+                    scan.paragraph(node, f"comment:{comment.get(W + 'id', '')}")
+                scan.finish()
+    return rows
+
+
 @operation(
     "fields.list",
     "read",
@@ -167,22 +200,7 @@ class _Scanner:
 )
 def fields_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
-    kinds = tuple(request.get("stories", _KINDS))
-    rows: list[dict[str, Any]] = []
-    for story in list_stories(doc.pkg, tuple(k for k in kinds if k != "comments")):
-        view = doc.story_view(story.key)
-        scan = _Scanner(story.key or "body", rows)
-        for para in view.index.paragraphs:
-            scan.paragraph(view.paragraph_element(para), str(para.address))
-        scan.finish()
-    if "comments" in kinds:
-        name = related_part(doc.pkg, OFFICE_REL + "comments", "word/comments.xml")
-        if name is not None:
-            for comment in parse_part(doc.pkg, name).iter(W + "comment"):
-                scan = _Scanner("comments", rows)
-                for node in comment.iter(W + "p"):
-                    scan.paragraph(node, f"comment:{comment.get(W + 'id', '')}")
-                scan.finish()
+    rows = collect_rows(doc, tuple(request.get("stories", _KINDS)))
     wanted = request.get("type")
     if wanted is not None:
         rows = [r for r in rows if r["type"] == wanted.upper()]
