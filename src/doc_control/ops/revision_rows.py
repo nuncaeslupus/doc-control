@@ -1,12 +1,14 @@
 """Table row revisions (``w:trPr/w:ins``, ``w:trPr/w:del``) for ``revision.accept``/``reject``.
 
 A row is not a paragraph, so the row layer works on bytes: :func:`scan_rows` finds the
-marked rows of the body, :func:`plan_rows` turns the decisions into cuts and marker drops
-(refusing to leave a table without rows), and :func:`apply_rows` makes them on the
-document bytes after the paragraph decisions were applied.
+marked rows of the body, :func:`plan_rows` turns the decisions into cuts and marker drops,
+and :func:`apply_rows` makes them on the document bytes after the paragraph decisions were
+applied.
 
 Accepting a deletion or rejecting an insertion removes the whole ``w:tr``; the paragraphs in
-it go with it and are not resolved on their own. Accepting an insertion or rejecting a
+it go with it and are not resolved on their own. When every row of a table goes, the whole
+``w:tbl`` goes, provided a paragraph follows it (so the body or cell stays valid); otherwise
+the decision is refused. Accepting an insertion or rejecting a
 deletion drops the marker and leaves the row's own text revisions as they are.
 """
 
@@ -30,6 +32,9 @@ _KINDS = {W + "ins": "row_insert", W + "del": "row_delete"}
 _TR_OPEN = re.compile(rb"<(?:[\w.-]+:)?tr[\s>/]")
 _TRPR_OPEN = re.compile(rb"<((?:[\w.-]+:)?)trPr(?=[\s>/])[^>]*?(/?)>")
 _TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>/]")
+_TBL_OPEN = re.compile(rb"<(?:[\w.-]+:)?tbl[\s>]")
+_TBL_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tbl\s*>")
+_P_NEXT = re.compile(rb"\s*<(?:[\w.-]+:)?p[\s>/]")
 _REMOVES = frozenset({("row_insert", "reject"), ("row_delete", "accept")})
 
 
@@ -52,6 +57,7 @@ class RowRevision:
 class RowScan:
     revisions: list[RowRevision]
     rows_per_table: dict[int, int]
+    data: bytes = b""
 
 
 def _paragraph_bounds(index: DocumentIndex) -> tuple[list[int], list[int]]:
@@ -123,7 +129,17 @@ def scan_rows(index: DocumentIndex) -> RowScan:
             )
             for m in marks
         ]
-    return RowScan(found, per_table)
+    return RowScan(found, per_table, data)
+
+
+def _table_span(data: bytes, first_start: int, last_end: int) -> tuple[int, int] | None:
+    """Byte span of the ``w:tbl`` whose first row starts at ``first_start`` and last row ends
+    at ``last_end``; ``None`` unless a paragraph follows it."""
+    opens = list(_TBL_OPEN.finditer(data, 0, first_start))
+    close = _TBL_CLOSE.search(data, last_end)
+    if not opens or close is None or not _P_NEXT.match(data, close.end()):
+        return None
+    return opens[-1].start(), close.end()
 
 
 @dataclass
@@ -131,11 +147,15 @@ class RowPlan:
     removed: list[RowRevision] = field(default_factory=list)  # one per row that goes
     dropped: list[RowRevision] = field(default_factory=list)  # markers that go, row stays
     dead: frozenset[int] = frozenset()  # paragraph numbers that go with a removed row
+    # whole tables that go: ``(first row ordinal, last row ordinal, start, end)``, the span
+    # in the original part
+    tables: list[tuple[int, int, int, int]] = field(default_factory=list)
 
     @property
     def spans(self) -> frozenset[tuple[int, int]]:
         """Byte spans of the original part that change."""
-        return frozenset((r.start, r.end) for r in [*self.removed, *self.dropped])
+        rows = {(r.start, r.end) for r in [*self.removed, *self.dropped]}
+        return frozenset(rows | {(s, e) for _, _, s, e in self.tables})
 
     def __bool__(self) -> bool:
         return bool(self.removed or self.dropped)
@@ -144,7 +164,8 @@ class RowPlan:
 def plan_rows(scan: RowScan, decisions: dict[int, str]) -> RowPlan:
     """Cuts and marker drops for ``decisions`` (``index in scan.revisions`` -> action).
 
-    Raises ``UNSUPPORTED_CONTENT`` when a table would be left without rows."""
+    A table left without rows is removed whole; ``UNSUPPORTED_CONTENT`` when no paragraph
+    follows it."""
     revs = scan.revisions
     cut: dict[int, RowRevision] = {}  # ordinal -> a marker that removes the row
     for i, action in decisions.items():
@@ -156,17 +177,22 @@ def plan_rows(scan: RowScan, decisions: dict[int, str]) -> RowPlan:
         if r.start >= last_end:
             outer.append(r)
             last_end = r.end
-    gone: dict[int, int] = {}
+    gone: dict[int, list[RowRevision]] = {}
     for r in outer:
-        gone[r.table] = gone.get(r.table, 0) + 1
-    for table, n in sorted(gone.items()):
-        if n >= scan.rows_per_table[table]:
+        gone.setdefault(r.table, []).append(r)
+    tables: list[tuple[int, int, int, int]] = []
+    for table, cuts in sorted(gone.items()):
+        if len(cuts) < scan.rows_per_table[table]:
+            continue
+        span = _table_span(scan.data, cuts[0].start, cuts[-1].end)
+        if span is None:
             raise DocControlError(
                 ErrorCode.UNSUPPORTED_CONTENT,
-                f"resolving these row revisions would leave table {table} without rows; "
-                "keep one of its rows or delete the table another way",
+                f"resolving these row revisions would leave table {table} without rows, "
+                "and no paragraph follows it to keep in its place; keep one of its rows",
                 table=table,
             )
+        tables.append((cuts[0].ordinal, cuts[-1].ordinal, *span))
 
     def inside_removed(r: RowRevision) -> bool:
         return any(o.start <= r.start and r.end <= o.end and o is not r for o in outer)
@@ -177,7 +203,7 @@ def plan_rows(scan: RowScan, decisions: dict[int, str]) -> RowPlan:
         if revs[i].ordinal not in cut and not inside_removed(revs[i])
     ]
     dead = frozenset(n for r in outer for n in r.paragraphs)
-    return RowPlan(outer, dropped, dead)
+    return RowPlan(outer, dropped, dead, tables)
 
 
 def apply_rows(index_of_data: DocumentIndex, plan: RowPlan) -> bytes:
@@ -186,6 +212,11 @@ def apply_rows(index_of_data: DocumentIndex, plan: RowPlan) -> bytes:
     data = index_of_data.spans.data
     rows = row_spans(index_of_data)
     edits: list[tuple[int, int, bytes]] = []
+    for first, last, _, _ in plan.tables:
+        span = _table_span(data, rows[first][0], rows[last][1])
+        if span is None:
+            raise DocControlError(ErrorCode.INTERNAL, "row revision: the table moved")
+        edits.append((*span, b""))
     for r in plan.removed:
         start, end, _ = rows[r.ordinal]
         edits.append((start, end, b""))
@@ -194,18 +225,25 @@ def apply_rows(index_of_data: DocumentIndex, plan: RowPlan) -> bytes:
         drop_ids.setdefault(r.ordinal, []).append(r)
     for ordinal, marks in drop_ids.items():
         start, end, _ = rows[ordinal]
-        edits.append((start, end, _drop_markers(data[start:end], marks)))
+        # only the row's own w:trPr changes, so rows nested in its cells stay separate edits
+        a, b, new = _drop_markers(data[start:end], marks)
+        edits.append((start + a, start + b, new))
     out = bytearray()
     pos = 0
-    for start, end, new in sorted(edits):
+    for start, end, new in sorted(edits, key=lambda e: (e[0], -e[1])):
+        if start < pos:
+            if end <= pos:
+                continue  # inside a span already removed
+            raise DocControlError(ErrorCode.INTERNAL, "row revision: overlapping edits")
         out += data[pos:start] + new
         pos = end
     out += data[pos:]
     return bytes(out)
 
 
-def _drop_markers(row: bytes, marks: Sequence[RowRevision]) -> bytes:
-    """``row`` without the ``w:ins``/``w:del`` markers ``marks`` in its ``w:trPr``."""
+def _drop_markers(row: bytes, marks: Sequence[RowRevision]) -> tuple[int, int, bytes]:
+    """The edit ``(start, end, new)`` within ``row`` that removes the ``w:ins``/``w:del``
+    markers ``marks`` from its ``w:trPr`` (it covers no more than that ``w:trPr``)."""
     tr = _TR_OPEN.match(row)
     pr = _TRPR_OPEN.search(row)
     cell = _TC_OPEN.search(row)
@@ -231,5 +269,5 @@ def _drop_markers(row: bytes, marks: Sequence[RowRevision]) -> bytes:
     rest = row[stop:close] if change >= 0 else b""
     if not body.strip() and not rest:
         # nothing else in the properties: drop the whole block
-        return row[: pr.start()] + row[close + len(b"</" + prefix + b"trPr>") :]
-    return row[: pr.end()] + body + row[stop:]
+        return pr.start(), close + len(b"</" + prefix + b"trPr>"), b""
+    return pr.end(), stop, body

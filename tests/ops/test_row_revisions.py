@@ -123,13 +123,79 @@ def test_row_revisions_follow_the_author_and_id_filters(tmp_path: Path) -> None:
     assert _types(only_marker) == {"row_delete", "delete", "mark_delete", "insert", "mark_insert"}
 
 
-def test_a_selection_that_empties_a_table_is_refused_and_changes_nothing(tmp_path: Path) -> None:
+def _nested(text: str, inner: str, *, ins: Mark) -> str:
+    """An inserted one-cell row whose cell holds a nested table with the row ``inner``."""
+    table = f'<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid>{inner}</w:tbl>'
+    cell = f"<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p>{table}<w:p/></w:tc>"
+    return f"<w:tr><w:trPr><w:ins {_mark(*ins)}/></w:trPr>{cell}</w:tr>"
+
+
+def _paras(path: Path) -> list[str]:
+    return [p.text for p in build_index(_xml(path).encode()).paragraphs]
+
+
+@pytest.mark.parametrize("inner", ["ins", "del"])
+def test_a_nested_tracked_row_inside_an_inserted_row(tmp_path: Path, inner: str) -> None:
+    deep = _row("deep", ins=(50, "Ben")) if inner == "ins" else _row("deep", dele=(50, "Ben"))
+    rows = (_row("head"), _nested("outer", _row("x") + deep, ins=(10, "Ana")))
+    accept = _docx(tmp_path / "accept.docx", *rows)
+    reject = _docx(tmp_path / "reject.docx", *rows)
+
+    _resolve(accept, "accept", all=True)
+    kept = ["x", "deep"] if inner == "ins" else ["x"]
+    assert _paras(accept) == ["before", "head", "outer", *kept, "", "after"]
+    data = _xml(accept)
+    assert not re.search(r"<w:trPr[ >/]", data) and _types(accept) == set()
+    assert validate_structure(accept.read_bytes()) == []
+
+    _resolve(reject, "reject", all=True)  # the outer row goes, nested rows with it
+    assert _paras(reject) == ["before", "head", "after"]
+    _clean(reject)
+
+
+def test_a_table_left_without_rows_is_removed_whole(tmp_path: Path) -> None:
     doc = _docx(tmp_path / "t.docx", _row("a", dele=(1, "Ana")), _row("b", dele=(5, "Ana")))
+    _resolve(doc, "accept", all=True)
+    assert "<w:tbl" not in _xml(doc)
+    assert [p.text for p in build_index(_xml(doc).encode()).paragraphs] == ["before", "after"]
+    _clean(doc)
+
+    kept = _docx(tmp_path / "k.docx", _row("a", dele=(1, "Ana")), _row("b", dele=(5, "Ana")))
+    _resolve(kept, "reject", all=True)  # rejecting keeps both rows
+    assert _rows(kept) == ["a", "b"]
+    _clean(kept)
+
+
+def test_emptying_a_table_with_no_paragraph_after_it_is_refused(tmp_path: Path) -> None:
+    doc = _docx(tmp_path / "t.docx", _row("a", dele=(1, "Ana")))
+    data = _xml(doc).replace("<w:p><w:r><w:t>after</w:t></w:r></w:p>", "")
+    with zipfile.ZipFile(doc, "w") as zf:
+        zf.writestr("[Content_Types].xml", CONTENT_TYPES)
+        zf.writestr("_rels/.rels", RELS)
+        zf.writestr("word/document.xml", data)
     before = doc.read_bytes()
     with pytest.raises(DocControlError) as err:
         _resolve(doc, "accept", all=True)
     assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
     assert doc.read_bytes() == before
-    _resolve(doc, "reject", all=True)  # rejecting keeps both rows
-    assert _rows(doc) == ["a", "b"]
-    _clean(doc)
+
+
+def test_dry_run_reports_row_revisions_and_writes_nothing(tmp_path: Path) -> None:
+    doc = _standard(tmp_path / "d.docx")
+    before = doc.read_bytes()
+    out = apply_resolutions(doc, [ResolveRevisions("accept", all=True)], dry_run=True, env={})
+    assert doc.read_bytes() == before
+    rows = {(r["id"], r["type"]) for r in out.to_dict()["revisions"]}
+    assert {("10", "row_insert"), ("20", "row_delete")} <= rows
+
+
+def test_undo_restores_a_row_resolution(tmp_path: Path) -> None:
+    from doc_control.ops.batch import batch
+    from doc_control.ops.history import undo
+
+    doc = _standard(tmp_path / "d.docx")
+    before = _xml(doc)
+    batch({"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
+    assert _rows(doc) == ["head", "new", "tail"]
+    undo({"doc": str(doc)})
+    assert _xml(doc) == before

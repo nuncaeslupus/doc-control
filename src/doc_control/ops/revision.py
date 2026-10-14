@@ -33,10 +33,11 @@ Table row revisions (``w:trPr/w:ins``, ``w:trPr/w:del``) are revisions like the 
 reported (and selected by ``at``) at the first paragraph of the row. Accepting a deleted row
 or rejecting an inserted one removes the ``w:tr``, with the paragraphs in it; accepting an
 inserted row or rejecting a deleted one drops the marker and leaves the row's own text
-revisions to their own decisions. A decision that would leave a table without rows is
-``UNSUPPORTED_CONTENT``. Table cell revisions (``w:tcPr``) and revisions inside text boxes
-are not resolved; selecting them by id is ``UNSUPPORTED_CONTENT``, and with other
-selectors they are left as they are and a warning names the fact.
+revisions to their own decisions. A decision that leaves a table without rows removes the
+whole table, and is ``UNSUPPORTED_CONTENT`` when no paragraph follows the table. Table
+cell revisions (``w:tcPr``) and revisions inside text boxes are not resolved; selecting
+them by id is ``UNSUPPORTED_CONTENT``, and with other selectors they are left as they are
+and a warning names the fact.
 
 Before the write the result is checked: no revision appears that was not there, the
 selected ones are gone, the paragraph count is right, accepting insertions and
@@ -273,9 +274,11 @@ def _range(index: DocumentIndex, at: str) -> tuple[int, int]:
 
 
 def _table_revisions(data: bytes, rows: RowScan) -> bool:
-    """Table revisions this operation cannot resolve are in ``data``."""
-    return _CELL_REVISION.search(data) is not None or (
-        not rows.revisions and _ROW_REVISION.search(data) is not None
+    """Table revisions this operation cannot resolve are in ``data``: cell revisions, or a
+    marked row the row scan did not find."""
+    marked = sum(1 for _ in _ROW_REVISION.finditer(data))
+    return _CELL_REVISION.search(data) is not None or marked > len(
+        {r.ordinal for r in rows.revisions}
     )
 
 
@@ -511,7 +514,8 @@ def prepare_resolutions(
     warnings: list[str] = []
     if table:
         warnings.append(
-            "table cell revisions are not resolved by this operation; they stay as they are"
+            "some table cell or row revisions are not resolved by this operation; "
+            "they stay as they are"
         )
     for res in resolved:
         _build(pkg, res)
