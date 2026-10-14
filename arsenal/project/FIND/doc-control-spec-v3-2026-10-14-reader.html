@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="f0880bffd704caa2f29967b9093d90dc74c08b9058f359e06cbb449c5842c627">
+<title>Doc Control — Specification (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#9a4a0b}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">Doc Control — Specification<small>annotatable reader · 2026-10-14</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 15 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Doc Control — Specification</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Spec</summary><ul>
+<li><a href="#s-spec-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-spec-1">§1 Problem statement</a></li>
+<li><a href="#s-spec-2">§2 Systems &amp; Impact</a></li>
+<li><a href="#s-spec-3">§3 Options</a></li>
+<li><a href="#s-spec-option-a-loose-matching-in-live">Option A: Loose matching in live.select and find only (Conservative)</a></li>
+<li><a href="#s-spec-option-b-one-shared-matcher-modu">Option B: One shared matcher module for every phrase-taking op (Recommended)</a></li>
+<li><a href="#s-spec-option-c-loose-matching-only-whe">Option C: Loose matching only when the exact search fails (Fallback-only)</a></li>
+<li><a href="#s-spec-match-levels-d-f1">Match levels (D-F1)</a></li>
+<li><a href="#s-spec-the-folding-rule">The folding rule</a></li>
+<li><a href="#s-spec-word-find-codes-in-agent-phrases">Word find codes in agent phrases (D-F6)</a></li>
+<li><a href="#s-spec-tiebreak-levels">Tiebreak levels</a></li>
+<li><a href="#s-spec-reporting-a-loose-match">Reporting a loose match</a></li>
+<li><a href="#s-spec-opt-out">Opt-out</a></li>
+<li><a href="#s-spec-performance">Performance</a></li>
+<li><a href="#s-spec-comparison">Comparison</a></li>
+<li><a href="#s-spec-4">§4 Recommendation</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge spec">Specification</span>Spec</h2>
+<article class="sec l2" id="s-spec-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-14
+<strong>Ticket / PR</strong>: — (workspace <code>FIND</code>)
+<strong>Author</strong>: Claude (doc-control session), for the owner
+<strong>Revision</strong>: 3
+<strong>Status</strong>: approved (2026-10-14, revision 2) — r3 clarifications (D-F7) proposed, pending owner ack
+<strong>Revision log</strong>:
+- r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code>
+- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
+- r3 — cold-review clarifications (D-F7): parameter renamed <code>match_level</code> so <code>anchor.resolve</code>'s <code>match</code> is untouched; <code>rename</code>/<code>history.search</code> stay exact by default and never retry; multi-hit ops return every hit; Word-code set aligned with <code>model/wordfind.py</code>; punctuation folds to a word boundary; benchmark is the 100k-word novel</p>
+<blockquote>
+<p>Review record. Each round of reviewer notes makes a new revision: bump
+<strong>Revision</strong>, add a log line naming the export it applied, and commit that
+export beside this file in the same commit. On approval set <strong>Status</strong> to
+<code>approved (YYYY-MM-DD, revision N)</code> and, when the reviewer sent no notes for
+that revision, add <code>— without annotations</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-intro"><label class="note-head" for="n-s-spec-intro"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC · intro</span></label><textarea class="note-ta" data-key="s-spec-intro" id="n-s-spec-intro" data-label="Preamble &amp; scope" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-1">
+<h3 class="sec-h"><span class="chip">§1</span><span class="sec-title">Problem statement</span></h3>
+<div class="sec-body"><p>A dialogue paragraph in the writer's document began with <code>--</code> (two hyphens, not an em dash or a hyphen). literary-critic's find phrase did not match it. Today every phrase an agent sends must match the document's characters exactly, apart from case. The agent cannot know which dash, quote or accent the writer typed.</p>
+<p>The owner's rule: make matching generic. Asked for a paragraph that begins with <code>Estas ahi</code>, doc-control should also accept <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code> and <code>-Estas ahí?</code>. The same holds for other punctuation. If two paragraphs match and one is exactly as asked, use that one. If the agent picked wrong, the user will say so and the passage can be found again.</p>
+<p>Two directions must stay apart:</p>
+<ul>
+<li><strong>(a) Matching an agent's phrase.</strong> This goes loose, with an exact-match tiebreak. It is the subject of this spec.</li>
+<li><strong>(b) Phrases doc-control generates</strong> for Word's own Find box (<code>locate</code>: <code>find_phrase</code>, <code>find_phrase_word</code>). These stay exact. Word's Find is case-insensitive and accent-sensitive, and a generated phrase must be unique under that rule. Loosening them would make them wrong in Word.</li>
+</ul>
+<p>Current rules, from the code:</p>
+<ul>
+<li><code>locate</code> (<code>ops/locate.py</code>): case-insensitive (<code>casefold</code>), accent-sensitive, Word's Find semantics. Whitespace is not collapsed.</li>
+<li><code>find</code> (<code>ops/find.py</code>, <code>model/search.py</code>): literal or regex. <code>ignore_case</code> and <code>ignore_accents</code> are opt-in flags, both default false. Offsets map back to the original text.</li>
+<li><code>live.select</code> (<code>ops/live.py</code>, <code>_found</code>): <code>casefold()</code> on the joined text, then a plain substring search. One hit is required (<code>ANCHOR_NOT_FOUND</code> for none, <code>ANCHOR_AMBIGUOUS</code> for several). No accent or punctuation folding.</li>
+<li><code>anchor.resolve</code> (<code>model/anchor.py</code>): exact, then a normalised tier (soft hyphens, zero-width characters, whitespace, NFC), then fuzzy for quotes of more than three words. It already reports the tier as <code>match</code>.</li>
+</ul>
+<p>Ops that take a text phrase today:</p>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Parameter</th>
+<th>Current matching</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>live.select</code></td>
+<td><code>find_phrase</code></td>
+<td>casefold, substring, must be unique</td>
+</tr>
+<tr>
+<td><code>find</code></td>
+<td><code>query</code></td>
+<td>literal or regex; folding is opt-in</td>
+</tr>
+<tr>
+<td><code>anchor.resolve</code></td>
+<td><code>exact</code> (+ prefix, suffix)</td>
+<td>exact, normalised, fuzzy</td>
+</tr>
+<tr>
+<td><code>rename</code></td>
+<td>search term</td>
+<td>same matcher as <code>find</code></td>
+</tr>
+<tr>
+<td><code>history.search</code></td>
+<td><code>query</code></td>
+<td><code>ignore_case</code>, <code>ignore_accents</code> flags</td>
+</tr>
+</tbody>
+</table>
+<p>Edit ops (<code>replace</code>, <code>insert</code>, <code>move</code>, comments) take addresses, not phrases. An agent reaches them through <code>find</code>, <code>anchor.resolve</code> or <code>live.select</code>. Loose matching in those three covers every edit.</p>
+<p><strong>Success criteria (measurable)</strong>:</p>
+<ul>
+<li>[ ] <code>loose_match_failures == 0</code> on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading <code>-</code>, <code>--</code>, <code>—</code>, <code>¿</code> or <code>«</code>, at the start or in the middle of the paragraph. The table includes <code>Estas ahi</code> against <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code>, <code>-Estas ahí?</code> and <code>--Estas ahi</code>, and a phrase without <code>¿</code> against a paragraph that has it mid-text (D-F2).</li>
+<li>[ ] <code>symbol_fold_violations == 0</code>: at the default level with no retry (<code>find</code> with <code>match_level: "default"</code>) a symbol (<code>$</code>, <code>+</code>, <code>*</code>) is never folded, so <code>5$</code> does not match <code>5</code>; at <code>loose</code> it does; and a phrase op that only matches after retrying to <code>loose</code> reports <code>match_level: "loose"</code>, never <code>"default"</code>. Rows cover both levels (D-F1).</li>
+<li>[ ] <code>fallback_level_misreports == 0</code>: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).</li>
+<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> equals <code>\r</code> (also mid-phrase, across paragraphs where the op allows it), <code>^t</code> a tab, <code>^s</code>, <code>^-</code>, <code>^~</code> and <code>^uNNN</code> their characters, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
+<li>[ ] <code>exact_tiebreak_violations == 0</code>: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.</li>
+<li>[ ] <code>tier_ambiguity_misses == 0</code>: two matches in the same level still raise <code>ANCHOR_AMBIGUOUS</code>; none is silently chosen.</li>
+<li>[ ] <code>span_mismatches == 0</code>: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).</li>
+<li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched); and every <code>find_phrase_word</code> it emits, translated back, equals its source text (<code>word_code_roundtrip_failures == 0</code>).</li>
+<li>[ ] <code>loose_report_missing == 0</code>: every response where the level was not exact says so (<code>match_level</code> field).</li>
+<li>[ ] <code>find_loose_overhead_ratio &lt;= 1.5</code> against the current literal <code>find</code> on the 100k-word novel benchmark in <code>tests/bench</code>; <code>live.select</code> stays under the current time plus 50 ms on the same document.</li>
+<li>[ ] No existing test changes behaviour: <code>match_level: "exact"</code> reproduces today's results, and plain <code>find</code>, <code>rename</code> and <code>history.search</code> with no <code>match_level</code> argument is unchanged (<code>regression_failures == 0</code>, D-F5).</li>
+<li>[ ] Judged, not measured: the owner re-runs the original <code>--</code> dialogue case from literary-critic and it is found.</li>
+</ul></div>
+<div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-2">
+<h3 class="sec-h"><span class="chip">§2</span><span class="sec-title">Systems &amp; Impact</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>System</th>
+<th>Type</th>
+<th>Role</th>
+<th>Needs changes?</th>
+<th>Impact</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ops/live.py</code> <code>_found</code></td>
+<td>Primary</td>
+<td>Resolves <code>find_phrase</code> for <code>live.select</code></td>
+<td>Yes</td>
+<td>Uses the tiered matcher; reports the tier</td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>ops/find.py</code>, <code>model/search.py</code></td>
+<td>Primary</td>
+<td>Literal and regex search</td>
+<td>Option B: Yes</td>
+<td>New <code>match_level</code> levels for literal queries; default stays exact</td>
+<td>Med</td>
+</tr>
+<tr>
+<td>New <code>model/loosefold.py</code> (Option B)</td>
+<td>Primary</td>
+<td>Fold, offset map, levelled search, Word-code translation</td>
+<td>Yes (new)</td>
+<td>One shared matcher</td>
+<td>High</td>
+</tr>
+<tr>
+<td><code>model/anchor.py</code></td>
+<td>Dependent</td>
+<td>Exact, normalised, fuzzy tiers</td>
+<td>Option B: aligns tiers</td>
+<td>Adds a loose tier before fuzzy</td>
+<td>Med</td>
+</tr>
+<tr>
+<td><code>ops/rename.py</code>, <code>ops/history.py</code></td>
+<td>Dependent</td>
+<td>Use the <code>find</code> matcher</td>
+<td>Option B: Yes</td>
+<td>Inherit the mode or opt out</td>
+<td>Low</td>
+</tr>
+<tr>
+<td><code>ops/locate.py</code>, <code>model/wordfind.py</code></td>
+<td>Dependent</td>
+<td>Generate Word-exact phrases</td>
+<td>No (guarded by a test)</td>
+<td>Must not change</td>
+<td>High if touched</td>
+</tr>
+<tr>
+<td><code>live/word_com.py</code>, <code>live/lo_uno.py</code></td>
+<td>Dependent</td>
+<td>Select a paragraph by index</td>
+<td>No</td>
+<td>Receive a paragraph index as today</td>
+<td>Low</td>
+</tr>
+<tr>
+<td><code>tests/bench</code></td>
+<td>Validation</td>
+<td>Perf tests</td>
+<td>Yes</td>
+<td>New loose-match benchmark</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>literary-critic</td>
+<td>Consumer</td>
+<td>Sends find phrases</td>
+<td>No</td>
+<td>Fewer misses; must read the level</td>
+<td>Low</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Impact</strong>:
+- <strong>API</strong>: additive. A response field names the level; a request field <code>match_level</code> (<code>"exact"</code>, <code>"default"</code>, <code>"loose"</code>) sets it. <code>"default"</code> is the default for the single-target phrase ops (<code>live.select</code>, <code>anchor.resolve</code>), which retry looser levels before failing, so some calls that failed now succeed. Plain <code>find</code>, <code>rename</code> and <code>history.search</code> stay exact. Agent phrases also accept Word's find codes (<code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code>).
+- <strong>Data</strong>: none. These are read ops or selections.
+- <strong>Performance</strong>: folding each paragraph costs linear time. Cache the folded text per document revision.
+- <strong>User</strong>: a wrong loose pick is visible and recoverable (the owner's rule). The level report lets the agent notice it.
+- <strong>Risk of inaction</strong>: agents keep missing paragraphs on punctuation they cannot see. Dialogue in Spanish and French is the common case.</p></div>
+<div class="note" data-for="s-spec-2"><label class="note-head" for="n-s-spec-2"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §2</span></label><textarea class="note-ta" data-key="s-spec-2" id="n-s-spec-2" data-label="§2 Systems &amp; Impact" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2 bare" id="s-spec-3">
+<h3 class="sec-h"><span class="chip">§3</span><span class="sec-title">Options</span></h3>
+</article>
+<article class="sec l3" id="s-spec-option-a-loose-matching-in-live">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option A: Loose matching in <code>live.select</code> and <code>find</code> only (Conservative)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: add a small <code>loose_fold</code> helper. <code>_found</code> searches in three tiers over the joined text. <code>find</code> gets the same tiers for literal queries when <code>match_level</code> is <code>"loose"</code>.</li>
+<li><strong>Scope</strong>: <code>ops/live.py</code>, <code>ops/find.py</code>, <code>model/search.py</code>, tests.</li>
+<li><strong>Effort</strong>: Small.</li>
+<li><strong>Tradeoffs</strong>: fast to ship and covers the reported case. <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> keep their own rules, so the same phrase can match in one op and not in another.</li>
+<li><strong>Compatibility</strong>: additive. <code>match_level: "exact"</code> restores today's behaviour.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-a-loose-matching-in-live"><label class="note-head" for="n-s-spec-option-a-loose-matching-in-live"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option A: Loose matching in live.select and find only (Conservative)</span></label><textarea class="note-ta" data-key="s-spec-option-a-loose-matching-in-live" id="n-s-spec-option-a-loose-matching-in-live" data-label="Option A: Loose matching in live.select and find only (Conservative)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-b-one-shared-matcher-modu">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: One shared matcher module for every phrase-taking op (Recommended)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: a new module <code>model/loosefold.py</code> owns the folding, the offset map, the level search and the Word-code translation. <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> call it. <code>locate</code> does not.</li>
+<li><strong>Scope</strong>: the module, the five ops above, the <code>match_level</code> parameter and response field, docs/operations.md, tests and benchmarks.</li>
+<li><strong>Effort</strong>: Medium.</li>
+<li><strong>Tradeoffs</strong>: one rule everywhere, one place to test and tune. More files touched, and <code>anchor.resolve</code>'s existing normalised tier must be merged without changing its scores.</li>
+<li><strong>Compatibility</strong>: additive with the same <code>match_level</code> opt-out.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-b-one-shared-matcher-modu"><label class="note-head" for="n-s-spec-option-b-one-shared-matcher-modu"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: One shared matcher module for every phrase-taking op (Recommended)</span></label><textarea class="note-ta" data-key="s-spec-option-b-one-shared-matcher-modu" id="n-s-spec-option-b-one-shared-matcher-modu" data-label="Option B: One shared matcher module for every phrase-taking op (Recommended)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-option-c-loose-matching-only-whe">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option C: Loose matching only when the exact search fails (Fallback-only)</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Description</strong>: keep exact matching first. Only when it finds nothing, retry loosely. No tiering among several hits.</li>
+<li><strong>Scope</strong>: <code>_found</code> and <code>find</code>.</li>
+<li><strong>Effort</strong>: Small.</li>
+<li><strong>Tradeoffs</strong>: simplest to reason about. But a phrase that matches one paragraph exactly and others loosely is handled only because exact is tried first; there is no case-only tier, and two exact hits are not told apart from loose ones in the report.</li>
+<li><strong>Compatibility</strong>: additive.</li>
+</ul></div>
+<div class="note" data-for="s-spec-option-c-loose-matching-only-whe"><label class="note-head" for="n-s-spec-option-c-loose-matching-only-whe"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option C: Loose matching only when the exact search fails (Fallback-only)</span></label><textarea class="note-ta" data-key="s-spec-option-c-loose-matching-only-whe" id="n-s-spec-option-c-loose-matching-only-whe" data-label="Option C: Loose matching only when the exact search fails (Fallback-only)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-match-levels-d-f1">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Match levels (D-F1)</span></h4>
+<div class="sec-body"><p><code>match_level</code> takes three values, from strictest to loosest:</p>
+<ul>
+<li><code>"exact"</code>: today's behaviour for that op. No folding, no retry.</li>
+<li><code>"default"</code>: case and accents are ignored, and punctuation and dashes are folded away. Symbols (S*) still count.</li>
+<li><code>"loose"</code>: everything in <code>"default"</code>, and symbols are dropped as well. An opt-in level; it never applies unless asked for or reached by the retry below.</li>
+</ul>
+<p><strong>Defaults</strong>: the single-target phrase ops (<code>live.select</code>, <code>anchor.resolve</code>) default to <code>"default"</code>. The multi-hit ops — plain <code>find</code> (D-F5), <code>rename</code> and <code>history.search</code> — default to <code>"exact"</code> and only fold when the caller passes <code>match_level</code>; <code>rename</code> writes tracked changes, so widening its default would silently edit more occurrences.</p>
+<p><strong>Retry before failing</strong>: when a phrase is not found at the level in force, a phrase op tries the less restrictive levels itself, one at a time, before it raises <code>ANCHOR_NOT_FOUND</code>. Each level keeps the exact-first tiebreak below. <code>"exact"</code> never retries. Multi-hit ops (<code>find</code>, <code>rename</code>, <code>history.search</code>) never retry: they search at the level passed and return every hit at that level. The reply names the level that matched.</p></div>
+<div class="note" data-for="s-spec-match-levels-d-f1"><label class="note-head" for="n-s-spec-match-levels-d-f1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Match levels (D-F1)</span></label><textarea class="note-ta" data-key="s-spec-match-levels-d-f1" id="n-s-spec-match-levels-d-f1" data-label="Match levels (D-F1)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-the-folding-rule">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">The folding rule</span></h4>
+<div class="sec-body"><p>Both the phrase and each paragraph are folded to a comparison string, and an offset map keeps the position of every folded character in the original text.</p>
+<ul>
+<li><strong>Accents</strong>: NFD, then drop combining marks (category M). <code>Estás</code> becomes <code>estas</code>.</li>
+<li><strong>Case</strong>: <code>casefold</code>.</li>
+<li><strong>Punctuation and dashes</strong> (levels <code>default</code> and <code>loose</code>): every character in Unicode category P* becomes a word boundary: it is replaced by a space, then runs of whitespace collapse to one and the ends are trimmed, so <code>ahí—dijo</code> matches <code>ahí dijo</code> and <code>-¿Estás ahí?</code> matches <code>Estas ahi</code>. <code>--</code> is two P* characters and folds the same way. <code>¿</code>, <code>?</code>, <code>-</code>, <code>—</code>, <code>–</code>, <code>«</code> and curly quotes all fold away.</li>
+<li><strong>Symbols</strong> (level <code>loose</code> only): every character in category S* (<code>$</code>, <code>*</code>, <code>+</code>, <code>=</code>, <code>&lt;</code>, <code>^</code> and so on) is dropped. At <code>default</code> they stay.</li>
+<li><strong>Whitespace</strong>: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped characters is merged.</li>
+<li><strong>Offsets</strong>: each folded character records the original start and end. A match from folded positions <code>i..j</code> maps to the original span from the start of character <code>i</code> to the end of character <code>j-1</code>. The span then widens to take punctuation that touches the match on its own side only when the phrase itself began or ended with punctuation. Combining marks stay with their base. The result is a normal <code>p142#…:s-e</code> range, as <code>find</code> returns today.</li>
+<li><strong>Empty phrase after folding</strong> (for example a phrase of only <code>--</code>, or only symbols at <code>loose</code>): matched exactly only; folded matching is refused with <code>SCHEMA_INVALID</code>, since it would match every paragraph.</li>
+<li><strong>Position</strong>: a match may start anywhere in a paragraph, not only at its start (D-F2). <code>Estas ahi</code> finds <code>-¿Estás ahí?</code>, and a phrase without <code>¿</code> finds a passage that has <code>¿</code> in the middle of a paragraph. <code>find</code> already searches inside paragraphs; the folded levels do the same.</li>
+</ul></div>
+<div class="note" data-for="s-spec-the-folding-rule"><label class="note-head" for="n-s-spec-the-folding-rule"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › The folding rule</span></label><textarea class="note-ta" data-key="s-spec-the-folding-rule" id="n-s-spec-the-folding-rule" data-label="The folding rule" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-word-find-codes-in-agent-phrases">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Word find codes in agent phrases (D-F6)</span></h4>
+<div class="sec-body"><p>Word's Find box accepts special codes, and they are useful to an agent. Before matching, agent phrases are translated, left to right, in <code>model/loosefold.py</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>^p</code></td>
+<td>paragraph mark</td>
+<td><code>\r</code>, as an alias (D-F6). A phrase may cross paragraphs where the op already allows it (<code>live.select</code>'s <code>_found</code>, <code>find_phrase_across</code>); the fold keeps <code>\r</code> as a hard separator and never turns it into a space</td>
+</tr>
+<tr>
+<td><code>^t</code></td>
+<td>tab</td>
+<td><code>\t</code>, where the op supports it</td>
+</tr>
+<tr>
+<td><code>^l</code></td>
+<td>manual line break</td>
+<td>the line-break character, where the op supports it</td>
+</tr>
+<tr>
+<td><code>^s</code></td>
+<td>no-break space</td>
+<td>U+00A0</td>
+</tr>
+<tr>
+<td><code>^-</code></td>
+<td>optional hyphen</td>
+<td>U+00AD</td>
+</tr>
+<tr>
+<td><code>^~</code></td>
+<td>non-breaking hyphen</td>
+<td>U+2011</td>
+</tr>
+<tr>
+<td><code>^uNNN</code></td>
+<td>character by decimal code</td>
+<td>that character (<code>^u173</code>, <code>^u8209</code>)</td>
+</tr>
+<tr>
+<td><code>^^</code></td>
+<td>a literal caret</td>
+<td><code>^</code></td>
+</tr>
+</tbody>
+</table>
+<p>Any other <code>^x</code> stays literal (further codes are not promised). Because translation runs left to right, <code>^^p</code> is a caret followed by <code>p</code>, not a paragraph mark. Word's simple Find box in the Navigation pane also takes <code>^p</code> and <code>^t</code>, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding, and only in agent phrases and in <code>find</code> calls that pass <code>match_level</code>; plain and regex <code>find</code> queries are not translated (D-F5); a literal <code>^</code> that the writer typed is matched with <code>^^</code> (at <code>loose</code> it is a symbol and is dropped like any other).</p>
+<p><code>locate</code>'s generated phrases (<code>find_phrase</code>, <code>find_phrase_word</code>) do not change (direction b). <code>find_phrase_word</code> already writes these codes (<code>model/wordfind.py</code> <code>_WORD_CODES</code>, <code>_HYPHEN_CODES</code>); the translator accepts exactly that set, so every <code>locate</code> phrase reads back to its own text.</p></div>
+<div class="note" data-for="s-spec-word-find-codes-in-agent-phrases"><label class="note-head" for="n-s-spec-word-find-codes-in-agent-phrases"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Word find codes in agent phrases (D-F6)</span></label><textarea class="note-ta" data-key="s-spec-word-find-codes-in-agent-phrases" id="n-s-spec-word-find-codes-in-agent-phrases" data-label="Word find codes in agent phrases (D-F6)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-tiebreak-levels">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Tiebreak levels</span></h4>
+<div class="sec-body"><ol>
+<li><strong>exact</strong>: the phrase equals the text verbatim.</li>
+<li><strong>case-only</strong>: equal after <code>casefold</code> (today's <code>live.select</code> rule).</li>
+<li><strong>default</strong>: equal after the accent, case and punctuation fold.</li>
+<li><strong>loose</strong>: equal after the symbol fold as well.</li>
+</ol>
+<p>For a single-target phrase op, the search takes the first level that has any match, starting from the strictest and escalating only as far as the retry rule allows. Within that level, one match is the answer. Two or more raise <code>ANCHOR_AMBIGUOUS</code> (as now), and the error lists the level and the candidate addresses. A looser level is never consulted once a stricter one matches, so one exact paragraph beats any number of looser ones. Multi-hit ops do not select a level: every hit that matches at the level passed (or stricter) is returned or renamed, each marked with its own <code>match_level</code>, and no <code>ANCHOR_AMBIGUOUS</code> is raised.</p></div>
+<div class="note" data-for="s-spec-tiebreak-levels"><label class="note-head" for="n-s-spec-tiebreak-levels"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Tiebreak levels</span></label><textarea class="note-ta" data-key="s-spec-tiebreak-levels" id="n-s-spec-tiebreak-levels" data-label="Tiebreak levels" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-reporting-a-loose-match">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Reporting a loose match</span></h4>
+<div class="sec-body"><p>Responses carry <code>"match_level": "exact" | "case" | "default" | "loose"</code>, the level that matched. It is a new key: <code>anchor.resolve</code>'s existing <code>match</code> field (<code>exact|normalized|fuzzy</code>, <code>model/anchor.py</code>) keeps its meaning and values, so no existing contract changes. Whenever the level is not <code>exact</code> the response also carries <code>matched_text</code>, the original text of the span, so the agent can compare it with what it asked for. <code>live.select</code> already returns the paragraph text. <code>find</code> marks each hit.</p></div>
+<div class="note" data-for="s-spec-reporting-a-loose-match"><label class="note-head" for="n-s-spec-reporting-a-loose-match"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Reporting a loose match</span></label><textarea class="note-ta" data-key="s-spec-reporting-a-loose-match" id="n-s-spec-reporting-a-loose-match" data-label="Reporting a loose match" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-opt-out">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Opt-out</span></h4>
+<div class="sec-body"><p><code>match_level: "exact"</code> on each phrase-taking op restores today's behaviour. For <code>find</code>, the existing <code>ignore_case</code>, <code>ignore_accents</code> and <code>whole_word</code> flags stay as they are; <code>match_level: "default"</code> implies the first two plus the punctuation fold, and <code>match_level: "loose"</code> adds the symbol fold. Omitting <code>match_level</code> leaves <code>find</code> exactly as it is today (D-F5).</p></div>
+<div class="note" data-for="s-spec-opt-out"><label class="note-head" for="n-s-spec-opt-out"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Opt-out</span></label><textarea class="note-ta" data-key="s-spec-opt-out" id="n-s-spec-opt-out" data-label="Opt-out" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-performance">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Performance</span></h4>
+<div class="sec-body"><ul>
+<li>Folded text and offset maps are built once per paragraph and cached with the <code>Document</code> index; a search over N paragraphs is O(total characters).</li>
+<li>The levels share one pass: the exact and case levels run first on the raw and casefolded text. The folded levels are built only when both are empty, and the symbol-folded text only when the punctuation-folded search is empty too.</li>
+<li><code>locate</code> indexes are unchanged.</li>
+<li>The repo's <code>tests/bench</code> documents are the base. A new benchmark runs the four levels on the 100k-word novel.</li>
+</ul></div>
+<div class="note" data-for="s-spec-performance"><label class="note-head" for="n-s-spec-performance"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Performance</span></label><textarea class="note-ta" data-key="s-spec-performance" id="n-s-spec-performance" data-label="Performance" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-comparison">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Comparison</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th></th>
+<th>Option A</th>
+<th>Option B</th>
+<th>Option C</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Effort</td>
+<td>Small</td>
+<td>Medium</td>
+<td>Small</td>
+</tr>
+<tr>
+<td>Risk</td>
+<td>Low</td>
+<td>Medium (anchor tiers merge)</td>
+<td>Low</td>
+</tr>
+<tr>
+<td>Completeness</td>
+<td>Covers the reported case</td>
+<td>Same rule in every op</td>
+<td>Misses the exact-wins rule</td>
+</tr>
+<tr>
+<td>Compatibility</td>
+<td>Additive</td>
+<td>Additive</td>
+<td>Additive</td>
+</tr>
+<tr>
+<td>Maintenance</td>
+<td>Two matchers</td>
+<td>One matcher</td>
+<td>Two matchers</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-comparison"><label class="note-head" for="n-s-spec-comparison"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Comparison</span></label><textarea class="note-ta" data-key="s-spec-comparison" id="n-s-spec-comparison" data-label="Comparison" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-4">
+<h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
+<div class="sec-body"><p><strong>Recommended option</strong>: Option B. The owner asked for a generic rule, and a shared module is the only way to make the same phrase behave the same in <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code>. The owner chose it on 2026-10-14 (D-F1). Ship it in two steps: the module with <code>live.select</code> first (the reported failure), then the other ops. <code>locate</code> stays exact by a regression test.</p>
+<p><strong>Immediate next action</strong>: after approval, <code>design</code> the plan, starting with the fixture table of variants and the tier tests, so the matcher is written against its gate.</p>
+<p><strong>Open questions</strong>: none. The owner answered Q1–Q5 in r2 (see D-F1..D-F6):
+- [x] Q1. Symbols (S*): not folded by default; dropped only at the opt-in <code>loose</code> level, with an automatic retry (D-F1).
+- [x] Q2. Matching inside a paragraph: yes, same levels (D-F2).
+- [x] Q3. <code>find</code> default: stays exact (D-F5); Word find codes <code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code> are added to agent phrases (D-F6).
+- [x] Q4. Refuse a loose match that needs a second look: no refusal; the level report is enough (D-F4).
+- [x] Q5. Fuzzy tier of <code>anchor.resolve</code>: stays as is, after the loose level (D-F3).</p>
+<p><strong>Decisions log</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Decision</th>
+<th>Status</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-F1</td>
+<td>Option B. Symbols (S*) are not folded by default. <code>match: "exact" \| "default" \| "loose"</code>; <code>"loose"</code> also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F2</td>
+<td>Matching works in the middle of a paragraph too, not only at its start; a phrase without <code>¿</code> must still match</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F3</td>
+<td>The fuzzy tier of <code>anchor.resolve</code> stays as is, after the loose level (Q5, as recommended)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F4</td>
+<td>No refusal of loose matches that look doubtful; the level report is enough (Q4, as recommended)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F5</td>
+<td>Plain <code>find</code> stays exact by default; folding only when <code>match</code> is passed</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F6</td>
+<td>Agent phrases accept Word's find codes: <code>^p</code> (alias for <code>\r</code>), <code>^t</code>, <code>^l</code> where the op supports them, <code>^^</code> for a literal caret. <code>locate</code>'s generated phrases do not change</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F7</td>
+<td>Review clarifications (r3): request/response key <code>match_level</code> (new; <code>anchor.resolve</code>'s <code>match</code> keeps <code>exact\|normalized\|fuzzy</code>); auto-retry and <code>"default"</code> default only for single-target ops (<code>live.select</code>, <code>anchor.resolve</code>); <code>find</code>, <code>rename</code>, <code>history.search</code> default exact, never retry, return all hits; Word codes = the <code>model/wordfind.py</code> set (<code>^p ^l ^t ^s ^- ^~ ^uNNN ^^</code>); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex <code>find</code></td>
+<td>proposed</td>
+<td>2026-10-14</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
+</blockquote></div>
+<div class="note" data-for="s-spec-4"><label class="note-head" for="n-s-spec-4"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></label><textarea class="note-ta" data-key="s-spec-4" id="n-s-spec-4" data-label="§4 Recommendation" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'doc-control-spec-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return 'doc-control-spec-v3-'+today()+'-notes.md';}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Specification notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>
