@@ -74,6 +74,7 @@ def test_select_matches_file_engine_text(live: LibreOffice, lo_home: Path, kind:
                 except DocControlError as err:
                     mismatches.append((f"{how} {row['at']}", err.code.value))
                     continue
+                got = {k: v for k, v in got.items() if k not in ("match_level", "matched_text")}
                 if got != want or seen != {"text": want["text"], "paragraph": want}:
                     mismatches.append((f"{how} {row['at']}", got["text"][:40]))
     finally:

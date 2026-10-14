@@ -27,6 +27,8 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
 from doc_control.model.address import Address, fingerprint, parse_address, parse_range
+from doc_control.model.loosefold import Hit, Level, first_hits, hits, ladder
+from doc_control.model.wordcodes import translate_codes
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author
 from doc_control.ops.comments import AddComment
 from doc_control.ops.tracked import InsertParagraph
@@ -223,22 +225,75 @@ def close(request: dict[str, Any]) -> dict[str, Any]:
     return {"closed": True, "saved": save_first}
 
 
-def _found(texts: list[str], phrase: str, across: str | None) -> int:
-    """The paragraph (from 0) a find phrase names: its one match, under ``locate``'s rules."""
-    if across and "\r" not in phrase:
+def _found(
+    texts: list[str], phrase: str, across: str | None, requested: Level = "default"
+) -> tuple[int, Level, str]:
+    """The paragraph (from 0) a find phrase names, the level it matched at and its text.
+
+    ``requested`` ``exact`` is ``locate``'s rule: one casefold match in the joined text.
+    Otherwise the ladder runs from ``exact`` to ``loose`` over the folded joined text, and
+    the first level with any hit must have exactly one. A phrase holding a caret is tried
+    raw, verbatim, before its Word codes are translated.
+    """
+    if across and "\r" not in translate_codes(phrase):
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
         )
-    folded = [text.casefold() for text in texts]
-    joined, needle = "\r".join(folded) + "\r", phrase.casefold()
-    at = joined.find(needle)
+    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
+    joined = "\r".join(texts) + "\r"
+    if requested == "exact":
+        at, end = _casefold_match(joined, phrase)
+        level: Level = "exact" if phrase in joined else "case"
+        found = [Hit(0, at, end, level)]
+    else:
+        found = hits([joined], phrase, "exact") if "^" in phrase else []
+        if not found:
+            found = first_hits([joined], translate_codes(phrase), requested, retry=True)
+        if not found:
+            raise DocControlError(
+                ErrorCode.ANCHOR_NOT_FOUND,
+                f"no match for {phrase!r}",
+                tried=list(ladder(requested, retry=True)),
+            )
+
+    def paragraph(hit: Hit) -> int:
+        # A phrase that opens with the paragraph before (or with its mark) names the next one.
+        return (
+            bisect_right(starts, hit.start)
+            - 1
+            + (across in ("previous", "both") or joined[hit.start] == "\r")
+        )
+
+    if len(found) > 1:
+        candidates = [
+            {"at": str(Address(n + 1, fingerprint(texts[n]))), "matched_text": text}
+            for hit in found[:5]
+            for n, text in [(paragraph(hit), joined[hit.start : hit.end])]
+            if n < len(texts)
+        ]
+        raise DocControlError(
+            ErrorCode.ANCHOR_AMBIGUOUS,
+            f"more than one match for {phrase!r} at match level {found[0].level!r}",
+            match_level=found[0].level,
+            candidates=candidates,
+        )
+    hit = found[0]
+    return paragraph(hit), hit.level, joined[hit.start : hit.end]
+
+
+def _casefold_match(joined: str, phrase: str) -> tuple[int, int]:
+    """The original span of the one casefold match of ``phrase`` in ``joined``."""
+    # casefold maps each character on its own, so each folded one keeps its source index.
+    source = [i for i, ch in enumerate(joined) for _ in ch.casefold()]
+    folded, needle = joined.casefold(), phrase.casefold()
+    at = folded.find(needle)
     if at < 0:
-        raise DocControlError(ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}")
-    if joined.find(needle, at + 1) >= 0:
+        raise DocControlError(
+            ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}", tried=["exact"]
+        )
+    if folded.find(needle, at + 1) >= 0:
         raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
-    starts = list(accumulate((len(text) + 1 for text in folded), initial=0))
-    # A phrase that opens with the paragraph before (or with its mark) names the next one.
-    return bisect_right(starts, at) - 1 + (across in ("previous", "both") or needle[0] == "\r")
+    return source[at], source[at + len(needle) - 1] + 1
 
 
 @operation(
@@ -257,6 +312,16 @@ def _found(texts: list[str], phrase: str, across: str | None) -> int:
         find_phrase_across={
             "enum": ["previous", "next", "both"],
             "description": "`locate`'s `find_phrase_across`, for a phrase spanning a mark.",
+        },
+        match_level={
+            "enum": ["exact", "default", "loose"],
+            "description": "How loosely `find_phrase` matches. `default` (the default) "
+            "ignores case, accents and punctuation; `loose` symbols too. Either tries "
+            "the levels from verbatim on and takes the first that matches, so one "
+            "verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case "
+            "ignored, nothing else. The reply's `match_level` (`exact`, `case`, "
+            "`default`, `loose`) names the level that matched, with `matched_text` "
+            "when it is not `exact`.",
         },
         mode={
             "enum": ["select", "cursor"],
@@ -282,7 +347,12 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
         n = address.number - 1
         _fresh(adapter, path, len(texts), address)
     else:
-        n = _found(texts, request["find_phrase"], request.get("find_phrase_across"))
+        n, level, matched = _found(
+            texts,
+            request["find_phrase"],
+            request.get("find_phrase_across"),
+            request.get("match_level", "default"),
+        )
     n += request.get("paragraphs_after", 0)
     if n >= len(texts):
         raise DocControlError(
@@ -290,6 +360,10 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
         )
     text = guarded(adapter.select, path, Span(n, n), cursor)
     out: dict[str, Any] = {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
+    if "find_phrase" in request:
+        out["match_level"] = level
+        if level != "exact":
+            out["matched_text"] = matched
     if request.get("front", True):
         out["front"] = _front(adapter, path)
     return out
