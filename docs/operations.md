@@ -160,6 +160,14 @@ File facts: size, hash, paragraph count, properties and which parts exist.
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+## `layout.get` (read)
+
+The document's page plan: per section where it starts, its break, page numbering, title page, and the header and footer text per kind (default, first, even), with PAGE, NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the section does not define is null (inherited). The plan carries "version": 1.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+
 ## `live.close` (write)
 
 Close the open document; with unsaved changes it needs `save` or `discard`.
