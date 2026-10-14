@@ -18,8 +18,6 @@ from tests.layout.label_fixtures import (
     label_failures,
 )
 
-TWO_SIDED_HEAD = {"header": "Book", "header_even": "Author"}
-
 SCENARIOS = [
     Scenario(
         "front_matter_unnumbered_then_1",
@@ -48,7 +46,10 @@ SCENARIOS = [
     ),
     Scenario(
         "two_sided_mirrored_headers",
-        [Sec(2, start=1, **TWO_SIDED_HEAD), Sec(2, **TWO_SIDED_HEAD)],
+        [
+            Sec(2, start=1, header="Book", header_even="Author"),
+            Sec(2, header="Book", header_even="Author"),
+        ],
         ["1", "2", "3", "4"],
         two_sided=True,
         expected_headers=["Book", "Author", "Book", "Author"],
