@@ -318,7 +318,16 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     backup: until the next save, taking one back is the app's own undo.
     """
     from doc_control.ops.batch import edits_from_request  # batch imports this module too
+    from doc_control.ops.tracked import story_of
 
+    for i, raw in enumerate(request["ops"]):
+        for key in ("at", "after", "before"):
+            value = raw.get(key) if isinstance(raw, dict) else None
+            if isinstance(value, str) and story_of(value):
+                raise unavailable(
+                    f"ops[{i}]: {value}: notes, headers and footers are file engine only",
+                    op_index=i,
+                )
     adapter, path = held(request)
     for guard in ("dry_run", "expect"):
         if request.get(guard):

@@ -2,7 +2,8 @@
 
 Comments come from ``word/comments.xml`` (text, author, date) joined with
 ``word/commentsExtended.xml`` (reply parent, resolved state) and located by the
-``w:commentRangeStart`` in the body. Revisions are found in the body paragraphs.
+``w:commentRangeStart`` in the body, or else in a note, header or footer. Revisions are
+found in the paragraphs of one story (the body unless the document is a story view).
 Both report the address of the paragraph they sit in.
 """
 
@@ -13,6 +14,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+from doc_control.errors import DocControlError
 from doc_control.model.document import Document
 from doc_control.model.parts import MS_REL_2011, OFFICE_REL, W14, W15, W, parse_part, related_part
 
@@ -73,6 +75,7 @@ class Comment:
     resolved: bool
     reply_to: str | None
     at: str | None  # address of the paragraph where the comment range starts
+    story: str | None = None  # "footnote", "endnote", "header", "footer"; None: the body
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,8 @@ def _comment_locations(doc: Document) -> dict[str, str]:
             i = bisect.bisect_right(starts, m.start()) - 1
             if i >= 0 and m.start() < spans[doc.index.paragraphs[i].span_index].end:
                 para = doc.index.paragraphs[i]
+            elif doc.index.story:
+                continue  # the part holds other notes too: only markers inside this story's
             elif i + 1 < len(starts):
                 para = doc.index.paragraphs[i + 1]
             else:
@@ -130,9 +135,26 @@ def read_comments(doc: Document) -> list[Comment]:
                 parent_para[para_id] = ex.get(W15 + "paraIdParent")
                 done[para_id] = (ex.get(W15 + "done") or "0").lower() in ("1", "true", "on")
     locations = _comment_locations(doc)
+    elements = parse_part(doc.pkg, name).findall(W + "comment")
+    stories: dict[str, str] = {}  # comment id -> kind of the story it is anchored in
+    if any(c.get(W + "id") not in locations for c in elements):
+        from doc_control.model.stories import list_stories
+
+        try:
+            found = [
+                (story, _comment_locations(doc.story_view(story.key)))
+                for story in list_stories(doc.pkg, ("notes", "headers"))
+            ]
+        except DocControlError:
+            found = []  # ponytail: an unreadable note or header part leaves those unplaced
+        for story, places in found:
+            for ident, at in places.items():
+                if ident not in locations:
+                    locations[ident] = at
+                    stories[ident] = story.kind
     rows: list[tuple[str, str | None, Comment]] = []  # (own paraId, parent paraId, comment)
     para_to_id: dict[str, str] = {}
-    for c in parse_part(doc.pkg, name).findall(W + "comment"):
+    for c in elements:
         cid = c.get(W + "id")
         if cid is None:
             continue
@@ -155,6 +177,7 @@ def read_comments(doc: Document) -> list[Comment]:
                     resolved=done.get(own, False),
                     reply_to=None,
                     at=locations.get(cid),
+                    story=stories.get(cid),
                 ),
             )
         )
@@ -187,7 +210,7 @@ def read_comments(doc: Document) -> list[Comment]:
 
 
 def read_revisions(doc: Document) -> list[Revision]:
-    """Tracked changes of the main story in document order.
+    """Tracked changes of the document's story (the body, or a story view's) in order.
 
     A table row or cell revision is reported at the first paragraph of the row or
     cell, before the revisions of that paragraph.
@@ -200,7 +223,8 @@ def read_revisions(doc: Document) -> list[Revision]:
         _collect(doc.index.spans.parse_paragraph(para.span_index), str(para.address), found)
         keyed += [(para.number, 1, r) for r in found]
     data = doc.index.spans.data
-    if _TABLE_REVISION_TAG.search(data):
+    # ponytail: row and cell revisions of the body only (a notes part holds many stories)
+    if not doc.index.story and _TABLE_REVISION_TAG.search(data):
         keyed += _table_revisions(doc)
     keyed.sort(key=lambda k: (k[0], k[1]))
     return [r for _, _, r in keyed]
