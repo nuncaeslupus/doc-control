@@ -167,7 +167,7 @@ Publishing to the Claude Desktop extensions directory, in addition to GitHub Rel
 | D-P3 | Ship unsigned; document the SmartScreen "More info → Run anyway" step. "What signing would need" is recorded for a future decision | agreed | 2026-10-14 |
 | D-P4 | The LibreOffice bridge follows Mac to a later phase (consequence of D-P2) | agreed | 2026-10-14 |
 | D-P5 | Publish as GitHub Release assets and as a listing in the Claude Desktop extensions directory; the listing requirements are a task-level requirement, policy details to confirm at submission | agreed | 2026-10-14 |
-| D-P6 | Freeze with PyInstaller (one-folder). T1 measured it at 29.3 MB against Nuitka's 40.2 MB (over T2's 40 MB gate), a 0.2 min build against 7.7 min, and the same start-up within run-to-run noise (182-307 ms against 245 ms); both passed both smokes. Answers Q1 | agreed | 2026-10-14 |
+| D-P6 | Freeze with PyInstaller (one-folder). T1 measured it at 29.3 MB against Nuitka's 40.2 MB (over T2's 40 MB gate), a 0.2 min build against 7.7 min, and a start-up 25% slower on the run of record (307 ms against 245 ms, on separate CI runners; the 182 ms of the first run came from a build whose smokes failed), a gap accepted for the size and build-time margins; both passed both smokes on the run of record. Answers Q1 | agreed | 2026-10-14 |
 
 Constraints carried: no signing required; the core stays stdlib-only; the owner answered Q-2 with yes.
 

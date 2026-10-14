@@ -27,3 +27,18 @@ def test_cli_stdout_is_utf8_under_cp1252_locale() -> None:
     proc = _run("capabilities")
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout.decode("utf-8"))["ok"] is True
+
+
+def test_cli_stdin_is_utf8_under_cp1252_locale() -> None:
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+    proc = subprocess.run(
+        [sys.executable, "-m", "doc_control", "outline", "--json", "-"],
+        input=json.dumps({"doc": "/nope/¿estás.docx"}, ensure_ascii=False).encode("utf-8"),
+        capture_output=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    error = json.loads(proc.stdout.decode("utf-8"))["error"]
+    assert error["code"] == "DOC_NOT_FOUND", error
+    assert error["details"]["path"] == "/nope/¿estás.docx"
