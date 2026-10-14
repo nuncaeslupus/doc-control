@@ -1,0 +1,34 @@
+{
+  "manifest_version": "0.2",
+  "name": "doc-control",
+  "display_name": "doc-control",
+  "version": "0.0.0",
+  "description": "Deterministic control of Word documents: addresses, tracked-change edits, live control of the Word you have open.",
+  "long_description": "doc-control edits .docx files on your machine through stable addresses and anchors, with tracked-change batches, a dry run before every write and a safety layer that refuses unsafe edits. With Microsoft Word open, it can also drive the document you are working on. Everything runs locally; doc-control sends nothing off the machine.",
+  "author": {
+    "name": "nuncaeslupus",
+    "url": "https://github.com/nuncaeslupus"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nuncaeslupus/doc-control"
+  },
+  "homepage": "https://github.com/nuncaeslupus/doc-control",
+  "documentation": "https://github.com/nuncaeslupus/doc-control#readme",
+  "support": "https://github.com/nuncaeslupus/doc-control/issues",
+  "license": "Apache-2.0",
+  "icon": "icon.png",
+  "keywords": ["word", "docx", "documents", "tracked changes", "ooxml"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/doc-control/doc-control.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/doc-control/doc-control.exe",
+      "args": ["mcp"]
+    }
+  },
+  "tools": [],
+  "compatibility": {
+    "platforms": ["win32"]
+  }
+}
