@@ -29,7 +29,12 @@ Several operations in one batch are all resolved against the document as read; t
 same revision accepted by one and rejected by another is a ``BATCH_CONFLICT``. They
 cannot be combined with text edits (``BATCH_CONFLICT``): addresses would shift.
 
-Table row and cell revisions (``w:trPr``/``w:tcPr``) and revisions inside text boxes
+Table row revisions (``w:trPr/w:ins``, ``w:trPr/w:del``) are revisions like the others,
+reported (and selected by ``at``) at the first paragraph of the row. Accepting a deleted row
+or rejecting an inserted one removes the ``w:tr``, with the paragraphs in it; accepting an
+inserted row or rejecting a deleted one drops the marker and leaves the row's own text
+revisions to their own decisions. A decision that would leave a table without rows is
+``UNSUPPORTED_CONTENT``. Table cell revisions (``w:tcPr``) and revisions inside text boxes
 are not resolved; selecting them by id is ``UNSUPPORTED_CONTENT``, and with other
 selectors they are left as they are and a warning names the fact.
 
@@ -57,6 +62,7 @@ from doc_control.ooxml import resolve as xml
 from doc_control.ooxml.revisions import PPR
 from doc_control.ooxml.splice import Container, scan
 from doc_control.ooxml.zipio import Package
+from doc_control.ops.revision_rows import RowPlan, RowScan, apply_rows, plan_rows, scan_rows
 from doc_control.ops.tracked import next_in_container, story_of
 from doc_control.safety.history import has_live_text, record, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
@@ -78,9 +84,9 @@ _REVISION_TAG = re.compile(
     rb"<(?:[\w.-]+:)?(?:ins|del|moveFrom|moveTo|rPrChange|pPrChange|sectPrChange)[\s/>]"
 )
 _SECT_CHANGE_TAG = re.compile(rb"<(?:[\w.-]+:)?sectPrChange[\s/>]")
-_TABLE_REVISION = re.compile(
-    rb"<(?:[\w.-]+:)?(?:cellIns|cellDel|cellMerge)[\s/>]"
-    rb"|<(?:[\w.-]+:)?trPr[\s>](?:(?!</(?:[\w.-]+:)?trPr>).)*?<(?:[\w.-]+:)?(?:ins|del)[\s/>]",
+_CELL_REVISION = re.compile(rb"<(?:[\w.-]+:)?(?:cellIns|cellDel|cellMerge)[\s/>]")
+_ROW_REVISION = re.compile(
+    rb"<(?:[\w.-]+:)?trPr[\s>](?:(?!</(?:[\w.-]+:)?trPr>).)*?<(?:[\w.-]+:)?(?:ins|del)[\s/>]",
     re.DOTALL,
 )
 _NOTES_PART = re.compile(r"word/(?:foot|end)notes\d*\.xml")
@@ -226,6 +232,8 @@ class PreparedResolution:
     joined: bool = False  # paragraphs were merged; the log cannot restore them
     written: dict[str, bytes] = field(default_factory=dict)
     """Every part the resolution changes (the body, notes, headers), with its new bytes."""
+    rows: RowPlan = field(default_factory=RowPlan)
+    """The table rows removed or unmarked; the undo log cannot restore them."""
 
 
 # -- selection --------------------------------------------------------------------------
@@ -264,12 +272,52 @@ def _range(index: DocumentIndex, at: str) -> tuple[int, int]:
     return a.number, b.number
 
 
-def _table_revisions(data: bytes) -> bool:
-    return _TABLE_REVISION.search(data) is not None
+def _table_revisions(data: bytes, rows: RowScan) -> bool:
+    """Table revisions this operation cannot resolve are in ``data``."""
+    return _CELL_REVISION.search(data) is not None or (
+        not rows.revisions and _ROW_REVISION.search(data) is not None
+    )
+
+
+def _choose_rows(
+    ops: Sequence[ResolveRevisions], index: DocumentIndex, rows: RowScan
+) -> tuple[dict[int, str], list[int]]:
+    """Which row revisions each operation selects: ``({marker: action}, per-op counts)``."""
+    chosen: dict[int, tuple[str, int]] = {}
+    picked = [0] * len(ops)
+    for i, op in enumerate(ops):
+        if op.at is not None and story_of(op.at) != index.story:
+            continue
+        low, high = _range(index, op.at) if op.at is not None else (0, len(index))
+        wanted = set(op.ids) if op.ids is not None else None
+        for j, r in enumerate(rows.revisions):
+            if not low <= r.first <= high:
+                continue
+            if (wanted is not None and r.id not in wanted) or (
+                op.author is not None and r.author != op.author
+            ):
+                continue
+            old = chosen.get(j)
+            if old is not None and old[0] != op.action:
+                where = str(index.paragraph(r.first).address)
+                raise DocControlError(
+                    ErrorCode.BATCH_CONFLICT,
+                    f"edits {old[1]} and {i} accept and reject the same revision "
+                    f"({r.kind} {r.id}) in {where}",
+                    paragraph=where,
+                    revision=r.id,
+                    edits=sorted((old[1], i)),
+                )
+            chosen.setdefault(j, (op.action, i))
+            picked[i] += 1
+    return {j: action for j, (action, _) in chosen.items()}, picked
 
 
 def _select(
-    op: ResolveRevisions, index: DocumentIndex, parsed: Sequence[_Parsed]
+    op: ResolveRevisions,
+    index: DocumentIndex,
+    parsed: Sequence[_Parsed],
+    dead: frozenset[int] = frozenset(),
 ) -> list[tuple[_Parsed, xml.Revision]]:
     if op.at is not None and story_of(op.at) != index.story:
         return []  # a range in another story
@@ -278,7 +326,7 @@ def _select(
     return [
         (p, r)
         for p in parsed
-        if low <= p.para.number <= high
+        if low <= p.para.number <= high and p.para.number not in dead
         for r in p.revs
         if (wanted is None or r.id in wanted) and (op.author is None or r.author == op.author)
     ]
@@ -290,7 +338,7 @@ def _check_ids(ops: Sequence[ResolveRevisions], known: set[str], table: bool) ->
             if table:
                 raise DocControlError(
                     ErrorCode.UNSUPPORTED_CONTENT,
-                    f"no paragraph revision has id {missing}; table row and cell revisions "
+                    f"no paragraph or row revision has id {missing}; table cell revisions "
                     "are not resolved by this operation",
                     revision=missing,
                 )
@@ -439,22 +487,31 @@ def prepare_resolutions(
     if not ops:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no operations given")
     found = _stories(pkg, ops, index)
-    table = any(_table_revisions(idx.spans.data) for story, idx in found if not story.key)
+    body_index = next((idx for story, idx in found if not story.key), None)
+    rows = scan_rows(body_index) if body_index is not None else RowScan([], {})
+    row_actions, row_picked = (
+        _choose_rows(ops, body_index, rows) if body_index is not None else ({}, [0] * len(ops))
+    )
+    plan = plan_rows(rows, row_actions)
+    table = any(_table_revisions(idx.spans.data, rows) for story, idx in found if not story.key)
     resolved: list[_StoryResolution] = []
     for story, idx in found:
         parsed = _parse_revisions(idx)
-        resolved.append(_choose(story, idx, parsed, ops))
+        resolved.append(_choose(story, idx, parsed, ops, frozenset() if story.key else plan.dead))
     body = next((res for res in resolved if not res.story.key), None)
     body_sect = _body_section(body.index) if body is not None else None
+    if body is not None:
+        body.picked = [a + b for a, b in zip(body.picked, row_picked, strict=True)]
     if body is not None and body_sect is not None:
         _choose_body_section(ops, body.index, body_sect, body.picked)
     known = {r.id for res in resolved for p in res.parsed for r in p.revs}
+    known |= {r.id for r in rows.revisions}
     _check_ids(ops, known | ({body_sect.rev.id} if body_sect else set()), table)
 
     warnings: list[str] = []
     if table:
         warnings.append(
-            "table row and cell revisions are not resolved by this operation; they stay as they are"
+            "table cell revisions are not resolved by this operation; they stay as they are"
         )
     for res in resolved:
         _build(pkg, res)
@@ -477,6 +534,20 @@ def prepare_resolutions(
                 "action": body_sect.action,
             }
         )
+    if body is not None:
+        for j, action in sorted(row_actions.items()):
+            row = rows.revisions[j]
+            counts[action] += 1
+            if len(shown) < LISTED:
+                shown.append(
+                    {
+                        "id": row.id,
+                        "type": row.kind,
+                        "author": row.author,
+                        "at": str(body.index.paragraph(row.first).address),
+                        "action": action,
+                    }
+                )
     for res in resolved:
         counts.update(action for action, _ in res.chosen.values())
         for p in res.parsed:
@@ -537,10 +608,20 @@ def prepare_resolutions(
             base = body.index.spans.data
         assert base is not None
         written[DOCUMENT_PART] = _resolve_body_section(base, body_sect.action)
+    address_map = {k: v for res in resolved for k, v in res.address_map.items()}
+    if body is not None and plan:
+        base = written.get(DOCUMENT_PART) or body.index.spans.data
+        final = apply_rows(build_index(base), plan)
+        written[DOCUMENT_PART] = final
+        address_map = {
+            k: v for res in resolved if res is not body for k, v in res.address_map.items()
+        }
+        address_map |= _address_map(body.index, build_index(final), body.gone, plan.dead)
     footprint = Footprint(
         replaced=frozenset(body.replacements) | frozenset(body.deletes) if body else frozenset(),
         stories=tuple(stories),
         body_section=resolves_body_sect,
+        spans=plan.spans,
     )
     result = ResolutionResult(
         applied=len(ops),
@@ -550,7 +631,7 @@ def prepare_resolutions(
         accepted=counts["accept"],
         rejected=counts["reject"],
         merged_paragraphs=sum(len(res.gone) for res in resolved),
-        address_map={k: v for res in resolved for k, v in res.address_map.items()},
+        address_map=address_map,
         footprint=[f"p{body.index.paragraph(n).number}" for n in sorted(body.elems)]
         if body
         else [],
@@ -560,18 +641,22 @@ def prepare_resolutions(
     )
     joined = any(res.gone for res in resolved)
     new_data = body.new_data if body else None
-    return PreparedResolution(pkg, new_data, footprint, result, changes, joined, written)
+    return PreparedResolution(pkg, new_data, footprint, result, changes, joined, written, plan)
 
 
 def _choose(
-    story: Story, index: DocumentIndex, parsed: list[_Parsed], ops: Sequence[ResolveRevisions]
+    story: Story,
+    index: DocumentIndex,
+    parsed: list[_Parsed],
+    ops: Sequence[ResolveRevisions],
+    dead: frozenset[int] = frozenset(),
 ) -> _StoryResolution:
     """Which revisions of one story each operation selects, refusing contradictions."""
     chosen: dict[tuple[int, int], tuple[str, int]] = {}  # (paragraph, position) -> (action, op)
     picked_counts: list[int] = []
     where = {id(r): (p, k) for p in parsed for k, r in enumerate(p.revs)}
     for i, op in enumerate(ops):
-        picked = _select(op, index, parsed)
+        picked = _select(op, index, parsed, dead)
         for p, r in picked:
             key = (p.para.number, where[id(r)][1])
             old = chosen.get(key)
@@ -663,12 +748,17 @@ def _build(pkg: Package, res: _StoryResolution) -> None:
         res.address_map = _address_map(index, new_index, gone)
 
 
-def _address_map(old: DocumentIndex, new: DocumentIndex, gone: set[int]) -> dict[str, str]:
-    """Old to new address of every paragraph whose number changed (a joined one: where it went)."""
+def _address_map(
+    old: DocumentIndex, new: DocumentIndex, gone: set[int], dead: frozenset[int] = frozenset()
+) -> dict[str, str]:
+    """Old to new address of every paragraph whose number changed (a joined one: where it
+    went; one in a removed table row has none)."""
     out: dict[str, str] = {}
     number = 0
     pending: list[Paragraph] = []
     for para in old.paragraphs:
+        if para.number in dead:
+            continue
         if para.number in gone:
             pending.append(para)
             continue
@@ -809,7 +899,7 @@ def apply_resolutions(
             # Joined paragraphs are not logged, so `undo` refuses this entry (safety.history).
             extra=(
                 {"undo_by_backup": True}
-                if prepared.footprint.body_section
+                if prepared.footprint.body_section or prepared.rows
                 else {"parts": ["joined paragraphs"]}
                 if prepared.joined
                 else None
