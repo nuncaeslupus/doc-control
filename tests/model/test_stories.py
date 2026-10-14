@@ -99,3 +99,45 @@ def test_note_container_picks_its_own_note_only() -> None:
     with pytest.raises(DocControlError) as err:
         scan(data, Container("endnotes", "endnote", "2"), "word/footnotes.xml")
     assert err.value.code is ErrorCode.NOT_A_DOCX
+
+
+def _with_document(tmp_path: Path, kind: str, edit: dict[str, tuple[bytes, bytes]]) -> Package:
+    import zipfile
+
+    parts = generate_parts(kind, 0)
+    for name, (old, new) in edit.items():
+        assert old in parts[name]
+        parts[name] = parts[name].replace(old, new, 1)
+    path = tmp_path / f"{kind}-edited.docx"
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in parts.items():
+            zf.writestr(name, data)
+    return Package(path)
+
+
+def test_tracked_section_change_is_not_a_section(tmp_path: Path) -> None:
+    # A tracked change of section 1's properties holds the old ones in a nested w:sectPr.
+    old = b'<w:pgNumType w:fmt="lowerRoman"/><w:titlePg/>'
+    change = (
+        old + b'<w:sectPrChange w:id="900" w:author="A" w:date="2026-01-01T00:00:00Z">'
+        b'<w:sectPr><w:pgNumType w:fmt="decimal"/></w:sectPr></w:sectPrChange>'
+    )
+    pkg = _with_document(tmp_path, "headers", {"word/document.xml": (old, change)})
+    from doc_control.model.stories import section_properties
+
+    assert len(section_properties(pkg)) == 3
+    pages = {s.key: s for s in list_stories(pkg, ("headers",))}
+    assert pages["hdr1.default"].used_by_sections == (1,)
+    assert pages["hdr2.default"].used_by_sections == (2, 3)
+
+
+def test_repeated_note_id_reads_the_first_note_only(tmp_path: Path) -> None:
+    pkg = _with_document(
+        tmp_path,
+        "notes",
+        {"word/footnotes.xml": (b'<w:footnote w:id="3">', b'<w:footnote w:id="1">')},
+    )
+    keys = [s.key for s in list_stories(pkg, ("notes",))]
+    assert keys.count("fn1") == 1 and "fn3" not in keys
+    index = story_index(pkg, find_story(pkg, "fn1"))
+    assert len(index.paragraphs) == 1

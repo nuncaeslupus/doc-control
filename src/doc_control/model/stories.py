@@ -48,12 +48,14 @@ def _notes(pkg: Package, kind: str) -> list[Story]:
     if name is None:
         return []
     out = []
+    seen: set[str] = set()
     for note in parse_part(pkg, name).iter(W + kind):
         if note.get(W + "type", "normal") != "normal":
             continue  # separators and continuation notices are not text
         ident = note.get(W + "id", "")
-        if not ident.isdigit() or ident.startswith("0"):
-            continue
+        if not ident.isdigit() or ident.startswith("0") or ident in seen:
+            continue  # a repeated id is the first note's (the scanner reads only that one)
+        seen.add(ident)
         prefix = "fn" if kind == "footnote" else "en"
         container = Container(f"{kind}s", kind, ident)
         out.append(Story(f"{prefix}{ident}", kind, name, container, note_id=int(ident)))
@@ -80,8 +82,13 @@ def _targets(pkg: Package) -> dict[str, str]:
 def section_properties(pkg: Package) -> list[ET.Element]:
     """Every section's ``w:sectPr``, in document order (the body's own one last)."""
     sections = []
-    for _, elem in ET.iterparse(io.BytesIO(pkg.read(DOCUMENT_PART)), events=("end",)):
-        if elem.tag == W + "sectPr":
+    tracked = 0  # inside a w:sectPrChange, whose w:sectPr holds the old properties
+    for event, elem in ET.iterparse(io.BytesIO(pkg.read(DOCUMENT_PART)), events=("start", "end")):
+        if elem.tag == W + "sectPrChange":
+            tracked += 1 if event == "start" else -1
+        elif event == "start":
+            continue
+        elif elem.tag == W + "sectPr" and not tracked:
             sections.append(elem)
         elif elem.tag == W + "p":
             elem.clear()  # paragraph content is not needed; keep the memory flat

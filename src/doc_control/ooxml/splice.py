@@ -601,7 +601,11 @@ def scan(
                 local == container.element
                 and body_depth == 0
                 and len(stack) == 1
-                and (container.ident is None or _w_id(attrs, scope, lt) == container.ident)
+                and (
+                    container.ident is None
+                    # one note per id: a repeated w:id is not read as the same story
+                    or (body_content is None and _w_id(attrs, scope, lt) == container.ident)
+                )
             ):
                 is_body = True
                 body_content = end
