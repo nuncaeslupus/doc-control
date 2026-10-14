@@ -64,7 +64,7 @@ on LibreOffice and on Word (Windows).
 
 | ID  | Name                                   | Groups      | Status | Spec section |
 |-----|----------------------------------------|-------------|--------|--------------|
-| S-1 | Notes, headers, tables (I-1 to I-3)    | A           | parked |              |
+| S-1 | Notes, headers, tables (I-1 to I-3)    | A           | specified | arsenal/project/STORIES/spec.md |
 | S-2 | Lists, links, images (I-4 to I-8)      | A           | parked |              |
 | S-3 | Authoring and assembly                 | B           | parked |              |
 | S-4 | Review and send (reports, scrub, lock) | C           | parked |              |
