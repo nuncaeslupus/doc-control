@@ -17,13 +17,14 @@ Make an anchor (quote with context) for a range, to find the passage again after
 
 ## `anchor.resolve` (read)
 
-Find an anchor's passage now: its range, score and match kind (exact, normalized or fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match.
+Find an anchor's passage now: its range, score and match kind (exact, normalized or fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match. match_level says how far the quote is folded when it is not found verbatim.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx file. |
 | `anchor` | object | yes | An anchor from anchor.create, or just {exact, prefix, suffix}. |
-| `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalized); anything else is ANCHOR_NOT_FOUND. |
+| `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalized) or at a fold level of match_level; anything else is ANCHOR_NOT_FOUND. |
+| `match_level` | `exact` \| `default` \| `loose` |  | How far the quote is folded when neither it nor its normalised text occurs. exact: today's rule (verbatim, then normalised, then fuzzy in mode best). default: then ignoring case, accents and punctuation (case, then default level), and failing that symbols too (loose). loose: the same ladder. The reply's match_level is the strictest level at which the quote equals the matched text (exact: character for character; case: normalised text with case ignored), with matched_text when it is not exact; a fuzzy match has neither. |
 
 ## `batch` (write)
 
