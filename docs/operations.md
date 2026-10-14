@@ -91,6 +91,19 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 | `stories` | array |  | Stories to read (default all): "body", "notes", "headers" and "comments". |
 | `type` | string |  | Only fields of this type, e.g. "TOC" or "ADDIN ZOTERO_ITEM". |
 
+## `fields.update` (write)
+
+Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. Fields it could not pair with LibreOffice's are listed under skipped.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `set_update_on_open` | boolean |  | Only set w:updateFields in settings.xml (no LibreOffice). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+
 ## `find` (read)
 
 Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex), with `query_word_options` (match_case, whole_words) to tick there.
@@ -578,6 +591,21 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 | `at` | string |  | Paragraph address or range, e.g. p142#a7b2a7b2:10-15. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `toc.insert` (write)
+
+Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The result text is filled by fields.update; until then fields.list shows the field as stale. Returns the address of the field's paragraph.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `after` | string | yes | Address of the body paragraph it goes after. |
+| `levels` | string |  | Heading levels it lists, e.g. "1-3" (default) or "2". |
+| `title` | string |  | Title paragraph above it (default "Contents"); "" for none. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
 
 ## `undo` (write)
 

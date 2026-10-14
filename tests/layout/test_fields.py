@@ -186,6 +186,33 @@ def test_fields_list_text_boxes_comments_and_stale(tmp_path: Path) -> None:
     assert [r["type"] for r in _fields(doc, stories=["comments"])] == ["REF"]
 
 
+def test_fields_list_mendeley_case_xe_and_comment_text_boxes(tmp_path: Path) -> None:
+    mendeley = _paragraph(
+        _char("begin"),
+        _run(' ADDIN Mendeley Citation{"citationID":"x"} ', "w:instrText"),
+        _char("separate"),
+        _run("(Doe, 2021)"),
+        _char("end"),
+    )
+    index_entry = _paragraph(_char("begin"), _run(' XE "term" ', "w:instrText"), _char("end"))
+    box = (
+        "<w:r><w:pict><w:txbxContent>"
+        + _paragraph(_field(" SEQ Figure ", "3"))
+        + "</w:txbxContent></w:pict></w:r>"
+    )
+    comments = (
+        f'<w:comments {NS}><w:comment w:id="1" w:author="A">'
+        + _paragraph(box)
+        + "</w:comment></w:comments>"
+    )
+    doc = _build(tmp_path / "m.docx", mendeley + index_entry, {"word/comments.xml": comments})
+    by_type = {r["type"]: r for r in _fields(doc)}
+    assert by_type["ADDIN MENDELEY"]["citation"] is True
+    assert _fields(doc, type="addin mendeley") == [by_type["ADDIN MENDELEY"]]
+    assert by_type["XE"]["stale"] is False  # no result to go stale
+    assert [r["type"] for r in _fields(doc, stories=["comments"])] == ["SEQ"]  # listed once
+
+
 def test_fields_list_headers(tmp_path: Path) -> None:
     doc = tmp_path / "h.docx"
     doc.write_bytes(generate("headers", 0))

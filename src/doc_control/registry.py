@@ -71,6 +71,7 @@ OPERATION_MODULES: dict[str, str] = {
     "compare": "compare",
     "diff": "diff",
     "fields.list": "fields",
+    "fields.update": "fieldwrite",
     "find": "find",
     "help": "meta",
     "history.list": "history",
@@ -112,6 +113,7 @@ OPERATION_MODULES: dict[str, str] = {
     "table.get": "tables",
     "term.rename": "rename",
     "text.normalized": "text",
+    "toc.insert": "fieldwrite",
     "undo": "history",
 }
 
