@@ -4,7 +4,7 @@
 **Ticket / PR**: — (workspace `PACKAGE`; answers literary-critic Q-2, unblocks their T6)
 **Author**: Claude (doc-control session), for the owner
 **Revision**: 2
-**Status**: approved (2026-10-14, revision 2)
+**Status**: approved (2026-10-14, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft; the owner answered "yes, write it" to literary-critic's Q-2
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Windows only for the first release, unsigned, two channels (D-P1..D-P5)
@@ -172,4 +172,101 @@ Constraints carried: no signing required; the core stays stdlib-only; the owner 
 
 ---
 
-> Sections 5–6 (contracts, risks) are appended by `design`.
+## 5. Contracts
+
+Everything here is additive and build-time. The runtime package keeps `dependencies = []`. The frozen binary runs the same `doc_control.cli:main` as the pip install, so the CLI envelope and the MCP protocol are the contracts already in force. What is new is the artifacts, the workflow wiring, and the check scripts that drive the binary from outside.
+
+### Release artifacts (per tag `vX.Y.Z`, GitHub Release assets, D-P5)
+
+| Asset | Contents | Used by |
+|-------|----------|---------|
+| `doc-control-X.Y.Z-windows-x64.zip` | The one-folder build: `doc-control/doc-control.exe` plus its runtime files | CLI users who unzip anywhere |
+| `doc-control-X.Y.Z-windows-x64-setup.exe` | Inno Setup installer of the same folder: per-user install to `%LOCALAPPDATA%\Programs\doc-control`, adds that folder to the user `PATH`, shows the `claude_desktop_config.json` snippet on its last page, registers an uninstaller. No admin rights. | Writers who want the CLI or a hand-written Claude Desktop config |
+| `doc-control-X.Y.Z-windows-x64.mcpb` | Zip of `manifest.json`, `icon.png` and `server/` (the one-folder build) | Claude Desktop, by double-click, and the directory listing |
+| `SHA256SUMS.txt` | `sha256  filename` per asset | Anyone verifying a download |
+
+The release notes carry the same SHA-256 lines under a `## Checksums` heading.
+
+### `.mcpb` manifest (`packaging/mcpb/manifest.json`, version filled at build)
+
+```json
+{"manifest_version": "0.2",
+ "name": "doc-control",
+ "display_name": "doc-control",
+ "version": "X.Y.Z",
+ "description": "Deterministic control of Word documents: addresses, tracked-change edits, live control of the Word you have open.",
+ "author": {"name": "<owner>"},
+ "icon": "icon.png",
+ "server": {"type": "binary",
+            "entry_point": "server/doc-control/doc-control.exe",
+            "mcp_config": {"command": "${__dirname}/server/doc-control/doc-control.exe",
+                           "args": ["mcp"]}},
+ "tools": [{"name": "find", "description": "…"}],
+ "compatibility": {"platforms": ["win32"]},
+ "privacy_policies": ["<url, if the directory requires one>"]}
+```
+
+- `tools` is generated from the registry (`mcp.tool_name` of every operation, with its `summary` as the description). It is never hand-listed, so it equals the binary's `tools/list`.
+- Field names follow the current `@anthropic-ai/mcpb` schema. `mcpb validate` in CI is the arbiter; the fields the directory requires on top are confirmed at submission (D-P5).
+
+### Frozen binary behaviour
+
+- `doc-control.exe <op> [--json …]` and `doc-control.exe mcp` give the same envelopes and JSON-RPC as the pip install (`frozen_vs_python_result_diffs == 0`). The one addition: `capabilities` gains a `build` object (`{"frozen": true, "freezer": "<name>"}`; `{"frozen": false}` for pip). Parity ignores that key.
+- `live/word_com.py` error text: when `sys.frozen` is set, a missing `pywin32` reads "this build of doc-control was packaged without pywin32 (please report it)", never "pip install doc-control[live]".
+- The build names these hidden imports: `pythoncom`, `pywintypes`, `win32com.client`, `winreg`, and every `doc_control.ops.*` module (the registry imports them by name). Data files: `doc_control/recipes/bundled/*.json`.
+
+### Check scripts (they drive the binary from outside)
+
+| Script | Invocation | Prints | Exit |
+|--------|-----------|--------|------|
+| `scripts/frozen_smoke.py` | `--exe PATH [--strip-python-path]` | one line per check, then `frozen_smoke_failures == N` | 0 iff N == 0 |
+| `scripts/frozen_parity.py` | `--exe PATH` (compares with in-process `doc_control`) | `frozen_vs_python_result_diffs == N` | 0 iff N == 0 |
+| `scripts/live_word_frozen_check.py` | `--exe PATH` (Windows, Word installed, no Word running) | the `word_suite` failures, then `live_word_failures == N` | 0 iff N == 0; 2 when Word cannot be driven |
+| `scripts/check_release_assets.py` | `--tag vX.Y.Z` (reads `gh release view --json assets,body`) | `release_artifacts_missing == N` | 0 iff N == 0 |
+
+`scripts/live_word_check.py` imports `doc_control` in-process, so it cannot test the exe. `live_word_frozen_check.py` replaces in-process calls with an MCP client:
+
+1. It spawns `doc-control.exe mcp` and sends `initialize`.
+2. It sends one `tools/call` per operation.
+3. It turns an error envelope (`isError: true`, `error.code`) back into `DocControlError(code)`, so the `tests/live/word_suite.py` scenarios run unchanged.
+
+The script itself still needs a Python with `pywin32` to play the writer (type text, switch markup). The binary under test carries its own `pywin32`.
+
+### Inter-component contracts
+
+| Caller | Callee | Protocol | Contract | Failure handling |
+|--------|--------|----------|----------|-----------------|
+| Claude Desktop | `doc-control.exe mcp` | MCP over stdio (JSON-RPC lines, UTF-8) | Existing `mcp.serve`; protocol versions `2025-06-18`, `2025-03-26`, `2024-11-05` | JSON-RPC errors; never a traceback on stdout |
+| `ci.yml` (pull requests) and `release.yml` (releases) | `.github/workflows/package.yml` | `on: workflow_call`, inputs `version` (string) and `attach` (bool, default false) | Builds the zip, installer and `.mcpb` on `windows-latest`, runs smoke and parity, uploads them as one artifact `windows-packages` | A failing check fails the caller's run; nothing is attached |
+| `release.yml` `attach` job | GitHub Releases | `gh release upload` / `gh release edit` with `GITHUB_TOKEN` (`contents: write`) | Runs after `tag` on the branch path, or alone on the hand-pushed tag path (creating the release if absent); uploads the four assets and writes `## Checksums` | Re-runnable with `--clobber`; a missing release is created, not an error |
+| `word_suite` scenarios | doc-control | a `Runner` (`InProcess` or `McpExe`) | Same `op`, `request`, result dict and `DocControlError` codes either way | `McpExe` maps envelope `error.code` to `ErrorCode` |
+
+Packaging is a reusable workflow called from `release.yml`, not a workflow of its own triggered by the tag. The `tag` job creates the tag with `GITHUB_TOKEN`, and events made with that token start no other workflow. A `workflow_call` runs inside the caller's run, so that rule does not touch it.
+
+### Configuration
+
+- A new dependency group `package` in `pyproject.toml` holds the chosen freezer (pinned, from T1) and nothing the runtime imports. `[project] dependencies` stays `[]`.
+- Inno Setup and the `mcpb` CLI are installed in the workflow at pinned versions (`choco install innosetup --version …`, `npx -y @anthropic-ai/mcpb@<version>`). Neither is a Python dependency.
+- No secrets: the build is unsigned (D-P3). A later signing step slots in after the build and before smoke, without changing the contracts above.
+
+### Database migrations
+
+| Service | Database | Change | Reversible | Forward-compatible |
+|---------|----------|--------|------------|-------------------|
+| — | none | — | yes | yes |
+
+## 6. Risks & Validation
+
+| Risk | Likelihood | Impact | Mitigation | Validation |
+|------|-----------|--------|------------|------------|
+| The freezer misses a lazy import (`pythoncom`, `win32com.client`, an `ops` module loaded by name), so live control or some ops fail only in the binary | High | High | Name them as hidden imports; smoke runs `tools/list` and a call per op family; parity compares outputs | CI smoke + parity on `windows-latest` |
+| The live-Word gate passes while testing Python, not the exe (`live_word_check.py` imports `doc_control` in-process) | High if unaddressed | High | New `live_word_frozen_check.py` drives the exe over MCP stdio; the scenarios run through a `Runner`, and a test asserts no scenario calls `api` directly | unit (runner) + manual (owner's Word) |
+| The exe attaches to a different Word than the one the checker plays the writer in (`GetActiveObject` versus the suite's hidden `DispatchEx` instance) | Med | Med | The frozen check requires that no Word is running, lets the exe start Word through `live.open`, then attaches to that instance for the writer's actions; otherwise it exits 2 | manual (owner's Word) |
+| Packaging in a tag-triggered workflow never runs, because the tag is created with `GITHUB_TOKEN` | High if unaddressed | High | `package.yml` is `workflow_call` only, called from `release.yml`; a test fails if any workflow other than `release.yml` triggers on tags | unit (workflow text scan) |
+| The hand-pushed tag path has no release object (the `tag` job is skipped) | Med | Med | `attach` creates the release when `gh release view` fails | first release; `check_release_assets.py` |
+| Antivirus or SmartScreen flags the unsigned exe; one-file PyInstaller is flagged most | Med | High | One-folder build; T1 measures both freezers; README documents "More info → Run anyway"; signing recorded for later (D-P3) | manual (clean machine); VirusTotal count noted in the evidence log, not gated |
+| Size over 40 MB (`pywin32` is the bulk) | Med | Low | Exclude `tkinter`, test modules and unused `win32` extensions; T1 measures both freezers against the budget | CI size check |
+| One-folder start-up time slows MCP start in Claude Desktop | Low | Med | T1 measures start-up; one-folder skips one-file's unpack step | CI (T1 numbers) |
+| The `.mcpb` manifest schema or the directory rules change before submission | Med | Med | Manifest generated and validated by the pinned `mcpb` CLI in CI; listing requirements kept as a checklist confirmed at submission; the GitHub release never waits on the listing (D-P5) | CI + submission |
+| A frozen build changes what the PyPI package does | Low | High | Packaging lives in `packaging/`, a dependency group and workflows; the only source changes are frozen-only error text and the additive `capabilities.build`; `core_runtime_dependencies == 0` is tested | unit (`tests/test_package.py`) |
+| Windows Actions minutes grow (packaging on every PR) | Med | Low | The `ci.yml` call to `package.yml` runs only when `src/`, `packaging/`, `scripts/frozen_*`, `pyproject.toml` or the workflows change | CI usage |

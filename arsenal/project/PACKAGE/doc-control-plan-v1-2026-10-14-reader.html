@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="f1bd3bcf6c256caba409691b58df2d1015d7e991aca500df13e0ac0d9a3d91e4">
+<title>Doc Control — Plan (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#9a4a0b}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">Doc Control — Plan<small>annotatable reader · 2026-10-14</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 10 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Doc Control — Plan</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Plan</summary><ul>
+<li><a href="#s-plan-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-plan-technical-solution">Technical solution</a></li>
+<li><a href="#s-plan-architecture-overview">Architecture overview</a></li>
+<li><a href="#s-plan-data-flow">Data flow</a></li>
+<li><a href="#s-plan-state-changes">State changes</a></li>
+<li><a href="#s-plan-technology-choices">Technology choices</a></li>
+<li><a href="#s-plan-out-of-scope">Out of scope</a></li>
+<li><a href="#s-plan-implementation-tasks">Implementation tasks</a></li>
+<li><a href="#s-plan-dependency-graph">Dependency graph</a></li>
+<li><a href="#s-plan-evidence-log">Evidence log</a></li>
+<li><a href="#s-plan-sign-off">Sign-off</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge plan">Plan</span>Plan</h2>
+<article class="sec l2" id="s-plan-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-14
+<strong>Specification</strong>: <code>arsenal/project/PACKAGE/spec.md</code> (approved r2; contracts §5, risks §6)
+<strong>Author</strong>: Claude (doc-control session), for the owner
+<strong>Revision</strong>: 1
+<strong>Status</strong>: draft
+<strong>Revision log</strong>:
+- r1 — first draft</p>
+<blockquote>
+<p>Review record, kept the way the spec keeps its own: each round of notes bumps
+<strong>Revision</strong> with a log line naming the <code>&lt;repo&gt;-plan-v&lt;N&gt;-&lt;date&gt;-notes.md</code>
+export it applied, committed beside this file in the same commit. Approval is
+<code>approved (YYYY-MM-DD, revision N)</code>, plus <code>— without annotations</code> when there
+were none.</p>
+</blockquote></div>
+<div class="note" data-for="s-plan-intro"><label class="note-head" for="n-s-plan-intro"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN · intro</span></label><textarea class="note-ta" data-key="s-plan-intro" id="n-s-plan-intro" data-label="Preamble &amp; scope" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2 bare" id="s-plan-technical-solution">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technical solution</span></h3>
+</article>
+<article class="sec l3" id="s-plan-architecture-overview">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Architecture overview</span></h4>
+<div class="sec-body"><p>This plan covers phase 1 only: Windows, unsigned, published as GitHub Release assets and listed in the Claude Desktop extensions directory (D-P1, D-P2, D-P3, D-P5). It adds a build around the unchanged package, in four layers:</p>
+<ol>
+<li><strong>Frozen build</strong> (<code>packaging/</code>): one entry script that calls <code>doc_control.cli:main</code>, plus the freezer's build file with hidden imports for <code>pywin32</code> and the <code>ops</code> modules the registry loads by name. The output is a one-folder build, <code>doc-control/doc-control.exe</code>. T1 measures PyInstaller against Nuitka and picks one (Q1).</li>
+<li><strong>Distributions</strong> made from that folder:<ul>
+<li>a zip;</li>
+<li>an Inno Setup per-user installer;</li>
+<li>a <code>.mcpb</code> bundle (server type <code>binary</code>) whose tool list comes from the registry.</li>
+</ul>
+</li>
+<li><strong>Checks that drive the exe from outside</strong>, never in-process:<ul>
+<li><code>frozen_smoke.py</code> (CLI and MCP, with Python stripped from <code>PATH</code>);</li>
+<li><code>frozen_parity.py</code> (exe output against the pip install);</li>
+<li><code>live_word_frozen_check.py</code>, which runs the <code>word_suite</code> scenarios through an MCP client talking to the exe.</li>
+</ul>
+</li>
+<li><strong>Workflows</strong>: <code>package.yml</code> is a reusable workflow (<code>on: workflow_call</code>) on <code>windows-latest</code>. <code>ci.yml</code> calls it on pull requests that touch packaging inputs; <code>release.yml</code> calls it in the same run that creates the tag, then attaches the assets. A separate tag-triggered workflow would never fire, because <code>release.yml</code> creates the tag with <code>GITHUB_TOKEN</code>.</li>
+</ol></div>
+<div class="note" data-for="s-plan-architecture-overview"><label class="note-head" for="n-s-plan-architecture-overview"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Architecture overview</span></label><textarea class="note-ta" data-key="s-plan-architecture-overview" id="n-s-plan-architecture-overview" data-label="Architecture overview" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-data-flow">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Data flow</span></h4>
+<div class="sec-body"><ul>
+<li><strong>Pull request</strong>: <code>ci.yml</code> → <code>package.yml</code> (build → size check → smoke → parity → zip, installer, <code>.mcpb</code> → <code>mcpb validate</code> → upload artifact <code>windows-packages</code>).</li>
+<li><strong>Release</strong>:<ol>
+<li><code>release.yml</code> <code>build</code> decides <code>release=true</code> and publishes to PyPI as today.</li>
+<li>Its <code>package</code> job calls <code>package.yml</code> with <code>version</code> and <code>attach: true</code>.</li>
+<li><code>tag</code> creates <code>vX.Y.Z</code> and the GitHub release (branch path only).</li>
+<li><code>attach</code> downloads <code>windows-packages</code>, creates the release if it is missing (hand-pushed tag path), uploads the four assets with <code>--clobber</code>, and writes <code>## Checksums</code> into the notes.</li>
+<li><code>check_release_assets.py --tag vX.Y.Z</code> confirms them.</li>
+</ol>
+</li>
+<li><strong>Directory listing</strong>: the <code>.mcpb</code> from the release is submitted by hand with the listing checklist; the release never waits on it (D-P5).</li>
+</ul></div>
+<div class="note" data-for="s-plan-data-flow"><label class="note-head" for="n-s-plan-data-flow"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Data flow</span></label><textarea class="note-ta" data-key="s-plan-data-flow" id="n-s-plan-data-flow" data-label="Data flow" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-state-changes">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">State changes</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Database</th>
+<th>Change</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GitHub Releases</td>
+<td>—</td>
+<td>UPDATE</td>
+<td>Four assets and a <code>## Checksums</code> section per tag</td>
+</tr>
+<tr>
+<td>Actions artifacts</td>
+<td>—</td>
+<td>CREATE</td>
+<td><code>windows-packages</code> per run (default retention)</td>
+</tr>
+<tr>
+<td>Writer's machine</td>
+<td>—</td>
+<td>CREATE</td>
+<td>Installer: <code>%LOCALAPPDATA%\Programs\doc-control</code> and a user <code>PATH</code> entry, removed by the uninstaller. <code>.mcpb</code>: Claude Desktop's own extension folder</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-state-changes"><label class="note-head" for="n-s-plan-state-changes"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › State changes</span></label><textarea class="note-ta" data-key="s-plan-state-changes" id="n-s-plan-state-changes" data-label="State changes" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-technology-choices">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technology choices</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PyInstaller or Nuitka, settled by T1's measurements</td>
+<td>Q1. PyInstaller has mature <code>pywin32</code> hooks; Nuitka can be smaller and faster but needs a C compiler and longer builds. Decided by size, start-up and smoke results, not by preference</td>
+</tr>
+<tr>
+<td>One-folder build, not one-file</td>
+<td>No unpack on each start, fewer antivirus flags; the zip and <code>.mcpb</code> carry the folder anyway</td>
+</tr>
+<tr>
+<td>Inno Setup, per-user</td>
+<td>Free, scriptable from CI, installs without admin rights; NSIS would also work but adds nothing here</td>
+</tr>
+<tr>
+<td><code>@anthropic-ai/mcpb</code> CLI, pinned, in CI only</td>
+<td>The arbiter of the manifest schema; not a Python dependency</td>
+</tr>
+<tr>
+<td>Reusable workflow (<code>workflow_call</code>)</td>
+<td>One build definition for PRs and releases; runs inside <code>release.yml</code>'s run, which the <code>GITHUB_TOKEN</code> rule cannot block</td>
+</tr>
+<tr>
+<td><code>package</code> dependency group</td>
+<td>Keeps freezer tools out of <code>[project] dependencies</code> (<code>core_runtime_dependencies == 0</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-technology-choices"><label class="note-head" for="n-s-plan-technology-choices"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Technology choices</span></label><textarea class="note-ta" data-key="s-plan-technology-choices" id="n-s-plan-technology-choices" data-label="Technology choices" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-out-of-scope">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Out of scope</span></h4>
+<div class="sec-body"><ul>
+<li>Mac in every form: the frozen Mac binary, the LibreOffice bridge (<code>live/lo_bridge.py</code>), Word for Mac (D-P2, D-P4).</li>
+<li>LibreOffice live control from the frozen binary (<code>uno</code> cannot load in it; that is the phase 2 bridge).</li>
+<li>Code signing (D-P3). "What signing would need" in the spec stays the reference.</li>
+<li>Auto-update inside the app.</li>
+<li>Any change to the PyPI package's behaviour, apart from the frozen-only error text and the additive <code>capabilities.build</code> object.</li>
+</ul></div>
+<div class="note" data-for="s-plan-out-of-scope"><label class="note-head" for="n-s-plan-out-of-scope"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Out of scope</span></label><textarea class="note-ta" data-key="s-plan-out-of-scope" id="n-s-plan-out-of-scope" data-label="Out of scope" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-implementation-tasks">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Implementation tasks</span></h3>
+<div class="sec-body"><p>Every task builds or tests Windows artifacts on <code>windows-latest</code> in CI (<code>surface: windows-ci</code>). Tasks marked <code>manual</code> also need evidence from the owner's Windows machine.</p>
+<table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Description</th>
+<th>Service</th>
+<th>Size</th>
+<th>Depends</th>
+<th>Gate</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T1</td>
+<td>Q1 spike, measured: a throwaway <code>workflow_dispatch</code> job <code>.github/workflows/freeze-spike.yml</code> on <code>windows-latest</code> builds a one-folder exe with PyInstaller and with Nuitka; <code>packaging/spike/measure.py</code> records for each <code>dist_mb</code>, <code>startup_ms_median</code> (10 runs of <code>capabilities</code>), <code>smoke_failures</code> (<code>capabilities</code>, <code>tools/list</code>) and build minutes; the numbers go in the evidence log and the choice in the spec's decisions log as D-P6; the spike workflow is deleted in the same PR (surface: windows-ci)</td>
+<td>packaging</td>
+<td>S</td>
+<td>—</td>
+<td><code>freezer_candidates_measured &gt;= 2</code></td>
+<td><code>test_measure_reports_every_metric_per_candidate</code> in <code>tests/packaging/test_measure.py</code> — given two fake build folders whose exe is a stub script, the report has <code>dist_mb</code>, <code>startup_ms_median</code> and <code>smoke_failures</code> for each candidate</td>
+</tr>
+<tr>
+<td>T2</td>
+<td>Frozen build with the T1 freezer: <code>packaging/entry.py</code>, the build file (hidden imports <code>pythoncom</code>, <code>pywintypes</code>, <code>win32com.client</code>, <code>winreg</code>, every <code>doc_control.ops.*</code>; data <code>recipes/bundled/*.json</code>; excludes <code>tkinter</code> and tests), <code>package</code> dependency group, frozen-only <code>pywin32</code> error text in <code>live/word_com.py</code>, additive <code>capabilities.build</code>; <code>.github/workflows/package.yml</code> (<code>workflow_call</code>) builds and checks the uncompressed folder size, called from <code>ci.yml</code> with a paths filter (surface: windows-ci)</td>
+<td>packaging, live, ci</td>
+<td>M</td>
+<td>T1</td>
+<td><code>frozen_exe_size_mb &lt;= 40</code></td>
+<td><code>test_word_error_when_frozen_names_no_pip</code> in <code>tests/live/test_word_com.py</code> — with <code>sys.frozen</code> set and <code>win32com</code> unimportable, the error text has no "pip install"; <code>test_core_dependencies_stay_empty_with_package_group</code> in <code>tests/test_package.py</code> — <code>[project] dependencies</code> is <code>[]</code> and the freezer appears only in the <code>package</code> group</td>
+</tr>
+<tr>
+<td>T3</td>
+<td><code>scripts/frozen_smoke.py --exe PATH --strip-python-path</code>: <code>capabilities</code>, file-engine <code>find</code> on a corpus fixture, MCP <code>initialize</code> plus <code>tools/list</code> plus one <code>tools/call</code> per op family, with every Python directory removed from <code>PATH</code>; a step in <code>package.yml</code> (surface: windows-ci)</td>
+<td>scripts, ci</td>
+<td>M</td>
+<td>T2</td>
+<td><code>frozen_smoke_failures == 0</code></td>
+<td><code>test_frozen_smoke_counts_each_failing_check</code> in <code>tests/packaging/test_frozen_smoke.py</code> — against a stub exe that fails <code>tools/list</code>, the script prints <code>frozen_smoke_failures == 1</code> and exits 1; <code>test_strip_python_path_removes_every_python_dir</code> in the same file — no entry of the child <code>PATH</code> holds a <code>python.exe</code></td>
+</tr>
+<tr>
+<td>T4</td>
+<td><code>scripts/frozen_parity.py --exe PATH</code>: <code>capabilities</code> (minus <code>build</code>) and <code>find</code> over the shared corpus (<code>tests/corpus/generator.py</code>, every kind) from the exe against in-process <code>doc_control</code>; a step in <code>package.yml</code> (surface: windows-ci)</td>
+<td>scripts, ci</td>
+<td>S</td>
+<td>T3</td>
+<td><code>frozen_vs_python_result_diffs == 0</code></td>
+<td><code>test_parity_reports_a_changed_find_result</code> in <code>tests/packaging/test_frozen_parity.py</code> — with <code>python -m doc_control</code> as the "exe" and one result altered by a stub, the script prints <code>frozen_vs_python_result_diffs == 1</code></td>
+</tr>
+<tr>
+<td>T5</td>
+<td>Live-Word gate over stdio: a <code>Runner</code> in <code>tests/live/word_suite.py</code> (<code>InProcess</code> default, <code>McpExe</code> that spawns <code>doc-control.exe mcp</code>, sends <code>tools/call</code> and maps error envelopes back to <code>DocControlError</code>); every scenario's doc-control call, including the <code>api.open</code> reads, goes through it; <code>scripts/live_word_frozen_check.py --exe PATH</code> requires no Word running, lets the exe start Word with <code>live.open</code>, attaches to that instance for the writer's actions, prints <code>live_word_failures == N</code> (surface: windows-ci + manual on the owner's Word)</td>
+<td>tests, scripts</td>
+<td>M</td>
+<td>T3</td>
+<td><code>live_word_failures == 0</code></td>
+<td><code>test_mcp_runner_maps_error_envelope_to_doc_control_error</code> in <code>tests/live/test_runner.py</code> — with <code>python -m doc_control mcp</code> as the exe, a stale-address call raises <code>DocControlError</code> with <code>STALE_ADDRESS</code>; <code>test_word_suite_calls_doc_control_only_through_runner</code> in the same file — an AST scan finds no <code>api.run</code> or <code>api.open</code> in <code>word_suite.py</code> outside the <code>InProcess</code> runner</td>
+</tr>
+<tr>
+<td>T6</td>
+<td><code>.mcpb</code> bundle: <code>packaging/mcpb/manifest.json</code> template and <code>icon.png</code>, <code>scripts/build_mcpb.py</code> (stdlib <code>zipfile</code>; version from <code>pyproject.toml</code>; tools from the registry; platforms <code>win32</code>); <code>package.yml</code> runs the pinned <code>mcpb validate</code> and installs the bundle's exe path into the smoke run (surface: windows-ci)</td>
+<td>packaging, scripts, ci</td>
+<td>M</td>
+<td>T3</td>
+<td><code>mcpb_manifest_errors == 0</code></td>
+<td><code>test_manifest_tools_equal_mcp_tools_list</code> in <code>tests/packaging/test_build_mcpb.py</code> — the bundle's <code>tools</code> names equal <code>mcp.handle(…, tools/list)</code> names; <code>test_manifest_version_matches_pyproject</code> in the same file — <code>version</code> equals <code>pyproject.toml</code>'s</td>
+</tr>
+<tr>
+<td>T7</td>
+<td>Inno Setup installer: <code>packaging/installer/doc-control.iss</code> (per-user, <code>PrivilegesRequired=lowest</code>, user <code>PATH</code> entry, config snippet page, uninstaller); <code>package.yml</code> installs pinned Inno Setup, builds it, then silently installs, runs <code>doc-control capabilities</code> from a new shell, uninstalls and checks the folder and <code>PATH</code> entry are gone (surface: windows-ci)</td>
+<td>packaging, ci</td>
+<td>M</td>
+<td>T3</td>
+<td><code>installer_smoke_failures == 0</code></td>
+<td><code>test_iss_version_define_matches_pyproject</code> in <code>tests/packaging/test_installer.py</code> — the build passes <code>pyproject.toml</code>'s version as <code>AppVersion</code>; <code>test_iss_installs_per_user_without_admin</code> in the same file — the script sets <code>PrivilegesRequired=lowest</code> and a <code>{localappdata}</code> install dir</td>
+</tr>
+<tr>
+<td>T8</td>
+<td>Release wiring: <code>release.yml</code> gains <code>package</code> (calls <code>package.yml</code> with <code>attach: true</code>, <code>needs: build</code>, <code>if: release == 'true'</code>) and <code>attach</code> (<code>needs: [package, tag]</code>, runs when <code>tag</code> succeeded or was skipped; creates the release if absent; uploads zip, installer, <code>.mcpb</code>, <code>SHA256SUMS.txt</code> with <code>--clobber</code>; writes <code>## Checksums</code>); <code>scripts/check_release_assets.py --tag</code> (surface: windows-ci)</td>
+<td>ci, scripts</td>
+<td>M</td>
+<td>T4, T6, T7</td>
+<td><code>release_artifacts_missing == 0</code></td>
+<td><code>test_only_release_yml_triggers_on_tags</code> in <code>tests/ci/test_release_workflow.py</code> — a text scan of <code>.github/workflows/*.yml</code> finds <code>tags:</code> under <code>on.push</code> in <code>release.yml</code> only, and <code>package.yml</code> has <code>workflow_call</code> and no <code>push</code>; <code>test_check_release_assets_flags_missing_and_unchecksummed</code> in <code>tests/ci/test_check_release_assets.py</code> — given a fake <code>gh release view</code> JSON missing the <code>.mcpb</code> and one checksum line, it prints <code>release_artifacts_missing == 2</code></td>
+</tr>
+<tr>
+<td>T9</td>
+<td>Docs: README "Install without Python (Windows)" with numbered steps for the <code>.mcpb</code> and the installer, the SmartScreen "More info → Run anyway" step, the checksum check and uninstall; <code>docs/install-windows.md</code>; clean-machine step count recorded in the evidence log (surface: windows-ci + manual on a clean Windows machine)</td>
+<td>docs</td>
+<td>S</td>
+<td>T8</td>
+<td><code>install_steps_windows_mcpb &lt;= 2</code></td>
+<td><code>test_readme_windows_install_steps_are_numbered_and_bounded</code> in <code>tests/test_docs.py</code> — the <code>.mcpb</code> list has at most 2 numbered steps and the installer list at most 3, each besides the SmartScreen step, and every asset name it links matches the T8 asset pattern</td>
+</tr>
+<tr>
+<td>T10</td>
+<td>Directory listing readiness: <code>packaging/mcpb/LISTING.md</code> checklist (manifest fields, icon, privacy statement, plain-language description of each tool and whether it changes files, submission route), <code>docs/privacy.md</code>, tool descriptions filled from the registry summaries; each item marked done with its evidence or "confirmed at submission" (surface: windows-ci)</td>
+<td>packaging, docs</td>
+<td>S</td>
+<td>T6, T9</td>
+<td><code>directory_checklist_open_items == 0</code></td>
+<td><code>test_listing_checklist_has_no_open_items</code> in <code>tests/packaging/test_listing.py</code> — every checklist row in <code>LISTING.md</code> is ticked and names a file or a submission note; <code>test_every_tool_has_a_listing_description</code> in the same file — each <code>tools/list</code> name has a non-empty description in the manifest</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Status legend</strong>: ☐ not started · ◐ in progress · ☑ merged</p>
+<p><strong>Merge order</strong>:
+1. T1 (the spike) first; its decision (D-P6) is recorded before T2 starts.
+2. T2, then T3.
+3. T4, T5, T6 and T7 in parallel.
+4. T8.
+5. T9, then T10.</p>
+<p><strong>Branch pattern</strong>: <code>package-T&lt;N&gt;-description</code> from the default branch.</p></div>
+<div class="note" data-for="s-plan-implementation-tasks"><label class="note-head" for="n-s-plan-implementation-tasks"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Implementation tasks</span></label><textarea class="note-ta" data-key="s-plan-implementation-tasks" id="n-s-plan-implementation-tasks" data-label="Implementation tasks" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-dependency-graph">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Dependency graph</span></h4>
+<div class="sec-body"><figure class="drawspec"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.75 -0.75 665.5 675.4" role="img" aria-labelledby="ds49f2c3f3ee-title"><title id="ds49f2c3f3ee-title">Task dependencies</title><path d="M 332 63.7 L 332 111.7" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="332,111.7 328.4,103.7 335.6,103.7" fill="currentColor" stroke="none"/><path d="M 332 163.4 L 332 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="332,211.4 328.4,203.4 335.6,203.4" fill="currentColor" stroke="none"/><path d="M 310.212 263.1 L 310.212 281.1 L 114.433 281.1 L 114.433 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="114.433,311.1 110.833,303.1 118.033,303.1" fill="currentColor" stroke="none"/><path d="M 324.737 263.1 L 324.737 293.1 L 259.478 293.1 L 259.478 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="259.478,311.1 255.878,303.1 263.078,303.1" fill="currentColor" stroke="none"/><path d="M 339.263 263.1 L 339.263 293.1 L 404.522 293.1 L 404.522 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="404.522,311.1 400.922,303.1 408.122,303.1" fill="currentColor" stroke="none"/><path d="M 353.788 263.1 L 353.788 281.1 L 549.567 281.1 L 549.567 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="549.567,311.1 545.967,303.1 553.167,303.1" fill="currentColor" stroke="none"/><path d="M 114.433 362.8 L 114.433 386.8 L 338.017 386.8 L 338.017 410.8" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="338.017,410.8 334.417,402.8 341.617,402.8" fill="currentColor" stroke="none"/><path d="M 392.418 362.8 L 392.418 374.8 L 356.174 374.8 L 356.174 410.8" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="356.174,410.8 352.574,402.8 359.774,402.8" fill="currentColor" stroke="none"/><path d="M 549.567 362.8 L 549.567 386.8 L 374.331 386.8 L 374.331 410.8" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="374.331,410.8 370.731,402.8 377.931,402.8" fill="currentColor" stroke="none"/><path d="M 356.174 462.5 L 356.174 510.5" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="356.174,510.5 352.574,502.5 359.774,502.5" fill="currentColor" stroke="none"/><path d="M 428.784 362.8 L 428.784 586.2 L 392.453 586.2 L 392.453 610.2" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="392.453,610.2 388.853,602.2 396.053,602.2" fill="currentColor" stroke="none"/><path d="M 368.244 562.2 L 368.244 610.2" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="368.244,610.2 364.644,602.2 371.844,602.2" fill="currentColor" stroke="none"/><rect x="271.478" y="12" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="332" y="33.233" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T1</tspan></text><text x="332" y="48.083" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Freezer spike</tspan></text><rect x="319.826" y="610.2" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="380.348" y="631.433" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T10</tspan></text><text x="380.348" y="646.283" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Directory listing</tspan></text><rect x="271.478" y="111.7" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="332" y="132.933" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T2</tspan></text><text x="332" y="147.783" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Frozen build</tspan></text><rect x="271.478" y="211.4" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="332" y="232.633" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T3</tspan></text><text x="332" y="247.483" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Frozen smoke</tspan></text><rect x="53.91" y="311.1" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="114.433" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T4</tspan></text><text x="114.433" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Parity</tspan></text><rect x="198.955" y="311.1" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="259.478" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T5</tspan></text><text x="259.478" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Live Word via exe</tspan></text><rect x="344" y="311.1" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="404.522" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T6</tspan></text><text x="404.522" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>.mcpb bundle</tspan></text><rect x="489.045" y="311.1" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="549.567" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T7</tspan></text><text x="549.567" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Installer</tspan></text><rect x="295.652" y="410.8" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="356.174" y="432.033" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T8</tspan></text><text x="356.174" y="446.883" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Release wiring</tspan></text><rect x="295.652" y="510.5" width="121.045" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="356.174" y="531.733" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T9</tspan></text><text x="356.174" y="546.583" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Install docs</tspan></text></svg></figure></div>
+<div class="note" data-for="s-plan-dependency-graph"><label class="note-head" for="n-s-plan-dependency-graph"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Dependency graph</span></label><textarea class="note-ta" data-key="s-plan-dependency-graph" id="n-s-plan-dependency-graph" data-label="Dependency graph" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-evidence-log">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Evidence log</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Gate</th>
+<th>Measured</th>
+<th>Command</th>
+<th>SHA</th>
+<th>Env</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-evidence-log"><label class="note-head" for="n-s-plan-evidence-log"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Evidence log</span></label><textarea class="note-ta" data-key="s-plan-evidence-log" id="n-s-plan-evidence-log" data-label="Evidence log" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-sign-off">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Sign-off</span></h3>
+<div class="sec-body"><ul>
+<li>[ ] Plan reviewed by the owner</li>
+<li>[ ] Contracts agreed with literary-critic (install route for their T6)</li>
+<li>[ ] Ready for execution</li>
+</ul></div>
+<div class="note" data-for="s-plan-sign-off"><label class="note-head" for="n-s-plan-sign-off"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Sign-off</span></label><textarea class="note-ta" data-key="s-plan-sign-off" id="n-s-plan-sign-off" data-label="Sign-off" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'doc-control-plan-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return 'doc-control-plan-v1-'+today()+'-notes.md';}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Plan notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>
