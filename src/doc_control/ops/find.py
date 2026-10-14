@@ -26,6 +26,7 @@ from doc_control.inprocess import limit as list_limit
 from doc_control.model.address import Address
 from doc_control.model.document import Document
 from doc_control.model.search import IsolatedScan, LocalScan, Matcher, SearchOptions
+from doc_control.model.storyorder import STORIES_PROPERTY, kinds_of, rows
 from doc_control.model.wordfind import word_find
 from doc_control.registry import operation
 
@@ -75,6 +76,7 @@ SCHEMA: dict[str, Any] = {
             "description": "Characters of surrounding text on each side of a match.",
         },
         "cursor": {"type": "string", "description": "The `next` value of the previous page."},
+        "stories": STORIES_PROPERTY,
     },
     "required": ["doc", "query"],
     "additionalProperties": False,
@@ -105,12 +107,16 @@ def find(request: dict[str, Any]) -> Reply:
     context: int = request.get("context", DEFAULT_CONTEXT)
     shared = Document(request["doc"])  # one parse per open document (doc_control.api)
     pkg, index = shared.pkg, shared.index
-    token = _token(pkg.sha256, options)
+    kinds = kinds_of(request)
+    token = _token(pkg.sha256, options, kinds)
     first, skip = _parse_cursor(request.get("cursor"), token)
 
-    if first > len(index):
+    # Paragraphs numbered in reading order: the body's own numbers when only the body is
+    # searched, so a cursor names the paragraph it stopped at.
+    order = list(index.paragraphs) if kinds == ("body",) else [r.para for r in rows(shared, kinds)]
+    if first > len(order):
         raise _bad_cursor()
-    items = [(p.number, p.text) for p in index.paragraphs[first - 1 :] if p.text]
+    items = [(n, p.text) for n, p in enumerate(order[first - 1 :], start=first) if p.text]
     deadline = time.monotonic() + TIME_BUDGET_SECONDS
     scan: LocalScan | IsolatedScan
     # Regexes run in a child process that can be killed; literals cannot backtrack.
@@ -125,7 +131,7 @@ def find(request: dict[str, Any]) -> Reply:
     remaining = 0  # matches after this page, counted so the reply can give a total
     with contextlib.closing(scan.__iter__()) as found:
         for number, spans in found:
-            para = index.paragraph(number)
+            para = order[number - 1]
             skipping = skip if number == first else 0
             for k, (start, end) in enumerate(spans):
                 if k < skipping:
@@ -141,18 +147,25 @@ def find(request: dict[str, Any]) -> Reply:
             if next_cursor is not None and "cursor" in request:
                 break
     stopped = scan.stopped_at
+
+    def where(n: int) -> str:
+        """Body-only: ``p<n>`` as before; across stories, the paragraph's address."""
+        return f"p{n}" if kinds == ("body",) else str(order[n - 1].address)
+
     counted = len(matches) + remaining
     if stopped is not None and next_cursor is None:
         if stopped == first and not matches:
             raise DocControlError(
                 ErrorCode.SCHEMA_INVALID,
-                f"search of p{stopped} did not finish within {TIME_BUDGET_SECONDS:g}s;"
-                " simplify the pattern (avoid nested or overlapping repeats)",
+                f"search of {where(stopped)} did not finish within "
+                f"{TIME_BUDGET_SECONDS:g}s; simplify the pattern (avoid nested or "
+                "overlapping repeats)",
                 path="$.query",
                 paragraph=stopped,
             )
         warnings.append(
-            f"TIME_BUDGET: stopped at p{stopped} after {TIME_BUDGET_SECONDS:g}s;"
+            f"TIME_BUDGET: stopped at {where(stopped)} after "
+            f"{TIME_BUDGET_SECONDS:g}s;"
             " continue with `next`"
         )
         next_cursor = f"c:find:{token}:{stopped}:0"
@@ -200,9 +213,12 @@ def _match(address: Address, text: str, start: int, end: int, context: int) -> d
     return out
 
 
-def _token(sha256: str, options: SearchOptions) -> str:
+def _token(sha256: str, options: SearchOptions, kinds: tuple[str, ...] = ("body",)) -> str:
     """Ties a cursor to one document and one query, so it cannot resume a different search."""
-    key = json.dumps([sha256, *vars(options).values()], ensure_ascii=True)
+    values: list[Any] = [sha256, *vars(options).values()]
+    if kinds != ("body",):
+        values.append(sorted(kinds))  # body-only tokens stay as before
+    key = json.dumps(values, ensure_ascii=True)
     return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
 
 

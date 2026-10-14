@@ -23,6 +23,7 @@ from doc_control.ooxml.zipio import Package
 
 DOCUMENT_PART = "word/document.xml"
 _TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
+_TABLE_TAG = re.compile(rb"<(/?)(?:[\w.-]+:)?(tbl|tr|tc)([\s/>])")
 _TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
@@ -105,6 +106,24 @@ class Document:
         value: _T = cache[key]
         return value
 
+    def story_view(self, key: str) -> Document:
+        """This document seen through one story (``""`` the body, ``fn3``, ``hdr1.default``):
+        the same package and styles, with that story's paragraph index, so every
+        paragraph-level helper reads it as it reads the body."""
+        if not key:
+            return self
+
+        def build() -> Document:
+            from doc_control.model.stories import find_story, story_index
+
+            view = object.__new__(Document)
+            view.path, view.pkg = self.path, self.pkg
+            view.index = story_index(self.pkg, find_story(self.pkg, key))
+            view.__dict__["styles"] = self.styles
+            return view
+
+        return self.memo(("story", key), build)
+
     def paragraph_element(self, para: Paragraph) -> ET.Element:
         """The parsed ``w:p`` of ``para``, parsed once per document; read it, never change it."""
         return self.index.spans.parsed(para.span_index)
@@ -152,6 +171,43 @@ class Document:
                     stack.pop()
                 e += 1
             out.append(stack[-1] if stack else -1)
+        return tuple(out)
+
+    @cached_property
+    def cell_positions(self) -> tuple[tuple[int, int, int] | None, ...]:
+        """Per paragraph, ``(table, row, col)`` of its innermost table cell, 1-based, tables
+        numbered in document order (nested ones too); None outside tables. ``col`` counts
+        the row's cells, not grid columns (``table.get`` gives the grid)."""
+        data = self.index.spans.data
+        tags = [
+            (m.start(), m[1] == b"/", m[2], m[3] == b"/")
+            for m in _TABLE_TAG.finditer(data)
+            if not (m[3] == b"/" and m[1] != b"/")  # an empty <w:tc/> holds no paragraph
+        ]
+        spans = self.index.spans.paragraphs
+        out: list[tuple[int, int, int] | None] = []
+        stack: list[list[int]] = []  # per open table: [number, row, col]
+        tables = 0
+        t = 0
+        for para in self.index.paragraphs:
+            start = spans[para.span_index].start
+            while t < len(tags) and tags[t][0] < start:
+                _, closing, name, _ = tags[t]
+                if name == b"tbl":
+                    if closing:
+                        if stack:
+                            stack.pop()
+                    else:
+                        tables += 1
+                        stack.append([tables, 0, 0])
+                elif stack and not closing:
+                    if name == b"tr":
+                        stack[-1][1] += 1
+                        stack[-1][2] = 0
+                    else:
+                        stack[-1][2] += 1
+                t += 1
+            out.append(tuple(stack[-1]) if stack else None)  # type: ignore[arg-type]
         return tuple(out)
 
     def style_id(self, para: Paragraph) -> str | None:

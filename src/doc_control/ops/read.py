@@ -21,6 +21,7 @@ from typing import Any
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import budget
+from doc_control.model.address import parse_range
 from doc_control.model.annotations import (
     REVISION_TYPES,
     read_comments,
@@ -30,6 +31,7 @@ from doc_control.model.document import Document
 from doc_control.model.format import para_format, run_format
 from doc_control.model.index import Paragraph
 from doc_control.model.parts import OFFICE_REL, W, parse_part, related_part
+from doc_control.model.storyorder import STORIES_PROPERTY, fields_for, kinds_of, rows
 from doc_control.model.styles import Style
 from doc_control.ops.paging import (
     PAGING_PROPERTIES,
@@ -150,28 +152,31 @@ def info(request: dict[str, Any]) -> Reply:
             "minimum": 1,
             "maximum": 9,
             "description": "Only headings up to this level.",
-        }
+        },
+        stories=STORIES_PROPERTY,
     ),
 )
 def outline(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
     max_level = request.get("max_level", 9)
     entries: list[dict[str, Any]] = []
-    for para in doc.index.paragraphs:
-        level = doc.heading_level(para)
+    for story_row in rows(doc, kinds_of(request)):
+        view, para = story_row.view, story_row.para
+        level = view.heading_level(para)
         if level is None or level > max_level or not para.text.strip():
             continue
         text, clipped = _clip(" ".join(para.text.split()), _OUTLINE_TEXT)
         entry: dict[str, Any] = {
             "at": str(para.address),
             "level": level,
-            "style": doc.style_id(para),
+            "style": view.style_id(para),
             "text": text,
         }
         if clipped:
             entry["truncated"] = True
         for fact in OUTLINE_FACTS:
-            entry.update(fact(ParagraphContext(doc, para)))
+            entry.update(fact(ParagraphContext(view, para)))
+        entry.update(story_row.fields)
         entries.append(entry)
     return paged("outline", doc, request, "headings", entries)
 
@@ -254,7 +259,7 @@ def _footnote_count(doc: Document) -> int:
     "Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.",
     {
         "type": "object",
-        "properties": {"doc": _DOC},
+        "properties": {"doc": _DOC, "stories": STORIES_PROPERTY},
         "required": ["doc"],
         "additionalProperties": False,
     },
@@ -277,6 +282,18 @@ def stats(request: dict[str, Any]) -> Reply:
         "styles_in_use": len(usage),
         "fonts": _fonts(doc),
     }
+    others = [k for k in kinds_of(request) if k != "body"]
+    if others:
+        # The body's counts above stay the body's; each other story kind is counted apart.
+        result["stories"] = {}
+        for kind in others:
+            texts = [r.para.text for r in rows(doc, (kind,))]
+            result["stories"][kind] = {
+                "stories": len({key for r in rows(doc, (kind,)) if (key := r.para.story)}),
+                "paragraphs": len(texts),
+                "words": sum(len(t.split()) for t in texts),
+                "characters": sum(len(t) for t in texts),
+            }
     return Reply(result, doc=doc.envelope_doc())
 
 
@@ -342,16 +359,17 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
 )
 def para_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
-    para = doc.index.resolve_address(request["at"])
+    view = doc.story_view(parse_range(request["at"]).start.story)
+    para = view.index.resolve_address(request["at"])
     start = read_cursor("para.get", doc, request)
     total = len(para.text)
     if start > total:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, "cursor is beyond the end of the paragraph", path="$.cursor"
         )
-    style = doc.style_id(para)
+    style = view.style_id(para)
     style_def = doc.styles.get(style) if style is not None else None
-    elem = doc.index.spans.parse_paragraph(para.span_index)
+    elem = view.index.spans.parse_paragraph(para.span_index)
     head: dict[str, Any] = {
         "at": str(para.address),
         "number": para.number,
@@ -361,8 +379,9 @@ def para_get(request: dict[str, Any]) -> Reply:
         "format": para_format(elem.find(W + "pPr")),
     }
     for fact in PARA_FACTS:
-        head.update(fact(ParagraphContext(doc, para)))
-    spans = _run_spans(doc, para)
+        head.update(fact(ParagraphContext(view, para)))
+    head.update(fields_for(doc, para.story))
+    spans = _run_spans(view, para)
     ceiling = min(total - start, request.get("limit", total))
     count = ceiling
     while True:
