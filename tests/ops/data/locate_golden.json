@@ -1,0 +1,1155 @@
+{
+ "comments": {
+  "paragraphs": 10,
+  "rows": [
+   {
+    "at": "p1#68135840",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#90c925e7",
+    "find_phrase": "of.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "of.",
+    "find_phrase_words": 1,
+    "phrase": "By … board."
+   },
+   {
+    "at": "p3#6ea2d818",
+    "find_phrase": "questions.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "questions.",
+    "find_phrase_words": 1,
+    "phrase": "Quick … questions."
+   },
+   {
+    "at": "p4#48014c4c",
+    "find_phrase": "and questions",
+    "find_phrase_unique": true,
+    "find_phrase_word": "and questions",
+    "find_phrase_words": 2,
+    "phrase": "Covers … the."
+   },
+   {
+    "at": "p5#faad3f51",
+    "find_phrase": "year.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "year.",
+    "find_phrase_words": 1,
+    "phrase": "The … during."
+   },
+   {
+    "at": "p6#5090f9ee",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section comments"
+   },
+   {
+    "at": "p7#204f826c",
+    "find_phrase": "Commented: Year",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Commented: Year",
+    "find_phrase_words": 2,
+    "phrase": "Commented: … board."
+   },
+   {
+    "at": "p8#e7e45fcb",
+    "find_phrase": "open.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "open.",
+    "find_phrase_words": 1,
+    "phrase": "Commented: … open."
+   },
+   {
+    "at": "p9#6683272b",
+    "find_phrase": "Commented: During",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Commented: During",
+    "find_phrase_words": 2,
+    "phrase": "Commented: … covers."
+   },
+   {
+    "at": "p10#ced32d39",
+    "find_phrase": "by.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "by.",
+    "find_phrase_words": 1,
+    "phrase": "The … review."
+   }
+  ]
+ },
+ "fields": {
+  "paragraphs": 9,
+  "rows": [
+   {
+    "at": "p1#a98036db",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#ea4d909c",
+    "find_phrase": "during.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "during.",
+    "find_phrase_words": 1,
+    "phrase": "The … the."
+   },
+   {
+    "at": "p3#a7d8f3cc",
+    "find_phrase": "open last",
+    "find_phrase_unique": true,
+    "find_phrase_word": "open last",
+    "find_phrase_words": 2,
+    "phrase": "Open … of."
+   },
+   {
+    "at": "p4#87cf2898",
+    "find_phrase": "review.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "review.",
+    "find_phrase_words": 1,
+    "phrase": "And … by."
+   },
+   {
+    "at": "p5#418d142c",
+    "find_phrase": "By and",
+    "find_phrase_unique": true,
+    "find_phrase_word": "By and",
+    "find_phrase_words": 2,
+    "phrase": "By … the."
+   },
+   {
+    "at": "p6#bd8ed537",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section fields"
+   },
+   {
+    "at": "p7#7f206dc7",
+    "find_phrase": "Page",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Page",
+    "find_phrase_words": 1,
+    "phrase": "Page … report."
+   },
+   {
+    "at": "p8#85481a01",
+    "find_phrase": "Dated",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Dated",
+    "find_phrase_words": 1,
+    "phrase": "Dated … test."
+   },
+   {
+    "at": "p9#3d4ffab8",
+    "find_phrase": "Covers review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Covers review",
+    "find_phrase_words": 2,
+    "phrase": "Covers … year."
+   }
+  ]
+ },
+ "footnotes": {
+  "paragraphs": 9,
+  "rows": [
+   {
+    "at": "p1#6d11b97e",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#18a60342",
+    "find_phrase": "of.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "of.",
+    "find_phrase_words": 1,
+    "phrase": "Quick … report."
+   },
+   {
+    "at": "p3#4f8d66b1",
+    "find_phrase": "Questions questions",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Questions questions",
+    "find_phrase_words": 2,
+    "phrase": "Questions … by."
+   },
+   {
+    "at": "p4#36037905",
+    "find_phrase": "meeting.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "meeting.",
+    "find_phrase_words": 1,
+    "phrase": "The … open."
+   },
+   {
+    "at": "p5#240ada3d",
+    "find_phrase": "quick.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quick.",
+    "find_phrase_words": 1,
+    "phrase": "Raised … raised."
+   },
+   {
+    "at": "p6#e9e5b65a",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section footnotes"
+   },
+   {
+    "at": "p7#245b0db0",
+    "find_phrase": "during by",
+    "find_phrase_unique": true,
+    "find_phrase_word": "during by",
+    "find_phrase_words": 2,
+    "phrase": "Figures … More."
+   },
+   {
+    "at": "p8#da296a47",
+    "find_phrase": "Review board",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Review board",
+    "find_phrase_words": 2,
+    "phrase": "Review … More."
+   },
+   {
+    "at": "p9#067660f8",
+    "find_phrase": "year.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "year.",
+    "find_phrase_words": 1,
+    "phrase": "Quick … year."
+   }
+  ]
+ },
+ "headings": {
+  "paragraphs": 12,
+  "rows": [
+   {
+    "at": "p1#a4d85266",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#02cbffde",
+    "find_phrase": "report.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "report.",
+    "find_phrase_words": 1,
+    "phrase": "Quick … report."
+   },
+   {
+    "at": "p3#1d88d132",
+    "find_phrase": "open.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "open.",
+    "find_phrase_words": 1,
+    "phrase": "The … open."
+   },
+   {
+    "at": "p4#65e68135",
+    "find_phrase": "Last meeting",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Last meeting",
+    "find_phrase_words": 2,
+    "phrase": "Last … and."
+   },
+   {
+    "at": "p5#cdf9286a",
+    "find_phrase": "By during",
+    "find_phrase_unique": true,
+    "find_phrase_word": "By during",
+    "find_phrase_words": 2,
+    "phrase": "By … the."
+   },
+   {
+    "at": "p6#52b58047",
+    "find_phrase": "Raised review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Raised review",
+    "find_phrase_words": 2,
+    "phrase": "Raised review … of."
+   },
+   {
+    "at": "p7#fb3575d6",
+    "find_phrase": "the year.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "the year.",
+    "find_phrase_words": 2,
+    "phrase": "Of … year."
+   },
+   {
+    "at": "p8#71771e2b",
+    "find_phrase": "during.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "during.",
+    "find_phrase_words": 1,
+    "phrase": "Covers … during."
+   },
+   {
+    "at": "p9#75b11bfe",
+    "find_phrase": "questions.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "questions.",
+    "find_phrase_words": 1,
+    "phrase": "Raised covers … of."
+   },
+   {
+    "at": "p10#bf48c344",
+    "find_phrase": "By figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "By figures",
+    "find_phrase_words": 2,
+    "phrase": "By … quick."
+   },
+   {
+    "at": "p11#bccc3b8e",
+    "find_phrase": "raised.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "raised.",
+    "find_phrase_words": 1,
+    "phrase": "Covers … the."
+   },
+   {
+    "at": "p12#cb420de7",
+    "find_phrase": "Of of",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Of of",
+    "find_phrase_words": 2,
+    "phrase": "Of … the."
+   }
+  ]
+ },
+ "hyperlinks": {
+  "paragraphs": 9,
+  "rows": [
+   {
+    "at": "p1#16517ffd",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#671e9046",
+    "find_phrase": "by.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "by.",
+    "find_phrase_words": 1,
+    "phrase": "The … last."
+   },
+   {
+    "at": "p3#3b17696a",
+    "find_phrase": "covers.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "covers.",
+    "find_phrase_words": 1,
+    "phrase": "The … covers."
+   },
+   {
+    "at": "p4#bb1d0e52",
+    "find_phrase": "raised.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "raised.",
+    "find_phrase_words": 1,
+    "phrase": "Report … questions."
+   },
+   {
+    "at": "p5#5904bed8",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section hyperlinks"
+   },
+   {
+    "at": "p6#458774a8",
+    "find_phrase": "See",
+    "find_phrase_unique": true,
+    "find_phrase_word": "See",
+    "find_phrase_words": 1,
+    "phrase": "See … details."
+   },
+   {
+    "at": "p7#7670ee22",
+    "find_phrase": "Bookmarked",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Bookmarked",
+    "find_phrase_words": 1,
+    "phrase": "Bookmarked … paragraph."
+   },
+   {
+    "at": "p8#57964d1a",
+    "find_phrase": "Jump",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Jump",
+    "find_phrase_words": 1,
+    "phrase": "Jump … bookmark."
+   },
+   {
+    "at": "p9#21978ba5",
+    "find_phrase": "quarterly.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quarterly.",
+    "find_phrase_words": 1,
+    "phrase": "Open … of."
+   }
+  ]
+ },
+ "kitchen_sink": {
+  "paragraphs": 49,
+  "rows": [
+   {
+    "at": "p1#2bf9c66a",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#bc9fbb75",
+    "find_phrase": "During raised",
+    "find_phrase_unique": true,
+    "find_phrase_word": "During raised",
+    "find_phrase_words": 2,
+    "phrase": "During … the."
+   },
+   {
+    "at": "p3#9dd2db2d",
+    "find_phrase": "year covers",
+    "find_phrase_unique": true,
+    "find_phrase_word": "year covers",
+    "find_phrase_words": 2,
+    "phrase": "By … and."
+   },
+   {
+    "at": "p4#17332453",
+    "find_phrase": "meeting report",
+    "find_phrase_unique": true,
+    "find_phrase_word": "meeting report",
+    "find_phrase_words": 2,
+    "phrase": "Figures … raised The."
+   },
+   {
+    "at": "p5#280e38e3",
+    "find_phrase": "quick questions",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quick questions",
+    "find_phrase_words": 2,
+    "phrase": "Report … the."
+   },
+   {
+    "at": "p6#b9a12a48",
+    "find_phrase": "revisions",
+    "find_phrase_unique": true,
+    "find_phrase_word": "revisions",
+    "find_phrase_words": 1,
+    "phrase": "Section revisions"
+   },
+   {
+    "at": "p7#9628195c",
+    "find_phrase": "Before",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Before",
+    "find_phrase_words": 1,
+    "phrase": "Before … the."
+   },
+   {
+    "at": "p9#42223441",
+    "find_phrase": "meeting during",
+    "find_phrase_unique": true,
+    "find_phrase_word": "meeting during",
+    "find_phrase_words": 2,
+    "phrase": "Figures … quarterly."
+   },
+   {
+    "at": "p10#ca1c3b0a",
+    "find_phrase": "open covers",
+    "find_phrase_unique": true,
+    "find_phrase_word": "open covers",
+    "find_phrase_words": 2,
+    "phrase": "Figures … the The."
+   },
+   {
+    "at": "p11#d0824720",
+    "find_phrase": "Review figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Review figures",
+    "find_phrase_words": 2,
+    "phrase": "Review … by."
+   },
+   {
+    "at": "p12#5090f9ee",
+    "find_phrase": "comments",
+    "find_phrase_unique": true,
+    "find_phrase_word": "comments",
+    "find_phrase_words": 1,
+    "phrase": "Section comments"
+   },
+   {
+    "at": "p13#fd142ff2",
+    "find_phrase": "questions.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "questions.",
+    "find_phrase_words": 1,
+    "phrase": "Commented: … questions."
+   },
+   {
+    "at": "p14#d5623194",
+    "find_phrase": "Commented: The",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Commented: The",
+    "find_phrase_words": 2,
+    "phrase": "Commented: … meeting."
+   },
+   {
+    "at": "p15#7d0f322b",
+    "find_phrase": "Commented: During",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Commented: During",
+    "find_phrase_words": 2,
+    "phrase": "Commented: … quarterly."
+   },
+   {
+    "at": "p16#9d78a3d2",
+    "find_phrase": "raised.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "raised.",
+    "find_phrase_words": 1,
+    "phrase": "Covers … quick."
+   },
+   {
+    "at": "p17#bd8ed537",
+    "find_phrase": "fields",
+    "find_phrase_unique": true,
+    "find_phrase_word": "fields",
+    "find_phrase_words": 1,
+    "phrase": "Section fields"
+   },
+   {
+    "at": "p18#7f206dc7",
+    "find_phrase": "Page 1",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Page 1",
+    "find_phrase_words": 2,
+    "phrase": "Page … report."
+   },
+   {
+    "at": "p19#85481a01",
+    "find_phrase": "Dated",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Dated",
+    "find_phrase_words": 1,
+    "phrase": "Dated … test."
+   },
+   {
+    "at": "p20#62e213eb",
+    "find_phrase": "figures.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "figures.",
+    "find_phrase_words": 1,
+    "phrase": "The … figures."
+   },
+   {
+    "at": "p21#5904bed8",
+    "find_phrase": "hyperlinks",
+    "find_phrase_unique": true,
+    "find_phrase_word": "hyperlinks",
+    "find_phrase_words": 1,
+    "phrase": "Section hyperlinks"
+   },
+   {
+    "at": "p22#458774a8",
+    "find_phrase": "See",
+    "find_phrase_unique": true,
+    "find_phrase_word": "See",
+    "find_phrase_words": 1,
+    "phrase": "See … details."
+   },
+   {
+    "at": "p23#7670ee22",
+    "find_phrase": "Bookmarked",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Bookmarked",
+    "find_phrase_words": 1,
+    "phrase": "Bookmarked … paragraph."
+   },
+   {
+    "at": "p24#57964d1a",
+    "find_phrase": "Jump",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Jump",
+    "find_phrase_words": 1,
+    "phrase": "Jump … bookmark."
+   },
+   {
+    "at": "p25#22bb24ca",
+    "find_phrase": "Covers last",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Covers last",
+    "find_phrase_words": 2,
+    "phrase": "Covers … during."
+   },
+   {
+    "at": "p26#39dd87be",
+    "find_phrase": "Section tables",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section tables",
+    "find_phrase_words": 2,
+    "phrase": "Section tables"
+   },
+   {
+    "at": "p27#964a0107",
+    "find_phrase": "R1C1 Quick",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C1 Quick",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … the."
+   },
+   {
+    "at": "p28#b0f398ac",
+    "find_phrase": "R1C2 And",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C2 And",
+    "find_phrase_words": 2,
+    "phrase": "R1C2 … report."
+   },
+   {
+    "at": "p29#ac917524",
+    "find_phrase": "R1C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C3",
+    "find_phrase_words": 1,
+    "phrase": "R1C3 … The."
+   },
+   {
+    "at": "p30#98f98c2e",
+    "find_phrase": "board board.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "board board.",
+    "find_phrase_words": 2,
+    "phrase": "R2C1 … board."
+   },
+   {
+    "at": "p31#5f5b95c2",
+    "find_phrase": "figures by.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "figures by.",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … by."
+   },
+   {
+    "at": "p32#3a08bfa4",
+    "find_phrase": "R2C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C3",
+    "find_phrase_words": 1,
+    "phrase": "R2C3 … of."
+   },
+   {
+    "at": "p33#6b0a0ca0",
+    "find_phrase": "R3C1",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C1",
+    "find_phrase_words": 1,
+    "phrase": "R3C1 … report."
+   },
+   {
+    "at": "p34#f1261839",
+    "find_phrase": "R3C2",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C2",
+    "find_phrase_words": 1,
+    "phrase": "R3C2 … the."
+   },
+   {
+    "at": "p35#743006a8",
+    "find_phrase": "R3C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C3",
+    "find_phrase_words": 1,
+    "phrase": "R3C3 … of."
+   },
+   {
+    "at": "p36#2e31237e",
+    "find_phrase": "Between",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Between",
+    "find_phrase_words": 1,
+    "phrase": "Between … tables."
+   },
+   {
+    "at": "p37#909a915f",
+    "find_phrase": "R1C1 Year",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C1 Year",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … year."
+   },
+   {
+    "at": "p38#6423394c",
+    "find_phrase": "R1C2 Quick",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C2 Quick",
+    "find_phrase_words": 2,
+    "phrase": "R1C2 … and."
+   },
+   {
+    "at": "p39#395d4b72",
+    "find_phrase": "during the.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "during the.",
+    "find_phrase_words": 2,
+    "phrase": "R2C1 … the."
+   },
+   {
+    "at": "p40#f04e64a3",
+    "find_phrase": "R1C1 Figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C1 Figures",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … quarterly."
+   },
+   {
+    "at": "p41#d5acda07",
+    "find_phrase": "open.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "open.",
+    "find_phrase_words": 1,
+    "phrase": "R1C2 … open."
+   },
+   {
+    "at": "p42#0cf0fec2",
+    "find_phrase": "R2C1 The of",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C1 The of",
+    "find_phrase_words": 3,
+    "phrase": "R2C1 … quick."
+   },
+   {
+    "at": "p43#b4ea5e9c",
+    "find_phrase": "quick quick.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quick quick.",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … quick."
+   },
+   {
+    "at": "p44#e850efd0",
+    "find_phrase": "R2C2 Review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C2 Review",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … covers."
+   },
+   {
+    "at": "p45#dabb8bca",
+    "find_phrase": "After",
+    "find_phrase_unique": true,
+    "find_phrase_word": "After",
+    "find_phrase_words": 1,
+    "phrase": "After … table."
+   },
+   {
+    "at": "p46#16d11b54",
+    "find_phrase": "Quick review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Quick review",
+    "find_phrase_words": 2,
+    "phrase": "Quick … review."
+   },
+   {
+    "at": "p47#e9e5b65a",
+    "find_phrase": "footnotes",
+    "find_phrase_unique": true,
+    "find_phrase_word": "footnotes",
+    "find_phrase_words": 1,
+    "phrase": "Section footnotes"
+   },
+   {
+    "at": "p48#cc5794fa",
+    "find_phrase": "quick by",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quick by",
+    "find_phrase_words": 2,
+    "phrase": "The … More."
+   },
+   {
+    "at": "p49#a87c9bc3",
+    "find_phrase": "review review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "review review",
+    "find_phrase_words": 2,
+    "phrase": "Open … More."
+   },
+   {
+    "at": "p50#6c1624c0",
+    "find_phrase": "quarterly last",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quarterly last",
+    "find_phrase_words": 2,
+    "phrase": "The … quarterly."
+   }
+  ]
+ },
+ "novel": {
+  "paragraphs": 2085,
+  "sha256": "b8feb3f771582bfc715f191b985a8ac832a52e466bcd31d2bc881e5efadbc3a2"
+ },
+ "plain": {
+  "paragraphs": 4,
+  "rows": [
+   {
+    "at": "p1#e11adbde",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#4569b087",
+    "find_phrase": "last",
+    "find_phrase_unique": true,
+    "find_phrase_word": "last",
+    "find_phrase_words": 1,
+    "phrase": "The … meeting."
+   },
+   {
+    "at": "p3#24625aed",
+    "find_phrase": "board.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "board.",
+    "find_phrase_words": 1,
+    "phrase": "And … report."
+   },
+   {
+    "at": "p4#761aa24a",
+    "find_phrase": "figures.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "figures.",
+    "find_phrase_words": 1,
+    "phrase": "The … by."
+   }
+  ]
+ },
+ "revisions": {
+  "paragraphs": 10,
+  "rows": [
+   {
+    "at": "p1#bc6d767a",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#d3ee9666",
+    "find_phrase": "Covers review",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Covers review",
+    "find_phrase_words": 2,
+    "phrase": "Covers … open."
+   },
+   {
+    "at": "p3#cd972ded",
+    "find_phrase": "Board by",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Board by",
+    "find_phrase_words": 2,
+    "phrase": "Board … the."
+   },
+   {
+    "at": "p4#eea8a302",
+    "find_phrase": "questions.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "questions.",
+    "find_phrase_words": 1,
+    "phrase": "Questions … the."
+   },
+   {
+    "at": "p5#bae99605",
+    "find_phrase": "board.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "board.",
+    "find_phrase_words": 1,
+    "phrase": "The … by."
+   },
+   {
+    "at": "p6#b9a12a48",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section revisions"
+   },
+   {
+    "at": "p7#dcb9e5b4",
+    "find_phrase": "Before",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Before",
+    "find_phrase_words": 1,
+    "phrase": "Before … meeting."
+   },
+   {
+    "at": "p9#d9ec810f",
+    "find_phrase": "questions quick",
+    "find_phrase_unique": true,
+    "find_phrase_word": "questions quick",
+    "find_phrase_words": 2,
+    "phrase": "The … open."
+   },
+   {
+    "at": "p10#20610b8f",
+    "find_phrase": "Of of",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Of of",
+    "find_phrase_words": 2,
+    "phrase": "Of … quick."
+   },
+   {
+    "at": "p11#3f5e846d",
+    "find_phrase": "Review open",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Review open",
+    "find_phrase_words": 2,
+    "phrase": "Review … of."
+   }
+  ]
+ },
+ "tables": {
+  "paragraphs": 26,
+  "rows": [
+   {
+    "at": "p1#ac514368",
+    "find_phrase": "Synthetic",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Synthetic",
+    "find_phrase_words": 1,
+    "phrase": "Synthetic … 1"
+   },
+   {
+    "at": "p2#cbec2858",
+    "find_phrase": "Quick open",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Quick open",
+    "find_phrase_words": 2,
+    "phrase": "Quick … last."
+   },
+   {
+    "at": "p3#3a9e51e3",
+    "find_phrase": "of during",
+    "find_phrase_unique": true,
+    "find_phrase_word": "of during",
+    "find_phrase_words": 2,
+    "phrase": "Meeting … the."
+   },
+   {
+    "at": "p4#5e3779d0",
+    "find_phrase": "quick.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "quick.",
+    "find_phrase_words": 1,
+    "phrase": "The … board."
+   },
+   {
+    "at": "p5#750996e6",
+    "find_phrase": "by.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "by.",
+    "find_phrase_words": 1,
+    "phrase": "The … by."
+   },
+   {
+    "at": "p6#39dd87be",
+    "find_phrase": "Section",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Section",
+    "find_phrase_words": 1,
+    "phrase": "Section tables"
+   },
+   {
+    "at": "p7#a40d25e2",
+    "find_phrase": "the of.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "the of.",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … of."
+   },
+   {
+    "at": "p8#63a7ff98",
+    "find_phrase": "R1C2 Figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C2 Figures",
+    "find_phrase_words": 2,
+    "phrase": "R1C2 … board."
+   },
+   {
+    "at": "p9#bbf9b77c",
+    "find_phrase": "R1C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C3",
+    "find_phrase_words": 1,
+    "phrase": "R1C3 … quarterly."
+   },
+   {
+    "at": "p10#ceab54fb",
+    "find_phrase": "R2C1 Meeting",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C1 Meeting",
+    "find_phrase_words": 2,
+    "phrase": "R2C1 … report."
+   },
+   {
+    "at": "p11#318d67c2",
+    "find_phrase": "R2C2 The",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C2 The",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … questions."
+   },
+   {
+    "at": "p12#4a8a5e88",
+    "find_phrase": "R2C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C3",
+    "find_phrase_words": 1,
+    "phrase": "R2C3 … review."
+   },
+   {
+    "at": "p13#f779aac8",
+    "find_phrase": "R3C1",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C1",
+    "find_phrase_words": 1,
+    "phrase": "R3C1 … during."
+   },
+   {
+    "at": "p14#512464b9",
+    "find_phrase": "R3C2",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C2",
+    "find_phrase_words": 1,
+    "phrase": "R3C2 … and."
+   },
+   {
+    "at": "p15#0890e132",
+    "find_phrase": "R3C3",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R3C3",
+    "find_phrase_words": 1,
+    "phrase": "R3C3 … the."
+   },
+   {
+    "at": "p16#2e31237e",
+    "find_phrase": "Between",
+    "find_phrase_unique": true,
+    "find_phrase_word": "Between",
+    "find_phrase_words": 1,
+    "phrase": "Between … tables."
+   },
+   {
+    "at": "p17#650cbd94",
+    "find_phrase": "year last.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "year last.",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … last."
+   },
+   {
+    "at": "p18#007d806e",
+    "find_phrase": "R1C2 Covers",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C2 Covers",
+    "find_phrase_words": 2,
+    "phrase": "R1C2 … open."
+   },
+   {
+    "at": "p19#22c8007b",
+    "find_phrase": "R2C1 During",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C1 During",
+    "find_phrase_words": 2,
+    "phrase": "R2C1 … figures."
+   },
+   {
+    "at": "p20#d025864b",
+    "find_phrase": "meeting and.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "meeting and.",
+    "find_phrase_words": 2,
+    "phrase": "R1C1 … and."
+   },
+   {
+    "at": "p21#36c4b906",
+    "find_phrase": "R1C2 Report",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R1C2 Report",
+    "find_phrase_words": 2,
+    "phrase": "R1C2 … during."
+   },
+   {
+    "at": "p22#e3cca6c7",
+    "find_phrase": "R2C1 Figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C1 Figures",
+    "find_phrase_words": 2,
+    "phrase": "R2C1 … covers."
+   },
+   {
+    "at": "p23#96ed78ff",
+    "find_phrase": "R2C2 Year",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C2 Year",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … of."
+   },
+   {
+    "at": "p24#6d69d580",
+    "find_phrase": "R2C2 Figures",
+    "find_phrase_unique": true,
+    "find_phrase_word": "R2C2 Figures",
+    "find_phrase_words": 2,
+    "phrase": "R2C2 … quarterly."
+   },
+   {
+    "at": "p25#dabb8bca",
+    "find_phrase": "After",
+    "find_phrase_unique": true,
+    "find_phrase_word": "After",
+    "find_phrase_words": 1,
+    "phrase": "After … table."
+   },
+   {
+    "at": "p26#bafe866d",
+    "find_phrase": "meeting.",
+    "find_phrase_unique": true,
+    "find_phrase_word": "meeting.",
+    "find_phrase_words": 1,
+    "phrase": "By … report."
+   }
+  ]
+ }
+}
