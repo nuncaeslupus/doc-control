@@ -16,6 +16,7 @@ import pytest
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
+from doc_control.ops.sections import section_rows
 from tests.layout.label_fixtures import Scenario, Sec, build_docx, export_pdfs, label_failures
 from tests.layout.test_page_labels import _require_tools
 
@@ -317,3 +318,55 @@ def test_untracked_changes_need_the_flag_and_null_drops_a_reference(tmp_path: Pa
     dropped["sections"][1]["header"]["default"] = None
     api.run("layout.apply", {"doc": str(path), "plan": dropped, "untracked": True})
     assert current(path)["sections"][1]["header"]["default"] is None
+    # Without its own reference the section prints the previous section's header.
+    assert printed_headers(path) == [header, header]
+
+
+def printed_headers(path: Path, kind: str = "default") -> list[str | None]:
+    """The header text each section prints, inheritance resolved: the text of the section
+    whose reference it uses (sections.list gives its key, hdr<N>.<kind>)."""
+    plan = current(path)["sections"]
+    out = []
+    for row in section_rows(Document(str(path))):
+        key = row["headers"][kind]
+        out.append(None if key is None else plan[int(key[3:].split(".")[0]) - 1]["header"][kind])
+    return out
+
+
+def three_sections_inheriting(tmp_path: Path) -> tuple[Path, str]:
+    """Three sections; the first owns the default header, the other two inherit it."""
+    path = plain(tmp_path, 6)
+    api.run("layout.apply", {"doc": str(path), "plan": asked_plan(path, {}, {}, {})})
+    header = current(path)["sections"][0]["header"]["default"]
+    plan = current(path)
+    for sect in plan["sections"][1:]:
+        sect["header"]["default"] = None
+    api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True})
+    assert printed_headers(path) == [header] * 3
+    assert [s["header"]["default"] for s in current(path)["sections"]] == [header, None, None]
+    return path, header
+
+
+def test_a_new_part_leaves_the_header_later_sections_inherit(tmp_path: Path) -> None:
+    path, header = three_sections_inheriting(tmp_path)
+    plan = current(path)
+    plan["sections"][1]["header"]["default"] = "B"
+    api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True})
+    assert printed_headers(path) == [header, "B", header]
+
+
+def test_dropping_a_reference_leaves_the_header_later_sections_inherit(tmp_path: Path) -> None:
+    path, header = three_sections_inheriting(tmp_path)
+    plan = current(path)
+    plan["sections"][0]["header"]["default"] = None
+    api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True})
+    assert printed_headers(path) == [None, header, header]
+
+
+def test_asking_the_inherited_text_changes_nothing(tmp_path: Path) -> None:
+    path, header = three_sections_inheriting(tmp_path)
+    before = path.read_bytes()
+    plan = current(path)
+    plan["sections"][2]["header"]["default"] = header
+    out = api.run("layout.apply", {"doc": str(path), "plan": plan}).result
+    assert out["changes"] == [] and path.read_bytes() == before

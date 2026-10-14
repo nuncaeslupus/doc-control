@@ -18,7 +18,7 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.layout import blank_before, centred, is_empty, page_break_before
 from doc_control.model.parts import W, parse_part
-from doc_control.model.stories import HF_KINDS, list_stories
+from doc_control.model.stories import HF_KINDS, list_stories, section_properties
 from doc_control.ooxml.hftext import free_part_names, free_rids
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR, unsupported
 from doc_control.ooxml.sections import BREAK_TYPES, check_props
@@ -418,6 +418,63 @@ def _differences(want: Any, got: Any, path: str = "plan") -> list[str]:
 
 _Refs = dict[str, dict[str, str | None]]  # "header_refs"/"footer_refs" -> kind -> rId or None
 _GROUPS = (("header", "headers"), ("footer", "footers"))
+_REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+_Printed = list[dict[str, dict[str, str | None]]]  # per section: group -> kind -> text shown
+
+
+def _printed(doc: Document) -> _Printed:
+    """The header and footer text each section prints per kind, inheritance resolved
+    (None where it prints none)."""
+    pkg = doc.pkg
+    stories = {s.key: s for s in list_stories(pkg, ("headers",))}
+    texts: dict[str, str] = {}
+    out: _Printed = []
+    for row in section_rows(doc):
+        shown: dict[str, dict[str, str | None]] = {}
+        for group, which in _GROUPS:
+            shown[group] = {}
+            for kind in HF_KINDS:
+                key = row[which][kind]
+                if key is not None and key not in texts:
+                    texts[key] = _story_text(parse_part(pkg, stories[key].part))
+                shown[group][kind] = None if key is None else texts[key]
+        out.append(shown)
+    return out
+
+
+def _printed_differences(
+    plan: dict[str, Any], owned: dict[str, Any], before: _Printed, after: _Printed
+) -> list[str]:
+    """Where a section prints other header or footer text than ``plan`` asks: the text
+    given, else (key left out, or null on a kind it inherits) what it printed ``before``;
+    null on a kind it owned (``owned``, the plan view before) means the previous section's."""
+    sections = plan["sections"]
+    if not len(sections) == len(before) == len(after):
+        return []  # the section count differs; the plan comparison says so
+    out = []
+    for i, sect in enumerate(sections):
+        for group, _ in _GROUPS:
+            for kind in HF_KINDS:
+                value = sect.get(group, {}).get(kind, _OMITTED)
+                want: str | None
+                if isinstance(value, str):
+                    want = value
+                elif value is None and owned["sections"][i][group][kind] is not None:
+                    want = after[i - 1][group][kind] if i else None
+                else:
+                    want = before[i][group][kind]
+                got = after[i][group][kind]
+                if (got or None) != (want or None):  # an empty part prints nothing too
+                    out.append(f"sections[{i}].{group}.{kind} prints {got!r}, not {want!r}")
+    return out
+
+
+def _ref_id(pkg: Any, section: int, group: str, kind: str) -> str:
+    """The relationship id of section ``section``'s own ``group`` reference of ``kind``."""
+    for ref in section_properties(pkg)[section - 1].findall(f"{W}{group}Reference"):
+        if ref.get(W + "type", "default") == kind:
+            return ref.get(_REL_ID, "")
+    raise AssertionError(f"section {section} has no {kind} {group} reference")
 
 
 def _header_edits(
@@ -429,7 +486,13 @@ def _header_edits(
 
     A part is rewritten in place (tracked) only when no section that keeps using it would
     change with it: every section referencing it asks the new text. A section asking other
-    text than its part keeps gets a new part of its own."""
+    text than its part keeps gets a new part of its own; one asking the text it already
+    shows (own or inherited) is left alone.
+
+    A section whose reference of a kind changes (a new part, or null dropping its own) would
+    change what the next section prints when that one inherits the kind, so the next
+    section is pinned to what it prints now: a reference to the same part, or, when it
+    printed none, an empty part of its own (which prints nothing)."""
     pkg = after.pkg
     rows = section_rows(after)
     if len(rows) != len(plan["sections"]):
@@ -443,7 +506,7 @@ def _header_edits(
         return texts[part]
 
     users: dict[str, list[Any]] = {}  # part -> what each section using it asks
-    slots: list[tuple[int, str, str, Any, str | None, str | None]] = []
+    slots: list[tuple[int, str, str, Any, str | None, str | None, str | None]] = []
     for i, (row, sect) in enumerate(zip(rows, plan["sections"], strict=True)):
         for group, which in _GROUPS:
             asked = sect.get(group, {})
@@ -455,7 +518,7 @@ def _header_edits(
                 if part is not None:
                     # A section inheriting the part shows its text, whatever its plan says.
                     users.setdefault(part, []).append(value if own else _OMITTED)
-                slots.append((i, group, kind, value, part if own else None, part))
+                slots.append((i, group, kind, value, part if own else None, part, key))
     keep: dict[str, str] = {}
     for part, values in users.items():
         current = text_of(part)
@@ -472,23 +535,48 @@ def _header_edits(
     rids = free_rids(pkg)
     refs: dict[int, _Refs] = {}
     needs: list[str] = []
-    for i, group, kind, value, own, part in slots:
-        where = f"sections[{i}].{group}.{kind}"
-        if value is _OMITTED or (value is not None and own is not None and keep[own] == value):
-            continue
-        if value is None:
-            if own is not None:
-                refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = None
-                needs.append(f"{where}: dropping the section's reference")
-            continue
+
+    def new_part(i: int, group: str, text: str, part: str | None) -> str:
         default = rows[i][group + "s"]["default"]
         like = part or (stories[default].part if default is not None else None)
         like = like or next((s.part for s in stories.values() if s.kind == group), None)
         name, rid = next(names[group]), next(rids)
-        edit = {"kind": "header.new", "part": name, "rid": rid, "group": group, "text": value}
+        edit = {"kind": "header.new", "part": name, "rid": rid, "group": group, "text": text}
         edits.append({**edit, "like": like} if like is not None else edit)
-        refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = rid
+        return rid
+
+    by_slot = {(i, group, kind): (own, part, key) for i, group, kind, _, own, part, key in slots}
+    changed: set[tuple[int, str, str]] = set()
+    for i, group, kind, value, own, part, _ in slots:
+        where = f"sections[{i}].{group}.{kind}"
+        if value is _OMITTED or (value is not None and part is not None and keep[part] == value):
+            continue
+        if value is None:
+            if own is not None:
+                refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = None
+                changed.add((i, group, kind))
+                needs.append(f"{where}: dropping the section's reference")
+            continue
+        refs.setdefault(i, {}).setdefault(group + "_refs", {})[kind] = new_part(
+            i, group, value, part
+        )
+        changed.add((i, group, kind))
         needs.append(f"{where}: a new {group} part")
+    for i, group, kind in sorted(changed):
+        nxt = (i + 1, group, kind)
+        if nxt not in by_slot or nxt in changed or by_slot[nxt][0] is not None:
+            continue  # no next section, or it gets or keeps its own reference
+        _, part, key = by_slot[nxt]
+        where = f"sections[{i + 1}].{group}.{kind}"
+        if part is not None and key is not None:
+            owner = stories[key].section
+            assert owner is not None
+            rid = _ref_id(pkg, owner, group, kind)
+            needs.append(f"{where}: a reference to the {group} it inherits")
+        else:
+            rid = new_part(i + 1, group, "", None)
+            needs.append(f"{where}: an empty {group} part, to keep printing none")
+        refs.setdefault(i + 1, {}).setdefault(group + "_refs", {})[kind] = rid
     return edits, refs, needs
 
 
@@ -559,6 +647,7 @@ def apply_plan(
         if edits:
             probe = write(edits, dry_run=True)
             made = _read_back(probe.package, scratch, "breaks.docx")
+        owned, before = page_plan(made), _printed(made)
         more, refs, needs = _header_edits(made, plan)
         settings = _settings_edit(plan, now)
         if settings is not None:
@@ -574,11 +663,15 @@ def apply_plan(
             probe = write(edits, dry_run=True)
             made = _read_back(probe.package, scratch, "after.docx")
         after = page_plan(made)
+        printed = _printed_differences(plan, owned, before, _printed(made))
+    # The header and footer text is checked as printed (inheritance resolved), not as the
+    # plan view shows it: a section pinned to the part it inherited shows it as its own.
+    skip = {"from", "header", "footer"}
     want = {
         **plan,
-        "sections": [{k: v for k, v in s.items() if k != "from"} for s in plan["sections"]],
+        "sections": [{k: v for k, v in s.items() if k not in skip} for s in plan["sections"]],
     }
-    differences = _differences(want, after)
+    differences = _differences(want, after) + printed
     if blocked:
         raise unsupported(
             "Word cannot track what the plan needs (D-L2): "
@@ -617,7 +710,9 @@ def apply_plan(
     "starts (from), its break (nextPage, oddPage for a right-hand start, evenPage, "
     "continuous), the page-number start and format, a different first page, the header and "
     "footer text per kind (default, first, even; {PAGE}, {NUMPAGES} and {chapter} become "
-    "fields; null drops the section's own), two_sided (even and odd headers) and "
+    "fields; null drops the section's own, so it inherits the previous section's; the next "
+    "section, when it inherits, keeps printing what it did, by a reference to the same part "
+    "or an empty part of its own), two_sided (even and odd headers) and "
     "mirror_margins. Keys left out stay as they are; shown is checked, not set. Breaks, "
     "numbering and the text of a header or footer part are tracked changes; a part is "
     "rewritten only when every section using it asks the same text, else the section gets "
