@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="arsenal-source-sha256" content="3691fffdaf2460eefa2932a5ca15a75380b76e7c93694b59480e9844e4987cca">
+<title>Doc Control — Plan (annotatable)</title>
+<style>
+:root{
+  --bg:#fbfaf7;--fg:#1d1c1a;--muted:#5f5c56;--line:#e3ded4;
+  --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
+  --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
+  --measure:70ch;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
+    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
+    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:96px;
+}
+.wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
+a{color:var(--link);text-underline-offset:2px}
+code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:.88em;line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+.topbar{position:sticky;top:0;z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--line);backdrop-filter:saturate(120%) blur(6px)}
+.topbar .wrap{display:flex;align-items:center;gap:8px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;margin-right:auto;letter-spacing:.2px;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand small{font-weight:500;color:var(--muted);display:block;font-size:11px;letter-spacing:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
+.count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
+.savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
+.savestate.ok{color:var(--accent)}
+.savestate.warn{color:#9a4a0b}
+@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
+.statusbar{border-bottom:1px solid var(--line);background:var(--card)}
+.statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
+#warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
+#warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
+@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
+.hero{padding:26px 0 6px}
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
+.help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.help summary{cursor:pointer;font-weight:600;padding:10px 0}
+.help ul{margin:.2em 0 1em;padding-left:1.2em}
+.help li{margin:.3em 0}
+.toc{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
+.toc>summary{cursor:pointer;font-weight:700;padding:11px 0;font-size:15px}
+.toc-part{margin:2px 0;border-top:1px solid var(--line)}
+.toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
+.toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
+.toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
+.toc-part a{text-decoration:none}
+.toc-part a:hover{text-decoration:underline}
+.part{margin:30px 0}
+.part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
+  padding-bottom:8px;margin:18px 0 10px}
+.badge{display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  vertical-align:middle;padding:3px 7px;border-radius:6px;margin-right:8px}
+.badge.spec,.badge.plan{background:var(--chip);color:var(--accent)}
+.badge.workspace{background:var(--chip);color:var(--accent2)}
+/* Two heading levels, told apart by size, weight and a rule: a ## section opens
+   with a full-width rule; a ### section sits indented under it on a side rule. */
+.sec{scroll-margin-top:72px}
+.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.part>.sec.l2:first-of-type{border-top:none;margin-top:0}
+.sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
+.sec-h{margin:6px 0 8px;line-height:1.3}
+h3.sec-h{font-size:1.3rem;font-weight:750}
+h4.sec-h{font-size:1.08rem;font-weight:650;color:var(--fg)}
+.sec.bare>.sec-h{margin-bottom:2px}
+.chip{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+  color:var(--accent);background:var(--chip);border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:middle}
+h4 .chip{font-size:11px;color:var(--muted)}
+.sec-title{vertical-align:middle}
+.sec-body{margin:.2em 0 .4em}
+.sec-body p,.sec-body li,.sec-body blockquote{max-width:var(--measure)}
+.sec-body p{margin:.6em 0}
+.sec-body ul,.sec-body ol{margin:.5em 0;padding-left:1.35em}
+.sec-body li{margin:.3em 0}
+.sec-body h4,.sec-body h5,.sec-body h6{font-size:1em;margin:1em 0 .3em}
+.sec-body blockquote{margin:.7em 0;padding:.5em .9em;border-left:3px solid var(--accent);
+  background:var(--code);border-radius:0 8px 8px 0;color:var(--fg)}
+.sec-body blockquote p{margin:.3em 0}
+.sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
+.sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
+  display:block;max-width:100%;overflow-x:auto}
+.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+.sec-body th{background:var(--chip);font-weight:700}
+.sec-body strong{font-weight:700}
+/* The note field: the one thing on the page that is the reviewer's, so it must
+   not read as more document. Dashed while empty, solid once written in. */
+.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
+  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
+.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
+.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+.note-ico{color:var(--note-fg);font-weight:800}
+.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note-ta::placeholder{color:var(--muted);opacity:1}
+.note.filled{border-style:solid}
+.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fab .btn{box-shadow:0 4px 14px #0003}
+.modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
+  max-height:86vh;display:flex;flex-direction:column;padding:16px}
+.modal-card h3{margin:.1em 0 .5em}
+.modal-card p{color:var(--muted);font-size:13.5px;margin:.2em 0 .6em}
+.modal-card textarea{width:100%;flex:1;min-height:220px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.hidden-input{display:none}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+  padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:.96}
+/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+@media(max-width:600px){
+  body{font-size:16px;padding-bottom:76px}
+  .hero h1{font-size:1.45rem}
+  .part-title{font-size:1.25rem}
+  h3.sec-h{font-size:1.15rem}
+  h4.sec-h{font-size:1rem}
+  .sec.l3{padding-left:10px}
+  .statusbar .hint{display:none}
+  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
+    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
+  .fab .btn{box-shadow:none;padding:7px 9px}
+  .toast{bottom:64px}
+}
+@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">Doc Control — Plan<small>annotatable reader · 2026-10-14</small></div>
+    <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn primary" id="btn-export">Save / Export</button>
+  </div>
+</div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 10 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Doc Control — Plan</h1>
+    <p>Read at your own pace and leave a note on any point you want to discuss.</p>
+  </div>
+  <details class="help">
+    <summary>How to annotate (tap)</summary>
+    <ul>
+      <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li><strong>Notes save automatically</strong> in this browser as you type.</li>
+      <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
+      <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
+      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
+    </ul>
+  </details>
+  <details class="toc" open><summary>Contents</summary>
+<details class="toc-part">
+<summary>Plan</summary><ul>
+<li><a href="#s-plan-intro">Preamble &amp; scope</a></li>
+<li><a href="#s-plan-technical-solution">Technical solution</a></li>
+<li><a href="#s-plan-architecture-overview">Architecture overview</a></li>
+<li><a href="#s-plan-data-flow">Data flow</a></li>
+<li><a href="#s-plan-state-changes">State changes</a></li>
+<li><a href="#s-plan-technology-choices">Technology choices</a></li>
+<li><a href="#s-plan-out-of-scope">Out of scope</a></li>
+<li><a href="#s-plan-implementation-tasks">Implementation tasks</a></li>
+<li><a href="#s-plan-dependency-graph">Dependency graph</a></li>
+<li><a href="#s-plan-evidence-log">Evidence log</a></li>
+<li><a href="#s-plan-sign-off">Sign-off</a></li>
+</ul></details>
+</details>
+  <section class="part">
+<h2 class="part-title"><span class="badge plan">Plan</span>Plan</h2>
+<article class="sec l2" id="s-plan-intro">
+<h3 class="sec-h"><span class="chip">overview</span><span class="sec-title">Preamble &amp; scope</span></h3>
+<div class="sec-body"><p><strong>Date</strong>: 2026-10-14
+<strong>Specification</strong>: <code>arsenal/project/STORIES/spec.md</code> (approved r2; contracts §5, risks §6)
+<strong>Author</strong>: Claude (doc-control session), for the owner
+<strong>Revision</strong>: 1
+<strong>Status</strong>: draft
+<strong>Revision log</strong>:
+- r1 — first draft</p>
+<blockquote>
+<p>Review record, kept the way the spec keeps its own: each round of notes bumps
+<strong>Revision</strong> with a log line naming the <code>&lt;repo&gt;-plan-v&lt;N&gt;-&lt;date&gt;-notes.md</code>
+export it applied, committed beside this file in the same commit. Approval is
+<code>approved (YYYY-MM-DD, revision N)</code>, plus <code>— without annotations</code> when there
+were none.</p>
+</blockquote></div>
+<div class="note" data-for="s-plan-intro"><label class="note-head" for="n-s-plan-intro"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN · intro</span></label><textarea class="note-ta" data-key="s-plan-intro" id="n-s-plan-intro" data-label="Preamble &amp; scope" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2 bare" id="s-plan-technical-solution">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technical solution</span></h3>
+</article>
+<article class="sec l3" id="s-plan-architecture-overview">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Architecture overview</span></h4>
+<div class="sec-body"><p>A <strong>story</strong> is one text flow with its own paragraph numbering: the body, one footnote, one endnote, or one header or footer part. The work makes the existing body machinery take a story as a parameter instead of assuming <code>word/document.xml</code>:</p>
+<ul>
+<li><strong>Addresses</strong> (<code>model/address.py</code>): an optional <code>&lt;story&gt;/</code> prefix. Without it the address means the body, exactly as today.</li>
+<li><strong>Stories</strong> (new <code>model/stories.py</code>): resolves each story to its part and to the XML element that holds its paragraphs. Notes are found by <code>w:id</code> in <code>footnotes.xml</code> or <code>endnotes.xml</code>; headers and footers through each section's <code>w:headerReference</code> / <code>w:footerReference</code> and the document rels.</li>
+<li><strong>Index</strong> (<code>model/index.py</code>, <code>ooxml/splice.py</code>): <code>scan</code> takes the container element (today hard-wired to <code>w:body</code>), so one <code>DocumentIndex</code> is built per story, lazily. The body index is built exactly as before.</li>
+<li><strong>Reads</strong> (<code>ops/read.py</code>, <code>ops/locate.py</code>): walk the stories listed in <code>stories</code>. Notes are interleaved after the body paragraph that holds their reference mark when the read is in document order.</li>
+<li><strong>Writes</strong> (<code>ops/tracked.py</code>, <code>ops/comments.py</code>): resolve the address's story, splice that part, and declare it in the footprint. <code>batch</code> groups edits per part and writes every part together through <code>write_verified</code>.</li>
+<li><strong>Safety</strong> (<code>safety/verify.py</code>, <code>safety/history.py</code>): the footprint and the history entry carry part names. Body verification stays byte-identical in what it checks.</li>
+<li><strong>New ops</strong>: <code>note.add</code>, <code>sections.list</code>, <code>table.get</code>, <code>table.row.insert</code>, <code>table.row.delete</code>, all in <code>OPERATION_MODULES</code>. The docs are regenerated.</li>
+</ul></div>
+<div class="note" data-for="s-plan-architecture-overview"><label class="note-head" for="n-s-plan-architecture-overview"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Architecture overview</span></label><textarea class="note-ta" data-key="s-plan-architecture-overview" id="n-s-plan-architecture-overview" data-label="Architecture overview" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-data-flow">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Data flow</span></h4>
+<div class="sec-body"><ol>
+<li>A request carries a story address.</li>
+<li><code>parse_range</code> splits it into story and range.</li>
+<li><code>stories.resolve(doc, story)</code> gives the part and its container.</li>
+<li>The index for that story resolves the range.</li>
+<li>The tracked splice runs on that part's bytes.</li>
+<li><code>write_verified</code> gets <code>{part: new_bytes, …}</code> and a footprint naming each part.</li>
+<li>History logs one entry with every part, and undo restores them together.</li>
+</ol></div>
+<div class="note" data-for="s-plan-data-flow"><label class="note-head" for="n-s-plan-data-flow"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Data flow</span></label><textarea class="note-ta" data-key="s-plan-data-flow" id="n-s-plan-data-flow" data-label="Data flow" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-state-changes">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">State changes</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Database</th>
+<th>Change</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.docx</code> on disk</td>
+<td>—</td>
+<td>UPDATE</td>
+<td>Only on an explicit write. Each write touches the parts it names: a story part, the comment parts, a notes part for <code>note.add</code>.</td>
+</tr>
+<tr>
+<td>doc-control store</td>
+<td>history log</td>
+<td>UPDATE</td>
+<td>Entries gain the parts touched. Old entries, which hold body changes only, are read as before.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-state-changes"><label class="note-head" for="n-s-plan-state-changes"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › State changes</span></label><textarea class="note-ta" data-key="s-plan-state-changes" id="n-s-plan-state-changes" data-label="State changes" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-technology-choices">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Technology choices</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Justification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standard library only</td>
+<td>The core's rule: no new dependency.</td>
+</tr>
+<tr>
+<td>Reuse <code>scan</code>/<code>splice</code> with a container parameter instead of a second parser</td>
+<td>One code path keeps the byte-exact splicing and its tests; the body is the default argument.</td>
+</tr>
+<tr>
+<td>Note address by stored <code>w:id</code> (D-S2)</td>
+<td>Stable while notes are added; the displayed number is returned as a field.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-technology-choices"><label class="note-head" for="n-s-plan-technology-choices"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Technology choices</span></label><textarea class="note-ta" data-key="s-plan-technology-choices" id="n-s-plan-technology-choices" data-label="Technology choices" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-out-of-scope">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Out of scope</span></h4>
+<div class="sec-body"><ul>
+<li>The live engine in notes and headers (D-S4, I-42).</li>
+<li>Table columns, merges and widths (D-S5, I-41).</li>
+<li>Text boxes (I-40).</li>
+<li>Changing sections, page numbering, layout, TOC, indexes, captions or citations: S-9, the next batch. <code>sections.list</code> only reads.</li>
+<li>Comments inside comments, and glossary documents.</li>
+</ul></div>
+<div class="note" data-for="s-plan-out-of-scope"><label class="note-head" for="n-s-plan-out-of-scope"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Out of scope</span></label><textarea class="note-ta" data-key="s-plan-out-of-scope" id="n-s-plan-out-of-scope" data-label="Out of scope" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-implementation-tasks">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Implementation tasks</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Description</th>
+<th>Service</th>
+<th>Size</th>
+<th>Depends</th>
+<th>Gate</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T1</td>
+<td>Corpus kinds <code>notes</code> (footnotes, endnotes, restarts, a custom mark) and <code>headers</code> (default/first/even, an inherited header, a page-numbering restart); the LibreOffice validator compares note, header and footer text and section setup (surface: cloud)</td>
+<td>tests/corpus</td>
+<td>M</td>
+<td>—</td>
+<td><code>story_fixture_failures == 0</code></td>
+<td><code>test_story_kinds_round_trip_through_libreoffice</code> in <code>tests/corpus/test_validator.py</code> — each new kind converts and the validator reports no missing note, header or footer text</td>
+</tr>
+<tr>
+<td>T2</td>
+<td>Story prefix in the address grammar (<code>fn&lt;id&gt;/</code>, <code>en&lt;id&gt;/</code>, <code>hdr&lt;s&gt;.&lt;kind&gt;/</code>, <code>ftr&lt;s&gt;.&lt;kind&gt;/</code>); cross-story ranges refused (surface: cloud)</td>
+<td>model</td>
+<td>S</td>
+<td>—</td>
+<td><code>body_address_drift == 0</code></td>
+<td><code>test_story_prefix_round_trips_and_body_unchanged</code> in <code>tests/model/test_address.py</code> — every story form parses and prints back unchanged, every 0.6.0 corpus body address is identical, and a cross-story range is <code>ADDRESS_INVALID</code></td>
+</tr>
+<tr>
+<td>T3</td>
+<td><code>model/stories.py</code>: resolve stories to parts and containers; <code>scan</code> and <code>build_index</code> take a container; lazy per-story index (surface: cloud)</td>
+<td>model, ooxml</td>
+<td>M</td>
+<td>T2</td>
+<td><code>story_index_failures == 0</code></td>
+<td><code>test_story_index_numbers_each_note_and_header</code> in <code>tests/model/test_stories.py</code> — every note, header and footer of the <code>notes</code> and <code>headers</code> kinds is indexed with its own numbering, and the body index equals 0.6.0's</td>
+</tr>
+<tr>
+<td>T4</td>
+<td>Reads take <code>stories</code>: <code>paragraphs.list</code>, <code>find</code>, <code>locate</code>, <code>para.get</code>, <code>outline</code>, <code>stats</code> give <code>story</code>, <code>note</code>, <code>section</code>, <code>kind</code>, <code>used_by_sections</code>; body rows in tables get <code>cell</code> (surface: cloud)</td>
+<td>ops</td>
+<td>M</td>
+<td>T1, T3</td>
+<td><code>story_read_mismatches == 0</code></td>
+<td><code>test_story_reads_match_libreoffice</code> in <code>tests/ops/test_story_reads.py</code> — every note, header and footer paragraph's text equals LibreOffice's, and each note's <code>of</code> is the body address holding its mark</td>
+</tr>
+<tr>
+<td>T5</td>
+<td>Footprint and verification per part; history logs every part of a write; undo restores them together (surface: cloud)</td>
+<td>safety</td>
+<td>M</td>
+<td>T3</td>
+<td><code>unintended_changes == 0</code></td>
+<td><code>test_story_part_footprint_rejects_outside_change</code> in <code>tests/safety/test_verify_parts.py</code> — a write that changes a byte outside the declared paragraphs of a story part is refused and restored, and the body checks are unchanged</td>
+</tr>
+<tr>
+<td>T6</td>
+<td>Tracked <code>text.replace</code>, <code>para.insert</code>, <code>para.delete</code>, <code>comment.add</code>, <code>revision.accept</code>/<code>reject</code> in any story; <code>batch</code> across parts all or nothing; live returns <code>ENGINE_UNAVAILABLE</code> for story addresses (surface: cloud)</td>
+<td>ops</td>
+<td>L</td>
+<td>T4, T5</td>
+<td><code>story_edit_failures == 0</code></td>
+<td><code>test_story_edits_round_trip_through_libreoffice</code> in <code>tests/ops/test_story_edits.py</code> — each edit kind in a footnote, an endnote, a header and a footer appears in LibreOffice as a revision or comment in that story, and accept, reject and undo all work</td>
+</tr>
+<tr>
+<td>T7</td>
+<td><code>note.add</code> (footnote or endnote at a body offset; mark and text as tracked insertions; creates the notes part when missing) (surface: cloud)</td>
+<td>ops</td>
+<td>M</td>
+<td>T6</td>
+<td><code>note_add_failures == 0</code></td>
+<td><code>test_note_add_tracked_and_rejectable</code> in <code>tests/ops/test_note_add.py</code> — a new note appears in LibreOffice as a tracked insertion, rejecting removes the mark and the note, and undo restores the file byte for byte</td>
+</tr>
+<tr>
+<td>T8</td>
+<td><code>sections.list</code>: break type, title page, even/odd, page-number start and format, header/footer references per kind (read-only, groundwork for S-9) (surface: cloud)</td>
+<td>ops</td>
+<td>S</td>
+<td>T1, T3</td>
+<td><code>section_read_mismatches == 0</code></td>
+<td><code>test_sections_list_matches_libreoffice</code> in <code>tests/ops/test_sections.py</code> — each section of the <code>headers</code> and <code>novel</code> kinds reports the setup LibreOffice reads</td>
+</tr>
+<tr>
+<td>T9</td>
+<td><code>table.get</code>: the grid with <code>gridSpan</code>/<code>vMerge</code> and paragraph addresses per cell (surface: cloud)</td>
+<td>ops</td>
+<td>M</td>
+<td>T3</td>
+<td><code>table_grid_mismatches == 0</code></td>
+<td><code>test_table_grid_matches_libreoffice</code> in <code>tests/ops/test_tables.py</code> — every corpus table's grid equals LibreOffice's rows × cells, merges included</td>
+</tr>
+<tr>
+<td>T10</td>
+<td>Tracked <code>table.row.insert</code> and <code>table.row.delete</code> (refused through a vertical merge) (surface: cloud)</td>
+<td>ops</td>
+<td>M</td>
+<td>T5, T9</td>
+<td><code>table_row_failures == 0</code></td>
+<td><code>test_table_rows_tracked_round_trip</code> in <code>tests/ops/test_table_rows.py</code> — an inserted and a deleted row show in LibreOffice as tracked row changes, and accept, reject and undo all work</td>
+</tr>
+<tr>
+<td>T11</td>
+<td>Performance check, README and docs regeneration, <code>scripts/real_word_stories.py</code> for the owner's Word check (surface: cloud)</td>
+<td>docs, scripts</td>
+<td>S</td>
+<td>T6, T7, T8, T10</td>
+<td><code>paragraphs_list_ratio &lt;= 1.10</code></td>
+<td><code>test_body_read_time_within_ratio</code> in <code>tests/bench/test_story_bench.py</code> — <code>paragraphs.list</code> on the corpus novel takes at most 1.10 × its 0.6.0 time</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Status legend</strong>: ☐ not started · ◐ in progress · ☑ merged</p>
+<p><strong>Merge order</strong>:
+1. T1 and T2, in parallel.
+2. T3.
+3. T4, T5, T8 and T9, in parallel.
+4. T6, then T7; T10 can start once T5 and T9 are in.
+5. T11 last.</p>
+<p><strong>Branch pattern</strong>: <code>stories-T&lt;N&gt;-description</code> from the default branch.</p></div>
+<div class="note" data-for="s-plan-implementation-tasks"><label class="note-head" for="n-s-plan-implementation-tasks"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Implementation tasks</span></label><textarea class="note-ta" data-key="s-plan-implementation-tasks" id="n-s-plan-implementation-tasks" data-label="Implementation tasks" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-plan-dependency-graph">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Dependency graph</span></h4>
+<div class="sec-body"><figure class="drawspec"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.75 -0.75 665.5 575.7" role="img" aria-labelledby="ds693ddc9f8a-title"><title id="ds693ddc9f8a-title">Task dependencies</title><path d="M 364.197 63.7 L 364.197 111.7" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="364.197,111.7 360.597,103.7 367.797,103.7" fill="currentColor" stroke="none"/><path d="M 224.931 63.7 L 224.931 165.4 L 128.341 165.4 L 128.341 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="128.341,211.4 124.741,203.4 131.941,203.4" fill="currentColor" stroke="none"/><path d="M 345.335 163.4 L 345.335 177.4 L 149.299 177.4 L 149.299 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="149.299,211.4 145.699,203.4 152.899,203.4" fill="currentColor" stroke="none"/><path d="M 357.909 163.4 L 357.909 201.4 L 267.607 201.4 L 267.607 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="267.607,211.4 264.007,203.4 271.207,203.4" fill="currentColor" stroke="none"/><path d="M 138.82 263.1 L 138.82 287.1 L 192.735 287.1 L 192.735 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="192.735,311.1 189.135,303.1 196.335,303.1" fill="currentColor" stroke="none"/><path d="M 257.128 263.1 L 257.128 287.1 L 213.692 287.1 L 213.692 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="213.692,311.1 210.092,303.1 217.292,303.1" fill="currentColor" stroke="none"/><path d="M 203.213 362.8 L 203.213 410.8" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="203.213,410.8 199.613,402.8 206.813,402.8" fill="currentColor" stroke="none"/><path d="M 245.889 63.7 L 245.889 187.4 L 385.915 187.4 L 385.915 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="385.915,211.4 382.315,203.4 389.515,203.4" fill="currentColor" stroke="none"/><path d="M 370.484 163.4 L 370.484 187.4 L 406.872 187.4 L 406.872 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="406.872,211.4 403.272,203.4 410.472,203.4" fill="currentColor" stroke="none"/><path d="M 383.058 163.4 L 383.058 189.4 L 525.18 189.4 L 525.18 211.4" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="525.18,211.4 521.58,203.4 528.78,203.4" fill="currentColor" stroke="none"/><path d="M 278.085 263.1 L 278.085 281.1 L 385.915 281.1 L 385.915 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="385.915,311.1 382.315,303.1 389.515,303.1" fill="currentColor" stroke="none"/><path d="M 525.18 263.1 L 525.18 287.1 L 406.872 287.1 L 406.872 311.1" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="406.872,311.1 403.272,303.1 410.472,303.1" fill="currentColor" stroke="none"/><path d="M 213.692 362.8 L 213.692 386.8 L 280.942 386.8 L 280.942 510.5" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="280.942,510.5 277.342,502.5 284.542,502.5" fill="currentColor" stroke="none"/><path d="M 203.213 462.5 L 203.213 486.5 L 293.516 486.5 L 293.516 510.5" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="293.516,510.5 289.916,502.5 297.116,502.5" fill="currentColor" stroke="none"/><path d="M 396.393 263.1 L 396.393 293.1 L 306.091 293.1 L 306.091 510.5" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="306.091,510.5 302.491,502.5 309.691,502.5" fill="currentColor" stroke="none"/><path d="M 396.393 362.8 L 396.393 486.5 L 318.665 486.5 L 318.665 510.5" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="318.665,510.5 315.065,502.5 322.265,502.5" fill="currentColor" stroke="none"/><rect x="183.017" y="12" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="235.41" y="33.233" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T1</tspan></text><text x="235.41" y="48.083" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Corpus kinds</tspan></text><rect x="344" y="311.1" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="396.393" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T10</tspan></text><text x="396.393" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Row ops</tspan></text><rect x="247.41" y="510.5" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="299.803" y="531.733" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T11</tspan></text><text x="299.803" y="546.583" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Perf + docs</tspan></text><rect x="311.803" y="12" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="364.197" y="33.233" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T2</tspan></text><text x="364.197" y="48.083" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Address prefix</tspan></text><rect x="311.803" y="111.7" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="364.197" y="132.933" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T3</tspan></text><text x="364.197" y="147.783" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Story index</tspan></text><rect x="86.427" y="211.4" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="138.82" y="232.633" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T4</tspan></text><text x="138.82" y="247.483" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Story reads</tspan></text><rect x="215.213" y="211.4" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="267.607" y="232.633" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T5</tspan></text><text x="267.607" y="247.483" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Per-part safety</tspan></text><rect x="150.82" y="311.1" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="203.213" y="332.333" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T6</tspan></text><text x="203.213" y="347.183" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>Story edits</tspan></text><rect x="150.82" y="410.8" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="203.213" y="432.033" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T7</tspan></text><text x="203.213" y="446.883" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>note.add</tspan></text><rect x="344" y="211.4" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="396.393" y="232.633" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T8</tspan></text><text x="396.393" y="247.483" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>sections.list</tspan></text><rect x="472.787" y="211.4" width="104.787" height="51.7" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="525.18" y="232.633" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan font-weight="bold">T9</tspan></text><text x="525.18" y="247.483" font-family="'DejaVu Sans', sans-serif" font-size="11" fill="currentColor" text-anchor="middle"><tspan>table.get</tspan></text></svg></figure></div>
+<div class="note" data-for="s-plan-dependency-graph"><label class="note-head" for="n-s-plan-dependency-graph"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Dependency graph</span></label><textarea class="note-ta" data-key="s-plan-dependency-graph" id="n-s-plan-dependency-graph" data-label="Dependency graph" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-evidence-log">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Evidence log</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>T#</th>
+<th>Gate</th>
+<th>Measured</th>
+<th>Command</th>
+<th>SHA</th>
+<th>Env</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-plan-evidence-log"><label class="note-head" for="n-s-plan-evidence-log"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Evidence log</span></label><textarea class="note-ta" data-key="s-plan-evidence-log" id="n-s-plan-evidence-log" data-label="Evidence log" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-plan-sign-off">
+<h3 class="sec-h"><span class="chip">▸</span><span class="sec-title">Sign-off</span></h3>
+<div class="sec-body"><ul>
+<li>[ ] Plan reviewed by the owner</li>
+<li>[ ] Contracts agreed with literary-critic (body rows unchanged; <code>stories</code> opt-in)</li>
+<li>[ ] Ready for execution</li>
+</ul></div>
+<div class="note" data-for="s-plan-sign-off"><label class="note-head" for="n-s-plan-sign-off"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">PLAN › Sign-off</span></label><textarea class="note-ta" data-key="s-plan-sign-off" id="n-s-plan-sign-off" data-label="Sign-off" data-part="Plan" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+</section>
+</div>
+
+<div class="fab">
+  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
+  <button class="btn" id="btn-import">Import</button>
+  <button class="btn" id="btn-clear">Clear</button>
+  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
+</div>
+<input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
+
+<div class="modal" id="modal">
+  <div class="modal-card">
+    <h3>Your notes</h3>
+    <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
+    <textarea id="modal-ta" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-copy">Copy</button>
+      <button class="btn" id="modal-dl">Download again</button>
+      <button class="btn" id="modal-close">Close</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>var SPEC_SEED_NOTES={};</script>
+<script>
+(function(){
+  var NS = 'doc-control-plan-v1:';
+  var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
+
+  function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
+  function setFilled(t){var box=t.closest('.note');if(box){box.classList.toggle('filled',t.value.trim()!=='');}}
+  function updateCount(){
+    var n=0;tas.forEach(function(t){if(t.value.trim()!=='')n++;});
+    var el=document.getElementById('count');if(el){el.textContent=n+' / '+tas.length+' notes';}
+    return n;
+  }
+  var lsOK=true,dirty=false;
+  try{localStorage.setItem('__vs__','1');localStorage.removeItem('__vs__');}catch(e){lsOK=false;}
+  var WARN='⚠ Not saving — tap Save / Export';
+  function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+  function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
+  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+
+  var saveTimers={};
+  function save(t){
+    if(!lsOK){dirty=true;setState(WARN,'warn');return;}
+    var k=NS+t.dataset.key;
+    try{
+      // An empty note is stored as "", not removed: a missing key means "never
+      // touched" and the loader falls back to the seed, so removing it brought a
+      // seeded note back after the reviewer had deliberately cleared it (#477).
+      localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      dirty=true;setState('✓ Saved '+nowStamp(),'ok');
+    }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+  }
+  var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
+  tas.forEach(function(t){
+    // Seed first, then let storage override it. With the read inside the same
+    // try as the seed, a throwing localStorage skipped the seed too and the
+    // reader came up empty exactly when it could save nothing (#477).
+    if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
+      var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
+    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    autoGrow(t);setFilled(t);
+    t.addEventListener('input',function(){
+      autoGrow(t);setFilled(t);updateCount();
+      clearTimeout(saveTimers[t.dataset.key]);
+      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+    });
+    t.addEventListener('blur',function(){save(t);});
+  });
+  updateCount();
+  if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
+
+  function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
+  function exportName(){return 'doc-control-plan-v1-'+today()+'-notes.md';}
+
+  function buildExport(){
+    var byPart={},order=[],data={},n=0;
+    tas.forEach(function(t){
+      var v=t.value.trim();if(v==='')return;n++;
+      data[t.dataset.key]=t.value;
+      var part=t.dataset.part||'Other';
+      if(!byPart[part]){byPart[part]=[];order.push(part);}
+      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+    });
+    var lines=['# Plan notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
+      '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
+    order.forEach(function(part){
+      lines.push('## '+part,'');
+      byPart[part].forEach(function(it){
+        lines.push('**'+it.label+'**  `'+it.ref+'`');
+        it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
+        lines.push('');
+      });
+    });
+    lines.push('<!-- SPEC-NOTES-DATA');
+    lines.push(JSON.stringify(data));
+    lines.push('-->');
+    return{text:lines.join('\n'),n:n};
+  }
+  function keyFromDom(domkey,t){var box=t.closest('.note');var r=box?box.querySelector('.note-ref'):null;return r?r.textContent:domkey;}
+
+  function download(name,text){
+    try{var blob=new Blob([text],{type:'text/markdown'});var url=URL.createObjectURL(blob);
+        var a=document.createElement('a');a.href=url;a.download=name;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1500);return true;}catch(e){return false;}
+  }
+
+  var modal=document.getElementById('modal');
+  var modalTa=document.getElementById('modal-ta');
+  function openModal(text){modalTa.value=text;modal.classList.add('open');}
+  function closeModal(){modal.classList.remove('open');}
+
+  document.getElementById('btn-export').addEventListener('click',function(){
+    var r=buildExport();
+    if(r.n===0){toast('No notes yet — add some first.');return;}
+    var saved=download(exportName(),r.text);openModal(r.text);
+    // download() returning only means the download was REQUESTED; a browser can
+    // still block or drop it. So `dirty` — what arms the unload warning — is
+    // cleared only on a confirmed copy: the clipboard promise fulfilling.
+    var cp=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){cp=navigator.clipboard.writeText(r.text);}}catch(e){cp=null;}
+    if(cp&&typeof cp.then==='function'){cp.then(function(){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');},function(){});}
+    if(!saved){setState('⚠ Download blocked — copy the notes from this box','warn');
+               toast('Download blocked — copy the notes before leaving');return;}
+    setState('Download requested '+nowStamp(),'ok');
+    toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
+  });
+  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
+
+  document.getElementById('modal-copy').addEventListener('click',function(){
+    // Success is reported only once a copy actually happened: the legacy
+    // execCommand returned true, or the clipboard promise fulfilled. Claiming it
+    // before writeText settled told the reviewer a rejected copy had worked (#477).
+    function report(ok){if(ok){dirty=false;setState('✓ Copied to clipboard '+nowStamp(),'ok');}
+                        toast(ok?'Copied to clipboard':'Select the text and copy');}
+    modalTa.select();var legacy=false;try{legacy=document.execCommand('copy')===true;}catch(e){}
+    if(legacy){report(true);return;}
+    var p=null;
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){p=navigator.clipboard.writeText(modalTa.value);}}catch(e){p=null;}
+    if(p&&typeof p.then==='function'){p.then(function(){report(true);},function(){report(false);});}
+    else{report(false);}
+  });
+  document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
+  document.getElementById('modal-close').addEventListener('click',closeModal);
+  modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+
+  // buildExport only ever writes strings, but an import takes whatever the file
+  // holds: an object arrives as "[object Object]", an array joins on commas,
+  // null becomes "null" — each then persisted over notes the reviewer wrote.
+  // The realistic trigger is a hand-edited or truncated export, not an attack;
+  // it just fails in the least useful way, silently and destructively. Skip
+  // anything that is not a string and say how many were skipped.
+  function applyData(obj){
+    var applied=0,skipped=0;
+    tas.forEach(function(t){
+      if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
+      var v=obj[t.dataset.key];
+      if(typeof v!=='string'){skipped++;return;}
+      t.value=v;save(t);autoGrow(t);setFilled(t);applied++;
+    });
+    updateCount();return{applied:applied,skipped:skipped};
+  }
+  document.getElementById('file-import').addEventListener('change',function(e){
+    var f=e.target.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var txt=String(rd.result||'');var obj=null;
+      // Last LINE-ANCHORED marker. A plain lastIndexOf lands inside the JSON
+      // string of a note that mentions the marker, and the import then reads as
+      // a corrupt file — the same defect the Python seeder had (#239).
+      var mk=/^[ \t]*<!--[ \t]*SPEC-NOTES-DATA/gm,mm=null,mx;
+      while((mx=mk.exec(txt))!==null){mm=mx;}
+      try{
+        if(mm){var after=txt.slice(mm.index+mm[0].length);var jstart=after.indexOf('{');var jend=after.lastIndexOf('}');
+                  if(jstart>=0&&jend>jstart){obj=JSON.parse(after.slice(jstart,jend+1));}}
+        else{obj=JSON.parse(txt);}
+      }catch(err){obj=null;}
+      if(!obj){toast('Could not read notes from that file');return;}
+      var r=applyData(obj);
+      toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
+            (r.skipped?' ('+r.skipped+' skipped — not text)':''));
+    };
+    rd.readAsText(f);e.target.value='';
+  });
+  document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+
+  document.getElementById('btn-clear').addEventListener('click',function(){
+    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
+    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
+    updateCount();toast('All notes cleared');
+  });
+
+  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
+})();
+</script>
+</body>
+</html>

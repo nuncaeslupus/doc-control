@@ -1,0 +1,42 @@
+{
+ "comments": {
+  "count": 9,
+  "sha256": "a27b044011774d906a003456b21020b71223ad02369a4daaabd6d2f3a31adf77"
+ },
+ "fields": {
+  "count": 9,
+  "sha256": "34485ba403dad30158c2c2971177bd6a289b933f31fdf6c9d3aa5dbddcac4895"
+ },
+ "footnotes": {
+  "count": 9,
+  "sha256": "3011ead32311cd77404070cc5787213daf7d333b7c67b672dae8df8a74b9549f"
+ },
+ "headings": {
+  "count": 12,
+  "sha256": "f6c967840a8ec55b2f5c7f3df600ab08dd731906c721b9d8619a6564645080f6"
+ },
+ "hyperlinks": {
+  "count": 8,
+  "sha256": "f5988d01b1ca871ecea3e249e3e1450b3650f598731ad5b2832d334c169875e3"
+ },
+ "kitchen_sink": {
+  "count": 49,
+  "sha256": "48013842248291a81705c6ed0f396d844a1be4fab4b2ac94825896e3bec99986"
+ },
+ "novel": {
+  "count": 2033,
+  "sha256": "e40a3944d53e28a0fcf0ec292120f8543b10a52dc287d73a197aa9c8ae3cb22b"
+ },
+ "plain": {
+  "count": 5,
+  "sha256": "90f1d6c6db6bc0caf2ed1b0a6311fa22d19fd2ed435ae6745e117cd9fd968fd9"
+ },
+ "revisions": {
+  "count": 10,
+  "sha256": "09a732713480d96d97084b9ebb5fe6e81b0ca2809b3e090a7982b18a104988ce"
+ },
+ "tables": {
+  "count": 26,
+  "sha256": "78d5cb2426a857b06eb0da41157d75ff4c07ac2f897824e3cf84333c4f19031d"
+ }
+}

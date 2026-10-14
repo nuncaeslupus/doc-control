@@ -155,3 +155,87 @@ This spec covers reading, finding and tracked editing in those stories, plus a t
 ---
 
 > Sections 5–6 (contracts, risks) are appended by `design`.
+
+## 5. Contracts
+
+All changes are additive to the operation registry. CLI, MCP and Python get them the same way, through the JSON Schemas generated from the registry. No database or migration is involved.
+
+### Addresses (`model/address.py`)
+
+```text
+p12#a7b2a7b2                    body paragraph 12 (unchanged)
+fn3/p1#0c9e0c9e:4-10            footnote with w:id 3, its paragraph 1, chars 4-10
+en2/p1#…                        endnote with w:id 2
+hdr1.default/p1#…               the header section 1 defines for the default pages
+ftr2.first/p1#…                 the footer section 2 defines for its first page
+fn3/p1#…:2..fn3/p2#…:5          a range stays inside one story
+```
+
+- `<story>/` is optional. Its absence means the body, so every 0.6.0 address parses to the same `Address` and prints byte for byte the same (`body_address_drift == 0`).
+- `n` counts paragraphs within the story.
+- A range whose two ends are in different stories is `ADDRESS_INVALID`.
+- A header or footer that a section inherits (a section with no `w:headerReference` of that kind) is addressed through the section that defines it. Reads report `used_by_sections`.
+
+### Read results
+
+`paragraphs.list`, `find`, `locate`, `para.get`, `outline` and `stats` take `stories` (an array of `"body"`, `"notes"`, `"headers"`; default `["body"]`). Rows from other stories add three fields:
+
+```json
+{"at": "fn3/p1#0c9e0c9e", "story": "footnote", "note": {"id": 3, "number": "2", "of": "p40#c0ffee00"},
+ "text": "Ibid., p. 12.", "style_name": "Footnote Text"}
+{"at": "hdr1.default/p1#5e5e5e5e", "story": "header", "section": 1, "kind": "default",
+ "used_by_sections": [1, 2], "text": "Chapter title"}
+```
+
+`note.number` is the number the writer sees, which shifts as notes are added. `note.of` is the body address of the reference mark. Body rows inside a table add `"cell": {"table": 2, "row": 1, "col": 3}` (1-based, in document order).
+
+### New operations
+
+| Op | Kind | Request | Result |
+|----|------|---------|--------|
+| `note.add` | write (batchable) | `{"at": "p40#c0ffee00:17", "kind": "footnote" \| "endnote", "text": "…"}` | `{"note": {"id": 7, "number": "3", "at": "fn7/p1#…"}}`. The reference mark and the note's text are both tracked insertions. |
+| `sections.list` | read | `{"doc": "…"}` | `[{"section": 1, "break": "nextPage", "title_page": true, "even_and_odd": false, "page_numbers": {"start": 1, "format": "lowerRoman"}, "headers": {"default": "hdr1.default", "first": null, "even": null}, "footers": {…}}]` (`"even_and_odd"` is a document-wide setting, repeated on each row) |
+| `table.get` | read | `{"doc": "…", "table": 2}` or `{"at": "<any address in it>"}` | `{"table": 2, "rows": [[{"col": 1, "span": 1, "vmerge": null, "paragraphs": ["p31#…"]}, …], …]}` |
+| `table.row.insert` | write (batchable) | `{"table": 2, "after_row": 3, "cells": ["a", "b", "c"]}` | A tracked row insertion (`w:trPr/w:ins`) with tracked runs. |
+| `table.row.delete` | write (batchable) | `{"table": 2, "row": 4}` | A tracked row deletion (`w:trPr/w:del`) with tracked deleted runs. |
+
+`revision.accept` and `revision.reject` select by ids, author, range or all, as today; a range may now be a story range. `revisions.list` and `comments.list` rows gain `story` and use story addresses.
+
+### Errors (existing codes, no new ones)
+
+- `ADDRESS_INVALID`: a malformed prefix, or a cross-story range.
+- `STALE_ADDRESS`: the story or the paragraph changed.
+- `ANCHOR_NOT_FOUND`: no such note id, section or table.
+- `UNSUPPORTED_CONTENT`: a body edit range that contains a note mark (unchanged), an edit in a text box, or a row op on a table with a vertical merge crossing that row.
+- `ENGINE_UNAVAILABLE`: any story address sent with `engine: "live"` (D-S4), with the reason "notes and headers are file engine only".
+
+### Safety contracts
+
+- `safety/verify.Footprint` gains a `part` (default `word/document.xml`). `_document_problems` checks that part.
+- `note.add` and the row ops declare the extra parts they touch: `footnotes.xml` or `endnotes.xml`, plus the rels and `[Content_Types].xml` only when they create the notes part.
+- `safety/history` logs the part for each change, and `undo` restores it. The refusal "change … is in <part>" stays only for parts outside `STORY_PART`.
+
+### Inter-component contracts
+
+| Caller | Callee | Protocol | Contract | Failure handling |
+|--------|--------|----------|----------|-----------------|
+| literary-critic | doc-control CLI/MCP | JSON in/out | Body rows unchanged. `stories` opts in to notes. | A new field it ignores is harmless. |
+| `ops/live.py` | `live/*` | Python | Body spans only (unchanged). | A story address answers `ENGINE_UNAVAILABLE`. |
+
+### Database migrations
+
+| Service | Database | Change | Reversible | Forward-compatible |
+|---------|----------|--------|------------|-------------------|
+| — | none | — | yes | yes |
+
+## 6. Risks & Validation
+
+| Risk | Likelihood | Impact | Mitigation | Validation |
+|------|-----------|--------|------------|------------|
+| Generalising the index or verify shifts body addresses or loosens the body check | Med | High | The body path keeps its code; the part becomes a parameter defaulting to the body. `body_address_drift` is gated on the whole corpus and the private corpus. | unit + corpus gate |
+| Word repairs a file with a tracked note or row insertion that LibreOffice accepts | Med | High | Follow the OOXML rules from `docs/research`. Note `w:id`s stay unique across notes and the separator ids (-1, 0) are kept. Owner's real-Word check. | integration (LibreOffice) + manual (Word) |
+| Shared headers: editing a header used by several sections changes all of them, which surprises the writer | Med | Med | Reads report `used_by_sections`; write results echo it so the agent can tell the writer. | unit |
+| A note's displayed number is computed wrongly (restarts per section, custom marks, `w:customMarkFollows`) | Med | Low | Mark the number advisory; the stored id is the address (D-S2). Test restarts and custom marks. | unit + LibreOffice compare |
+| Table grids with merged cells (`gridSpan`, `vMerge`) disagree with LibreOffice | Med | Med | Compare grids on the corpus. Refuse row ops through a vertical merge (`UNSUPPORTED_CONTENT`). | integration |
+| Reading every story slows reads on long documents | Low | Med | Opt-in `stories`; body-only default; `paragraphs_list_ms` ratio gated. | perf |
+| Undo across parts restores one part but not another in a multi-part batch | Low | High | History records every touched part of a batch as one entry; undo restores them together or refuses. | unit (byte compare) |
