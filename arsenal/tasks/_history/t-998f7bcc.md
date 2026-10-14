@@ -4,6 +4,7 @@ title: "FIND T2: fold with an offset map"
 label: "loose fold module"
 priority: 5
 workspace: FIND
+status: merged
 ---
 
 ## Acceptance gate
