@@ -1,0 +1,731 @@
+{
+ "0:plain:{\"query\": \"the\"}": [
+  {
+   "matches": [
+    {
+     "at": "p1#e11adbde:3-6",
+     "context": "Synthetic plain document 1",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:7-10",
+     "context": "The by the and covers review meeting the…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:37-40",
+     "context": "…the and covers review meeting the meeting. The report covers th…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:68-71",
+     "context": "…he meeting. The report covers the the by covers and open year. …",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:72-75",
+     "context": "…eeting. The report covers the the by covers and open year. Revi…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:118-121",
+     "context": "…d open year. Review questions the the last year the the meeting…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:122-125",
+     "context": "…en year. Review questions the the last year the the meeting rep…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:136-139",
+     "context": "…w questions the the last year the the meeting report. Quarterly…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:140-143",
+     "context": "…estions the the last year the the meeting report. Quarterly rev…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:177-180",
+     "context": "…ting report. Quarterly review the by open open the figures cove…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:194-197",
+     "context": "…terly review the by open open the figures covers the quick meet…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:213-216",
+     "context": "… open open the figures covers the quick meeting. ",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:45-48",
+     "context": "…view and of quick meeting The the board. Of review covers meeti…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:81-84",
+     "context": "…ard. Of review covers meeting the questions raised report quest…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:160-163",
+     "context": "…ort of of raised and quick by the. Figures and the the and revi…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:177-180",
+     "context": "…and quick by the. Figures and the the and review. The by review…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:181-184",
+     "context": "…quick by the. Figures and the the and review. The by review the…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:211-214",
+     "context": "…the and review. The by review the the by the the raised report.…",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:215-218",
+     "context": "…and review. The by review the the by the the raised report. ",
+     "text": "the"
+    },
+    {
+     "at": "p3#24625aed:222-225",
+     "context": "…iew. The by review the the by the the raised report. ",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:5262f920:3:8",
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 27,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p3#24625aed:226-229",
+     "context": "… The by review the the by the the raised report. ",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:26-29",
+     "context": "The quick raised and open the year quarterly the and figure…",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:45-48",
+     "context": "…d and open the year quarterly the and figures. The during cover…",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:88-91",
+     "context": "…es. The during covers The and the the review quarterly. The of …",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:92-95",
+     "context": "…The during covers The and the the review quarterly. The of The …",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:197-200",
+     "context": "… meeting year. Of quick board the quick the report open open. Q…",
+     "text": "the"
+    },
+    {
+     "at": "p4#761aa24a:207-210",
+     "context": "…ear. Of quick board the quick the report open open. Quick open …",
+     "text": "the"
+    }
+   ],
+   "next": null,
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "warnings": []
+  }
+ ],
+ "10:spanish:{\"query\": \"a^pb\"}": [
+  {
+   "matches": [
+    {
+     "at": "p5#5cd781dc:22-26",
+     "context": "Línea\tcon tabulador y a^pb literal.",
+     "text": "a^pb"
+    }
+   ],
+   "next": null,
+   "query_word": "a^^pb",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 1,
+   "warnings": []
+  }
+ ],
+ "11:spanish:{\"query\": \"^t\"}": [
+  {
+   "matches": [],
+   "next": null,
+   "query_word": "^^t",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 0,
+   "warnings": []
+  }
+ ],
+ "12:spanish:{\"query\": \"maria\", \"ignore_case\": true, \"ignore_accents\": true, \"limit\": 1}": [
+  {
+   "matches": [
+    {
+     "at": "p1#b546cf8b:19-24",
+     "context": "-¿Estás ahí? -dijo María.",
+     "text": "María"
+    }
+   ],
+   "next": "c:find:2b9d642a:2:0",
+   "query_word": null,
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": false
+   },
+   "total": 2,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p2#2c547ed7:13-18",
+     "context": "--Estas ahi, Maria, ¿verdad?",
+     "text": "Maria"
+    }
+   ],
+   "next": null,
+   "query_word": null,
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": false
+   },
+   "warnings": []
+  }
+ ],
+ "1:plain:{\"query\": \"the\", \"limit\": 3}": [
+  {
+   "matches": [
+    {
+     "at": "p1#e11adbde:3-6",
+     "context": "Synthetic plain document 1",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:7-10",
+     "context": "The by the and covers review meeting the…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:37-40",
+     "context": "…the and covers review meeting the meeting. The report covers th…",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:5262f920:2:2",
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 27,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p2#4569b087:68-71",
+     "context": "…he meeting. The report covers the the by covers and open year. …",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:72-75",
+     "context": "…eeting. The report covers the the by covers and open year. Revi…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:118-121",
+     "context": "…d open year. Review questions the the last year the the meeting…",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:5262f920:2:5",
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "warnings": []
+  }
+ ],
+ "2:plain:{\"query\": \"THE\", \"ignore_case\": true, \"limit\": 2}": [
+  {
+   "matches": [
+    {
+     "at": "p1#e11adbde:3-6",
+     "context": "Synthetic plain document 1",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:0-3",
+     "context": "The by the and covers review meet…",
+     "text": "The"
+    }
+   ],
+   "next": "c:find:5cb605ba:2:1",
+   "query_word": "THE",
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": false
+   },
+   "total": 36,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p2#4569b087:7-10",
+     "context": "The by the and covers review meeting the…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:37-40",
+     "context": "…the and covers review meeting the meeting. The report covers th…",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:5cb605ba:2:3",
+   "query_word": "THE",
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": false
+   },
+   "warnings": []
+  }
+ ],
+ "3:plain:{\"query\": \"the\", \"whole_word\": true, \"limit\": 4}": [
+  {
+   "matches": [
+    {
+     "at": "p2#4569b087:7-10",
+     "context": "The by the and covers review meeting the…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:37-40",
+     "context": "…the and covers review meeting the meeting. The report covers th…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:68-71",
+     "context": "…he meeting. The report covers the the by covers and open year. …",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:72-75",
+     "context": "…eeting. The report covers the the by covers and open year. Revi…",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:1be77321:2:4",
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": true
+   },
+   "total": 26,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p2#4569b087:118-121",
+     "context": "…d open year. Review questions the the last year the the meeting…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:122-125",
+     "context": "…en year. Review questions the the last year the the meeting rep…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:136-139",
+     "context": "…w questions the the last year the the meeting report. Quarterly…",
+     "text": "the"
+    },
+    {
+     "at": "p2#4569b087:140-143",
+     "context": "…estions the the last year the the meeting report. Quarterly rev…",
+     "text": "the"
+    }
+   ],
+   "next": "c:find:1be77321:2:8",
+   "query_word": "the",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": true
+   },
+   "warnings": []
+  }
+ ],
+ "4:plain:{\"query\": \"\\\\bq\\\\w+\", \"regex\": true, \"limit\": 3}": [
+  {
+   "matches": [
+    {
+     "at": "p2#4569b087:108-117",
+     "context": "… covers and open year. Review questions the the last year the the mee…",
+     "text": "questions"
+    },
+    {
+     "at": "p2#4569b087:217-222",
+     "context": "…n open the figures covers the quick meeting. ",
+     "text": "quick"
+    },
+    {
+     "at": "p3#24625aed:27-32",
+     "context": "And year and review and of quick meeting The the board. Of rev…",
+     "text": "quick"
+    }
+   ],
+   "next": "c:find:2e8296dc:3:1",
+   "total": 14,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p3#24625aed:85-94",
+     "context": "… Of review covers meeting the questions raised report questions repor…",
+     "text": "questions"
+    },
+    {
+     "at": "p3#24625aed:109-118",
+     "context": "…g the questions raised report questions report. Report of of raised a…",
+     "text": "questions"
+    },
+    {
+     "at": "p3#24625aed:151-156",
+     "context": "…port. Report of of raised and quick by the. Figures and the the a…",
+     "text": "quick"
+    }
+   ],
+   "next": "c:find:2e8296dc:4:0",
+   "warnings": []
+  }
+ ],
+ "5:kitchen_sink:{\"query\": \"board\", \"limit\": 5}": [
+  {
+   "matches": [
+    {
+     "at": "p3#9dd2db2d:19-24",
+     "context": "By the year covers board quarterly raised the. Meeting…",
+     "text": "board"
+    },
+    {
+     "at": "p3#9dd2db2d:86-91",
+     "context": "…pen review covers quick quick board of. The board the the the qui…",
+     "text": "board"
+    },
+    {
+     "at": "p3#9dd2db2d:100-105",
+     "context": "…ers quick quick board of. The board the the the quick the covers …",
+     "text": "board"
+    },
+    {
+     "at": "p4#17332453:46-51",
+     "context": "…the meeting report during The board. Year report year during ques…",
+     "text": "board"
+    },
+    {
+     "at": "p4#17332453:142-147",
+     "context": "…ures questions the. Quarterly board report questions covers meeti…",
+     "text": "board"
+    }
+   ],
+   "next": "c:find:a23c2b25:4:2",
+   "query_word": "board",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 24,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p4#17332453:180-185",
+     "context": "…port questions covers meeting board. Report review the open quest…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:7-12",
+     "context": "Report board quick questions covers review…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:90-95",
+     "context": "…uring the the the the. Review board open questions raised questio…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:226-231",
+     "context": "…stions and the the The report board of of the. ",
+     "text": "board"
+    },
+    {
+     "at": "p9#42223441:19-24",
+     "context": "Figures The covers board meeting the meeting during th…",
+     "text": "board"
+    }
+   ],
+   "next": "c:find:a23c2b25:11:0",
+   "query_word": "board",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "warnings": []
+  }
+ ],
+ "6:kitchen_sink:{\"query\": \"Board\", \"ignore_case\": true, \"whole_word\": true}": [
+  {
+   "matches": [
+    {
+     "at": "p3#9dd2db2d:19-24",
+     "context": "By the year covers board quarterly raised the. Meeting…",
+     "text": "board"
+    },
+    {
+     "at": "p3#9dd2db2d:86-91",
+     "context": "…pen review covers quick quick board of. The board the the the qui…",
+     "text": "board"
+    },
+    {
+     "at": "p3#9dd2db2d:100-105",
+     "context": "…ers quick quick board of. The board the the the quick the covers …",
+     "text": "board"
+    },
+    {
+     "at": "p4#17332453:46-51",
+     "context": "…the meeting report during The board. Year report year during ques…",
+     "text": "board"
+    },
+    {
+     "at": "p4#17332453:142-147",
+     "context": "…ures questions the. Quarterly board report questions covers meeti…",
+     "text": "board"
+    },
+    {
+     "at": "p4#17332453:180-185",
+     "context": "…port questions covers meeting board. Report review the open quest…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:7-12",
+     "context": "Report board quick questions covers review…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:90-95",
+     "context": "…uring the the the the. Review board open questions raised questio…",
+     "text": "board"
+    },
+    {
+     "at": "p5#280e38e3:226-231",
+     "context": "…stions and the the The report board of of the. ",
+     "text": "board"
+    },
+    {
+     "at": "p7#9628195c:31-36",
+     "context": "…efore the change, new wording Board open questions during The The…",
+     "text": "Board"
+    },
+    {
+     "at": "p9#42223441:19-24",
+     "context": "Figures The covers board meeting the meeting during th…",
+     "text": "board"
+    },
+    {
+     "at": "p11#d0824720:36-41",
+     "context": "… figures during the questions board quick. Covers the open the qu…",
+     "text": "board"
+    },
+    {
+     "at": "p15#7d0f322b:60-65",
+     "context": "…d last covers The figures and board The covers quarterly.",
+     "text": "board"
+    },
+    {
+     "at": "p16#9d78a3d2:16-21",
+     "context": "Covers The year board board and questions covers th…",
+     "text": "board"
+    },
+    {
+     "at": "p16#9d78a3d2:22-27",
+     "context": "Covers The year board board and questions covers the year…",
+     "text": "board"
+    },
+    {
+     "at": "p16#9d78a3d2:58-63",
+     "context": "…and questions covers the year board. Report last by the quick qua…",
+     "text": "board"
+    },
+    {
+     "at": "p16#9d78a3d2:207-212",
+     "context": "…quick and year year. Year the board and review the the of quick. ",
+     "text": "board"
+    },
+    {
+     "at": "p20#62e213eb:74-79",
+     "context": "…e. The meeting the the during board and meeting the open the the …",
+     "text": "board"
+    },
+    {
+     "at": "p20#62e213eb:239-244",
+     "context": "… meeting quick meeting review board figures. ",
+     "text": "board"
+    },
+    {
+     "at": "p25#22bb24ca:39-44",
+     "context": "…st by review of The the quick board meeting. Questions The report…",
+     "text": "board"
+    }
+   ],
+   "next": "c:find:b6b9f7b3:25:1",
+   "query_word": "Board",
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": true
+   },
+   "total": 25,
+   "warnings": []
+  },
+  {
+   "matches": [
+    {
+     "at": "p25#22bb24ca:75-80",
+     "context": "…meeting. Questions The report board and covers. Covers questions …",
+     "text": "board"
+    },
+    {
+     "at": "p28#b0f398ac:9-14",
+     "context": "R1C2 And board report.",
+     "text": "board"
+    },
+    {
+     "at": "p30#98f98c2e:9-14",
+     "context": "R2C1 The board board.",
+     "text": "board"
+    },
+    {
+     "at": "p30#98f98c2e:15-20",
+     "context": "R2C1 The board board.",
+     "text": "board"
+    },
+    {
+     "at": "p48#cc5794fa:23-28",
+     "context": "The quick by questions board covers meeting the review dur…",
+     "text": "board"
+    }
+   ],
+   "next": null,
+   "query_word": "Board",
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": true
+   },
+   "warnings": []
+  }
+ ],
+ "7:spanish:{\"query\": \"Estas ahi\"}": [
+  {
+   "matches": [
+    {
+     "at": "p2#2c547ed7:2-11",
+     "context": "--Estas ahi, Maria, ¿verdad?",
+     "text": "Estas ahi"
+    }
+   ],
+   "next": null,
+   "query_word": "Estas ahi",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 1,
+   "warnings": []
+  }
+ ],
+ "8:spanish:{\"query\": \"estas ahi\", \"ignore_case\": true, \"ignore_accents\": true}": [
+  {
+   "matches": [
+    {
+     "at": "p1#b546cf8b:2-11",
+     "context": "-¿Estás ahí? -dijo María.",
+     "text": "Estás ahí"
+    },
+    {
+     "at": "p2#2c547ed7:2-11",
+     "context": "--Estas ahi, Maria, ¿verdad?",
+     "text": "Estas ahi"
+    }
+   ],
+   "next": null,
+   "query_word": null,
+   "query_word_options": {
+    "match_case": false,
+    "whole_words": false
+   },
+   "total": 2,
+   "warnings": []
+  }
+ ],
+ "9:spanish:{\"query\": \"5$\"}": [
+  {
+   "matches": [
+    {
+     "at": "p3#00995265:7-9",
+     "context": "Cuesta 5$ el kilo y 5 la docena.",
+     "text": "5$"
+    },
+    {
+     "at": "p4#f1f9f9ec:27-29",
+     "context": "Precio: 5 euros; el total, 5$ + 3.",
+     "text": "5$"
+    }
+   ],
+   "next": null,
+   "query_word": "5$",
+   "query_word_options": {
+    "match_case": true,
+    "whole_words": false
+   },
+   "total": 2,
+   "warnings": []
+  }
+ ]
+}

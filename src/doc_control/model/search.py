@@ -51,6 +51,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.model import loosefold
+from doc_control.model.loosefold import LEVELS, Level
 
 MAX_QUERY_LENGTH = 1000
 Span = tuple[int, int]
@@ -245,6 +247,74 @@ class Matcher:
             yield origin(fs, False), origin(fe, True), tuple(groups)
 
 
+class LevelMatcher:
+    """A search at a :mod:`~doc_control.model.loosefold` level, each span tagged.
+
+    ``exact`` is today's :class:`Matcher` with the options as given (a regex included);
+    ``default`` and ``loose`` fold the literal query and the text (case and accents are
+    implied by the level). :meth:`spans` gives what :meth:`Matcher.spans` gives, and leaves
+    in :attr:`levels` the strictest level each span of that text meets. ``whole_word``
+    looks at the original characters on either side of a folded span.
+    """
+
+    def __init__(self, options: SearchOptions, level: Level) -> None:
+        self._options = options
+        self._level = level
+        self._exact: Matcher | None = None
+        self.levels: dict[Span, Level] = {}
+        if level == "exact":
+            self._exact = Matcher(options)
+            return
+        if len(options.query) > MAX_QUERY_LENGTH:
+            raise _invalid(f"query is longer than {MAX_QUERY_LENGTH} characters")
+        try:
+            loosefold.fold_phrase(options.query, level)
+        except DocControlError as exc:
+            raise _invalid(exc.message) from exc
+
+    def spans(self, text: str) -> Iterator[Span]:
+        """The spans of ``text``, in order; :attr:`levels` tags them."""
+        query = self._options.query
+        found: list[tuple[int, int, Level]]
+        if self._exact is not None:
+            found = [
+                (s, e, "exact" if self._options.regex else _strictest(text[s:e], query))
+                for s, e in self._exact.spans(text)
+            ]
+        else:
+            found = [
+                (h.start, h.end, h.level)
+                for h in loosefold.hits([text], query, self._level)
+                if not self._options.whole_word or _whole(text, h.start, h.end)
+            ]
+        self.levels = {(s, e): level for s, e, level in found}
+        return iter([(s, e) for s, e, _ in found])
+
+
+def _strictest(matched: str, query: str) -> Level:
+    """The strictest level at which ``matched`` and ``query`` fold to the same string."""
+    if matched == query:
+        return "exact"
+    for level in LEVELS[1:]:
+        folded = loosefold.fold(query, level).text
+        if folded and loosefold.fold(matched, level).text == folded:
+            return level
+    return "loose"
+
+
+@functools.cache
+def _word_char() -> re.Pattern[str]:
+    return re.compile(_marks()[0])
+
+
+def _whole(text: str, start: int, end: int) -> bool:
+    """No letter, digit or mark touches ``text[start:end]`` on either side."""
+    word = _word_char()
+    return not (start > 0 and word.match(text, start - 1)) and not (
+        end < len(text) and word.match(text, end)
+    )
+
+
 def _check_regex(pattern: str) -> None:
     try:
         parsed = importlib.import_module("re._parser").parse(pattern)
@@ -313,7 +383,9 @@ class LocalScan:
     (at least one paragraph is always searched), else ``None``.
     """
 
-    def __init__(self, matcher: Matcher, items: Sequence[Item], deadline: float) -> None:
+    def __init__(
+        self, matcher: Matcher | LevelMatcher, items: Sequence[Item], deadline: float
+    ) -> None:
         self._matcher = matcher
         self._items = items
         self._deadline = deadline
