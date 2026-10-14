@@ -25,5 +25,6 @@ An error answers with `ok: false` and `error: {code, message, hint, details}`. T
 | `RECIPE_INVALID` | Fix the recipe so it only uses the documented keys. |
 | `HISTORY_NOT_FOUND` | List history with history.list and use an existing op id. |
 | `ENGINE_UNAVAILABLE` | details.reason says why; live.status lists the apps. Without one, use the file engine. |
+| `DOC_AMBIGUOUS` | Several open documents have that name: pass the full path, one of details.candidates. |
 | `UNSAVED_CHANGES` | Pass save: true to keep the changes or discard: true to drop them. |
 | `INTERNAL` | Unexpected error; nothing was written. Report it with the request. |

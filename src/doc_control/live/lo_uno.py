@@ -304,6 +304,23 @@ class LibreOffice:
                 return component
         return None
 
+    @_guard
+    def documents(self) -> list[Path]:
+        try:
+            desktop = self._desktop()
+        except LiveUnavailable:
+            return []
+        found = []
+        components = desktop.Components.createEnumeration()
+        while components.hasMoreElements():
+            component = components.nextElement()
+            url = getattr(component, "URL", "")
+            if url.startswith("file:") and component.supportsService(
+                "com.sun.star.text.TextDocument"
+            ):
+                found.append(Path(_uno().fileUrlToSystemPath(url)))
+        return found
+
     def _doc(self, path: Path) -> Any:
         doc = self._find(path)
         if doc is None:

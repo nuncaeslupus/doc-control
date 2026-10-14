@@ -57,7 +57,11 @@ BATCH_KINDS = tuple(ALL_SCHEMAS)
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "doc": {"type": "string", "minLength": 1, "description": "Path to the .docx."},
+        "doc": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Path to the .docx (live: or the file name of one open in a live app).",
+        },
         "ops": {
             "type": "array",
             "description": (

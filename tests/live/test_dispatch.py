@@ -40,7 +40,12 @@ def test_live_call_without_app_returns_engine_unavailable(doc: Path) -> None:
         for op, request in _live_calls(doc):
             envelope, _ = execute(registry, op, request)
             if op == "live.status":
-                assert envelope["result"] == {"apps": [], "open_in": None, "dirty": False}
+                assert envelope["result"] == {
+                    "apps": [],
+                    "open_in": None,
+                    "dirty": False,
+                    "path": str(doc.resolve()),
+                }
                 continue
             error = envelope["error"]
             if error["code"] != "ENGINE_UNAVAILABLE" or not error["details"]["reason"]:

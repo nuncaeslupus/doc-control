@@ -4,6 +4,10 @@
 on a document a live app already holds. Closing never drops the writer's unsaved work:
 a changed document closes only with ``save`` or ``discard``.
 
+``doc`` may be a bare file name (``Novel.docx``): it names the one document of that name
+a live app has open, wherever it is, for a caller that does not know the path the app
+sees (an assistant in a sandbox). ``live.status`` without ``doc`` lists them.
+
 ``live.select`` puts the app's selection on a paragraph, named by address or by a find
 phrase from ``locate``; ``paragraphs_after`` moves that many paragraphs on from it (as in
 ``locate``'s ``context``).
@@ -32,7 +36,11 @@ from doc_control.safety.store import DocStore
 
 LIVE_KINDS = ("comment.add", "text.replace", "para.insert")
 
-_DOC = {"type": "string", "minLength": 1, "description": "Path to the document."}
+_DOC = {
+    "type": "string",
+    "minLength": 1,
+    "description": "Path to the document, or the file name of one open in a live app.",
+}
 _ENGINE = {"enum": ["live"], "description": "Always the live engine; may be left out."}
 
 
@@ -60,9 +68,56 @@ def _fresh(adapter: LiveAdapter, path: Path, count: int, address: Address) -> st
     return text
 
 
+def _open_documents(
+    probes: list[dict[str, Any]] | None = None, strict: bool = False
+) -> list[dict[str, Any]]:
+    """Every document the reachable live apps have open: ``{"app", "path", "name"}``.
+
+    An app that cannot list them gets its ``reason`` in ``probes``, or, ``strict``, raises
+    ``ENGINE_UNAVAILABLE``: a name looked up while an app is busy is not "not open".
+    """
+    found = []
+    for adapter, probe in zip(adapters(), probes or apps(), strict=True):
+        try:
+            paths = adapter.documents() if probe.get("reachable") else []
+        except LiveUnavailable as err:
+            if strict:
+                raise unavailable(f"{adapter.app}: {err}") from err
+            probe["reason"] = str(err)
+            continue
+        found += [{"app": adapter.app, "path": str(p), "name": p.name} for p in paths]
+    return found
+
+
+def _named(doc: str, probes: list[dict[str, Any]] | None = None) -> Path:
+    """``doc`` as a path; a bare file name is the one open document of that name, if any.
+
+    A file of that name in the working directory counts as a candidate too, so a bare
+    name never acts on another document when it could mean that one.
+    """
+    path = Path(doc)
+    if path.name != doc or os.sep in doc or "/" in doc:
+        return path
+    want = os.path.normcase(doc)
+    matches = {
+        os.path.normcase(str(Path(d["path"]).resolve())): d["path"]
+        for d in _open_documents(probes, strict=True)
+        if os.path.normcase(d["name"]) == want
+    }
+    if matches and path.is_file():
+        matches.setdefault(os.path.normcase(str(path.resolve())), str(path.resolve()))
+    if len(matches) > 1:
+        raise DocControlError(
+            ErrorCode.DOC_AMBIGUOUS,
+            f"{len(matches)} documents are named {doc}",
+            candidates=sorted(matches.values()),
+        )
+    return Path(next(iter(matches.values()))) if matches else path
+
+
 def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
     """The adapter that has the request's document open."""
-    path = Path(request["doc"])
+    path = _named(request["doc"])
     adapter = adapter_for(path)
     if not guarded(adapter.is_open, path):
         raise unavailable(f"{path.name} is not open in a live app: call live.open first")
@@ -72,14 +127,17 @@ def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
 @operation(
     "live.status",
     "read",
-    "Live apps (Word, LibreOffice) found and reachable; with `doc`, which app has it open "
-    "and whether it has unsaved changes.",
+    "Live apps (Word, LibreOffice) found and reachable, and the documents they have open; "
+    "with `doc`, which app has it open, its full path, and whether it has unsaved changes.",
     _schema(required=False),
 )
 def status(request: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"apps": apps(), "open_in": None, "dirty": False}
-    if "doc" in request:
-        path = Path(request["doc"])
+    if "doc" not in request:
+        out["documents"] = _open_documents(out["apps"])
+    else:
+        path = _named(request["doc"], out["apps"])
+        out["path"] = str(path.resolve())
         for adapter, probe in zip(adapters(), out["apps"], strict=True):
             try:
                 if probe.get("reachable") and adapter.is_open(path):
@@ -103,12 +161,12 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
     _schema(app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."}),
 )
 def open_(request: dict[str, Any]) -> dict[str, Any]:
-    path = Path(request["doc"])
+    path = _named(request["doc"])
     if not path.is_file():
         raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
     adapter = adapter_for(path, request.get("app"))
     guarded(adapter.open, path)
-    return {"app": adapter.app, "dirty": guarded(adapter.dirty, path)}
+    return {"app": adapter.app, "path": str(path.resolve()), "dirty": guarded(adapter.dirty, path)}
 
 
 @operation("live.save", "write", "Save the open document in its app.", _schema())

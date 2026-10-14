@@ -21,6 +21,7 @@ from doc_control.live import word_com
 from doc_control.live.dispatch import using
 from doc_control.live.protocol import Span
 from doc_control.live.word_com import Word
+from doc_control.model.address import fingerprint
 from doc_control.ooxml.zipio import sha256_file
 from tests.corpus.generator import KINDS, generate
 from tests.helpers import make_docx, table
@@ -122,7 +123,8 @@ def session(word: Word, home: Path) -> list[str]:
     bad.check(_run("live.status", request)["open_in"] is None, "status before open")
     opened = _run("live.open", request)
     try:
-        bad.check(opened == {"app": "word", "dirty": False}, "open", opened)
+        want = {"app": "word", "path": str(doc.resolve()), "dirty": False}
+        bad.check(opened == want, "open", opened)
         _run("live.open", request)  # attaches, no second window
         bad.check(int(word._application().Documents.Count) == 1, "open twice")
         _type(word, doc, " More.")
@@ -546,6 +548,31 @@ def linked(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def named(word: Word, home: Path) -> list[str]:
+    """``live.status`` lists the open documents; a bare file name finds the one open."""
+    bad = Failures()
+    folder = home / "named"
+    folder.mkdir(exist_ok=True)
+    doc = make_docx(folder / "Named.docx", "One.", "Two.")
+    _run("live.open", {"doc": str(doc)})
+    try:
+        listed = _run("live.status", {})["documents"]
+        row = {"app": "word", "path": str(doc.resolve()), "name": "Named.docx"}
+        bad.check(row in listed, "listed", listed)
+        status = _run("live.status", {"doc": "named.docx"})  # Windows names fold case
+        bad.check(status["path"] == str(doc.resolve()), "status by name", status)
+        bad.check(status["open_in"] == {"app": "word", "controlled": True}, "open_in", status)
+        chosen = _run("live.select", {"doc": "Named.docx", "at": f"p2#{fingerprint('Two.')}"})
+        bad.check(chosen["text"] == "Two.", "select by name", chosen)
+        _type(word, doc, " More.")
+        bad.check(_run("live.save", {"doc": "Named.docx"}) == {"saved": True}, "save by name")
+    finally:
+        _run("live.close", {"doc": "Named.docx", "discard": True})
+    bad.check(not word.is_open(doc), "closed by name")
+    bad.check(_texts(doc) == ["One.", "Two. More."], "saved by name", _texts(doc))
+    return bad
+
+
 def _same_edits(
     bad: Failures, word: Word, doc: Path, ops: list[dict[str, Any]], where: str
 ) -> None:
@@ -640,6 +667,7 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     refused_batch,
     buried,
     linked,
+    named,
     cells,
     links,
 ]

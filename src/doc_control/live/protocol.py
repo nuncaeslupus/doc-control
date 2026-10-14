@@ -38,6 +38,10 @@ class LiveAdapter(Protocol):
         Never raises.
         """
 
+    def documents(self) -> list[Path]:
+        """The files the app has open (documents never saved left out); none when the
+        app is not running."""
+
     def is_open(self, path: Path) -> bool: ...
 
     def open(self, path: Path) -> None:
@@ -98,6 +102,9 @@ class FakeAdapter:
 
     def probe(self) -> dict[str, Any]:
         return {"app": self.app, "available": True, "reachable": True, "version": "0"}
+
+    def documents(self) -> list[Path]:
+        return [Path(key) for key in self.docs]
 
     def is_open(self, path: Path) -> bool:
         return str(path.resolve()) in self.docs

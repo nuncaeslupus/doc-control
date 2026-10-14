@@ -31,7 +31,7 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
@@ -165,7 +165,7 @@ Close the open document; with unsaved changes it needs `save` or `discard`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the document. |
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 | `save` | boolean |  | Save, then close. |
 | `discard` | boolean |  | Close and drop the unsaved changes. |
@@ -176,7 +176,7 @@ Attach to the app window holding the document, or open it in a live app.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the document. |
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 | `app` | string |  | `word` or `libreoffice`. |
 
@@ -186,7 +186,7 @@ Save the open document in its app.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the document. |
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
 ## `live.select` (write)
@@ -195,7 +195,7 @@ Select a paragraph in the app's window, by address (`at`) or by a `locate` find 
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the document. |
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 | `at` | string |  | Paragraph address, e.g. `p142#a7b2a7b2`. |
 | `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `locate` gives it. |
@@ -208,16 +208,16 @@ The text selected in the app's window, and the paragraph the cursor is in.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the document. |
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
 ## `live.status` (read)
 
-Live apps (Word, LibreOffice) found and reachable; with `doc`, which app has it open and whether it has unsaved changes.
+Live apps (Word, LibreOffice) found and reachable, and the documents they have open; with `doc`, which app has it open, its full path, and whether it has unsaved changes.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string |  | Path to the document. |
+| `doc` | string |  | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
 ## `locate` (read)
