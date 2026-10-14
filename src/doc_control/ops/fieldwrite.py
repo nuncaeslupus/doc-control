@@ -7,7 +7,7 @@ placeholder result, and a paragraph closing the field (the shape Word writes). T
 stale until ``fields.update`` fills it.
 
 ``fields.update`` recomputes the results of the body's TOC, page, page-count, word/character-count,
-sequence and reference fields. SECTIONPAGES and SECTION are not recomputed (LibreOffice
+sequence and reference fields. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice
 keeps their cached results, so a stale value cannot be told from a current one): they are
 listed under ``skipped``. A copy of the document goes through headless LibreOffice (see
 :mod:`doc_control.ooxml.soffice`), which rebuilds the indexes and refreshes the fields; the
@@ -67,7 +67,7 @@ from doc_control.ooxml.revisions import (
 from doc_control.ooxml.soffice import refresh_fields, soffice_path
 from doc_control.ooxml.splice import DocumentSpans
 from doc_control.ooxml.zipio import Package
-from doc_control.ops.fields import _NO_RESULT, _SKIP, _type_of, collect_rows
+from doc_control.ops.fields import _SKIP, _type_of, collect_rows
 from doc_control.ops.tracked import check_name, check_text, log_changes, story_of
 from doc_control.registry import operation
 from doc_control.safety.history import record
@@ -82,7 +82,6 @@ UPDATABLE = frozenset(
         "TOC",
         "PAGEREF",
         "REF",
-        "NOTEREF",
         "SEQ",
         "PAGE",
         "NUMPAGES",
@@ -92,7 +91,7 @@ UPDATABLE = frozenset(
 )
 #: Types LibreOffice does not evaluate: it hands back the cached result, so the operation
 #: cannot tell a current value from a stale one. They are reported under ``skipped``.
-NOT_RECOMPUTED = frozenset({"SECTIONPAGES", "SECTION"})
+NOT_RECOMPUTED = frozenset({"SECTIONPAGES", "SECTION", "NOTEREF"})
 _LEVELS = re.compile(r"^([1-9])(?:-([1-9]))?$")
 _FLD_TYPE = W + "fldCharType"
 _DIRTY = W + "dirty"
@@ -906,7 +905,7 @@ def update_fields(
     soffice = soffice_path()
     if soffice is None:
         stale = [r for r in collect_rows(Document(str(doc_path)), ("body", "notes", "headers"))]
-        stale = [r for r in stale if r["stale"] and r["type"] not in _NO_RESULT]
+        stale = [r for r in stale if r["stale"] and r["type"] in UPDATABLE]
         raise DocControlError(
             ErrorCode.ENGINE_UNAVAILABLE,
             "LibreOffice (soffice) is not available, so field results cannot be recomputed; "
@@ -1036,7 +1035,8 @@ def update_fields(
     "changes (the old result is struck, the new one inserted). Without LibreOffice it "
     "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
     "w:updateFields instead, so Word updates the fields when it opens the file. Citation "
-    "fields are never changed. SECTIONPAGES and SECTION are not recomputed (LibreOffice keeps "
+    "fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed "
+    "(LibreOffice keeps "
     "their cached results) and are listed under skipped. Fields it could not pair with "
     "LibreOffice's are listed under skipped.",
     {

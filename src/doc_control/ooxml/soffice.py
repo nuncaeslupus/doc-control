@@ -17,6 +17,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Iterator
@@ -134,9 +135,15 @@ def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> str:
     try:
         _, err = proc.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired as exc:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(proc.pid, signal.SIGKILL)
-        _, err = proc.communicate()
+        if sys.platform == "win32":
+            proc.kill()
+        else:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        try:  # a process outside the group may still hold stderr open
+            _, err = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            err = ""
         raise DocControlError(
             ErrorCode.ENGINE_UNAVAILABLE,
             f"LibreOffice did not finish within {TIMEOUT}s" + _tail(err),

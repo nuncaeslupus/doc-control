@@ -437,13 +437,14 @@ def test_update_skips_section_fields_it_cannot_recompute(
     body = (
         f"<w:p>{_section_field('SECTIONPAGES', '7')}</w:p>"
         f"<w:p>{_section_field('SECTION', '7')}</w:p>"
+        f"<w:p>{_section_field('NOTEREF _Ref1', '7')}</w:p>"
     )
     doc = _build(tmp_path / "sec.docx", body)
     before = doc.read_bytes()
     # needs no LibreOffice: nothing else is left to recompute
     monkeypatch.setenv("DOC_CONTROL_NO_SOFFICE", "1")
     out = api.run("fields.update", {"doc": str(doc)}).result
-    assert [s["type"] for s in out["skipped"]] == ["SECTIONPAGES", "SECTION"]
+    assert [s["type"] for s in out["skipped"]] == ["SECTIONPAGES", "SECTION", "NOTEREF"]
     assert all("not recomputed" in s["reason"] for s in out["skipped"])
     assert out["updated"] == [] and out["unchanged"] == 0
     assert doc.read_bytes() == before
