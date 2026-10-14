@@ -15,7 +15,7 @@ from doc_control.live.dispatch import using
 from doc_control.live.lo_uno import LibreOffice
 from doc_control.live.protocol import LiveAdapter
 from doc_control.ooxml.zipio import sha256_file
-from tests.helpers import make_docx
+from tests.helpers import make_docx, symlink_or_skip
 
 
 def _run(op: str, request: dict[str, Any]) -> dict[str, Any]:
@@ -70,6 +70,32 @@ def test_save_keeps_it_open_and_discard_drops_changes(live: LibreOffice, lo_home
     _run("live.open", request)
     assert live._doc(doc).Text.getString() == "One. Kept."
     _run("live.close", request)
+
+
+def test_a_document_opened_through_a_symlink_is_found_by_its_target(
+    live: LibreOffice, lo_home: Path
+) -> None:
+    doc = make_docx(lo_home / "target.docx", "One.")
+    link = lo_home / "link.docx"
+    symlink_or_skip(link, doc)
+    _run("live.open", {"doc": str(link)})
+    try:
+        assert live.is_open(doc)
+        assert _run("live.open", {"doc": str(doc)})["app"] == "libreoffice"  # no second window
+        assert sum(1 for _ in _windows(live)) == 1
+    finally:
+        _run("live.close", {"doc": str(doc), "discard": True})
+    assert not live.is_open(link)
+
+
+def _windows(adapter: LibreOffice) -> list[Any]:
+    found = adapter._desktop().Components.createEnumeration()
+    out = []
+    while found.hasMoreElements():
+        component = found.nextElement()
+        if getattr(component, "URL", "").startswith("file:"):
+            out.append(component)
+    return out
 
 
 def test_no_instance_and_no_soffice_is_engine_unavailable(

@@ -389,13 +389,17 @@ class LibreOffice:
             redline = redlines.nextElement()
             if redline.RedlineType != "Delete" or redline.IsInHeaderFooter:
                 continue
-            start = redline.RedlineStart
-            span = start.getText().createTextCursorByRange(start)
-            span.gotoRange(redline.RedlineEnd, True)
+            start, end = redline.RedlineStart, redline.RedlineEnd
+            story = start.getText()
+            if end.getText() == story and story.compareRegionStarts(start, end) < 0:
+                # A deletion over a table can report its two ends the other way round.
+                start, end = end, start
+            span = story.createTextCursorByRange(start)
+            span.gotoRange(end, True)
             if span.getString().count("\n") < 2:
                 continue
             inside = len(list(_walk(span))) - 2
-            first = self._index(doc, texts, _around(start.getText().createTextCursorByRange(start)))
+            first = self._index(doc, texts, _around(story.createTextCursorByRange(start)))
             out.update(range(first + 1, first + 1 + inside))
         return out
 

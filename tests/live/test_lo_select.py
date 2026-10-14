@@ -9,7 +9,7 @@ import pytest
 
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.live.lo_uno import LibreOffice
+from doc_control.live.lo_uno import LibreOffice, _point
 from tests.corpus.generator import KINDS, generate
 from tests.helpers import make_docx
 
@@ -200,6 +200,41 @@ def test_paragraphs_wholly_inside_a_deletion_read_as_the_file_engine(
     try:
         assert live.paragraphs(doc) == [p["text"] for p in rows]
         assert _run("live.select", {**base, "find_phrase": "unicorn"})["at"] == rows[-1]["at"]
+        for row in rows:
+            assert _run("live.select", {**base, "at": row["at"]})["text"] == row["text"]
+    finally:
+        _run("live.close", {**base, "discard": True})
+
+
+def _table(*cells: str) -> str:
+    """A one-row table, written as a ``make_docx`` paragraph: it closes the paragraph
+    before and opens the one after."""
+    row = "".join(f"<w:tc><w:p><w:r><w:t>{cell}</w:t></w:r></w:p></w:tc>" for cell in cells)
+    return f"</w:t></w:r></w:p><w:tbl><w:tr>{row}</w:tr></w:tbl><w:p><w:r><w:t>"
+
+
+def test_deletion_over_a_whole_table_reads_as_the_file_engine(
+    live: LibreOffice, lo_home: Path
+) -> None:
+    doc = make_docx(
+        lo_home / "table.docx", "Lead.", f"Keep gone{_table('c1', 'c2 last')}Gone kept", "Tail."
+    )
+    base = {"doc": str(doc)}
+    _run("live.open", base)
+    try:
+        # The file engine cannot cut across a table, so the writer does it in the app.
+        open_doc = live._doc(doc)
+        texts = live._texts(open_doc)
+        assert texts == ["Lead.", "Keep gone", "c1", "c2 last", "Gone kept", "Tail."]
+        open_doc.RecordChanges = True
+        cursor = _point(live._paragraph(open_doc, texts, 1), 4)
+        cursor.gotoRange(_point(live._paragraph(open_doc, texts, 4), 4), True)
+        cursor.setString("")
+        _run("live.save", base)
+        with api.open(doc) as handle:
+            rows = handle.paragraphs()
+        assert [p["text"] for p in rows] == ["Lead.", "Keep", "", "", " kept", "Tail."]
+        assert live.paragraphs(doc) == [p["text"] for p in rows]
         for row in rows:
             assert _run("live.select", {**base, "at": row["at"]})["text"] == row["text"]
     finally:

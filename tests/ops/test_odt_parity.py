@@ -23,6 +23,7 @@ import pytest
 from doc_control import api
 from tests.corpus.generator import KINDS, generate
 from tests.corpus.validator import soffice_path
+from tests.helpers import soffice_dir
 
 _DIGITS = re.compile(r"\d")
 
@@ -52,6 +53,11 @@ def test_odt_parity_gate(tmp_path: Path) -> None:
     soffice = soffice_path()
     if soffice is None:
         pytest.skip("LibreOffice (soffice) is needed to convert the corpus to .odt")
+    with soffice_dir(tmp_path) as work:
+        _gate(soffice, work)
+
+
+def _gate(soffice: str, tmp_path: Path) -> None:
     for kind in KINDS:
         (tmp_path / f"{kind}.docx").write_bytes(generate(kind, 1))
     subprocess.run(

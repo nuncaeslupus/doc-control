@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import shutil
 import sys
+import tempfile
+import time
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -51,3 +56,22 @@ def symlink_or_skip(link: Path, target: Path) -> None:
         if sys.platform != "win32":
             raise
         pytest.skip("symlinks not available")
+
+
+@contextlib.contextmanager
+def soffice_dir(fallback: Path) -> Iterator[Path]:
+    """A directory LibreOffice can read: a snap-confined one cannot see /tmp, where
+    pytest keeps ``fallback``, so it gets a fresh one under the home directory."""
+    soffice = shutil.which("soffice") or shutil.which("libreoffice") or ""
+    if not soffice.startswith("/snap/"):
+        yield fallback
+        return
+    home = Path(tempfile.mkdtemp(dir=Path.home(), prefix="doc-control-lo-"))
+    try:
+        yield home
+    finally:
+        deadline = time.monotonic() + 30
+        while home.exists() and time.monotonic() < deadline:
+            # LibreOffice writes its profile for a moment after it is told to stop.
+            shutil.rmtree(home, ignore_errors=True)
+            time.sleep(0.2)
