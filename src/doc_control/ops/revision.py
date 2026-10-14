@@ -84,7 +84,7 @@ _TABLE_REVISION = re.compile(
     re.DOTALL,
 )
 _NOTES_PART = re.compile(r"word/(?:foot|end)notes\d*\.xml")
-_PAGE_PART = re.compile(r"word/(?:header|footer)\d*\.xml")
+_PAGE_PART = re.compile(r"word/(?:header|footer)[^/]*\.xml")
 _MOVE_RANGE = re.compile(rb"<(?:[\w.-]+:)?move(?:From|To)Range(?:Start|End)[\s/>]")
 _FIELD_CHAR = re.compile(rb"fldCharType\s*=\s*[\"'](begin|end)[\"']")
 _MARK_KINDS = frozenset({"mark_insert", "mark_delete", "mark_move_from", "mark_move_to"})

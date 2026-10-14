@@ -218,3 +218,102 @@ def test_undo_restores_the_bytes_and_reject_restores_the_document(tmp_path: Path
     path.write_bytes(saved)
     api.run("batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
     assert current(path) == current(plain(tmp_path, 6, "o.docx"))
+
+
+# --- headers, footers, two-sided (LAYOUT T5) -----------------------------------------------
+
+#: Front matter in lower roman with a title page, then the text from 1; printed two-sided, so
+#: odd and even pages carry their own header and footer, with page numbers and the count.
+TWO_SIDED_SECTIONS: tuple[dict[str, Any], ...] = (
+    {
+        "numbering": {"start": 1, "format": "lowerRoman"},
+        "first_page_different": True,
+        "header": {"default": "hd:front-{PAGE}", "first": "hd:title", "even": "hd:verso-{PAGE}"},
+        "footer": {"default": "pg:{PAGE}", "first": "", "even": "pg:{PAGE}"},
+    },
+    {
+        "numbering": {"start": 1, "format": "decimal"},
+        "header": {"default": "hd:odd-{PAGE}", "even": "hd:even-{PAGE}"},
+        "footer": {"default": "pg:{PAGE}/{NUMPAGES}", "even": "pg:{PAGE}"},
+    },
+)
+TWO_SIDED = Scenario(
+    "two_sided_headers",
+    [Sec(2), Sec(4)],
+    ["", "ii", "1/6", "2", "3/6", "4"],
+    expected_headers=["title", "verso-ii", "odd-1", "even-2", "odd-3", "even-4"],
+)
+
+
+def two_sided_plan(path: Path) -> dict[str, Any]:
+    plan = asked_plan(path, *copy.deepcopy(TWO_SIDED_SECTIONS))
+    return {**plan, "two_sided": True, "mirror_margins": True}
+
+
+def accepted_copy(path: Path, to: Path) -> Path:
+    """``path`` with every revision accepted: the pages as the writer sees them once the
+    changes are taken (LibreOffice prints deleted text struck through otherwise)."""
+    to.write_bytes(path.read_bytes())
+    api.run("batch", {"doc": str(to), "ops": [{"op": "revision.accept", "all": True}]})
+    return to
+
+
+def test_apply_two_sided_headers_print_planned_text(tmp_path: Path) -> None:
+    _require_tools()
+    path = plain(tmp_path, 6, "applied.docx")
+    plan = two_sided_plan(path)
+
+    out = api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True}).result
+
+    kinds = {change["kind"] for change in out["changes"]}
+    assert {"section.break", "header.text", "settings"} <= kinds
+    assert all(c["tracked"] for c in out["changes"] if c["kind"] == "header.text")
+    got = current(path)
+    assert out["plan"] == got
+    assert got["two_sided"] is True and got["mirror_margins"] is True
+    for asked, have in zip(plan["sections"], got["sections"], strict=True):
+        for group in ("header", "footer"):
+            assert {k: have[group][k] for k in asked[group]} == asked[group]
+        assert have["numbering"]["shown"] is True
+        assert have["first_page_different"] is asked.get("first_page_different", False)
+
+    printed_doc = accepted_copy(path, tmp_path / f"{TWO_SIDED.name}.docx")
+    assert current(printed_doc)["sections"][1]["header"] == got["sections"][1]["header"]
+    pdfs = export_pdfs([printed_doc], tmp_path / "pdf")
+    assert label_failures(TWO_SIDED, pdfs[printed_doc.stem]) == []
+
+
+def test_a_part_only_one_section_uses_is_rewritten_as_tracked_changes(tmp_path: Path) -> None:
+    path = plain(tmp_path, 4)
+    before = path.read_bytes()
+    plan = asked_plan(path, {"footer": {"default": "Page {PAGE} of {NUMPAGES}"}})
+
+    preview = api.run("layout.apply", {"doc": str(path), "plan": plan, "dry_run": True}).result
+    assert path.read_bytes() == before
+    out = api.run("layout.apply", {"doc": str(path), "plan": plan}).result
+
+    assert [c["kind"] for c in out["changes"]] == ["header.text"]
+    assert out["changes"][0]["tracked"] and out["plan"] == preview["plan"] == current(path)
+    assert current(path)["sections"][0]["footer"]["default"] == "Page {PAGE} of {NUMPAGES}"
+    api.run("batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
+    assert current(path)["sections"][0]["footer"]["default"] == "pg:{PAGE}"
+
+
+def test_untracked_changes_need_the_flag_and_null_drops_a_reference(tmp_path: Path) -> None:
+    path = plain(tmp_path, 4)
+    header = current(path)["sections"][0]["header"]["default"]
+    # Both sections share the original parts after the split: another text for the second
+    # needs a part of its own, which Word cannot track.
+    plan = asked_plan(path, {}, {"header": {"default": "hd:other"}})
+    error = refused(path, plan, ErrorCode.UNSUPPORTED_CONTENT)
+    assert error.details["needs"] == ["sections[1].header.default: a new header part"]
+
+    out = api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True}).result
+    assert "header.new" in {c["kind"] for c in out["changes"]}
+    got = current(path)["sections"]
+    assert got[0]["header"]["default"] == header and got[1]["header"]["default"] == "hd:other"
+
+    dropped = current(path)
+    dropped["sections"][1]["header"]["default"] = None
+    api.run("layout.apply", {"doc": str(path), "plan": dropped, "untracked": True})
+    assert current(path)["sections"][1]["header"]["default"] is None

@@ -19,8 +19,16 @@ now, and writes them in one verified step:
     mark: accepting it joins the section with the next one.
 ``{"kind": "settings", "even_and_odd_headers": true, "mirror_margins": false}``
     Flags of ``word/settings.xml``.
+``{"kind": "header.text", "part": "word/header1.xml", "text": "Page {PAGE}"}``
+    Rewrite a one-paragraph header or footer part as tracked changes (LAYOUT T5): its live
+    content deleted, ``text`` inserted, ``{PAGE}``, ``{NUMPAGES}`` and ``{chapter}`` as fields.
+``{"kind": "header.new", "part": "word/header4.xml", "rid": "rId12", "group": "header",
+"text": "...", "like": "word/header1.xml"}``
+    Create a header (or footer) part holding ``text``, reachable from the main document as
+    ``rid``, its formatting copied from ``like``. Sections reference it through
+    ``header_refs``/``footer_refs`` props, also in a break's ``props``.
 
-Word cannot track a header or footer reference change or a settings change. Those are
+Word cannot track a header or footer reference change, a new part or a settings change. Those are
 refused (``UNSUPPORTED_CONTENT``) unless ``untracked`` is true (LAYOUT D-L2); either way the
 write is logged, and undo puts the backup back while the file is what the write left.
 
@@ -33,13 +41,20 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
+from doc_control.ooxml.hftext import (
+    GROUPS,
+    new_part_bytes,
+    package_entries,
+    rewrite_paragraph,
+    root_name,
+)
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     PPR,
@@ -63,15 +78,16 @@ from doc_control.ooxml.sections import (
     set_props,
 )
 from doc_control.ooxml.settingsflags import SETTINGS_PART, read_flag, set_flag
-from doc_control.ooxml.splice import DocumentSpans, scan
+from doc_control.ooxml.splice import Container, DocumentSpans, scan
 from doc_control.ooxml.zipio import build_package
 from doc_control.ops.tracked import next_in_container
 from doc_control.safety.history import record, to_text
 from doc_control.safety.layout import layout_footprint, untracked_section_changes
 from doc_control.safety.lock import check_changed, check_unlocked
-from doc_control.safety.verify import DOCUMENT_PART, write_verified
+from doc_control.safety.verify import DOCUMENT_PART, StoryFootprint, write_verified
 
 _SETTING_KEYS = {"even_and_odd_headers": "evenAndOddHeaders", "mirror_margins": "mirrorMargins"}
+_REF_KEYS = ("header_refs", "footer_refs")
 
 
 @dataclass(frozen=True)
@@ -137,6 +153,8 @@ def apply_layout_edits(
     unbreaks: dict[int, int] = {}
     break_props: dict[int, Mapping[str, Any]] = {}
     flags: dict[str, bool] = {}
+    hf_text: dict[str, str] = {}  # part -> its new text, a tracked rewrite
+    hf_new: dict[str, tuple[str, str, str, str | None]] = {}  # part -> rid, group, text, like
     for n, edit in enumerate(edits):
         kind = edit.get("kind")
         if kind == "section.props":
@@ -187,8 +205,10 @@ def apply_layout_edits(
                 if not isinstance(part_props, Mapping):
                     raise _bad(f"edit {n}: 'props' must be an object")
                 check_props(part_props)
-                if has_refs(part_props):
-                    raise _bad(f"edit {n}: a break's props take no header or footer references")
+                if has_refs(part_props) and not untracked:
+                    raise unsupported(
+                        "header and footer references cannot be tracked; pass untracked: true"
+                    )
                 break_props[para.span_index] = part_props
             breaks[para.span_index] = (n, value)
         elif kind == "section.unbreak":
@@ -206,6 +226,31 @@ def apply_layout_edits(
                 if not isinstance(edit[key], bool):
                     raise _bad(f"edit {n}: {key} must be true or false")
                 flags[_SETTING_KEYS[key]] = edit[key]
+        elif kind in ("header.text", "header.new"):
+            name, text = edit.get("part"), edit.get("text")
+            if not isinstance(name, str) or not isinstance(text, str):
+                raise _bad(f"edit {n}: {kind} takes a part and a text")
+            if name in hf_text or name in hf_new:
+                raise DocControlError(
+                    ErrorCode.BATCH_CONFLICT, f"two edits of {name}", edits=[n], part=name
+                )
+            if kind == "header.text":
+                if name not in pkg:
+                    raise unsupported(f"the document has no {name}", part=name)
+                hf_text[name] = text
+                continue
+            group, rid, like = edit.get("group"), edit.get("rid"), edit.get("like")
+            if group not in GROUPS or not isinstance(rid, str):
+                raise _bad(f"edit {n}: header.new takes a group (header or footer) and a rid")
+            if name in pkg or not name.startswith("word/"):
+                raise _bad(f"edit {n}: {name} is not a free part name", part=name)
+            if like is not None and (not isinstance(like, str) or like not in pkg):
+                raise _bad(f"edit {n}: like must name a header or footer part", like=like)
+            if not untracked:
+                raise unsupported(
+                    "Word cannot track a new header or footer part; pass untracked: true"
+                )
+            hf_new[name] = (rid, str(group), text, like)
         else:
             raise _bad(f"edit {n}: unknown kind {kind!r}")
 
@@ -295,6 +340,9 @@ def apply_layout_edits(
             before_sect = inserted[span_index].find(f"{PPR}/{SECT_PR}")
             assert before_sect is not None
             set_props(before_sect, break_props[span_index])
+            refs = {k: v for k, v in break_props[span_index].items() if k in _REF_KEYS}
+            if refs:
+                change_section(before_sect, refs, None)  # part of the insertion: no record
         para = next(p for p in doc.index.paragraphs if p.span_index == span_index)
         mark("section.break", str(para.address), True, before_ids, type=breaks[span_index][1])
 
@@ -320,6 +368,34 @@ def apply_layout_edits(
                 if before_flag != on:
                     mark("settings", name, False, len(ctx.revision_ids), flag=name, value=on)
 
+    hf_parts: dict[str, bytes] = {}
+    stories: list[StoryFootprint] = []
+    for name, text in sorted(hf_text.items()):
+        before_ids = len(ctx.revision_ids)
+        data = pkg.read(name)
+        container = Container(root_name(data, name))
+        story = scan(data, container, name)
+        if len(story.paragraphs) != 1:
+            raise unsupported(
+                f"{name} has {len(story.paragraphs)} paragraphs; only a one-paragraph header "
+                "or footer is rewritten",
+                part=name,
+            )
+        p = story.parse_paragraph(0)
+        rewrite_paragraph(p, text, ctx)
+        hf_parts[name] = story.splice({0: story.serialize(p, 0)})
+        stories.append(StoryFootprint(name, container, replaced=frozenset({0})))
+        mark("header.text", name, True, before_ids, part=name, text=text)
+    for name, (rid, group, text, like) in sorted(hf_new.items()):
+        like_p: ET.Element | None = None
+        if like is not None:
+            like_data = pkg.read(like)
+            like_spans = scan(like_data, Container(root_name(like_data, like)), like)
+            like_p = like_spans.parsed(0) if like_spans.paragraphs else None
+        hf_parts[name] = new_part_bytes(group, name, text, like_p)
+        mark("header.new", name, False, len(ctx.revision_ids), part=name, rid=rid, text=text)
+    hf_parts.update(package_entries(pkg, [(n, v[0], v[1]) for n, v in sorted(hf_new.items())]))
+
     if not changes:
         return LayoutWriteResult([], dry_run, pkg.sha256)
 
@@ -333,6 +409,7 @@ def apply_layout_edits(
         written_parts[DOCUMENT_PART] = new_doc
     if new_settings is not None and new_settings != settings:
         written_parts[SETTINGS_PART] = new_settings
+    written_parts.update(hf_parts)
 
     problems = untracked_section_changes(
         spans.data, new_doc, insert_after.keys(), allow_refs=untracked
@@ -348,6 +425,12 @@ def apply_layout_edits(
         body_section=body_sect is not None,
         settings=[n for n in flags if written_parts.get(SETTINGS_PART) is not None],
     )
+    if hf_parts:
+        footprint = replace(
+            footprint,
+            parts=frozenset(n for n in hf_parts if n not in hf_text),
+            stories=tuple(stories),
+        )
     if dry_run:
         package = build_package(pkg, written_parts)  # the parts must at least assemble
         return LayoutWriteResult(
@@ -374,6 +457,9 @@ def apply_layout_edits(
         logged.append({"kind": "part", "part": DOCUMENT_PART, "what": "body section properties"})
     if SETTINGS_PART in written_parts:
         logged.append({"kind": "part", "part": SETTINGS_PART, "flags": sorted(flags)})
+    for name in sorted(hf_parts):
+        what = "header or footer text" if name in hf_text else "new part or its entry"
+        logged.append({"kind": "part", "part": name, "what": what})
     try:
         op_id = record(
             doc_path,
