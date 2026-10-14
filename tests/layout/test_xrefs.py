@@ -120,7 +120,8 @@ def test_captions_xrefs_and_index_resolve_after_update(tmp_path: Path) -> None:
         ("To heading page:", heading, "page"),
     ):
         add("xref.add", at=_at(doc, prefix), to=to, show=show)
-    for prefix, entry in (("Alpha text", "Alpha"), ("Sunrise", "Sunrise:Picture")):
+    # flat entries: with a Term:Sub mark fields.update would leave the index as it is
+    for prefix, entry in (("Alpha text", "Alpha"), ("Sunrise", "Sunrise")):
         add("index.mark", at=_at(doc, prefix), entry=entry)
     add("index.mark", at=_at(doc, "Closing"), entry="Closing")
     add("index.insert", after=_at(doc, "Index goes here"))
@@ -156,7 +157,7 @@ def test_captions_xrefs_and_index_resolve_after_update(tmp_path: Path) -> None:
 
     (index,) = _fields(settled, "INDEX")
     listed = dict(re.findall(r"([A-Za-z:]+)\t?(\d+)", "\n".join(_texts(settled))))
-    for entry, needle in (("Alpha", "Alpha text."), ("Sunrise:Picture", "Sunrise picture")):
+    for entry, needle in (("Alpha", "Alpha text."), ("Sunrise", "Sunrise picture")):
         if listed.get(entry) != str(page_of(needle)):
             mismatches.append(f"index {entry}: {listed.get(entry)} != {page_of(needle)}")
     if listed.get("Closing") != str(page_of("Closing remarks")):
@@ -207,7 +208,7 @@ def test_update_recomputes_each_field_type_from_a_wrong_cached_value(tmp_path: P
         + f"<w:p>{caption}<w:r><w:t>: cap</w:t></w:r></w:p>"
         + "<w:p><w:r><w:t>Banana</w:t></w:r>"
         + _xe("Banana")
-        + _xe("Apple:Pie")
+        + _xe("Apple")
         + "</w:p>"
         + _page_break()
         + _para("Index")
@@ -224,7 +225,75 @@ def test_update_recomputes_each_field_type_from_a_wrong_cached_value(tmp_path: P
     assert changed["PAGEREF"]["before"] == ["77"] and changed["PAGEREF"]["after"] == ["3"]
     assert changed["SEQ"]["before"] == ["42"] and changed["SEQ"]["after"] == ["1"]
     assert changed["INDEX"]["before"] == ["Zebra\t99"]
-    assert changed["INDEX"]["after"] == ["Apple:Pie\t3", "Banana\t3"]
+    assert changed["INDEX"]["after"] == ["Apple\t3", "Banana\t3"]
+
+
+def _index_xml(doc: Path) -> str:
+    """The document XML from the paragraph holding the INDEX code to the end of the body."""
+    with zipfile.ZipFile(doc) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    start = xml.rindex("<w:p>", 0, xml.index(" INDEX"))
+    return xml[start : xml.index("</w:body>", start)]
+
+
+@pytest.mark.parametrize(
+    ("code", "marks", "why"),
+    [
+        ("INDEX", ("Apple:Pie", "Apple:Tart", "Banana"), "sub-entries"),
+        ('INDEX \\e "\t" \\c "1"', ("Apple", "Banana"), "switches"),
+    ],
+)
+def test_update_leaves_an_index_it_cannot_rebuild_alone(
+    tmp_path: Path, code: str, marks: tuple[str, ...], why: str
+) -> None:
+    """LibreOffice lists Term:Sub entries flat and ignores the INDEX switches, so an index
+    Word built that way would be overwritten with a wrong one: it is skipped, untouched,
+    while the other fields are still updated."""
+    _need_soffice()
+    word_built = "".join(
+        f"<w:p><w:r><w:t>{line}</w:t></w:r></w:p>" for line in ("Apple", "Pie\t2", "Tart\t2")
+    )
+    body = (
+        '<w:p><w:r><w:t xml:space="preserve">Table </w:t></w:r>'
+        + _field("SEQ Table \\* ARABIC", "42")
+        + "</w:p><w:p><w:r><w:t>Terms</w:t></w:r>"
+        + "".join(_xe(m) for m in marks)
+        + "</w:p>"
+        + '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        f'<w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Apple</w:t></w:r></w:p>'
+        + word_built
+        + '<w:p><w:r><w:t>Banana\t2</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    )
+    doc = _build(tmp_path / "word.docx", body)
+    before_xml = _index_xml(doc)
+    (before,) = _fields(doc, "INDEX")
+    out = api.run("fields.update", {"doc": str(doc)}).result
+    assert [u["type"] for u in out["updated"]] == ["SEQ"] and out["written"] is True
+    (skipped,) = out["skipped"]
+    assert skipped["type"] == "INDEX" and why in skipped["reason"]
+    assert _index_xml(doc) == before_xml
+    assert _fields(doc, "INDEX") == [before]
+
+
+def test_xref_to_a_simple_field_caption_number_is_refused(tmp_path: Path) -> None:
+    body = (
+        '<w:p><w:r><w:t xml:space="preserve">Table </w:t></w:r>'
+        '<w:fldSimple w:instr=" SEQ Table \\* ARABIC "><w:r><w:t>1</w:t></w:r></w:fldSimple>'
+        "<w:r><w:t>: cap</w:t></w:r></w:p>" + _para("See")
+    )
+    doc = _build(tmp_path / "simple.docx", body)
+    original = doc.read_bytes()
+    request = {"doc": str(doc), "at": _at(doc, "See"), "to": _at(doc, "Table")}
+    for show in ("number", "page"):
+        with pytest.raises(DocControlError) as err:
+            api.run("xref.add", {**request, "show": show})
+        assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
+        assert "fldSimple" in err.value.message
+        assert doc.read_bytes() == original
+    api.run("xref.add", {**request, "show": "text"})
+    (row,) = _fields(doc, "REF")
+    assert row["code"].startswith("REF _Ref")
 
 
 def test_caption_and_xref_are_tracked_insertions_with_a_bookmark(tmp_path: Path) -> None:

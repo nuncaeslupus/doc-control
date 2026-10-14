@@ -452,7 +452,13 @@ def add_xref(
         )
     # What the bookmark has to cover: a caption's label and number, or the whole paragraph.
     if seq is not None and show != "text":
-        assert seq.end is not None
+        if seq.end is None:
+            raise DocControlError(
+                ErrorCode.UNSUPPORTED_CONTENT,
+                "the caption's number is a simple field (w:fldSimple), which a "
+                "cross-reference cannot be bookmarked around; use show=text",
+                address=to,
+            )
         lo, hi = first, seq.end[1] + 1
     else:
         lo, hi = first, stop

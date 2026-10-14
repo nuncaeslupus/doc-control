@@ -12,8 +12,11 @@ captions). LibreOffice recomputes all of these from a wrong cached result (the l
 check REF, PAGEREF, SEQ and INDEX with deliberately wrong values), and it puts an index entry
 and its page number in two paragraphs, which are joined again. SECTIONPAGES, SECTION and
 NOTEREF are not recomputed (LibreOffice keeps their cached results, so a stale value cannot
-be told from a current one): they are
-listed under ``skipped``. A copy of the document goes through headless LibreOffice (see
+be told from a current one): they are listed under ``skipped``. An INDEX is recomputed only
+when its code is a bare ``INDEX`` (what ``index.insert`` writes) and no ``XE`` mark has a
+sub-entry (``Term:Sub``): LibreOffice ignores the INDEX switches and lists sub-entries flat,
+so any other index (one Word built, say) is left as it is and listed under ``skipped``.
+A copy of the document goes through headless LibreOffice (see
 :mod:`doc_control.ooxml.soffice`), which rebuilds the indexes and refreshes the fields; the
 fields of that copy are paired with the original's by type and order, and only the result
 runs are written back, as tracked changes: the old result runs become ``w:del`` (inside
@@ -104,6 +107,8 @@ _TAB = W + "tab"
 _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 _DEFAULT_TEXT_WIDTH = 9350
 _MAX_NAMED = 8
+#: The entry text of an ``XE`` code: quoted (with ``\"`` and ``\\`` escapes) or one word.
+_XE_ENTRY = re.compile(r'^XE\s+(?:"((?:[^"\\]|\\.)*)"?|(\S+))', re.IGNORECASE)
 #: CT_Settings children that come after ``w:updateFields``, in schema order.
 _AFTER_UPDATE_FIELDS = (
     "hdrShapeDefaults|footnotePr|endnotePr|compat|docVars|rsids|mathPr|attachedSchema|"
@@ -893,6 +898,38 @@ def _set_update_on_open(
     return result
 
 
+def _has_subentry(xe_code: str) -> bool:
+    """Whether the ``XE`` code's entry has a level separator (a ``:`` not escaped as ``\\:``)."""
+    match = _XE_ENTRY.match(xe_code.strip())
+    if match is None:
+        return False
+    text = match.group(1) if match.group(1) is not None else match.group(2)
+    escaped = False
+    for char in text:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            return True
+    return False
+
+
+def _index_refusal(loc: _Loc, subentries: bool) -> str | None:
+    """Why the INDEX at ``loc`` must keep its result, or None when LibreOffice's is right."""
+    if loc.code.upper() != "INDEX":
+        return (
+            f"the index has switches ({loc.code}) that LibreOffice ignores, so its result "
+            "is left as it is"
+        )
+    if subentries:
+        return (
+            "the index has sub-entries (XE marks with Term:Sub), which LibreOffice lists "
+            "flat, so its result is left as it is"
+        )
+    return None
+
+
 def _name_fields(rows: Sequence[Mapping[str, Any]]) -> str:
     named = [f"{r['at']} ({r['type'] or 'field'})" for r in rows[:_MAX_NAMED]]
     more = len(rows) - len(named)
@@ -1010,9 +1047,18 @@ def update_fields(
     unchanged = 0
     updated: list[dict[str, Any]] = []
     cleared: list[str] = []
+    subentries = any(loc.type == "INDEX" for loc in located) and any(
+        _has_subentry(r["code"])
+        for r in collect_rows(Document(str(doc_path)), ("body", "notes", "headers"))
+        if r["type"] == "XE"
+    )
     for loc in reversed(located):  # later fields first: edits never move an earlier mark
         fresh = pairs.get(id(loc))
         if fresh is None:
+            continue
+        refusal = _index_refusal(loc, subentries) if loc.type == "INDEX" else None
+        if refusal is not None:
+            skip(loc, refusal)
             continue
         plan = _plan(loc, body)
         if isinstance(plan, str):
@@ -1095,9 +1141,10 @@ def update_fields(
     "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
     "w:updateFields instead, so Word updates the fields when it opens the file. Citation "
     "fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed "
-    "(LibreOffice keeps "
-    "their cached results) and are listed under skipped. Fields it could not pair with "
-    "LibreOffice's are listed under skipped.",
+    "(LibreOffice keeps their cached results) and are listed under skipped. An INDEX is "
+    "recomputed only when its code is a bare INDEX and no XE mark has a sub-entry "
+    "(Term:Sub); any other index keeps its result and is listed under skipped. Fields it "
+    "could not pair with LibreOffice's are listed under skipped.",
     {
         "type": "object",
         "properties": {
