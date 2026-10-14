@@ -53,6 +53,30 @@ with api.open("Novela.docx") as doc:
 Recipes propose batches of fixes (Spanish typography, quotes, dashes, spacing, empty
 paragraphs and more): `recipe.list`, then `recipe.run` returns a batch to review and apply.
 
+### Notes, headers, footers and tables
+
+Reads cover the body only unless asked; `stories` opts in to the rest (`"notes"` for
+footnotes and endnotes, `"headers"` for headers and footers) on `paragraphs.list`,
+`find`, `locate`, `para.get`, `outline`, `stats` and `revisions.list`. Their paragraphs
+carry an address with a prefix (`fn3/p1#0c9e0c9e`, `en2/…`, `hdr1.default/…`,
+`ftr1.first/…`) that the edit operations accept, so a tracked edit inside a footnote or a
+running header works like one in the body. A body read stays as fast as before.
+
+```bash
+doc-control paragraphs.list --json '{"doc": "Tesis.docx", "stories": ["body", "notes"]}'
+doc-control text.replace --json '{"doc": "Tesis.docx", "at": "fn3/p1#0c9e0c9e:4-10", "text": "2019"}'
+doc-control note.add --json '{"doc": "Tesis.docx", "at": "p40#c0ffee00:17", "kind": "footnote", "text": "Ver el cap. 2."}'
+doc-control sections.list --json '{"doc": "Tesis.docx"}'
+doc-control table.get --json '{"doc": "Tesis.docx", "table": 1}'
+doc-control table.row.insert --json '{"doc": "Tesis.docx", "table": 1, "after_row": 2, "cells": ["a", "b"]}'
+doc-control table.row.delete --json '{"doc": "Tesis.docx", "table": 1, "row": 4}'
+```
+
+`note.add` inserts the reference mark and the note as tracked insertions (rejecting them
+removes both); the row operations write tracked row insertions and deletions. All of it is
+backed up, verified and undoable like any other write. `scripts/real_word_stories.py`
+checks it in real Word (see [docs/real-word-check.md](docs/real-word-check.md)).
+
 ### Live: the document the writer has open
 
 With LibreOffice Writer installed, the same front doors work on the open window: the
