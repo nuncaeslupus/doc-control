@@ -71,10 +71,22 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     """A ``bench`` test named on the command line by its node id runs even under the
     default ``-m 'not bench'`` (a task gate names its benchmark that way), and so does one
     named exactly by ``-k <test name>``."""
+    for item in items:
+        if _named_on_command_line(config, item):
+            item.own_markers = [m for m in item.own_markers if m.name != "bench"]
+
+
+def _named_on_command_line(config: pytest.Config, item: pytest.Item) -> bool:
     named = {arg for arg in config.args if "::" in arg}
     keyword = str(config.getoption("keyword", "") or "").strip()
-    for item in items:
-        if item.name == keyword or any(
-            item.nodeid.endswith(arg.split("/", 1)[-1]) or item.nodeid == arg for arg in named
-        ):
-            item.own_markers = [m for m in item.own_markers if m.name != "bench"]
+    return item.name == keyword or any(
+        item.nodeid.endswith(arg.split("/", 1)[-1]) or item.nodeid == arg for arg in named
+    )
+
+
+@pytest.fixture
+def gate_mode(request: pytest.FixtureRequest) -> bool:
+    """True when this test was named on the command line, which is how a task gate runs
+    it. A benchmark that cannot measure must then fail rather than skip: a skip exits 0,
+    so the gate would pass with no number behind it."""
+    return _named_on_command_line(request.config, request.node)
