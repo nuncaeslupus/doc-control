@@ -110,6 +110,8 @@ OPERATION_MODULES: dict[str, str] = {
     "styleset.import-dotx": "dotx",
     "styleset.install": "styleset",
     "table.get": "tables",
+    "table.row.delete": "tablerows",
+    "table.row.insert": "tablerows",
     "term.rename": "rename",
     "text.normalized": "text",
     "undo": "history",

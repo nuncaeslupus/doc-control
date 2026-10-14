@@ -186,6 +186,21 @@ class DocumentSpans:
         elem.tail = None
         return elem
 
+    def parsed_range(self, start: int, end: int, near: int) -> ET.Element:
+        """The one element in ``data[start:end]`` (a table row, say), parsed for reading in
+        the namespace scope of paragraph ``near``, which lies inside or next to it. Changes to
+        it are not written back; build what to splice and :meth:`serialize` it."""
+        decls = _wrapper_decls(tuple(self.paragraphs[near].outer_scope.items()))
+        try:
+            root = ET.fromstring(
+                f"<dc-read {decls}>".encode() + self.data[start:end] + b"</dc-read>"
+            )
+        except ET.ParseError as exc:
+            raise DocControlError(ErrorCode.NOT_A_DOCX, f"cannot read the element: {exc}") from exc
+        if len(root) != 1:
+            raise DocControlError(ErrorCode.NOT_A_DOCX, "expected exactly one element")
+        return root[0]
+
     def parse_paragraph(self, index: int) -> ET.Element:
         """Parse paragraph ``index`` into an ElementTree element.
 
