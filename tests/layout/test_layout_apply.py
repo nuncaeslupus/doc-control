@@ -347,20 +347,52 @@ def three_sections_inheriting(tmp_path: Path) -> tuple[Path, str]:
     return path, header
 
 
-def test_a_new_part_leaves_the_header_later_sections_inherit(tmp_path: Path) -> None:
+def refused_whole(path: Path, plan: dict[str, Any], section: int) -> None:
+    """``plan`` is refused because it would alter inheriting ``section``; the file is kept."""
+    before = path.read_bytes()
+    for flags in ({}, {"untracked": True}, {"untracked": True, "dry_run": True}):
+        with pytest.raises(DocControlError) as caught:
+            api.run("layout.apply", {"doc": str(path), "plan": plan, **flags})
+        assert caught.value.code is ErrorCode.UNSUPPORTED_CONTENT
+        assert f"would alter section {section} " in str(caught.value)
+        assert "not supported yet" in str(caught.value)
+        assert path.read_bytes() == before
+
+
+def test_a_new_part_a_later_section_inherits_is_refused(tmp_path: Path) -> None:
     path, header = three_sections_inheriting(tmp_path)
     plan = current(path)
     plan["sections"][1]["header"]["default"] = "B"
-    api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True})
-    assert printed_headers(path) == [header, "B", header]
+    refused_whole(path, plan, 3)
+    assert printed_headers(path) == [header] * 3
 
 
-def test_dropping_a_reference_leaves_the_header_later_sections_inherit(tmp_path: Path) -> None:
+def test_dropping_a_reference_a_later_section_inherits_is_refused(tmp_path: Path) -> None:
     path, header = three_sections_inheriting(tmp_path)
     plan = current(path)
     plan["sections"][0]["header"]["default"] = None
-    api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True})
-    assert printed_headers(path) == [None, header, header]
+    refused_whole(path, plan, 2)
+    assert printed_headers(path) == [header] * 3
+
+
+def test_a_new_part_no_section_inherits_applies_and_reapplies_as_a_no_op(
+    tmp_path: Path,
+) -> None:
+    path, header = three_sections_inheriting(tmp_path)
+    plan = current(path)
+    plan["sections"][2]["header"]["default"] = "B"
+    plan["sections"][2]["footer"]["default"] = "F-{PAGE}"
+    out = api.run("layout.apply", {"doc": str(path), "plan": plan, "untracked": True}).result
+    assert out["plan"] == current(path)
+    assert [s["header"]["default"] for s in out["plan"]["sections"]] == [header, None, "B"]
+    assert out["plan"]["sections"][2]["footer"]["default"] == "F-{PAGE}"
+    assert printed_headers(path) == [header, header, "B"]
+
+    before = path.read_bytes()
+    again = api.run(
+        "layout.apply", {"doc": str(path), "plan": out["plan"], "untracked": True}
+    ).result
+    assert again["changes"] == [] and path.read_bytes() == before
 
 
 def test_asking_the_inherited_text_changes_nothing(tmp_path: Path) -> None:
@@ -370,3 +402,4 @@ def test_asking_the_inherited_text_changes_nothing(tmp_path: Path) -> None:
     plan["sections"][2]["header"]["default"] = header
     out = api.run("layout.apply", {"doc": str(path), "plan": plan}).result
     assert out["changes"] == [] and path.read_bytes() == before
+    assert out["plan"]["sections"][2]["header"]["default"] is None  # it keeps inheriting
