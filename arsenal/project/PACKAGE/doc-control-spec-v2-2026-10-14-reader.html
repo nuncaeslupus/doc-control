@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="95531698473a8900d13d28d3a84aab78cf663fd5af59abc3ed51bfb0fadf5b70">
+<meta name="arsenal-source-sha256" content="02c197bd285b444e87c771ba0fc06a31fb42db6442c7a1432238112700fb66d1">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -161,7 +161,7 @@ h4 .chip{font-size:11px;color:var(--muted)}
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
 </div>
-<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 10 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 12 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
 <div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
 
 <div class="wrap">
@@ -188,9 +188,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <li><a href="#s-spec-3">§3 Options</a></li>
 <li><a href="#s-spec-phases-shared-by-the-options">Phases (shared by the options)</a></li>
 <li><a href="#s-spec-option-a-windows-frozen-exe-plus">Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)</a></li>
-<li><a href="#s-spec-option-b-a-and-b-phases-with-lib">Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</a></li>
+<li><a href="#s-spec-option-b-windows-first-then-mac">Option B: Windows first, then Mac with LibreOffice live control through its own Python (Recommended; chosen by the owner)</a></li>
 <li><a href="#s-spec-option-c-run-the-whole-server-in">Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)</a></li>
 <li><a href="#s-spec-packaging-details">Packaging details</a></li>
+<li><a href="#s-spec-what-signing-would-need-for-a-fu">What signing would need (for a future decision)</a></li>
+<li><a href="#s-spec-claude-desktop-directory-listing">Claude Desktop directory listing (task-level requirement, D-P5)</a></li>
 <li><a href="#s-spec-comparison">Comparison</a></li>
 <li><a href="#s-spec-4">§4 Recommendation</a></li>
 </ul></details>
@@ -202,10 +204,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-14
 <strong>Ticket / PR</strong>: — (workspace <code>PACKAGE</code>; answers literary-critic Q-2, unblocks their T6)
 <strong>Author</strong>: Claude (doc-control session), for the owner
-<strong>Revision</strong>: 1
-<strong>Status</strong>: draft
+<strong>Revision</strong>: 2
+<strong>Status</strong>: approved (2026-10-14, revision 2)
 <strong>Revision log</strong>:
-- r1 — first draft; the owner answered "yes, write it" to literary-critic's Q-2</p>
+- r1 — first draft; the owner answered "yes, write it" to literary-critic's Q-2
+- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Windows only for the first release, unsigned, two channels (D-P1..D-P5)</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -226,17 +229,18 @@ that revision, add <code>— without annotations</code>.</p>
 <li>The core has no dependencies (<code>dependencies = []</code>). The MCP server is <code>doc-control mcp</code> over stdio; the CLI is <code>doc-control</code>.</li>
 <li>Releases go to PyPI from <code>.github/workflows/release.yml</code>. CI already runs on <code>ubuntu-latest</code> and <code>windows-latest</code>.</li>
 </ul>
-<p>What should be true: a writer downloads one file, double-clicks, and Claude Desktop (or the command line) can use doc-control. Windows gets Word live control. Mac gets the file engine and, as far as the platform allows, live control.</p>
-<p>Code signing is not required. Unsigned installs show a warning that the user can pass: on Windows, SmartScreen offers "More info → Run anyway". On macOS, "Privacy &amp; Security → Open Anyway". Paid signing (Windows certificate; Apple Developer Program, notarization) removes those warnings and is optional.</p>
+<p>What should be true: a writer downloads one file, double-clicks, and Claude Desktop (or the command line) can use doc-control. The first release is Windows only (D-P2) and gives Word live control. Mac (the file engine, the LibreOffice bridge, and Word for Mac) moves to later phases and is out of scope here; the analysis of it is kept below for those phases.</p>
+<p>Code signing is not required, and the first release ships unsigned (D-P3). The Windows warning can be passed: SmartScreen offers "More info → Run anyway", and the README documents that step. (For the later Mac phase, the equivalent is "Privacy &amp; Security → Open Anyway".) What signing would need is in section 3, for a future decision.</p>
 <p><strong>Success criteria (measurable)</strong>:</p>
 <ul>
-<li>[ ] <code>frozen_smoke_failures == 0</code> on <code>windows-latest</code> and <code>macos-latest</code>: the frozen binary runs <code>capabilities</code>, a file-engine <code>find</code> on a fixture <code>.docx</code>, and an MCP <code>initialize</code> plus <code>tools/list</code> over stdio, with no Python on <code>PATH</code>.</li>
+<li>[ ] <code>frozen_smoke_failures == 0</code> on <code>windows-latest</code>: the frozen binary runs <code>capabilities</code>, a file-engine <code>find</code> on a fixture <code>.docx</code>, and an MCP <code>initialize</code> plus <code>tools/list</code> over stdio, with no Python on <code>PATH</code>.</li>
 <li>[ ] <code>live_word_failures == 0</code> for the frozen Windows exe: <code>scripts/live_word_check.py</code> run against it on the owner's Windows machine (manual evidence).</li>
-<li>[ ] <code>install_steps_windows &lt;= 2</code> (download, double-click) for the <code>.mcpb</code> bundle and <code>&lt;= 3</code> for the plain installer; <code>install_steps_mac &lt;= 3</code> including "Open Anyway". Counted from a clean machine, recorded in the plan's evidence log.</li>
-<li>[ ] <code>frozen_exe_size_mb &lt;= 40</code> per OS (measured on the CI artifact).</li>
+<li>[ ] <code>install_steps_windows &lt;= 2</code> (download, double-click) for the <code>.mcpb</code> bundle and <code>&lt;= 3</code> for the plain installer, plus the documented SmartScreen "More info → Run anyway" step. Counted from a clean machine, recorded in the plan's evidence log.</li>
+<li>[ ] <code>frozen_exe_size_mb &lt;= 40</code> for the Windows build (measured on the CI artifact).</li>
 <li>[ ] <code>core_runtime_dependencies == 0</code>: <code>pyproject.toml</code> <code>dependencies</code> stays empty. Packaging tools appear only in a build dependency group and the workflow.</li>
-<li>[ ] <code>release_artifacts_per_tag == expected</code>: a tagged release attaches the Windows exe, the Mac binary, and the <code>.mcpb</code> file(s), each with a SHA-256 in the release notes.</li>
-<li>[ ] <code>frozen_vs_python_result_diffs == 0</code> on the shared fixture corpus: <code>capabilities</code> and <code>find</code> output of the binary equals the pip-installed version.</li>
+<li>[ ] <code>release_artifacts_per_tag == expected</code>: a tagged release attaches the Windows exe, the installer and the <code>.mcpb</code> file, each with a SHA-256 in the release notes (GitHub Release assets, D-P5). Mac artifacts are not expected until their phase.</li>
+<li>[ ] <code>directory_submission_ready == true</code>: the <code>.mcpb</code> passes the manifest validator, and the listing checklist in section 3 ("Claude Desktop directory listing") is complete: manifest fields, icon, privacy and tool descriptions, review submission. Whether the directory accepts it is judged at submission, not measured (D-P5).</li>
+<li>[ ] <code>frozen_vs_python_result_diffs == 0</code> on the shared fixture corpus: <code>capabilities</code> and <code>find</code> output of the Windows binary equals the pip-installed version.</li>
 <li>[ ] Judged, not measured: a writer with no Python installs it from the README alone and Claude Desktop lists the doc-control tools.</li>
 </ul></div>
 <div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
@@ -265,10 +269,10 @@ that revision, add <code>— without annotations</code>.</p>
 </tr>
 <tr>
 <td><code>live/lo_uno.py</code></td>
-<td>Primary (Mac, Windows, Linux)</td>
+<td>Primary (later phase: Mac, Windows, Linux)</td>
 <td>Drives LibreOffice</td>
-<td>Option B/C: Yes</td>
-<td>Cannot import <code>uno</code> from a frozen interpreter; needs a bridge</td>
+<td>Not in the first release</td>
+<td>Cannot import <code>uno</code> from a frozen interpreter; needs a bridge (phase 2)</td>
 <td>High</td>
 </tr>
 <tr>
@@ -292,7 +296,7 @@ that revision, add <code>— without annotations</code>.</p>
 <td>Infrastructure</td>
 <td>Build, smoke test, attach artifacts</td>
 <td>Yes</td>
-<td>Runs on <code>windows-latest</code> and <code>macos-latest</code></td>
+<td>Runs on <code>windows-latest</code>; <code>macos-latest</code> joins in phase 2</td>
 <td>Med</td>
 </tr>
 <tr>
@@ -314,9 +318,9 @@ that revision, add <code>— without annotations</code>.</p>
 <tr>
 <td>Claude Desktop</td>
 <td>Consumer</td>
-<td>Installs <code>.mcpb</code>, runs the binary</td>
+<td>Installs <code>.mcpb</code>, runs the binary; extensions directory lists it</td>
 <td>No</td>
-<td>Type <code>binary</code> manifest</td>
+<td>Type <code>binary</code> manifest; directory submission (D-P5)</td>
 <td>Med</td>
 </tr>
 <tr>
@@ -339,7 +343,7 @@ that revision, add <code>— without annotations</code>.</p>
 </table>
 <p><strong>Impact</strong>:
 - <strong>User</strong>: a writer installs without Python. The first run shows an OS warning (unsigned).
-- <strong>Operational</strong>: two more CI jobs and a release step. Binaries are rebuilt per release.
+- <strong>Operational</strong>: one more CI job (a second for Mac in phase 2) and a release step. Binaries are rebuilt per release. A directory listing adds a review submission per release to confirm.
 - <strong>Performance</strong>: a one-file exe unpacks on start; expect 1–3 seconds of startup. A one-folder build avoids it.
 - <strong>API and data</strong>: none.
 - <strong>Risk of inaction</strong>: literary-critic's writers must install Python or use computer-use clicks. T6 stays blocked.</p></div>
@@ -351,10 +355,11 @@ that revision, add <code>— without annotations</code>.</p>
 <article class="sec l3" id="s-spec-phases-shared-by-the-options">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Phases (shared by the options)</span></h4>
 <div class="sec-body"><ol>
-<li><strong>Phase 1, Windows</strong>: frozen exe (PyInstaller or Nuitka) with <code>pywin32</code>, the <code>.mcpb</code> bundle (server type <code>binary</code>), a plain installer, CI smoke test.</li>
-<li><strong>Phase 2, Mac file engine</strong>: a frozen Mac binary (Apple silicon and Intel, or universal2), <code>.mcpb</code> for Mac, "Open Anyway" instructions. Live control is LibreOffice only, with the bridge below.</li>
-<li><strong>Phase 3, Mac Word</strong>: a new Word-for-Mac engine through AppleScript or JXA (<code>osascript</code>). It is a separate spec and not part of this one.</li>
-</ol></div>
+<li><strong>Phase 1, Windows (the first release, in scope)</strong>: frozen exe (PyInstaller or Nuitka) with <code>pywin32</code>, the <code>.mcpb</code> bundle (server type <code>binary</code>), a plain installer, CI smoke test, GitHub Release assets and the Claude Desktop directory listing.</li>
+<li><strong>Phase 2, Mac file engine (later, out of scope here)</strong>: a frozen Mac binary (Apple silicon and Intel, or universal2), <code>.mcpb</code> for Mac, "Open Anyway" instructions. Live control is LibreOffice only, with the bridge below.</li>
+<li><strong>Phase 3, Mac Word (later, out of scope here)</strong>: a new Word-for-Mac engine through AppleScript or JXA (<code>osascript</code>). It is a separate spec.</li>
+</ol>
+<p>The owner moved Mac to later phases (D-P2). The Mac analysis below is kept so those phases start from it.</p></div>
 <div class="note" data-for="s-spec-phases-shared-by-the-options"><label class="note-head" for="n-s-spec-phases-shared-by-the-options"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Phases (shared by the options)</span></label><textarea class="note-ta" data-key="s-spec-phases-shared-by-the-options" id="n-s-spec-phases-shared-by-the-options" data-label="Phases (shared by the options)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-option-a-windows-frozen-exe-plus">
@@ -368,16 +373,16 @@ that revision, add <code>— without annotations</code>.</p>
 </ul></div>
 <div class="note" data-for="s-spec-option-a-windows-frozen-exe-plus"><label class="note-head" for="n-s-spec-option-a-windows-frozen-exe-plus"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)</span></label><textarea class="note-ta" data-key="s-spec-option-a-windows-frozen-exe-plus" id="n-s-spec-option-a-windows-frozen-exe-plus" data-label="Option A: Windows frozen exe plus .mcpb, Mac file engine only (Conservative)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
-<article class="sec l3" id="s-spec-option-b-a-and-b-phases-with-lib">
-<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</span></h4>
+<article class="sec l3" id="s-spec-option-b-windows-first-then-mac">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: Windows first, then Mac with LibreOffice live control through its own Python (Recommended; chosen by the owner)</span></h4>
 <div class="sec-body"><ul>
-<li><strong>Description</strong>: everything in Option A, plus Mac live control through LibreOffice. The frozen binary cannot import <code>uno</code>, so a small helper script runs in LibreOffice's bundled Python (<code>/Applications/LibreOffice.app/Contents/Resources/python</code>) and speaks the same protocol over a local socket or stdio. The frozen binary starts it when <code>uno</code> is not importable. The same route works on Windows and Linux for LibreOffice users. The file engine and MCP server stay in the frozen binary.</li>
-<li><strong>Scope</strong>: Option A plus a <code>lo_uno</code> bridge process (<code>live/lo_bridge.py</code>, standard library only, runs under LibreOffice's Python), tests with a fake bridge, and Mac CI smoke.</li>
+<li><strong>Description</strong>: phase 1 is Option A for Windows only. The design then plans, for later phases, Mac live control through LibreOffice. The frozen binary cannot import <code>uno</code>, so a small helper script runs in LibreOffice's bundled Python (<code>/Applications/LibreOffice.app/Contents/Resources/python</code>) and speaks the same protocol over a local socket or stdio. The frozen binary starts it when <code>uno</code> is not importable. The same route works on Windows and Linux for LibreOffice users. The file engine and MCP server stay in the frozen binary.</li>
+<li><strong>Scope</strong>: the first release is the Windows part of Option A. Later phases add a <code>lo_uno</code> bridge process (<code>live/lo_bridge.py</code>, standard library only, runs under LibreOffice's Python), tests with a fake bridge, and Mac CI smoke.</li>
 <li><strong>Effort</strong>: Medium–Large.</li>
-<li><strong>Tradeoffs</strong>: Mac writers get live control with LibreOffice and no Python. Adds a process and a protocol to keep in step with <code>live/protocol.py</code>. It does not give Word on Mac (phase 3).</li>
+<li><strong>Tradeoffs</strong>: the first release carries no Mac or bridge work, so it ships sooner. Once the later phases land, Mac writers get live control with LibreOffice and no Python. The bridge adds a process and a protocol to keep in step with <code>live/protocol.py</code>. It does not give Word on Mac (phase 3).</li>
 <li><strong>Compatibility</strong>: additive. With a Python that already has <code>uno</code>, today's in-process path wins.</li>
 </ul></div>
-<div class="note" data-for="s-spec-option-b-a-and-b-phases-with-lib"><label class="note-head" for="n-s-spec-option-b-a-and-b-phases-with-lib"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)</span></label><textarea class="note-ta" data-key="s-spec-option-b-a-and-b-phases-with-lib" id="n-s-spec-option-b-a-and-b-phases-with-lib" data-label="Option B: A and B-phases with LibreOffice live control on Mac through its own Python (Recommended)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+<div class="note" data-for="s-spec-option-b-windows-first-then-mac"><label class="note-head" for="n-s-spec-option-b-windows-first-then-mac"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: Windows first, then Mac with LibreOffice live control through its own Python (Recommended; chosen by the owner)</span></label><textarea class="note-ta" data-key="s-spec-option-b-windows-first-then-mac" id="n-s-spec-option-b-windows-first-then-mac" data-label="Option B: Windows first, then Mac with LibreOffice live control through its own Python (Recommended; chosen by the owner)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-option-c-run-the-whole-server-in">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option C: Run the whole server inside LibreOffice's Python (Mac and Windows)</span></h4>
@@ -394,16 +399,40 @@ that revision, add <code>— without annotations</code>.</p>
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Packaging details</span></h4>
 <div class="sec-body"><ul>
 <li><strong>Windows exe</strong>: PyInstaller is the default. It has mature <code>pywin32</code> hooks. Nuitka gives smaller, faster output but takes longer to build and needs a C compiler on the runner. Decide by measurement in phase 1 (size, startup, smoke test). Antivirus false positives are more common with one-file PyInstaller; one-folder or Nuitka reduces them.</li>
-<li><strong><code>.mcpb</code></strong>: a zip with <code>manifest.json</code> (server type <code>binary</code>, <code>entry_point</code> the exe, <code>mcp_config</code> command and args <code>mcp</code>) and the binary. Claude Desktop installs it by double-click. Windows and Mac get separate bundles because the binaries differ.</li>
+<li><strong><code>.mcpb</code></strong>: a zip with <code>manifest.json</code> (server type <code>binary</code>, <code>entry_point</code> the exe, <code>mcp_config</code> command and args <code>mcp</code>) and the binary. Claude Desktop installs it by double-click. Windows and (in phase 2) Mac get separate bundles because the binaries differ.</li>
 <li><strong>Plain installer</strong>: Windows <code>.exe</code> installer (Inno Setup) copies the exe, adds it to <code>PATH</code> and prints the <code>claude_desktop_config.json</code> snippet. Mac gets a <code>.pkg</code> or a signed-less zip with <code>doc-control</code> to drop on <code>/usr/local/bin</code>.</li>
 <li><strong>CLI use</strong>: the same binary. <code>doc-control capabilities</code> works from a terminal.</li>
 <li><strong>Mac Word</strong>: AppleScript/JXA through <code>osascript</code> is the route to Word on Mac. Phase 3, its own spec.</li>
-<li><strong>Signing</strong>: not required. Unsigned downloads show SmartScreen "More info → Run anyway" on Windows and "Privacy &amp; Security → Open Anyway" on macOS. Windows code signing costs a yearly certificate (cloud signing services are cheaper than hardware tokens); Apple's Developer Program is a yearly fee and adds notarization. Both remove the warnings. Add them later without changing the build, by signing in the workflow when secrets exist.</li>
-<li><strong>CI</strong>: a <code>package.yml</code> workflow on <code>windows-latest</code> and <code>macos-latest</code> (and <code>macos-13</code> for Intel, if needed). Build, run the smoke test on the built binary with <code>PATH</code> stripped of Python, upload artifacts, and on a release tag attach them to the GitHub release with checksums. Actions pins follow the existing workflows (commit SHAs).</li>
-<li><strong>Size</strong>: the standard-library-only core freezes small. Budget 40 MB per OS; <code>pywin32</code> on Windows is the largest part.</li>
+<li><strong>Signing</strong>: not required; the first release ships unsigned and documents the SmartScreen "More info → Run anyway" step (D-P3). See "What signing would need" below. Signing can be added later without changing the build, by signing in the workflow when secrets exist. (Mac, for its phase: "Privacy &amp; Security → Open Anyway"; the Apple Developer Program is a yearly fee and adds notarization.)</li>
+<li><strong>CI</strong>: a <code>package.yml</code> workflow on <code>windows-latest</code> (phase 2 adds <code>macos-latest</code>, and <code>macos-13</code> for Intel, if needed). Build, run the smoke test on the built binary with <code>PATH</code> stripped of Python, upload artifacts, and on a release tag attach them to the GitHub release with checksums. Actions pins follow the existing workflows (commit SHAs).</li>
+<li><strong>Size</strong>: the standard-library-only core freezes small. Budget 40 MB for the Windows build; <code>pywin32</code> on Windows is the largest part.</li>
 <li><strong>Stdlib-only rule</strong>: PyInstaller or Nuitka, hooks and installer tools are build-time only. They go in a <code>package</code> dependency group, never in <code>[project] dependencies</code>. The runtime stays <code>dependencies = []</code>; <code>pywin32</code> stays the <code>live</code> extra for pip users and is bundled in the Windows build only.</li>
 </ul></div>
 <div class="note" data-for="s-spec-packaging-details"><label class="note-head" for="n-s-spec-packaging-details"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Packaging details</span></label><textarea class="note-ta" data-key="s-spec-packaging-details" id="n-s-spec-packaging-details" data-label="Packaging details" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-what-signing-would-need-for-a-fu">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">What signing would need (for a future decision)</span></h4>
+<div class="sec-body"><p>Not part of the first release (D-P3). Recorded so the choice can be made later without new research. Prices and policies below move; confirm each before deciding.</p>
+<ul>
+<li><strong>Azure Trusted Signing</strong> (Microsoft's managed signing service): about $10 a month. It needs identity validation of an individual or an organisation, and eligibility depends on region and account type (to confirm). It signs from GitHub Actions with a service principal, with no hardware token to handle. Likely the cheapest path.</li>
+<li><strong>OV and EV code-signing certificates from a certificate authority</strong>: roughly a few hundred dollars a year, EV costing more than OV (to confirm with the CA). Since 2023 the private key must live on a hardware token or in an HSM or cloud HSM, so a file-based <code>.pfx</code> secret in CI is not allowed; the CA's cloud-signing offer or a token on a self-hosted runner is needed.</li>
+<li><strong><code>signtool</code> in CI</strong>: the workflow signs the exe (and the installer) after the build with <code>signtool sign</code> and a timestamp server, then verifies with <code>signtool verify</code>, before the smoke test and the release step. The <code>.mcpb</code> bundle may need its own signing step (to confirm).</li>
+<li><strong>SmartScreen reputation builds over time</strong>, even for signed OV binaries: a new signed file can still warn until enough downloads accumulate. Signing changes the warning from "unknown publisher" to a named publisher; it does not remove the warning on day one.</li>
+</ul></div>
+<div class="note" data-for="s-spec-what-signing-would-need-for-a-fu"><label class="note-head" for="n-s-spec-what-signing-would-need-for-a-fu"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › What signing would need (for a future decision)</span></label><textarea class="note-ta" data-key="s-spec-what-signing-would-need-for-a-fu" id="n-s-spec-what-signing-would-need-for-a-fu" data-label="What signing would need (for a future decision)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-claude-desktop-directory-listing">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Claude Desktop directory listing (task-level requirement, D-P5)</span></h4>
+<div class="sec-body"><p>Publishing to the Claude Desktop extensions directory, in addition to GitHub Release assets, needs the following. Anything the directory's own rules decide is marked "to confirm at submission"; this spec does not state exact policy.</p>
+<ul>
+<li>A valid <code>manifest.json</code> in the <code>.mcpb</code>: name, display name, version, description, author, server type <code>binary</code> with <code>entry_point</code> and <code>mcp_config</code>, the tool list, and the compatibility platforms (<code>win32</code> only for now). Exact required fields: to confirm at submission against the current manifest schema.</li>
+<li>An icon in the format and size the directory asks for (to confirm at submission).</li>
+<li>A privacy statement: what the tool reads and writes (local Word documents, nothing sent off the machine by doc-control itself), and a privacy policy link if the directory requires one (to confirm at submission).</li>
+<li>Tool descriptions: a plain-language description of each tool (read, edit, live control of Word) and whether it changes files, for the listing and the review.</li>
+<li>The review submission: the submission route, its review criteria, turnaround and re-review on each new version are all to confirm at submission. Plan for a listing that lags the GitHub release.</li>
+<li>The listing must not block the GitHub release: the release assets ship first (D-P5).</li>
+</ul></div>
+<div class="note" data-for="s-spec-claude-desktop-directory-listing"><label class="note-head" for="n-s-spec-claude-desktop-directory-listing"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Claude Desktop directory listing (task-level requirement, D-P5)</span></label><textarea class="note-ta" data-key="s-spec-claude-desktop-directory-listing" id="n-s-spec-claude-desktop-directory-listing" data-label="Claude Desktop directory listing (task-level requirement, D-P5)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-comparison">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Comparison</span></h4>
@@ -465,15 +494,58 @@ that revision, add <code>— without annotations</code>.</p>
 </article>
 <article class="sec l2" id="s-spec-4">
 <h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
-<div class="sec-body"><p><strong>Recommended option</strong>: Option B, built in phases. Phase 1 (Windows, Option A) delivers what literary-critic needs for T6 and can ship alone. Phase 2 adds the Mac binary and the LibreOffice bridge. Phase 3 (Word on Mac) stays a separate spec.</p>
+<div class="sec-body"><p><strong>Recommended option</strong>: Option B, built in phases and chosen by the owner (D-P1). Phase 1 (Windows, Option A) is the whole first release: it delivers what literary-critic needs for T6, ships unsigned, and goes out as GitHub Release assets and a Claude Desktop directory listing. Phase 2 (the Mac binary and the LibreOffice bridge) and phase 3 (Word on Mac, a separate spec) come later and are out of scope here.</p>
 <p><strong>Immediate next action</strong>: after approval, <code>design</code> the plan, starting with a throwaway PyInstaller build in CI on <code>windows-latest</code> that runs the smoke test (<code>capabilities</code>), to settle PyInstaller against Nuitka by measured size and startup.</p>
 <p><strong>Open questions</strong>:
-- [ ] Q1. PyInstaller or Nuitka for Windows? Recommended: start with PyInstaller one-folder; switch only if antivirus flags or size miss the 40 MB budget.
-- [ ] Q2. Is Mac in scope for the first release, or Windows only (Option A) with Mac after? Recommended: Windows first, Mac in the same plan as phase 2.
-- [ ] Q3. Is shipping unsigned acceptable for the first release? Recommended: yes; revisit signing if writers drop out at the warning.
-- [ ] Q4. Should the LibreOffice bridge on Mac be part of this spec, or deferred with Word-for-Mac? Recommended: include it (Option B).
-- [ ] Q5. Which distribution channel: GitHub release assets only, or also a listing in Claude Desktop's extension directory? Recommended: GitHub release assets first.</p>
-<p><strong>Decisions log</strong>: none (the work did not start in <code>explore-idea</code>). Constraints carried: no signing required; the core stays stdlib-only; the owner answered Q-2 with yes.</p>
+- [ ] Q1. PyInstaller or Nuitka for Windows? Not an owner question: the plan settles it by measurement in phase 1. Recommended: start with PyInstaller one-folder; switch only if antivirus flags or size miss the 40 MB budget.
+- [x] Q2. Is Mac in scope for the first release? No: Windows only; Mac moves to later phases (D-P2).
+- [x] Q3. Is shipping unsigned acceptable for the first release? Yes; document SmartScreen "More info → Run anyway" (D-P3).
+- [x] Q4. Is the LibreOffice bridge on Mac part of this spec? Deferred with Mac to later phases; the analysis stays (D-P4).
+- [x] Q5. Distribution channel? Both: GitHub Release assets and a Claude Desktop directory listing (D-P5).</p>
+<p><strong>Decisions log</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Decision</th>
+<th>Status</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-P1</td>
+<td>Option B, built in phases</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-P2</td>
+<td>Windows only for the first release. Mac (the LibreOffice bridge, and Word for Mac) moves to later phases and is out of scope; the analysis is kept</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-P3</td>
+<td>Ship unsigned; document the SmartScreen "More info → Run anyway" step. "What signing would need" is recorded for a future decision</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-P4</td>
+<td>The LibreOffice bridge follows Mac to a later phase (consequence of D-P2)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-P5</td>
+<td>Publish as GitHub Release assets and as a listing in the Claude Desktop extensions directory; the listing requirements are a task-level requirement, policy details to confirm at submission</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+</tbody>
+</table>
+<p>Constraints carried: no signing required; the core stays stdlib-only; the owner answered Q-2 with yes.</p>
 <blockquote>
 <p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
 </blockquote></div>
@@ -558,7 +630,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+  function exportName(){return 'doc-control-spec-v2-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;

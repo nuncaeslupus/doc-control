@@ -3,10 +3,11 @@
 **Date**: 2026-10-14
 **Ticket / PR**: — (workspace `FIND`)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: draft
+**Revision**: 2
+**Status**: approved (2026-10-14, revision 2)
 **Revision log**:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with `--`
+- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -48,14 +49,17 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 
 **Success criteria (measurable)**:
 
-- [ ] `loose_match_failures == 0` on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading `-`, `--`, `—`, `¿` or `«`. The table includes `Estas ahi` against `¿Estás ahí?`, `-¿Estás ahí?`, `-Estas ahí?` and `--Estas ahi`.
+- [ ] `loose_match_failures == 0` on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading `-`, `--`, `—`, `¿` or `«`, at the start or in the middle of the paragraph. The table includes `Estas ahi` against `¿Estás ahí?`, `-¿Estás ahí?`, `-Estas ahí?` and `--Estas ahi`, and a phrase without `¿` against a paragraph that has it mid-text (D-F2).
+- [ ] `symbol_fold_violations == 0`: at the default level a symbol (`$`, `+`, `*`) is never folded, so `5$` does not match `5`; at the `loose` level it does. Rows cover both levels (D-F1).
+- [ ] `fallback_level_misreports == 0`: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).
+- [ ] `word_code_failures == 0` on a fixture table: `^p` equals `\r`, `^t` a tab, `^l` a manual line break where the op supports it, `^^` a literal caret, and an unknown `^x` stays literal (D-F6).
 - [ ] `exact_tiebreak_violations == 0`: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.
-- [ ] `tier_ambiguity_misses == 0`: two matches in the same tier still raise `ANCHOR_AMBIGUOUS`; none is silently chosen.
+- [ ] `tier_ambiguity_misses == 0`: two matches in the same level still raise `ANCHOR_AMBIGUOUS`; none is silently chosen.
 - [ ] `span_mismatches == 0`: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).
-- [ ] `locate_phrase_changes == 0`: `locate` output on the corpus is byte-identical before and after (direction b is untouched).
-- [ ] `loose_report_missing == 0`: every response where the tier was not exact says so (`match` tier field).
+- [ ] `locate_phrase_changes == 0`: `locate` output on the corpus is byte-identical before and after (direction b is untouched, including no `^` codes in generated phrases).
+- [ ] `loose_report_missing == 0`: every response where the level was not exact says so (`match` level field).
 - [ ] `find_loose_overhead_ratio <= 1.5` against the current literal `find` on the 100k-paragraph benchmark document in `tests/bench`; `live.select` stays under the current time plus 50 ms on the same document.
-- [ ] No existing test changes behaviour: `exact` mode reproduces today's results (`regression_failures == 0`).
+- [ ] No existing test changes behaviour: `match: "exact"` reproduces today's results, and plain `find` with no `match` argument is unchanged (`regression_failures == 0`, D-F5).
 - [ ] Judged, not measured: the owner re-runs the original `--` dialogue case from literary-critic and it is found.
 
 ## 2. Systems & Impact
@@ -63,20 +67,20 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 | System | Type | Role | Needs changes? | Impact | Severity |
 |--------|------|------|----------------|--------|----------|
 | `ops/live.py` `_found` | Primary | Resolves `find_phrase` for `live.select` | Yes | Uses the tiered matcher; reports the tier | High |
-| `ops/find.py`, `model/search.py` | Primary | Literal and regex search | Option B: Yes | New `match` mode for literal queries | Med |
-| New `model/loosefold.py` (Option B) | Primary | Fold, offset map, tiered search | Yes (new) | One shared matcher | High |
+| `ops/find.py`, `model/search.py` | Primary | Literal and regex search | Option B: Yes | New `match` levels for literal queries; default stays exact | Med |
+| New `model/loosefold.py` (Option B) | Primary | Fold, offset map, levelled search, Word-code translation | Yes (new) | One shared matcher | High |
 | `model/anchor.py` | Dependent | Exact, normalised, fuzzy tiers | Option B: aligns tiers | Adds a loose tier before fuzzy | Med |
 | `ops/rename.py`, `ops/history.py` | Dependent | Use the `find` matcher | Option B: Yes | Inherit the mode or opt out | Low |
 | `ops/locate.py`, `model/wordfind.py` | Dependent | Generate Word-exact phrases | No (guarded by a test) | Must not change | High if touched |
 | `live/word_com.py`, `live/lo_uno.py` | Dependent | Select a paragraph by index | No | Receive a paragraph index as today | Low |
 | `tests/bench` | Validation | Perf tests | Yes | New loose-match benchmark | Low |
-| literary-critic | Consumer | Sends find phrases | No | Fewer misses; must read the tier | Low |
+| literary-critic | Consumer | Sends find phrases | No | Fewer misses; must read the level | Low |
 
 **Impact**:
-- **API**: additive. A response field names the tier; a request field `match` (`"loose"` default, `"exact"`) opts out. Defaults change for `live.select`, so some calls that failed now succeed.
+- **API**: additive. A response field names the level; a request field `match` (`"exact"`, `"default"`, `"loose"`) sets it. `"default"` is the default for the phrase ops, which retry looser levels before failing, so some calls that failed now succeed. Plain `find` stays exact. Agent phrases also accept Word's find codes (`^p`, `^t`, `^l`, `^^`).
 - **Data**: none. These are read ops or selections.
 - **Performance**: folding each paragraph costs linear time. Cache the folded text per document revision.
-- **User**: a wrong loose pick is visible and recoverable (the owner's rule). The tier report lets the agent notice it.
+- **User**: a wrong loose pick is visible and recoverable (the owner's rule). The level report lets the agent notice it.
 - **Risk of inaction**: agents keep missing paragraphs on punctuation they cannot see. Dialogue in Spanish and French is the common case.
 
 ## 3. Options
@@ -91,8 +95,8 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 
 ### Option B: One shared matcher module for every phrase-taking op (Recommended)
 
-- **Description**: a new module `model/loosefold.py` owns the folding, the offset map and the tier search. `live.select`, `find`, `anchor.resolve`, `rename` and `history.search` call it. `locate` does not.
-- **Scope**: the module, the five ops above, response fields, docs/operations.md, tests and benchmarks.
+- **Description**: a new module `model/loosefold.py` owns the folding, the offset map, the level search and the Word-code translation. `live.select`, `find`, `anchor.resolve`, `rename` and `history.search` call it. `locate` does not.
+- **Scope**: the module, the five ops above, the `match` parameter and response fields, docs/operations.md, tests and benchmarks.
 - **Effort**: Medium.
 - **Tradeoffs**: one rule everywhere, one place to test and tune. More files touched, and `anchor.resolve`'s existing normalised tier must be merged without changing its scores.
 - **Compatibility**: additive with the same `match` opt-out.
@@ -105,40 +109,69 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 - **Tradeoffs**: simplest to reason about. But a phrase that matches one paragraph exactly and others loosely is handled only because exact is tried first; there is no case-only tier, and two exact hits are not told apart from loose ones in the report.
 - **Compatibility**: additive.
 
-### The folding rule (all options)
+### Match levels (D-F1)
+
+`match` takes three values, from strictest to loosest:
+
+- `"exact"`: today's behaviour for that op. No folding, no retry.
+- `"default"`: case and accents are ignored, and punctuation and dashes are folded away. Symbols (S*) still count.
+- `"loose"`: everything in `"default"`, and symbols are dropped as well. An opt-in level; it never applies unless asked for or reached by the retry below.
+
+**Defaults**: the phrase ops (`live.select`, `anchor.resolve`, `rename`'s search, `history.search`) default to `"default"`. Plain `find` defaults to `"exact"` (D-F5) and only folds when the caller passes `match`.
+
+**Retry before failing**: when a phrase is not found at the level in force, a phrase op tries the less restrictive levels itself, one at a time, before it raises `ANCHOR_NOT_FOUND`. Each level keeps the exact-first tiebreak below. `"exact"` never retries. For `find`, retry applies only when `match` is `"default"` or `"loose"`. The reply names the level that matched.
+
+### The folding rule
 
 Both the phrase and each paragraph are folded to a comparison string, and an offset map keeps the position of every folded character in the original text.
 
 - **Accents**: NFD, then drop combining marks (category M). `Estás` becomes `estas`.
 - **Case**: `casefold`.
-- **Punctuation and dashes**: every character in Unicode category P* is dropped. The sequence `--` is dropped as well. `¿`, `?`, `-`, `—`, `–`, `«` and curly quotes all fold away. Symbol categories (S*) stay, so `$` and `+` still count.
-- **Whitespace**: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped punctuation is merged.
+- **Punctuation and dashes** (levels `default` and `loose`): every character in Unicode category P* is dropped. The sequence `--` is dropped as well. `¿`, `?`, `-`, `—`, `–`, `«` and curly quotes all fold away.
+- **Symbols** (level `loose` only): every character in category S* (`$`, `*`, `+`, `=`, `<`, `^` and so on) is dropped. At `default` they stay.
+- **Whitespace**: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped characters is merged.
 - **Offsets**: each folded character records the original start and end. A match from folded positions `i..j` maps to the original span from the start of character `i` to the end of character `j-1`. The span then widens to take punctuation that touches the match on its own side only when the phrase itself began or ended with punctuation. Combining marks stay with their base. The result is a normal `p142#…:s-e` range, as `find` returns today.
-- **Empty phrase after folding** (for example a phrase of only `--`): matched exactly only; loose matching is refused with `SCHEMA_INVALID`, since it would match every paragraph.
-- **Prefix match**: for `live.select`, a phrase that begins a paragraph may match at the folded start of the paragraph, so `Estas ahi` finds `-¿Estás ahí?`.
+- **Empty phrase after folding** (for example a phrase of only `--`, or only symbols at `loose`): matched exactly only; folded matching is refused with `SCHEMA_INVALID`, since it would match every paragraph.
+- **Position**: a match may start anywhere in a paragraph, not only at its start (D-F2). `Estas ahi` finds `-¿Estás ahí?`, and a phrase without `¿` finds a passage that has `¿` in the middle of a paragraph. `find` already searches inside paragraphs; the folded levels do the same.
 
-### Tiebreak tiers
+### Word find codes in agent phrases (D-F6)
+
+Word's Find box accepts special codes, and they are useful to an agent. Before matching, agent phrases are translated, left to right, in `model/loosefold.py`:
+
+| Code | Meaning | Becomes |
+|------|---------|---------|
+| `^p` | paragraph mark | `\r`, as an alias |
+| `^t` | tab | `\t`, where the op supports it |
+| `^l` | manual line break | the line-break character, where the op supports it |
+| `^^` | a literal caret | `^` |
+
+Any other `^x` stays literal (further codes are not promised). Because translation runs left to right, `^^p` is a caret followed by `p`, not a paragraph mark. Word's simple Find box in the Navigation pane also takes `^p` and `^t`, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding; a literal `^` that the writer typed is matched with `^^` (at `loose` it is a symbol and is dropped like any other).
+
+`locate`'s generated phrases (`find_phrase`, `find_phrase_word`) do not change and do not emit `^` codes (direction b).
+
+### Tiebreak levels
 
 1. **exact**: the phrase equals the text verbatim.
 2. **case-only**: equal after `casefold` (today's `live.select` rule).
-3. **loose**: equal after the full fold.
+3. **default**: equal after the accent, case and punctuation fold.
+4. **loose**: equal after the symbol fold as well.
 
-The search takes the first tier that has any match. Within that tier, one match is the answer. Two or more raise `ANCHOR_AMBIGUOUS` (as now), and the error lists the tier and the candidate addresses. A looser tier is never consulted once a stricter one matches, so one exact paragraph beats any number of loose ones.
+The search takes the first level that has any match, starting from the strictest and escalating only as far as the retry rule allows. Within that level, one match is the answer. Two or more raise `ANCHOR_AMBIGUOUS` (as now), and the error lists the level and the candidate addresses. A looser level is never consulted once a stricter one matches, so one exact paragraph beats any number of looser ones.
 
 ### Reporting a loose match
 
-Responses carry `"match": "exact" | "case" | "loose"`, the same key `anchor.resolve` already uses. For a loose match the response also carries `matched_text`, the original text of the span, so the agent can compare it with what it asked for. `live.select` already returns the paragraph text. `find` marks each hit.
+Responses carry `"match": "exact" | "case" | "default" | "loose"`, the level that matched, in the same key `anchor.resolve` already uses. Whenever the level is not `exact` the response also carries `matched_text`, the original text of the span, so the agent can compare it with what it asked for. `live.select` already returns the paragraph text. `find` marks each hit.
 
 ### Opt-out
 
-`match: "exact"` on each phrase-taking op restores today's behaviour. `"loose"` is the default for `live.select`, `anchor.resolve`, `rename`'s search and `history.search`. For `find`, the existing `ignore_case`, `ignore_accents` and `whole_word` flags stay as they are; `match: "loose"` is a new value that implies both and the punctuation fold. Its default is open (Q3 below).
+`match: "exact"` on each phrase-taking op restores today's behaviour. For `find`, the existing `ignore_case`, `ignore_accents` and `whole_word` flags stay as they are; `match: "default"` implies the first two plus the punctuation fold, and `match: "loose"` adds the symbol fold. Omitting `match` leaves `find` exactly as it is today (D-F5).
 
 ### Performance
 
 - Folded text and offset maps are built once per paragraph and cached with the `Document` index; a search over N paragraphs is O(total characters).
-- The three tiers share one pass: the exact and case tiers run first on the raw and casefolded text. The loose tier is built only when both are empty.
+- The levels share one pass: the exact and case levels run first on the raw and casefolded text. The folded levels are built only when both are empty, and the symbol-folded text only when the punctuation-folded search is empty too.
 - `locate` indexes are unchanged.
-- The repo's `tests/bench` documents are the base. A new benchmark runs the three tiers on a 100k-paragraph document.
+- The repo's `tests/bench` documents are the base. A new benchmark runs the four levels on a 100k-paragraph document.
 
 ### Comparison
 
@@ -152,18 +185,27 @@ Responses carry `"match": "exact" | "case" | "loose"`, the same key `anchor.reso
 
 ## 4. Recommendation
 
-**Recommended option**: Option B. The owner asked for a generic rule, and a shared module is the only way to make the same phrase behave the same in `live.select`, `find`, `anchor.resolve`, `rename` and `history.search`. Ship it in two steps: the module with `live.select` first (the reported failure), then the other ops. `locate` stays exact by a regression test.
+**Recommended option**: Option B. The owner asked for a generic rule, and a shared module is the only way to make the same phrase behave the same in `live.select`, `find`, `anchor.resolve`, `rename` and `history.search`. The owner chose it on 2026-10-14 (D-F1). Ship it in two steps: the module with `live.select` first (the reported failure), then the other ops. `locate` stays exact by a regression test.
 
 **Immediate next action**: after approval, `design` the plan, starting with the fixture table of variants and the tier tests, so the matcher is written against its gate.
 
-**Open questions**:
-- [ ] Q1. Should the fold also drop symbols (category S*, for example `$`, `*`, `+`) or only punctuation (P*)? Recommended: punctuation only.
-- [ ] Q2. Should a loose match be allowed inside a paragraph (not only at its start)? `find` already finds inside paragraphs. Recommended: yes, same tiers.
-- [ ] Q3. Should `find` default to `match: "loose"`? It changes the meaning of a plain query. Recommended: no, keep `find` exact by default and make loose the default only for the phrase ops that must land on one paragraph.
-- [ ] Q4. Should a loose match that needs a second look (for example, folding removed digits' neighbours) be refused? Recommended: no refusal; the report is enough.
-- [ ] Q5. Should the fuzzy tier of `anchor.resolve` stay as is after the loose tier? Recommended: yes.
+**Open questions**: none. The owner answered Q1–Q5 in r2 (see D-F1..D-F6):
+- [x] Q1. Symbols (S*): not folded by default; dropped only at the opt-in `loose` level, with an automatic retry (D-F1).
+- [x] Q2. Matching inside a paragraph: yes, same levels (D-F2).
+- [x] Q3. `find` default: stays exact (D-F5); Word find codes `^p`, `^t`, `^l`, `^^` are added to agent phrases (D-F6).
+- [x] Q4. Refuse a loose match that needs a second look: no refusal; the level report is enough (D-F4).
+- [x] Q5. Fuzzy tier of `anchor.resolve`: stays as is, after the loose level (D-F3).
 
-**Decisions log**: none (the work did not start in `explore-idea`). The owner's rules above are constraints: loose by default, exact paragraph wins, wrong picks are recoverable, `locate` phrases stay exact.
+**Decisions log**:
+
+| ID | Decision | Status | Date |
+|----|----------|--------|------|
+| D-F1 | Option B. Symbols (S*) are not folded by default. `match: "exact" \| "default" \| "loose"`; `"loose"` also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched | agreed | 2026-10-14 |
+| D-F2 | Matching works in the middle of a paragraph too, not only at its start; a phrase without `¿` must still match | agreed | 2026-10-14 |
+| D-F3 | The fuzzy tier of `anchor.resolve` stays as is, after the loose level (Q5, as recommended) | agreed | 2026-10-14 |
+| D-F4 | No refusal of loose matches that look doubtful; the level report is enough (Q4, as recommended) | agreed | 2026-10-14 |
+| D-F5 | Plain `find` stays exact by default; folding only when `match` is passed | agreed | 2026-10-14 |
+| D-F6 | Agent phrases accept Word's find codes: `^p` (alias for `\r`), `^t`, `^l` where the op supports them, `^^` for a literal caret. `locate`'s generated phrases do not change | agreed | 2026-10-14 |
 
 ---
 

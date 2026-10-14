@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="5f5131cecc82082776d62f029a9a621d8170d7328006867df8b15e0f4f24aa05">
+<meta name="arsenal-source-sha256" content="345bda439f0386eb11cf9f72eae787fa5030409f7bd93f347a1e51e0c137dc42">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -161,7 +161,7 @@ h4 .chip{font-size:11px;color:var(--muted)}
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
 </div>
-<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 13 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 15 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
 <div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
 
 <div class="wrap">
@@ -189,8 +189,10 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <li><a href="#s-spec-option-a-loose-matching-in-live">Option A: Loose matching in live.select and find only (Conservative)</a></li>
 <li><a href="#s-spec-option-b-one-shared-matcher-modu">Option B: One shared matcher module for every phrase-taking op (Recommended)</a></li>
 <li><a href="#s-spec-option-c-loose-matching-only-whe">Option C: Loose matching only when the exact search fails (Fallback-only)</a></li>
-<li><a href="#s-spec-the-folding-rule-all-options">The folding rule (all options)</a></li>
-<li><a href="#s-spec-tiebreak-tiers">Tiebreak tiers</a></li>
+<li><a href="#s-spec-match-levels-d-f1">Match levels (D-F1)</a></li>
+<li><a href="#s-spec-the-folding-rule">The folding rule</a></li>
+<li><a href="#s-spec-word-find-codes-in-agent-phrases">Word find codes in agent phrases (D-F6)</a></li>
+<li><a href="#s-spec-tiebreak-levels">Tiebreak levels</a></li>
 <li><a href="#s-spec-reporting-a-loose-match">Reporting a loose match</a></li>
 <li><a href="#s-spec-opt-out">Opt-out</a></li>
 <li><a href="#s-spec-performance">Performance</a></li>
@@ -205,10 +207,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-14
 <strong>Ticket / PR</strong>: — (workspace <code>FIND</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
-<strong>Revision</strong>: 1
-<strong>Status</strong>: draft
+<strong>Revision</strong>: 2
+<strong>Status</strong>: approved (2026-10-14, revision 2)
 <strong>Revision log</strong>:
-- r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code></p>
+- r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code>
+- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -274,14 +277,17 @@ that revision, add <code>— without annotations</code>.</p>
 <p>Edit ops (<code>replace</code>, <code>insert</code>, <code>move</code>, comments) take addresses, not phrases. An agent reaches them through <code>find</code>, <code>anchor.resolve</code> or <code>live.select</code>. Loose matching in those three covers every edit.</p>
 <p><strong>Success criteria (measurable)</strong>:</p>
 <ul>
-<li>[ ] <code>loose_match_failures == 0</code> on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading <code>-</code>, <code>--</code>, <code>—</code>, <code>¿</code> or <code>«</code>. The table includes <code>Estas ahi</code> against <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code>, <code>-Estas ahí?</code> and <code>--Estas ahi</code>.</li>
+<li>[ ] <code>loose_match_failures == 0</code> on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading <code>-</code>, <code>--</code>, <code>—</code>, <code>¿</code> or <code>«</code>, at the start or in the middle of the paragraph. The table includes <code>Estas ahi</code> against <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code>, <code>-Estas ahí?</code> and <code>--Estas ahi</code>, and a phrase without <code>¿</code> against a paragraph that has it mid-text (D-F2).</li>
+<li>[ ] <code>symbol_fold_violations == 0</code>: at the default level a symbol (<code>$</code>, <code>+</code>, <code>*</code>) is never folded, so <code>5$</code> does not match <code>5</code>; at the <code>loose</code> level it does. Rows cover both levels (D-F1).</li>
+<li>[ ] <code>fallback_level_misreports == 0</code>: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).</li>
+<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> equals <code>\r</code>, <code>^t</code> a tab, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
 <li>[ ] <code>exact_tiebreak_violations == 0</code>: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.</li>
-<li>[ ] <code>tier_ambiguity_misses == 0</code>: two matches in the same tier still raise <code>ANCHOR_AMBIGUOUS</code>; none is silently chosen.</li>
+<li>[ ] <code>tier_ambiguity_misses == 0</code>: two matches in the same level still raise <code>ANCHOR_AMBIGUOUS</code>; none is silently chosen.</li>
 <li>[ ] <code>span_mismatches == 0</code>: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).</li>
-<li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched).</li>
-<li>[ ] <code>loose_report_missing == 0</code>: every response where the tier was not exact says so (<code>match</code> tier field).</li>
+<li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched, including no <code>^</code> codes in generated phrases).</li>
+<li>[ ] <code>loose_report_missing == 0</code>: every response where the level was not exact says so (<code>match</code> level field).</li>
 <li>[ ] <code>find_loose_overhead_ratio &lt;= 1.5</code> against the current literal <code>find</code> on the 100k-paragraph benchmark document in <code>tests/bench</code>; <code>live.select</code> stays under the current time plus 50 ms on the same document.</li>
-<li>[ ] No existing test changes behaviour: <code>exact</code> mode reproduces today's results (<code>regression_failures == 0</code>).</li>
+<li>[ ] No existing test changes behaviour: <code>match: "exact"</code> reproduces today's results, and plain <code>find</code> with no <code>match</code> argument is unchanged (<code>regression_failures == 0</code>, D-F5).</li>
 <li>[ ] Judged, not measured: the owner re-runs the original <code>--</code> dialogue case from literary-critic and it is found.</li>
 </ul></div>
 <div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
@@ -313,13 +319,13 @@ that revision, add <code>— without annotations</code>.</p>
 <td>Primary</td>
 <td>Literal and regex search</td>
 <td>Option B: Yes</td>
-<td>New <code>match</code> mode for literal queries</td>
+<td>New <code>match</code> levels for literal queries; default stays exact</td>
 <td>Med</td>
 </tr>
 <tr>
 <td>New <code>model/loosefold.py</code> (Option B)</td>
 <td>Primary</td>
-<td>Fold, offset map, tiered search</td>
+<td>Fold, offset map, levelled search, Word-code translation</td>
 <td>Yes (new)</td>
 <td>One shared matcher</td>
 <td>High</td>
@@ -369,16 +375,16 @@ that revision, add <code>— without annotations</code>.</p>
 <td>Consumer</td>
 <td>Sends find phrases</td>
 <td>No</td>
-<td>Fewer misses; must read the tier</td>
+<td>Fewer misses; must read the level</td>
 <td>Low</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Impact</strong>:
-- <strong>API</strong>: additive. A response field names the tier; a request field <code>match</code> (<code>"loose"</code> default, <code>"exact"</code>) opts out. Defaults change for <code>live.select</code>, so some calls that failed now succeed.
+- <strong>API</strong>: additive. A response field names the level; a request field <code>match</code> (<code>"exact"</code>, <code>"default"</code>, <code>"loose"</code>) sets it. <code>"default"</code> is the default for the phrase ops, which retry looser levels before failing, so some calls that failed now succeed. Plain <code>find</code> stays exact. Agent phrases also accept Word's find codes (<code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code>).
 - <strong>Data</strong>: none. These are read ops or selections.
 - <strong>Performance</strong>: folding each paragraph costs linear time. Cache the folded text per document revision.
-- <strong>User</strong>: a wrong loose pick is visible and recoverable (the owner's rule). The tier report lets the agent notice it.
+- <strong>User</strong>: a wrong loose pick is visible and recoverable (the owner's rule). The level report lets the agent notice it.
 - <strong>Risk of inaction</strong>: agents keep missing paragraphs on punctuation they cannot see. Dialogue in Spanish and French is the common case.</p></div>
 <div class="note" data-for="s-spec-2"><label class="note-head" for="n-s-spec-2"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §2</span></label><textarea class="note-ta" data-key="s-spec-2" id="n-s-spec-2" data-label="§2 Systems &amp; Impact" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -399,8 +405,8 @@ that revision, add <code>— without annotations</code>.</p>
 <article class="sec l3" id="s-spec-option-b-one-shared-matcher-modu">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: One shared matcher module for every phrase-taking op (Recommended)</span></h4>
 <div class="sec-body"><ul>
-<li><strong>Description</strong>: a new module <code>model/loosefold.py</code> owns the folding, the offset map and the tier search. <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> call it. <code>locate</code> does not.</li>
-<li><strong>Scope</strong>: the module, the five ops above, response fields, docs/operations.md, tests and benchmarks.</li>
+<li><strong>Description</strong>: a new module <code>model/loosefold.py</code> owns the folding, the offset map, the level search and the Word-code translation. <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> call it. <code>locate</code> does not.</li>
+<li><strong>Scope</strong>: the module, the five ops above, the <code>match</code> parameter and response fields, docs/operations.md, tests and benchmarks.</li>
 <li><strong>Effort</strong>: Medium.</li>
 <li><strong>Tradeoffs</strong>: one rule everywhere, one place to test and tune. More files touched, and <code>anchor.resolve</code>'s existing normalised tier must be merged without changing its scores.</li>
 <li><strong>Compatibility</strong>: additive with the same <code>match</code> opt-out.</li>
@@ -418,47 +424,99 @@ that revision, add <code>— without annotations</code>.</p>
 </ul></div>
 <div class="note" data-for="s-spec-option-c-loose-matching-only-whe"><label class="note-head" for="n-s-spec-option-c-loose-matching-only-whe"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option C: Loose matching only when the exact search fails (Fallback-only)</span></label><textarea class="note-ta" data-key="s-spec-option-c-loose-matching-only-whe" id="n-s-spec-option-c-loose-matching-only-whe" data-label="Option C: Loose matching only when the exact search fails (Fallback-only)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
-<article class="sec l3" id="s-spec-the-folding-rule-all-options">
-<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">The folding rule (all options)</span></h4>
+<article class="sec l3" id="s-spec-match-levels-d-f1">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Match levels (D-F1)</span></h4>
+<div class="sec-body"><p><code>match</code> takes three values, from strictest to loosest:</p>
+<ul>
+<li><code>"exact"</code>: today's behaviour for that op. No folding, no retry.</li>
+<li><code>"default"</code>: case and accents are ignored, and punctuation and dashes are folded away. Symbols (S*) still count.</li>
+<li><code>"loose"</code>: everything in <code>"default"</code>, and symbols are dropped as well. An opt-in level; it never applies unless asked for or reached by the retry below.</li>
+</ul>
+<p><strong>Defaults</strong>: the phrase ops (<code>live.select</code>, <code>anchor.resolve</code>, <code>rename</code>'s search, <code>history.search</code>) default to <code>"default"</code>. Plain <code>find</code> defaults to <code>"exact"</code> (D-F5) and only folds when the caller passes <code>match</code>.</p>
+<p><strong>Retry before failing</strong>: when a phrase is not found at the level in force, a phrase op tries the less restrictive levels itself, one at a time, before it raises <code>ANCHOR_NOT_FOUND</code>. Each level keeps the exact-first tiebreak below. <code>"exact"</code> never retries. For <code>find</code>, retry applies only when <code>match</code> is <code>"default"</code> or <code>"loose"</code>. The reply names the level that matched.</p></div>
+<div class="note" data-for="s-spec-match-levels-d-f1"><label class="note-head" for="n-s-spec-match-levels-d-f1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Match levels (D-F1)</span></label><textarea class="note-ta" data-key="s-spec-match-levels-d-f1" id="n-s-spec-match-levels-d-f1" data-label="Match levels (D-F1)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-the-folding-rule">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">The folding rule</span></h4>
 <div class="sec-body"><p>Both the phrase and each paragraph are folded to a comparison string, and an offset map keeps the position of every folded character in the original text.</p>
 <ul>
 <li><strong>Accents</strong>: NFD, then drop combining marks (category M). <code>Estás</code> becomes <code>estas</code>.</li>
 <li><strong>Case</strong>: <code>casefold</code>.</li>
-<li><strong>Punctuation and dashes</strong>: every character in Unicode category P* is dropped. The sequence <code>--</code> is dropped as well. <code>¿</code>, <code>?</code>, <code>-</code>, <code>—</code>, <code>–</code>, <code>«</code> and curly quotes all fold away. Symbol categories (S*) stay, so <code>$</code> and <code>+</code> still count.</li>
-<li><strong>Whitespace</strong>: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped punctuation is merged.</li>
+<li><strong>Punctuation and dashes</strong> (levels <code>default</code> and <code>loose</code>): every character in Unicode category P* is dropped. The sequence <code>--</code> is dropped as well. <code>¿</code>, <code>?</code>, <code>-</code>, <code>—</code>, <code>–</code>, <code>«</code> and curly quotes all fold away.</li>
+<li><strong>Symbols</strong> (level <code>loose</code> only): every character in category S* (<code>$</code>, <code>*</code>, <code>+</code>, <code>=</code>, <code>&lt;</code>, <code>^</code> and so on) is dropped. At <code>default</code> they stay.</li>
+<li><strong>Whitespace</strong>: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped characters is merged.</li>
 <li><strong>Offsets</strong>: each folded character records the original start and end. A match from folded positions <code>i..j</code> maps to the original span from the start of character <code>i</code> to the end of character <code>j-1</code>. The span then widens to take punctuation that touches the match on its own side only when the phrase itself began or ended with punctuation. Combining marks stay with their base. The result is a normal <code>p142#…:s-e</code> range, as <code>find</code> returns today.</li>
-<li><strong>Empty phrase after folding</strong> (for example a phrase of only <code>--</code>): matched exactly only; loose matching is refused with <code>SCHEMA_INVALID</code>, since it would match every paragraph.</li>
-<li><strong>Prefix match</strong>: for <code>live.select</code>, a phrase that begins a paragraph may match at the folded start of the paragraph, so <code>Estas ahi</code> finds <code>-¿Estás ahí?</code>.</li>
+<li><strong>Empty phrase after folding</strong> (for example a phrase of only <code>--</code>, or only symbols at <code>loose</code>): matched exactly only; folded matching is refused with <code>SCHEMA_INVALID</code>, since it would match every paragraph.</li>
+<li><strong>Position</strong>: a match may start anywhere in a paragraph, not only at its start (D-F2). <code>Estas ahi</code> finds <code>-¿Estás ahí?</code>, and a phrase without <code>¿</code> finds a passage that has <code>¿</code> in the middle of a paragraph. <code>find</code> already searches inside paragraphs; the folded levels do the same.</li>
 </ul></div>
-<div class="note" data-for="s-spec-the-folding-rule-all-options"><label class="note-head" for="n-s-spec-the-folding-rule-all-options"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › The folding rule (all options)</span></label><textarea class="note-ta" data-key="s-spec-the-folding-rule-all-options" id="n-s-spec-the-folding-rule-all-options" data-label="The folding rule (all options)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+<div class="note" data-for="s-spec-the-folding-rule"><label class="note-head" for="n-s-spec-the-folding-rule"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › The folding rule</span></label><textarea class="note-ta" data-key="s-spec-the-folding-rule" id="n-s-spec-the-folding-rule" data-label="The folding rule" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
-<article class="sec l3" id="s-spec-tiebreak-tiers">
-<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Tiebreak tiers</span></h4>
+<article class="sec l3" id="s-spec-word-find-codes-in-agent-phrases">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Word find codes in agent phrases (D-F6)</span></h4>
+<div class="sec-body"><p>Word's Find box accepts special codes, and they are useful to an agent. Before matching, agent phrases are translated, left to right, in <code>model/loosefold.py</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>^p</code></td>
+<td>paragraph mark</td>
+<td><code>\r</code>, as an alias</td>
+</tr>
+<tr>
+<td><code>^t</code></td>
+<td>tab</td>
+<td><code>\t</code>, where the op supports it</td>
+</tr>
+<tr>
+<td><code>^l</code></td>
+<td>manual line break</td>
+<td>the line-break character, where the op supports it</td>
+</tr>
+<tr>
+<td><code>^^</code></td>
+<td>a literal caret</td>
+<td><code>^</code></td>
+</tr>
+</tbody>
+</table>
+<p>Any other <code>^x</code> stays literal (further codes are not promised). Because translation runs left to right, <code>^^p</code> is a caret followed by <code>p</code>, not a paragraph mark. Word's simple Find box in the Navigation pane also takes <code>^p</code> and <code>^t</code>, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding; a literal <code>^</code> that the writer typed is matched with <code>^^</code> (at <code>loose</code> it is a symbol and is dropped like any other).</p>
+<p><code>locate</code>'s generated phrases (<code>find_phrase</code>, <code>find_phrase_word</code>) do not change and do not emit <code>^</code> codes (direction b).</p></div>
+<div class="note" data-for="s-spec-word-find-codes-in-agent-phrases"><label class="note-head" for="n-s-spec-word-find-codes-in-agent-phrases"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Word find codes in agent phrases (D-F6)</span></label><textarea class="note-ta" data-key="s-spec-word-find-codes-in-agent-phrases" id="n-s-spec-word-find-codes-in-agent-phrases" data-label="Word find codes in agent phrases (D-F6)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-tiebreak-levels">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Tiebreak levels</span></h4>
 <div class="sec-body"><ol>
 <li><strong>exact</strong>: the phrase equals the text verbatim.</li>
 <li><strong>case-only</strong>: equal after <code>casefold</code> (today's <code>live.select</code> rule).</li>
-<li><strong>loose</strong>: equal after the full fold.</li>
+<li><strong>default</strong>: equal after the accent, case and punctuation fold.</li>
+<li><strong>loose</strong>: equal after the symbol fold as well.</li>
 </ol>
-<p>The search takes the first tier that has any match. Within that tier, one match is the answer. Two or more raise <code>ANCHOR_AMBIGUOUS</code> (as now), and the error lists the tier and the candidate addresses. A looser tier is never consulted once a stricter one matches, so one exact paragraph beats any number of loose ones.</p></div>
-<div class="note" data-for="s-spec-tiebreak-tiers"><label class="note-head" for="n-s-spec-tiebreak-tiers"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Tiebreak tiers</span></label><textarea class="note-ta" data-key="s-spec-tiebreak-tiers" id="n-s-spec-tiebreak-tiers" data-label="Tiebreak tiers" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+<p>The search takes the first level that has any match, starting from the strictest and escalating only as far as the retry rule allows. Within that level, one match is the answer. Two or more raise <code>ANCHOR_AMBIGUOUS</code> (as now), and the error lists the level and the candidate addresses. A looser level is never consulted once a stricter one matches, so one exact paragraph beats any number of looser ones.</p></div>
+<div class="note" data-for="s-spec-tiebreak-levels"><label class="note-head" for="n-s-spec-tiebreak-levels"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Tiebreak levels</span></label><textarea class="note-ta" data-key="s-spec-tiebreak-levels" id="n-s-spec-tiebreak-levels" data-label="Tiebreak levels" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-reporting-a-loose-match">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Reporting a loose match</span></h4>
-<div class="sec-body"><p>Responses carry <code>"match": "exact" | "case" | "loose"</code>, the same key <code>anchor.resolve</code> already uses. For a loose match the response also carries <code>matched_text</code>, the original text of the span, so the agent can compare it with what it asked for. <code>live.select</code> already returns the paragraph text. <code>find</code> marks each hit.</p></div>
+<div class="sec-body"><p>Responses carry <code>"match": "exact" | "case" | "default" | "loose"</code>, the level that matched, in the same key <code>anchor.resolve</code> already uses. Whenever the level is not <code>exact</code> the response also carries <code>matched_text</code>, the original text of the span, so the agent can compare it with what it asked for. <code>live.select</code> already returns the paragraph text. <code>find</code> marks each hit.</p></div>
 <div class="note" data-for="s-spec-reporting-a-loose-match"><label class="note-head" for="n-s-spec-reporting-a-loose-match"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Reporting a loose match</span></label><textarea class="note-ta" data-key="s-spec-reporting-a-loose-match" id="n-s-spec-reporting-a-loose-match" data-label="Reporting a loose match" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-opt-out">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Opt-out</span></h4>
-<div class="sec-body"><p><code>match: "exact"</code> on each phrase-taking op restores today's behaviour. <code>"loose"</code> is the default for <code>live.select</code>, <code>anchor.resolve</code>, <code>rename</code>'s search and <code>history.search</code>. For <code>find</code>, the existing <code>ignore_case</code>, <code>ignore_accents</code> and <code>whole_word</code> flags stay as they are; <code>match: "loose"</code> is a new value that implies both and the punctuation fold. Its default is open (Q3 below).</p></div>
+<div class="sec-body"><p><code>match: "exact"</code> on each phrase-taking op restores today's behaviour. For <code>find</code>, the existing <code>ignore_case</code>, <code>ignore_accents</code> and <code>whole_word</code> flags stay as they are; <code>match: "default"</code> implies the first two plus the punctuation fold, and <code>match: "loose"</code> adds the symbol fold. Omitting <code>match</code> leaves <code>find</code> exactly as it is today (D-F5).</p></div>
 <div class="note" data-for="s-spec-opt-out"><label class="note-head" for="n-s-spec-opt-out"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Opt-out</span></label><textarea class="note-ta" data-key="s-spec-opt-out" id="n-s-spec-opt-out" data-label="Opt-out" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-performance">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Performance</span></h4>
 <div class="sec-body"><ul>
 <li>Folded text and offset maps are built once per paragraph and cached with the <code>Document</code> index; a search over N paragraphs is O(total characters).</li>
-<li>The three tiers share one pass: the exact and case tiers run first on the raw and casefolded text. The loose tier is built only when both are empty.</li>
+<li>The levels share one pass: the exact and case levels run first on the raw and casefolded text. The folded levels are built only when both are empty, and the symbol-folded text only when the punctuation-folded search is empty too.</li>
 <li><code>locate</code> indexes are unchanged.</li>
-<li>The repo's <code>tests/bench</code> documents are the base. A new benchmark runs the three tiers on a 100k-paragraph document.</li>
+<li>The repo's <code>tests/bench</code> documents are the base. A new benchmark runs the four levels on a 100k-paragraph document.</li>
 </ul></div>
 <div class="note" data-for="s-spec-performance"><label class="note-head" for="n-s-spec-performance"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Performance</span></label><textarea class="note-ta" data-key="s-spec-performance" id="n-s-spec-performance" data-label="Performance" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -510,15 +568,63 @@ that revision, add <code>— without annotations</code>.</p>
 </article>
 <article class="sec l2" id="s-spec-4">
 <h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
-<div class="sec-body"><p><strong>Recommended option</strong>: Option B. The owner asked for a generic rule, and a shared module is the only way to make the same phrase behave the same in <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code>. Ship it in two steps: the module with <code>live.select</code> first (the reported failure), then the other ops. <code>locate</code> stays exact by a regression test.</p>
+<div class="sec-body"><p><strong>Recommended option</strong>: Option B. The owner asked for a generic rule, and a shared module is the only way to make the same phrase behave the same in <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code>. The owner chose it on 2026-10-14 (D-F1). Ship it in two steps: the module with <code>live.select</code> first (the reported failure), then the other ops. <code>locate</code> stays exact by a regression test.</p>
 <p><strong>Immediate next action</strong>: after approval, <code>design</code> the plan, starting with the fixture table of variants and the tier tests, so the matcher is written against its gate.</p>
-<p><strong>Open questions</strong>:
-- [ ] Q1. Should the fold also drop symbols (category S*, for example <code>$</code>, <code>*</code>, <code>+</code>) or only punctuation (P*)? Recommended: punctuation only.
-- [ ] Q2. Should a loose match be allowed inside a paragraph (not only at its start)? <code>find</code> already finds inside paragraphs. Recommended: yes, same tiers.
-- [ ] Q3. Should <code>find</code> default to <code>match: "loose"</code>? It changes the meaning of a plain query. Recommended: no, keep <code>find</code> exact by default and make loose the default only for the phrase ops that must land on one paragraph.
-- [ ] Q4. Should a loose match that needs a second look (for example, folding removed digits' neighbours) be refused? Recommended: no refusal; the report is enough.
-- [ ] Q5. Should the fuzzy tier of <code>anchor.resolve</code> stay as is after the loose tier? Recommended: yes.</p>
-<p><strong>Decisions log</strong>: none (the work did not start in <code>explore-idea</code>). The owner's rules above are constraints: loose by default, exact paragraph wins, wrong picks are recoverable, <code>locate</code> phrases stay exact.</p>
+<p><strong>Open questions</strong>: none. The owner answered Q1–Q5 in r2 (see D-F1..D-F6):
+- [x] Q1. Symbols (S*): not folded by default; dropped only at the opt-in <code>loose</code> level, with an automatic retry (D-F1).
+- [x] Q2. Matching inside a paragraph: yes, same levels (D-F2).
+- [x] Q3. <code>find</code> default: stays exact (D-F5); Word find codes <code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code> are added to agent phrases (D-F6).
+- [x] Q4. Refuse a loose match that needs a second look: no refusal; the level report is enough (D-F4).
+- [x] Q5. Fuzzy tier of <code>anchor.resolve</code>: stays as is, after the loose level (D-F3).</p>
+<p><strong>Decisions log</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Decision</th>
+<th>Status</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D-F1</td>
+<td>Option B. Symbols (S*) are not folded by default. <code>match: "exact" \| "default" \| "loose"</code>; <code>"loose"</code> also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F2</td>
+<td>Matching works in the middle of a paragraph too, not only at its start; a phrase without <code>¿</code> must still match</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F3</td>
+<td>The fuzzy tier of <code>anchor.resolve</code> stays as is, after the loose level (Q5, as recommended)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F4</td>
+<td>No refusal of loose matches that look doubtful; the level report is enough (Q4, as recommended)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F5</td>
+<td>Plain <code>find</code> stays exact by default; folding only when <code>match</code> is passed</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-F6</td>
+<td>Agent phrases accept Word's find codes: <code>^p</code> (alias for <code>\r</code>), <code>^t</code>, <code>^l</code> where the op supports them, <code>^^</code> for a literal caret. <code>locate</code>'s generated phrases do not change</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+</tbody>
+</table>
 <blockquote>
 <p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
 </blockquote></div>
@@ -603,7 +709,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+  function exportName(){return 'doc-control-spec-v2-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
