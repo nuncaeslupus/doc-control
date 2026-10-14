@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="f0880bffd704caa2f29967b9093d90dc74c08b9058f359e06cbb449c5842c627">
+<meta name="arsenal-source-sha256" content="451a020d161f7ddea0d98268d756b2eef966fd321e3e1a4d071f98605bf6bc42">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -161,7 +161,7 @@ h4 .chip{font-size:11px;color:var(--muted)}
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
 </div>
-<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 15 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
+<div class="statusbar"><div class="wrap"><span class="count" id="count">0 / 27 notes</span><span class="hint"> · notes save automatically; <strong>Save / Export</strong> keeps a file you can send back</span></div></div>
 <div id="warnbar"><div class="wrap"><strong>Heads up —</strong> this browser isn't storing your notes automatically (private/incognito mode or restricted file view). Tap <strong>Save / Export</strong> regularly.</div></div>
 
 <div class="wrap">
@@ -198,6 +198,18 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <li><a href="#s-spec-performance">Performance</a></li>
 <li><a href="#s-spec-comparison">Comparison</a></li>
 <li><a href="#s-spec-4">§4 Recommendation</a></li>
+<li><a href="#s-spec-5">§5 Contracts</a></li>
+<li><a href="#s-spec-two-meanings-of-exact">Two meanings of &quot;exact&quot;</a></li>
+<li><a href="#s-spec-fold-levels-model-loosefold-py">Fold levels (model/loosefold.py)</a></li>
+<li><a href="#s-spec-request-parameter-match-level">Request parameter match_level</a></li>
+<li><a href="#s-spec-live-select">live.select</a></li>
+<li><a href="#s-spec-anchor-resolve">anchor.resolve</a></li>
+<li><a href="#s-spec-find">find</a></li>
+<li><a href="#s-spec-term-rename-and-history-search">term.rename and history.search</a></li>
+<li><a href="#s-spec-errors-existing-codes">Errors (existing codes)</a></li>
+<li><a href="#s-spec-inter-component-contracts">Inter-component contracts</a></li>
+<li><a href="#s-spec-database-migrations">Database migrations</a></li>
+<li><a href="#s-spec-6">§6 Risks &amp; Validation</a></li>
 </ul></details>
 </details>
   <section class="part">
@@ -208,7 +220,7 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <strong>Ticket / PR</strong>: — (workspace <code>FIND</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
 <strong>Revision</strong>: 3
-<strong>Status</strong>: approved (2026-10-14, revision 2) — r3 clarifications (D-F7) proposed, pending owner ack
+<strong>Status</strong>: approved (2026-10-14, revision 3) — without annotations
 <strong>Revision log</strong>:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code>
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
@@ -651,11 +663,371 @@ that revision, add <code>— without annotations</code>.</p>
 <td>2026-10-14</td>
 </tr>
 </tbody>
-</table>
-<blockquote>
-<p>Sections 5–6 (contracts, risks) are appended by <code>design</code>.</p>
-</blockquote></div>
+</table></div>
 <div class="note" data-for="s-spec-4"><label class="note-head" for="n-s-spec-4"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §4</span></label><textarea class="note-ta" data-key="s-spec-4" id="n-s-spec-4" data-label="§4 Recommendation" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-5">
+<h3 class="sec-h"><span class="chip">§5</span><span class="sec-title">Contracts</span></h3>
+<div class="sec-body"><p>All changes are additive registry operations, so CLI, MCP and Python get them the same way. No request field changes its meaning and no response field changes its values.</p></div>
+<div class="note" data-for="s-spec-5"><label class="note-head" for="n-s-spec-5"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §5</span></label><textarea class="note-ta" data-key="s-spec-5" id="n-s-spec-5" data-label="§5 Contracts" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-two-meanings-of-exact">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Two meanings of "exact"</span></h4>
+<div class="sec-body"><p>The word appears on both sides of the contract and means different things:</p>
+<ol>
+<li><strong>Requested</strong> <code>match_level: "exact"</code> means <em>the op's rule of today</em>, not "verbatim". For <code>live.select</code> that is today's casefold substring rule; for <code>term.rename</code> it is today's case-insensitive whole-word rule; for <code>anchor.resolve</code> it is today's exact → normalised → fuzzy chain. It never folds accents, punctuation or symbols and never retries.</li>
+<li><strong>Reported</strong> <code>match_level: "exact"</code> means the phrase (after Word-code translation) equals the matched text character for character. So <code>live.select</code> called with <code>match_level: "exact"</code> can report <code>"case"</code>, because today's rule already ignores case.</li>
+</ol></div>
+<div class="note" data-for="s-spec-two-meanings-of-exact"><label class="note-head" for="n-s-spec-two-meanings-of-exact"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Two meanings of &quot;exact&quot;</span></label><textarea class="note-ta" data-key="s-spec-two-meanings-of-exact" id="n-s-spec-two-meanings-of-exact" data-label="Two meanings of &quot;exact&quot;" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-fold-levels-model-loosefold-py">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Fold levels (<code>model/loosefold.py</code>)</span></h4>
+<div class="sec-body"><p>Each level folds everything the one before it folds. The reported level is the strictest one at which the phrase and the text fold to the same string.</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Fold</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>exact</code></td>
+<td>none</td>
+<td>verbatim</td>
+</tr>
+<tr>
+<td><code>case</code></td>
+<td>Cf characters dropped (soft hyphen U+00AD, U+200B–U+200D, U+2060, U+FEFF, bidi marks; a superset of <code>model/normalized.py</code>'s <code>IGNORABLE</code>), NFC, <code>casefold</code>, whitespace runs to one space</td>
+<td>the same characters <code>anchor.resolve</code>'s normalised tier ignores, so no phrase that tier finds is lost at a folded level</td>
+</tr>
+<tr>
+<td><code>default</code></td>
+<td><code>case</code>, plus NFD and combining marks (M*) dropped, every P* character turned into a word boundary (a space)</td>
+<td>symbols (S*) are kept</td>
+</tr>
+<tr>
+<td><code>loose</code></td>
+<td><code>default</code>, plus every S* character dropped</td>
+<td>opt-in, or reached by the retry</td>
+</tr>
+</tbody>
+</table>
+<p>Whitespace rules, for every folded level:</p>
+<ol>
+<li><code>\r</code> (a paragraph mark, or <code>^p</code> in the phrase) is a hard separator. It is never turned into a space, never collapsed with one, and never trimmed. A space next to it is dropped.</li>
+<li>Every other whitespace (space, tab, no-break space, <code>\n</code>) becomes one space, and runs collapse.</li>
+<li>Only spaces are trimmed from the ends of the folded phrase. <code>^pEstas</code> keeps its leading <code>\r</code>, so <code>live.select</code> still names the paragraph after the mark.</li>
+</ol>
+<p>The fold of a phrase that leaves no letter, digit or symbol (only <code>--</code>, or only symbols at <code>loose</code>) is refused with <code>SCHEMA_INVALID</code> at the folded levels; such a phrase is matched at <code>exact</code> only.</p>
+<pre><code class="language-python"># model/loosefold.py
+Level = Literal[&quot;exact&quot;, &quot;case&quot;, &quot;default&quot;, &quot;loose&quot;]
+LEVELS: tuple[Level, ...] = (&quot;exact&quot;, &quot;case&quot;, &quot;default&quot;, &quot;loose&quot;)
+
+@dataclass(frozen=True)
+class Folded:
+    text: str                      # the comparison string
+    starts: tuple[int, ...]        # original start of each folded character
+    ends: tuple[int, ...]          # original end (exclusive) of each folded character
+
+def fold(text: str, level: Level) -&gt; Folded: ...           # cached per (text, level)
+def to_original(folded: Folded, i: int, j: int, *, widen_left: bool, widen_right: bool) -&gt; tuple[int, int]: ...
+def translate_codes(phrase: str) -&gt; str: ...                # Word find codes, left to right
+def ladder(requested: Level | Literal[&quot;default&quot;], *, retry: bool) -&gt; tuple[Level, ...]: ...
+def hits(texts: Sequence[str], phrase: str, level: Level) -&gt; list[Hit]: ...   # Hit = (index, start, end, level)
+</code></pre>
+<p><code>translate_codes</code> accepts exactly <code>model/wordfind.py</code>'s set (<code>^^</code>, <code>^p</code>, <code>^l</code>, <code>^t</code>, <code>^s</code>, <code>^-</code>, <code>^~</code>, <code>^uNNN</code>); any other <code>^x</code> stays literal. For every text <code>t</code> without two-form hyphens, <code>translate_codes(word_find(t)) == t</code>.</p></div>
+<div class="note" data-for="s-spec-fold-levels-model-loosefold-py"><label class="note-head" for="n-s-spec-fold-levels-model-loosefold-py"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Fold levels (model/loosefold.py)</span></label><textarea class="note-ta" data-key="s-spec-fold-levels-model-loosefold-py" id="n-s-spec-fold-levels-model-loosefold-py" data-label="Fold levels (model/loosefold.py)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-request-parameter-match-level">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Request parameter <code>match_level</code></span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Values</th>
+<th>Default</th>
+<th>Retries</th>
+<th><code>"exact"</code> reproduces</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>live.select</code> (<code>find_phrase</code>)</td>
+<td><code>exact</code>, <code>default</code>, <code>loose</code></td>
+<td><code>default</code></td>
+<td>yes</td>
+<td>casefold substring, unique (<code>_found</code> today)</td>
+</tr>
+<tr>
+<td><code>anchor.resolve</code> (<code>anchor.exact</code>)</td>
+<td><code>exact</code>, <code>default</code>, <code>loose</code></td>
+<td><code>default</code></td>
+<td>yes</td>
+<td>exact → normalised → fuzzy (<code>model/anchor.py</code> <code>resolve</code> today)</td>
+</tr>
+<tr>
+<td><code>find</code> (<code>query</code>)</td>
+<td><code>exact</code>, <code>default</code>, <code>loose</code></td>
+<td>absent = <code>exact</code></td>
+<td>never</td>
+<td>today's <code>find</code>, honouring <code>ignore_case</code>, <code>ignore_accents</code>, <code>whole_word</code></td>
+</tr>
+<tr>
+<td><code>term.rename</code> (<code>from</code>)</td>
+<td><code>exact</code>, <code>default</code>, <code>loose</code></td>
+<td>absent = <code>exact</code></td>
+<td>never</td>
+<td>today's case-insensitive whole-word match</td>
+</tr>
+<tr>
+<td><code>history.search</code> (<code>query</code>)</td>
+<td><code>exact</code>, <code>default</code>, <code>loose</code></td>
+<td>absent = <code>exact</code></td>
+<td>never</td>
+<td>today's <code>ignore_case</code> / <code>ignore_accents</code> search</td>
+</tr>
+</tbody>
+</table>
+<p>Ladders for the single-target ops (strictest first; a level runs only when every level before it found nothing):</p>
+<ul>
+<li>requested <code>default</code>: <code>exact</code> → <code>case</code> → <code>default</code> → <code>loose</code>.</li>
+<li>requested <code>loose</code>: the same ladder; asking for <code>loose</code> only says the caller expects it may be needed.</li>
+<li>requested <code>exact</code>: today's rule only.</li>
+</ul>
+<p>The multi-hit ops search once, at the level passed, and return every hit that folds equal at that level, each tagged with the strictest level it meets. With <code>regex: true</code>, a <code>match_level</code> other than <code>exact</code> is <code>SCHEMA_INVALID</code> (<code>path: "$.match_level"</code>). With <code>match_level</code> passed, <code>find</code>'s <code>ignore_case</code> and <code>ignore_accents</code> are implied by the level and may not contradict it (<code>ignore_case: false</code> with <code>default</code> is <code>SCHEMA_INVALID</code>).</p></div>
+<div class="note" data-for="s-spec-request-parameter-match-level"><label class="note-head" for="n-s-spec-request-parameter-match-level"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Request parameter match_level</span></label><textarea class="note-ta" data-key="s-spec-request-parameter-match-level" id="n-s-spec-request-parameter-match-level" data-label="Request parameter match_level" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-live-select">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title"><code>live.select</code></span></h4>
+<div class="sec-body"><p>Request: today's fields plus <code>match_level</code>. The existing <code>mode</code> (<code>select</code> | <code>cursor</code>) is unrelated and unchanged.</p>
+<pre><code class="language-json">{&quot;doc&quot;: &quot;Novel.docx&quot;, &quot;find_phrase&quot;: &quot;Estas ahi&quot;, &quot;match_level&quot;: &quot;default&quot;}
+</code></pre>
+<p>Reply (new keys <code>match_level</code>, <code>matched_text</code>; <code>matched_text</code> only when the level is not <code>exact</code>):</p>
+<pre><code class="language-json">{&quot;text&quot;: &quot;-¿Estás ahí? -dijo.&quot;, &quot;at&quot;: &quot;p142#a7b2a7b2&quot;, &quot;front&quot;: true,
+ &quot;match_level&quot;: &quot;default&quot;, &quot;matched_text&quot;: &quot;¿Estás ahí&quot;}
+</code></pre>
+<ul>
+<li>Two or more hits at the first level that has any: <code>ANCHOR_AMBIGUOUS</code> with <code>details: {"match_level": "default", "candidates": [{"at": "p142#…", "matched_text": "…"}, …]}</code> (at most 5).</li>
+<li>No hit at any level of the ladder: <code>ANCHOR_NOT_FOUND</code> with <code>details: {"tried": ["exact", "case", "default", "loose"]}</code>.</li>
+<li>A phrase holding <code>^</code> is first tried raw at the <code>exact</code> level, then translated, so a <code>locate</code> <code>find_phrase</code> that contains a literal caret still selects its paragraph.</li>
+<li><code>find_phrase_across</code> and the "phrase opens with <code>\r</code>" rule work on the folded joined text as they do now.</li>
+</ul></div>
+<div class="note" data-for="s-spec-live-select"><label class="note-head" for="n-s-spec-live-select"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › live.select</span></label><textarea class="note-ta" data-key="s-spec-live-select" id="n-s-spec-live-select" data-label="live.select" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-anchor-resolve">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title"><code>anchor.resolve</code></span></h4>
+<div class="sec-body"><p>The verbatim stage and its context-score choice are unchanged: several verbatim hits are still told apart by <code>(0.5·quote + 0.2·prefix + 0.2·suffix)/0.9</code>, the tie margin and the fingerprint rule, and only that rule raises <code>ANCHOR_AMBIGUOUS</code>. A hit count never does. The folded stages slot in after the existing normalised one and before fuzzy (D-F3):</p>
+<p><code>exact</code> (verbatim) → <code>normalized</code> (today) → <code>case</code> → <code>default</code> → <code>loose</code> → fuzzy (only when <code>mode: "best"</code>).</p>
+<p>Each later stage runs only when every earlier stage found no span, exactly as <code>normalized</code> runs today only when no verbatim span exists. Its spans are scored like any candidate (<code>quote_score = 1.0</code>) and pass through the same acceptance and tie rules.</p>
+<p><code>mode</code> × <code>match_level</code>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>match_level: "exact"</code></th>
+<th><code>match_level: "default"</code> / <code>"loose"</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mode: "best"</code> (default)</td>
+<td>today: exact → normalised → fuzzy</td>
+<td>exact → normalised → case → default → loose → fuzzy</td>
+</tr>
+<tr>
+<td><code>mode: "exact"</code></td>
+<td>today: exact → normalised, every span accepted whatever its context score, no fuzzy</td>
+<td>exact → normalised → case → default → loose, every span accepted whatever its context score, no fuzzy</td>
+</tr>
+</tbody>
+</table>
+<p><code>mode</code> decides whether fuzzy runs and whether the context score gates acceptance; <code>match_level</code> decides how far the fold goes. Neither changes the other's meaning.</p>
+<p>Reply (new key <code>match_level</code>; <code>match</code> keeps its values <code>exact | normalized | fuzzy</code>):</p>
+<pre><code class="language-json">{&quot;at&quot;: &quot;p142#a7b2a7b2:2-12&quot;, &quot;score&quot;: 0.97, &quot;match&quot;: &quot;normalized&quot;,
+ &quot;match_level&quot;: &quot;default&quot;, &quot;matched_text&quot;: &quot;¿Estás ahí&quot;}
+</code></pre>
+<ul>
+<li><code>match: "exact"</code> ↔ <code>match_level: "exact"</code>.</li>
+<li><code>match: "normalized"</code> covers today's normalised tier (reported <code>match_level: "case"</code>, the strictest level whose fold equals it) and every folded stage (<code>case</code>, <code>default</code>, <code>loose</code>).</li>
+<li><code>match: "fuzzy"</code> carries no <code>match_level</code>.</li>
+<li>Ambiguity candidates gain <code>match_level</code> beside their existing <code>match</code>.</li>
+</ul></div>
+<div class="note" data-for="s-spec-anchor-resolve"><label class="note-head" for="n-s-spec-anchor-resolve"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › anchor.resolve</span></label><textarea class="note-ta" data-key="s-spec-anchor-resolve" id="n-s-spec-anchor-resolve" data-label="anchor.resolve" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-find">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title"><code>find</code></span></h4>
+<div class="sec-body"><p>Request: today's fields plus <code>match_level</code>. Without it, the reply, the cursor token and <code>query_word</code> are byte-identical to today (the token gains <code>match_level</code> only when it is passed, as it does for <code>stories</code>).</p>
+<p>Each hit gains <code>match_level</code> when <code>match_level</code> was passed:</p>
+<pre><code class="language-json">{&quot;matches&quot;: [{&quot;at&quot;: &quot;p142#a7b2a7b2:2-12&quot;, &quot;text&quot;: &quot;¿Estás ahí&quot;, &quot;context&quot;: &quot;…-¿Estás ahí? -dijo.…&quot;,
+  &quot;match_level&quot;: &quot;default&quot;}], &quot;total&quot;: 1, &quot;query_word&quot;: null}
+</code></pre>
+<ul>
+<li><code>query_word</code> is <code>null</code> at <code>default</code> and <code>loose</code> (Word's Find cannot fold punctuation).</li>
+<li><code>whole_word</code> checks the original characters on either side of the mapped span.</li>
+<li>Word codes are translated only when <code>match_level</code> is passed and <code>regex</code> is false (D-F5).</li>
+</ul></div>
+<div class="note" data-for="s-spec-find"><label class="note-head" for="n-s-spec-find"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › find</span></label><textarea class="note-ta" data-key="s-spec-find" id="n-s-spec-find" data-label="find" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-term-rename-and-history-search">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title"><code>term.rename</code> and <code>history.search</code></span></h4>
+<div class="sec-body"><ul>
+<li><code>term.rename</code>: <code>match_level</code> widens what <code>from</code> matches; <code>whole_word</code>, <code>preserve_case</code> and <code>inflections</code> apply to the matched original text as now. Each <code>preview</code> change gains <code>match_level</code>; the result gains <code>matches_by_level: {"exact": n, "case": n, …}</code> when <code>match_level</code> was passed (<code>counts</code> keeps its integer fields). <code>dry_run</code> is the advised first call at a folded level.</li>
+<li><code>history.search</code>: each hit gains <code>match_level</code> when it was passed, and the offset of a folded hit is now exact (the fold keeps an offset map), so <code>text</code> shows the hit's own context instead of the start of the source.</li>
+</ul></div>
+<div class="note" data-for="s-spec-term-rename-and-history-search"><label class="note-head" for="n-s-spec-term-rename-and-history-search"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › term.rename and history.search</span></label><textarea class="note-ta" data-key="s-spec-term-rename-and-history-search" id="n-s-spec-term-rename-and-history-search" data-label="term.rename and history.search" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-errors-existing-codes">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Errors (existing codes)</span></h4>
+<div class="sec-body"><ul>
+<li><code>SCHEMA_INVALID</code>: a phrase empty after folding; <code>match_level</code> with <code>regex</code>; <code>match_level</code> contradicting <code>ignore_case</code> / <code>ignore_accents</code>.</li>
+<li><code>ANCHOR_NOT_FOUND</code>: no hit on the whole ladder (<code>details.tried</code>).</li>
+<li><code>ANCHOR_AMBIGUOUS</code>: <code>live.select</code> with several hits at the first level that has any; <code>anchor.resolve</code> by its score rule only.</li>
+</ul></div>
+<div class="note" data-for="s-spec-errors-existing-codes"><label class="note-head" for="n-s-spec-errors-existing-codes"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Errors (existing codes)</span></label><textarea class="note-ta" data-key="s-spec-errors-existing-codes" id="n-s-spec-errors-existing-codes" data-label="Errors (existing codes)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-inter-component-contracts">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Inter-component contracts</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Caller</th>
+<th>Callee</th>
+<th>Protocol</th>
+<th>Contract</th>
+<th>Failure handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>literary-critic</td>
+<td><code>live.select</code>, <code>anchor.resolve</code>, <code>find</code></td>
+<td>JSON</td>
+<td>Sends phrases as typed; reads <code>match_level</code> and <code>matched_text</code> and tells the user when it is not <code>exact</code></td>
+<td>A wrong pick is re-asked with a longer phrase or <code>match_level: "exact"</code> (D-F4)</td>
+</tr>
+<tr>
+<td><code>ops/live.py</code>, <code>model/anchor.py</code>, <code>model/search.py</code>, <code>safety/history.py</code></td>
+<td><code>model/loosefold.py</code></td>
+<td>Python</td>
+<td><code>fold</code>, <code>translate_codes</code>, <code>hits</code>, <code>ladder</code> as above</td>
+<td>Errors raised as <code>DocControlError</code></td>
+</tr>
+<tr>
+<td><code>ops/locate.py</code>, <code>model/wordfind.py</code></td>
+<td>—</td>
+<td>—</td>
+<td>Not changed; <code>locate</code> output pinned by a golden file</td>
+<td>Regression test fails the build</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-inter-component-contracts"><label class="note-head" for="n-s-spec-inter-component-contracts"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Inter-component contracts</span></label><textarea class="note-ta" data-key="s-spec-inter-component-contracts" id="n-s-spec-inter-component-contracts" data-label="Inter-component contracts" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l3" id="s-spec-database-migrations">
+<h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Database migrations</span></h4>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Database</th>
+<th>Change</th>
+<th>Reversible</th>
+<th>Forward-compatible</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>—</td>
+<td>none</td>
+<td>—</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-database-migrations"><label class="note-head" for="n-s-spec-database-migrations"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Database migrations</span></label><textarea class="note-ta" data-key="s-spec-database-migrations" id="n-s-spec-database-migrations" data-label="Database migrations" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
+</article>
+<article class="sec l2" id="s-spec-6">
+<h3 class="sec-h"><span class="chip">§6</span><span class="sec-title">Risks &amp; Validation</span></h3>
+<div class="sec-body"><table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Likelihood</th>
+<th>Impact</th>
+<th>Mitigation</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A loose level picks the wrong paragraph silently</td>
+<td>Med</td>
+<td>Med</td>
+<td>Exact-first ladder; <code>match_level</code> and <code>matched_text</code> in every reply; ambiguity inside a level is an error, not a guess (D-F4)</td>
+<td>unit (variant fixture table)</td>
+</tr>
+<tr>
+<td><code>anchor.resolve</code> results change for anchors that resolve today</td>
+<td>Low</td>
+<td>High</td>
+<td>Folded stages run only when no verbatim or normalised span exists; their candidates go through the same score and tie rules; <code>match_level: "exact"</code> reproduces today</td>
+<td>unit (<code>tests/model/test_anchor*.py</code> unchanged, plus a parity test over the corpus)</td>
+</tr>
+<tr>
+<td>The fold trims or collapses <code>\r</code>, so a <code>^p</code> phrase names the wrong paragraph</td>
+<td>Med</td>
+<td>High</td>
+<td><code>\r</code> is a hard separator in the fold; only spaces are trimmed; fixture rows with <code>^p</code> at the start, middle and end</td>
+<td>unit</td>
+</tr>
+<tr>
+<td>Cf characters (soft hyphen, zero-width) block a folded match that the normalised tier would find</td>
+<td>Med</td>
+<td>Med</td>
+<td>The <code>case</code> level drops all Cf, a superset of <code>IGNORABLE</code>; a test asserts every normalised-tier fixture also matches at <code>case</code></td>
+<td>unit</td>
+</tr>
+<tr>
+<td>A <code>locate</code> <code>find_phrase</code> holding a literal <code>^</code> is mistranslated as a Word code</td>
+<td>Low</td>
+<td>Med</td>
+<td><code>live.select</code> tries the raw phrase at <code>exact</code> before translating</td>
+<td>unit</td>
+</tr>
+<tr>
+<td>Widening <code>term.rename</code> edits more occurrences than meant</td>
+<td>Med</td>
+<td>High</td>
+<td>Default stays <code>exact</code>; no retry for multi-hit ops; <code>matches_by_level</code> and <code>dry_run</code> show the reach</td>
+<td>unit</td>
+</tr>
+<tr>
+<td>Folded search is too slow on long documents</td>
+<td>Med</td>
+<td>Med</td>
+<td>Fold cached per paragraph text; folded levels built only when the stricter ones are empty; benchmark on the 100k-word novel (<code>generate("novel", 1)</code>)</td>
+<td>perf (<code>find_loose_overhead_ratio &lt;= 1.5</code>, <code>live_select_loose_extra_ms &lt;= 50</code>)</td>
+</tr>
+<tr>
+<td>Offsets drift for combining marks, expansions (<code>ß</code> → <code>ss</code>) or dropped Cf characters</td>
+<td>Med</td>
+<td>High</td>
+<td>Per-character offset map; spans never cut a base from its marks; property test on random accented text</td>
+<td>property test (<code>span_mismatches == 0</code>)</td>
+</tr>
+<tr>
+<td><code>locate</code> output changes by accident (direction b)</td>
+<td>Low</td>
+<td>High</td>
+<td>Golden file of <code>locate</code> over the corpus taken before any change; round-trip of <code>find_phrase_word</code> through <code>translate_codes</code></td>
+<td>unit</td>
+</tr>
+</tbody>
+</table></div>
+<div class="note" data-for="s-spec-6"><label class="note-head" for="n-s-spec-6"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §6</span></label><textarea class="note-ta" data-key="s-spec-6" id="n-s-spec-6" data-label="§6 Risks &amp; Validation" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 </section>
 </div>
@@ -736,7 +1108,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v3-'+today()+'-notes.md';}
+  function exportName(){return 'agent-a4ef994cd539cb279-spec-v3-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;

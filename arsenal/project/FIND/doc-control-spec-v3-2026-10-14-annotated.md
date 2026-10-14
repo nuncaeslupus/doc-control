@@ -12,7 +12,7 @@
 **Ticket / PR**: — (workspace `FIND`)
 **Author**: Claude (doc-control session), for the owner
 **Revision**: 3
-**Status**: approved (2026-10-14, revision 2) — r3 clarifications (D-F7) proposed, pending owner ack
+**Status**: approved (2026-10-14, revision 3) — without annotations
 **Revision log**:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with `--`
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
@@ -289,11 +289,239 @@ Responses carry `"match_level": "exact" | "case" | "default" | "loose"`, the lev
 | D-F6 | Agent phrases accept Word's find codes: `^p` (alias for `\r`), `^t`, `^l` where the op supports them, `^^` for a literal caret. `locate`'s generated phrases do not change | agreed | 2026-10-14 |
 | D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; Word codes = the `model/wordfind.py` set (`^p ^l ^t ^s ^- ^~ ^uNNN ^^`); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex `find` | proposed | 2026-10-14 |
 
-
-> Sections 5–6 (contracts, risks) are appended by `design`.
-
 <!-- -->
 
 > **✎ Notes** · `SPEC §4`
+> _(your notes here — replace this line)_
+
+## §5 Contracts
+
+All changes are additive registry operations, so CLI, MCP and Python get them the same way. No request field changes its meaning and no response field changes its values.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC §5`
+> _(your notes here — replace this line)_
+
+### Two meanings of "exact"
+
+The word appears on both sides of the contract and means different things:
+
+1. **Requested** `match_level: "exact"` means *the op's rule of today*, not "verbatim". For `live.select` that is today's casefold substring rule; for `term.rename` it is today's case-insensitive whole-word rule; for `anchor.resolve` it is today's exact → normalised → fuzzy chain. It never folds accents, punctuation or symbols and never retries.
+2. **Reported** `match_level: "exact"` means the phrase (after Word-code translation) equals the matched text character for character. So `live.select` called with `match_level: "exact"` can report `"case"`, because today's rule already ignores case.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Two meanings of "exact"`
+> _(your notes here — replace this line)_
+
+### Fold levels (model/loosefold.py)
+
+Each level folds everything the one before it folds. The reported level is the strictest one at which the phrase and the text fold to the same string.
+
+| Level | Fold | Notes |
+|-------|------|-------|
+| `exact` | none | verbatim |
+| `case` | Cf characters dropped (soft hyphen U+00AD, U+200B–U+200D, U+2060, U+FEFF, bidi marks; a superset of `model/normalized.py`'s `IGNORABLE`), NFC, `casefold`, whitespace runs to one space | the same characters `anchor.resolve`'s normalised tier ignores, so no phrase that tier finds is lost at a folded level |
+| `default` | `case`, plus NFD and combining marks (M*) dropped, every P* character turned into a word boundary (a space) | symbols (S*) are kept |
+| `loose` | `default`, plus every S* character dropped | opt-in, or reached by the retry |
+
+Whitespace rules, for every folded level:
+
+1. `\r` (a paragraph mark, or `^p` in the phrase) is a hard separator. It is never turned into a space, never collapsed with one, and never trimmed. A space next to it is dropped.
+2. Every other whitespace (space, tab, no-break space, `\n`) becomes one space, and runs collapse.
+3. Only spaces are trimmed from the ends of the folded phrase. `^pEstas` keeps its leading `\r`, so `live.select` still names the paragraph after the mark.
+
+The fold of a phrase that leaves no letter, digit or symbol (only `--`, or only symbols at `loose`) is refused with `SCHEMA_INVALID` at the folded levels; such a phrase is matched at `exact` only.
+
+```python
+# model/loosefold.py
+Level = Literal["exact", "case", "default", "loose"]
+LEVELS: tuple[Level, ...] = ("exact", "case", "default", "loose")
+
+@dataclass(frozen=True)
+class Folded:
+    text: str                      # the comparison string
+    starts: tuple[int, ...]        # original start of each folded character
+    ends: tuple[int, ...]          # original end (exclusive) of each folded character
+
+def fold(text: str, level: Level) -> Folded: ...           # cached per (text, level)
+def to_original(folded: Folded, i: int, j: int, *, widen_left: bool, widen_right: bool) -> tuple[int, int]: ...
+def translate_codes(phrase: str) -> str: ...                # Word find codes, left to right
+def ladder(requested: Level | Literal["default"], *, retry: bool) -> tuple[Level, ...]: ...
+def hits(texts: Sequence[str], phrase: str, level: Level) -> list[Hit]: ...   # Hit = (index, start, end, level)
+```
+
+`translate_codes` accepts exactly `model/wordfind.py`'s set (`^^`, `^p`, `^l`, `^t`, `^s`, `^-`, `^~`, `^uNNN`); any other `^x` stays literal. For every text `t` without two-form hyphens, `translate_codes(word_find(t)) == t`.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Fold levels (model/loosefold.py)`
+> _(your notes here — replace this line)_
+
+### Request parameter match_level
+
+| Op | Values | Default | Retries | `"exact"` reproduces |
+|----|--------|---------|---------|----------------------|
+| `live.select` (`find_phrase`) | `exact`, `default`, `loose` | `default` | yes | casefold substring, unique (`_found` today) |
+| `anchor.resolve` (`anchor.exact`) | `exact`, `default`, `loose` | `default` | yes | exact → normalised → fuzzy (`model/anchor.py` `resolve` today) |
+| `find` (`query`) | `exact`, `default`, `loose` | absent = `exact` | never | today's `find`, honouring `ignore_case`, `ignore_accents`, `whole_word` |
+| `term.rename` (`from`) | `exact`, `default`, `loose` | absent = `exact` | never | today's case-insensitive whole-word match |
+| `history.search` (`query`) | `exact`, `default`, `loose` | absent = `exact` | never | today's `ignore_case` / `ignore_accents` search |
+
+Ladders for the single-target ops (strictest first; a level runs only when every level before it found nothing):
+
+- requested `default`: `exact` → `case` → `default` → `loose`.
+- requested `loose`: the same ladder; asking for `loose` only says the caller expects it may be needed.
+- requested `exact`: today's rule only.
+
+The multi-hit ops search once, at the level passed, and return every hit that folds equal at that level, each tagged with the strictest level it meets. With `regex: true`, a `match_level` other than `exact` is `SCHEMA_INVALID` (`path: "$.match_level"`). With `match_level` passed, `find`'s `ignore_case` and `ignore_accents` are implied by the level and may not contradict it (`ignore_case: false` with `default` is `SCHEMA_INVALID`).
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Request parameter match_level`
+> _(your notes here — replace this line)_
+
+### live.select
+
+Request: today's fields plus `match_level`. The existing `mode` (`select` | `cursor`) is unrelated and unchanged.
+
+```json
+{"doc": "Novel.docx", "find_phrase": "Estas ahi", "match_level": "default"}
+```
+
+Reply (new keys `match_level`, `matched_text`; `matched_text` only when the level is not `exact`):
+
+```json
+{"text": "-¿Estás ahí? -dijo.", "at": "p142#a7b2a7b2", "front": true,
+ "match_level": "default", "matched_text": "¿Estás ahí"}
+```
+
+- Two or more hits at the first level that has any: `ANCHOR_AMBIGUOUS` with `details: {"match_level": "default", "candidates": [{"at": "p142#…", "matched_text": "…"}, …]}` (at most 5).
+- No hit at any level of the ladder: `ANCHOR_NOT_FOUND` with `details: {"tried": ["exact", "case", "default", "loose"]}`.
+- A phrase holding `^` is first tried raw at the `exact` level, then translated, so a `locate` `find_phrase` that contains a literal caret still selects its paragraph.
+- `find_phrase_across` and the "phrase opens with `\r`" rule work on the folded joined text as they do now.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › live.select`
+> _(your notes here — replace this line)_
+
+### anchor.resolve
+
+The verbatim stage and its context-score choice are unchanged: several verbatim hits are still told apart by `(0.5·quote + 0.2·prefix + 0.2·suffix)/0.9`, the tie margin and the fingerprint rule, and only that rule raises `ANCHOR_AMBIGUOUS`. A hit count never does. The folded stages slot in after the existing normalised one and before fuzzy (D-F3):
+
+`exact` (verbatim) → `normalized` (today) → `case` → `default` → `loose` → fuzzy (only when `mode: "best"`).
+
+Each later stage runs only when every earlier stage found no span, exactly as `normalized` runs today only when no verbatim span exists. Its spans are scored like any candidate (`quote_score = 1.0`) and pass through the same acceptance and tie rules.
+
+`mode` × `match_level`:
+
+| | `match_level: "exact"` | `match_level: "default"` / `"loose"` |
+|---|---|---|
+| `mode: "best"` (default) | today: exact → normalised → fuzzy | exact → normalised → case → default → loose → fuzzy |
+| `mode: "exact"` | today: exact → normalised, every span accepted whatever its context score, no fuzzy | exact → normalised → case → default → loose, every span accepted whatever its context score, no fuzzy |
+
+`mode` decides whether fuzzy runs and whether the context score gates acceptance; `match_level` decides how far the fold goes. Neither changes the other's meaning.
+
+Reply (new key `match_level`; `match` keeps its values `exact | normalized | fuzzy`):
+
+```json
+{"at": "p142#a7b2a7b2:2-12", "score": 0.97, "match": "normalized",
+ "match_level": "default", "matched_text": "¿Estás ahí"}
+```
+
+- `match: "exact"` ↔ `match_level: "exact"`.
+- `match: "normalized"` covers today's normalised tier (reported `match_level: "case"`, the strictest level whose fold equals it) and every folded stage (`case`, `default`, `loose`).
+- `match: "fuzzy"` carries no `match_level`.
+- Ambiguity candidates gain `match_level` beside their existing `match`.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › anchor.resolve`
+> _(your notes here — replace this line)_
+
+### find
+
+Request: today's fields plus `match_level`. Without it, the reply, the cursor token and `query_word` are byte-identical to today (the token gains `match_level` only when it is passed, as it does for `stories`).
+
+Each hit gains `match_level` when `match_level` was passed:
+
+```json
+{"matches": [{"at": "p142#a7b2a7b2:2-12", "text": "¿Estás ahí", "context": "…-¿Estás ahí? -dijo.…",
+  "match_level": "default"}], "total": 1, "query_word": null}
+```
+
+- `query_word` is `null` at `default` and `loose` (Word's Find cannot fold punctuation).
+- `whole_word` checks the original characters on either side of the mapped span.
+- Word codes are translated only when `match_level` is passed and `regex` is false (D-F5).
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › find`
+> _(your notes here — replace this line)_
+
+### term.rename and history.search
+
+- `term.rename`: `match_level` widens what `from` matches; `whole_word`, `preserve_case` and `inflections` apply to the matched original text as now. Each `preview` change gains `match_level`; the result gains `matches_by_level: {"exact": n, "case": n, …}` when `match_level` was passed (`counts` keeps its integer fields). `dry_run` is the advised first call at a folded level.
+- `history.search`: each hit gains `match_level` when it was passed, and the offset of a folded hit is now exact (the fold keeps an offset map), so `text` shows the hit's own context instead of the start of the source.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › term.rename and history.search`
+> _(your notes here — replace this line)_
+
+### Errors (existing codes)
+
+- `SCHEMA_INVALID`: a phrase empty after folding; `match_level` with `regex`; `match_level` contradicting `ignore_case` / `ignore_accents`.
+- `ANCHOR_NOT_FOUND`: no hit on the whole ladder (`details.tried`).
+- `ANCHOR_AMBIGUOUS`: `live.select` with several hits at the first level that has any; `anchor.resolve` by its score rule only.
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Errors (existing codes)`
+> _(your notes here — replace this line)_
+
+### Inter-component contracts
+
+| Caller | Callee | Protocol | Contract | Failure handling |
+|--------|--------|----------|----------|-----------------|
+| literary-critic | `live.select`, `anchor.resolve`, `find` | JSON | Sends phrases as typed; reads `match_level` and `matched_text` and tells the user when it is not `exact` | A wrong pick is re-asked with a longer phrase or `match_level: "exact"` (D-F4) |
+| `ops/live.py`, `model/anchor.py`, `model/search.py`, `safety/history.py` | `model/loosefold.py` | Python | `fold`, `translate_codes`, `hits`, `ladder` as above | Errors raised as `DocControlError` |
+| `ops/locate.py`, `model/wordfind.py` | — | — | Not changed; `locate` output pinned by a golden file | Regression test fails the build |
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Inter-component contracts`
+> _(your notes here — replace this line)_
+
+### Database migrations
+
+| Service | Database | Change | Reversible | Forward-compatible |
+|---------|----------|--------|------------|-------------------|
+| — | none | — | yes | yes |
+
+<!-- -->
+
+> **✎ Notes** · `SPEC › Database migrations`
+> _(your notes here — replace this line)_
+
+## §6 Risks & Validation
+
+| Risk | Likelihood | Impact | Mitigation | Validation |
+|------|-----------|--------|------------|------------|
+| A loose level picks the wrong paragraph silently | Med | Med | Exact-first ladder; `match_level` and `matched_text` in every reply; ambiguity inside a level is an error, not a guess (D-F4) | unit (variant fixture table) |
+| `anchor.resolve` results change for anchors that resolve today | Low | High | Folded stages run only when no verbatim or normalised span exists; their candidates go through the same score and tie rules; `match_level: "exact"` reproduces today | unit (`tests/model/test_anchor*.py` unchanged, plus a parity test over the corpus) |
+| The fold trims or collapses `\r`, so a `^p` phrase names the wrong paragraph | Med | High | `\r` is a hard separator in the fold; only spaces are trimmed; fixture rows with `^p` at the start, middle and end | unit |
+| Cf characters (soft hyphen, zero-width) block a folded match that the normalised tier would find | Med | Med | The `case` level drops all Cf, a superset of `IGNORABLE`; a test asserts every normalised-tier fixture also matches at `case` | unit |
+| A `locate` `find_phrase` holding a literal `^` is mistranslated as a Word code | Low | Med | `live.select` tries the raw phrase at `exact` before translating | unit |
+| Widening `term.rename` edits more occurrences than meant | Med | High | Default stays `exact`; no retry for multi-hit ops; `matches_by_level` and `dry_run` show the reach | unit |
+| Folded search is too slow on long documents | Med | Med | Fold cached per paragraph text; folded levels built only when the stricter ones are empty; benchmark on the 100k-word novel (`generate("novel", 1)`) | perf (`find_loose_overhead_ratio <= 1.5`, `live_select_loose_extra_ms <= 50`) |
+| Offsets drift for combining marks, expansions (`ß` → `ss`) or dropped Cf characters | Med | High | Per-character offset map; spans never cut a base from its marks; property test on random accented text | property test (`span_mismatches == 0`) |
+| `locate` output changes by accident (direction b) | Low | High | Golden file of `locate` over the corpus taken before any change; round-trip of `find_phrase_word` through `translate_codes` | unit |
+
+<!-- -->
+
+> **✎ Notes** · `SPEC §6`
 > _(your notes here — replace this line)_
 
