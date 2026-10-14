@@ -84,6 +84,14 @@ def _hresult(err: BaseException) -> int | None:
     return code if isinstance(code, int) else 0
 
 
+def _no_pywin32() -> str:
+    """Why Word cannot be driven without ``pywin32``. A frozen build carries its own
+    ``pywin32``, so there the writer has nothing to install: the build is at fault."""
+    if getattr(sys, "frozen", False):
+        return "this build of doc-control was packaged without pywin32 (please report it)"
+    return "pywin32 is not installed (pip install doc-control[live])"
+
+
 def _why(err: BaseException) -> str:
     info = getattr(err, "excepinfo", None)
     said = info[2] if info and len(info) > 2 and info[2] else getattr(err, "strerror", None)
@@ -247,9 +255,7 @@ class Word:
             pythoncom: Any = importlib.import_module("pythoncom")
             client: Any = importlib.import_module("win32com.client")
         except ImportError as err:
-            raise LiveUnavailable(
-                f"pywin32 is not installed (pip install doc-control[live]): {err}"
-            ) from err
+            raise LiveUnavailable(f"{_no_pywin32()}: {err}") from err
         pythoncom.CoInitialize()
         try:
             self._word = client.GetActiveObject(_PROGID)
@@ -278,10 +284,7 @@ class Word:
                     return {**out, "reason": "Word is not installed"}
                 out["available"] = True
                 if importlib.util.find_spec("win32com") is None:
-                    return {
-                        **out,
-                        "reason": "pywin32 is not installed: pip install doc-control[live]",
-                    }
+                    return {**out, "reason": _no_pywin32()}
             out["available"] = True
             if self._word is not None:
                 with contextlib.suppress(Exception):  # the writer quit it: ``open`` restarts

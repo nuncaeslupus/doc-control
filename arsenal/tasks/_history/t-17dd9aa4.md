@@ -5,6 +5,7 @@ label: "frozen build"
 priority: 5
 deps: [t-329d1bc9]
 workspace: PACKAGE
+status: merged
 ---
 
 ## Acceptance gate

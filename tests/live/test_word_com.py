@@ -212,3 +212,27 @@ def test_probe_never_imports_pywin32(monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(LiveUnavailable, match="Windows"):
             Word().open(Path("a.docx"))
         assert Word().is_open(Path("a.docx")) is False
+
+
+def test_word_error_when_frozen_names_no_pip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A frozen build missing pywin32 says so; it never tells a writer to pip install."""
+
+    def missing(name: str) -> Any:
+        raise ImportError(f"No module named {name!r}")
+
+    monkeypatch.setattr(word_com.sys, "platform", "win32")
+    monkeypatch.setattr(word_com.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(word_com.importlib, "import_module", missing)
+    with pytest.raises(LiveUnavailable) as raised:
+        Word()._application()
+    assert "pip install" not in str(raised.value)
+    assert "packaged without pywin32" in str(raised.value)
+
+    monkeypatch.setattr(word_com, "_installed", lambda: True)
+    monkeypatch.setattr(word_com.importlib.util, "find_spec", lambda name: None)
+    probe = Word().probe()
+    assert "pip install" not in probe["reason"] and "packaged without pywin32" in probe["reason"]
+
+    monkeypatch.delattr(word_com.sys, "frozen")
+    with pytest.raises(LiveUnavailable, match="pip install"):
+        Word()._application()

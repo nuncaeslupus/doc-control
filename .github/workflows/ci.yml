@@ -53,6 +53,34 @@ jobs:
         shell: bash
         run: echo "No pyproject.toml yet; Python checks skipped."
 
+  packaging-inputs:
+    # Paths filter for the frozen Windows build: does this change touch what goes into it?
+    # A pull request is checked out as its merge commit, whose first parent is the base;
+    # a push to main is one squash-merged commit. Either way HEAD^1..HEAD is the change.
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: diff
+        run: |
+          pattern='^(packaging/|src/doc_control/|pyproject\.toml$|uv\.lock$|\.github/workflows/(package|ci)\.yml$)'
+          if ! files=$(git diff --name-only HEAD^1 HEAD); then
+            echo "no parent to compare with: building"; echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if grep -Eq "$pattern" <<<"$files"; then changed=true; else changed=false; fi
+          grep -E "$pattern" <<<"$files" || true
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+  package:
+    # The frozen Windows build and its 40 MiB size gate (PACKAGE T2).
+    needs: packaging-inputs
+    if: needs.packaging-inputs.outputs.changed == 'true'
+    uses: ./.github/workflows/package.yml
+
   validate:
     # OOXML structural lint of the generated corpus plus every package the tool's own
     # tests commit (judged on errors introduced, not errors already in the input).

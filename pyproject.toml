@@ -16,6 +16,9 @@ doc-control = "doc_control.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "mypy>=1.11"]
+# The freezer for the Windows build (packaging/doc-control.spec, PACKAGE D-P6), pinned.
+# Build-time only: nothing the runtime imports, never in [project] dependencies.
+package = ["pyinstaller==6.22.3"]
 
 [build-system]
 requires = ["hatchling"]
