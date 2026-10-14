@@ -4,7 +4,7 @@
 **Specification**: `arsenal/project/STORIES/spec.md` (approved r2; contracts §5, risks §6)
 **Author**: Claude (doc-control session), for the owner
 **Revision**: 1
-**Status**: draft
+**Status**: approved (2026-10-14, revision 1) — without annotations
 **Revision log**:
 - r1 — first draft
 
