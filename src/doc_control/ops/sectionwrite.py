@@ -12,7 +12,8 @@ now, and writes them in one verified step:
     the section. The section before the break keeps the setup the whole had; the section
     after it starts as ``type`` (a tracked change of the old closing ``w:sectPr``) and drops
     what would otherwise repeat at the break: a page-number start and a different first
-    page.
+    page. Optional ``props`` set the page setup of the section the break ends, which is part
+    of the insertion and so needs no record of its own.
 ``{"kind": "section.unbreak", "at": "p3#fp"}``
     Remove the section break that ends that paragraph, tracked as a deleted paragraph
     mark: accepting it joins the section with the next one.
@@ -59,6 +60,7 @@ from doc_control.ooxml.sections import (
     middle_setup,
     new_break,
     section_closers,
+    set_props,
 )
 from doc_control.ooxml.settingsflags import SETTINGS_PART, read_flag, set_flag
 from doc_control.ooxml.splice import DocumentSpans, scan
@@ -82,6 +84,7 @@ class LayoutWriteResult:
     op_id: str | None = None
     revision_ids: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    package: bytes | None = None  # a dry run's resulting file, for the caller to check
 
 
 def _bad(message: str, **details: object) -> DocControlError:
@@ -132,6 +135,7 @@ def apply_layout_edits(
     section_edit: dict[int, int] = {}  # section -> first edit that touched it
     breaks: dict[int, tuple[int, str]] = {}  # paragraph span index -> (edit, type)
     unbreaks: dict[int, int] = {}
+    break_props: dict[int, Mapping[str, Any]] = {}
     flags: dict[str, bool] = {}
     for n, edit in enumerate(edits):
         kind = edit.get("kind")
@@ -178,6 +182,14 @@ def apply_layout_edits(
                 raise DocControlError(
                     ErrorCode.BATCH_CONFLICT, f"two breaks after {para.address}", edits=[n]
                 )
+            part_props = edit.get("props")
+            if part_props is not None:
+                if not isinstance(part_props, Mapping):
+                    raise _bad(f"edit {n}: 'props' must be an object")
+                check_props(part_props)
+                if has_refs(part_props):
+                    raise _bad(f"edit {n}: a break's props take no header or footer references")
+                break_props[para.span_index] = part_props
             breaks[para.span_index] = (n, value)
         elif kind == "section.unbreak":
             para = doc.index.resolve_address(str(edit.get("at", "")))
@@ -279,6 +291,10 @@ def apply_layout_edits(
             # carries neither the page-number restart nor the title page of the first part.
             source_sect = middle_setup(source_sect, breaks[group[group.index(span_index) - 1]][1])
         inserted[span_index] = new_break(source_sect, ctx)
+        if span_index in break_props:
+            before_sect = inserted[span_index].find(f"{PPR}/{SECT_PR}")
+            assert before_sect is not None
+            set_props(before_sect, break_props[span_index])
         para = next(p for p in doc.index.paragraphs if p.span_index == span_index)
         mark("section.break", str(para.address), True, before_ids, type=breaks[span_index][1])
 
@@ -333,8 +349,10 @@ def apply_layout_edits(
         settings=[n for n in flags if written_parts.get(SETTINGS_PART) is not None],
     )
     if dry_run:
-        build_package(pkg, written_parts)  # the parts must at least assemble
-        return LayoutWriteResult(changes, True, pkg.sha256, revision_ids=list(ctx.revision_ids))
+        package = build_package(pkg, written_parts)  # the parts must at least assemble
+        return LayoutWriteResult(
+            changes, True, pkg.sha256, revision_ids=list(ctx.revision_ids), package=package
+        )
     written = write_verified(
         doc_path, written_parts, footprint, pkg.sha256, now=now, env=env, stage=stage
     )

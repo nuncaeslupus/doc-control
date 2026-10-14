@@ -78,6 +78,7 @@ OPERATION_MODULES: dict[str, str] = {
     "history.purge": "history",
     "history.search": "history",
     "info": "read",
+    "layout.apply": "layout",
     "layout.get": "layout",
     "live.close": "live",
     "live.select": "live",
