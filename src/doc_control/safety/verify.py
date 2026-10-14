@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.ooxml.settingsflags import SETTINGS_PART, without
 from doc_control.ooxml.splice import BODY, Container, DocumentSpans, scan
 from doc_control.ooxml.zipio import (
     Package,
@@ -90,6 +91,14 @@ class Footprint:
     #: Paragraph-level allowances in other parts; every byte of those parts outside them
     #: must stay, as for the body.
     stories: tuple[StoryFootprint, ...] = ()
+    #: The body's own ``w:sectPr`` (the last section's) may change; no paragraph holds it.
+    body_section: bool = False
+    #: Local names of the ``w:settings`` children of ``word/settings.xml`` that may be added,
+    #: changed or removed; every other byte of the part must stay (see :mod:`.layout`).
+    settings: frozenset[str] = frozenset()
+    #: The write is a layout write: also check what changed inside the touched paragraphs
+    #: (:func:`doc_control.safety.layout.layout_problems`).
+    layout: bool = False
     #: Byte spans ``(start, end)`` of the original ``word/document.xml`` that may change as a
     #: whole (``start == end``: something is inserted there): a table row, which is not a
     #: paragraph. Every byte outside them and the paragraphs must stay.
@@ -131,10 +140,17 @@ def verify_footprint(original: Package, result: Package, footprint: Footprint) -
     for name in before:
         if name == DOCUMENT_PART or name in story_parts or name not in result:
             continue
-        if name not in footprint.parts and result.fingerprint(name) != original.fingerprint(name):
+        if name == SETTINGS_PART and footprint.settings and name not in footprint.parts:
+            problems.extend(_settings_problems(original.read(name), result.read(name), footprint))
+        elif name not in footprint.parts and result.fingerprint(name) != original.fingerprint(name):
             problems.append(f"member changed outside the footprint: {name}")
     if DOCUMENT_PART in result:
-        problems.extend(_document_problems(original, result, footprint))
+        document = _document_problems(original, result, footprint)
+        problems.extend(document)
+        if footprint.layout and not document:
+            from doc_control.safety.layout import layout_problems
+
+            problems.extend(layout_problems(original, result, footprint))
     for part in sorted(story_parts):
         regions = [
             (s.container, s.replaced, s.inserted_after, s.inserted_before)
@@ -158,6 +174,14 @@ def verify_footprint(original: Package, result: Package, footprint: Footprint) -
     return problems
 
 
+def _settings_problems(old: bytes, new: bytes, footprint: Footprint) -> list[str]:
+    try:
+        same = without(old, footprint.settings) == without(new, footprint.settings)
+    except DocControlError as exc:
+        return [str(exc)]
+    return [] if same else [f"{SETTINGS_PART} changed outside {sorted(footprint.settings)}"]
+
+
 def _changed(original: Package, result: Package, name: str) -> bool:
     return name not in original or original.read(name) != result.read(name)
 
@@ -170,6 +194,7 @@ def _document_problems(original: Package, result: Package, footprint: Footprint)
         DOCUMENT_PART,
         [region],
         sorted(footprint.spans),
+        body_section=footprint.body_section,
     )
 
 
@@ -182,6 +207,8 @@ def _part_problems(
     part: str,
     regions: list[_Region],
     extra: Sequence[tuple[int, int]] = (),
+    *,
+    body_section: bool = False,
 ) -> list[str]:
     """Every byte of ``part`` outside the declared paragraphs of its ``regions`` (one per
     story it holds) must reappear, in order."""
@@ -202,6 +229,8 @@ def _part_problems(
         problem = _region_cuts(spans, replaced, inserted_after, inserted_before, cuts)
         if problem is not None:
             return [problem]
+        if body_section and container == BODY and spans.body_sect is not None:
+            cuts.append(spans.body_sect)
     # Everything between the touched spans must reappear, in order, in the result.
     gaps: list[bytes] = []
     pos = 0

@@ -14,7 +14,9 @@ What each revision does
     ``w:t``/``w:instrText``.
     ``w:rPrChange``: accepting drops the record, rejecting puts the recorded
     run properties back. ``w:pPrChange``: the same for paragraph properties
-    (the paragraph's mark properties and section break stay).
+    (the paragraph's mark properties and section break stay). ``w:sectPrChange``
+    (``section_format``): the same for the page setup of the section the paragraph's
+    ``w:sectPr`` closes, except its header and footer references.
     Paragraph marks (``w:pPr/w:rPr`` holding ``w:ins``, ``w:del``, ``w:moveFrom``
     or ``w:moveTo``): the marker is dropped; when the decision removes the mark
     (accepting a deleted or moved-away mark, rejecting an inserted or moved-in
@@ -43,10 +45,11 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 from doc_control.ooxml.revisions import AUTHOR, DEL, DELTEXT, ID, INS, PPR, RPR, R, T, W
+from doc_control.ooxml.sections import drop_change, restore_section
 
 MOVE_FROM, MOVE_TO = W + "moveFrom", W + "moveTo"
 RPR_CHANGE, PPR_CHANGE = W + "rPrChange", W + "pPrChange"
-SECT_PR = W + "sectPr"
+SECT_PR, SECT_CHANGE = W + "sectPr", W + "sectPrChange"
 _TEXT_BOX = W + "txbxContent"
 _DEL_INSTR, _INSTR = W + "delInstrText", W + "instrText"
 _COMMENT_REFERENCE = W + "commentReference"
@@ -113,6 +116,9 @@ def _scan(elem: ET.Element, out: list[Revision]) -> None:
             change = child.find(PPR_CHANGE)
             if change is not None:
                 out.append(_revision(change, "paragraph_format"))
+            sect_change = child.find(f"{SECT_PR}/{SECT_CHANGE}")
+            if sect_change is not None:
+                out.append(_revision(sect_change, "section_format"))
             continue
         if tag in _CONTENT_KIND:
             out.append(_revision(child, _CONTENT_KIND[tag]))
@@ -123,6 +129,20 @@ def _scan(elem: ET.Element, out: list[Revision]) -> None:
 
 def _revision(elem: ET.Element, kind: str) -> Revision:
     return Revision(elem.get(ID) or "", kind, elem.get(AUTHOR) or "", elem)
+
+
+def scan_section(sect: ET.Element) -> list[Revision]:
+    """The tracked property change of a ``w:sectPr`` that no paragraph holds (the body's)."""
+    change = sect.find(SECT_CHANGE)
+    return [] if change is None else [_revision(change, "section_format")]
+
+
+def resolve_section(sect: ET.Element, change: ET.Element, action: str) -> None:
+    """Accept or reject the ``w:sectPrChange`` ``change`` of ``sect``."""
+    if action == REJECT:
+        restore_section(sect, change)
+    else:
+        drop_change(sect, change)
 
 
 def resolve_paragraph(p: ET.Element, actions: dict[int, str]) -> bool:
@@ -162,6 +182,11 @@ def _resolve_ppr(ppr: ET.Element, actions: dict[int, str]) -> bool:
             ppr[:] = ([copy.deepcopy(c) for c in old] if old is not None else []) + kept
         else:
             ppr.remove(change)
+    sect = ppr.find(SECT_PR)
+    sect_change = sect.find(SECT_CHANGE) if sect is not None else None
+    act = actions.get(id(sect_change)) if sect_change is not None else None
+    if sect is not None and sect_change is not None and act is not None:
+        resolve_section(sect, sect_change, act)
     return removed
 
 

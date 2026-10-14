@@ -28,7 +28,10 @@ _TABLE_REVISION_TAG = re.compile(
     rb"|<(?:[\w.-]+:)?trPr[\s>](?:(?!</(?:[\w.-]+:)?trPr>).)*?<(?:[\w.-]+:)?(?:ins|del)[\s/>]",
     re.DOTALL,
 )
-_REVISION_TAG = re.compile(rb"<(?:[\w.-]+:)?(?:ins|del|moveFrom|moveTo|rPrChange|pPrChange)[\s/>]")
+_REVISION_TAG = re.compile(
+    rb"<(?:[\w.-]+:)?(?:ins|del|moveFrom|moveTo|rPrChange|pPrChange|sectPrChange)[\s/>]"
+)
+_SECT_CHANGE_TAG = re.compile(rb"<(?:[\w.-]+:)?sectPrChange[\s/>]")
 
 # Revision element -> reported type; the same tags inside a paragraph's own
 # ``w:pPr/w:rPr`` mark the paragraph mark instead.
@@ -60,6 +63,7 @@ REVISION_TYPES = tuple(
             *_CELL_REVISIONS.values(),
             "paragraph_format",
             "mark_format",
+            "section_format",
         }
     )
 )
@@ -226,6 +230,15 @@ def read_revisions(doc: Document) -> list[Revision]:
     # ponytail: row and cell revisions of the body only (a notes part holds many stories)
     if not doc.index.story and _TABLE_REVISION_TAG.search(data):
         keyed += _table_revisions(doc)
+    if not doc.index.story and len(doc.index) and doc.index.spans.body_sect is not None:
+        start, end = doc.index.spans.body_sect
+        if _SECT_CHANGE_TAG.search(data, start, end):
+            change = doc.index.spans.parse_body_sect().find(W + "sectPrChange")
+            if change is not None:  # the last section's setup: reported at the last paragraph
+                last = doc.index.paragraph(len(doc.index))
+                keyed.append(
+                    (last.number, 2, _revision(change, "section_format", str(last.address), ""))
+                )
     keyed.sort(key=lambda k: (k[0], k[1]))
     return [r for _, _, r in keyed]
 
@@ -282,6 +295,9 @@ def _collect(elem: ET.Element, at: str, out: list[Revision]) -> None:
             change = child.find(W + "pPrChange")
             if change is not None:
                 out.append(_revision(change, "paragraph_format", at, ""))
+            sect_change = child.find(f"{W}sectPr/{W}sectPrChange")
+            if sect_change is not None:
+                out.append(_revision(sect_change, "section_format", at, ""))
             continue
         if tag in _RUN_REVISIONS:
             kind = _RUN_REVISIONS[tag]
