@@ -16,7 +16,10 @@ now, and writes them in one verified step:
     of the insertion and so needs no record of its own.
 ``{"kind": "section.unbreak", "at": "p3#fp"}``
     Remove the section break that ends that paragraph, tracked as a deleted paragraph
-    mark: accepting it joins the section with the next one.
+    mark: accepting it joins the section with the next one. Refused before a table or at the
+    end of a container, where accepting could not join. The history log names the mark
+    revisions of breaks and unbreaks (``break_marks``): only those may take a section break
+    away when resolved; another section closer keeps its mark.
 ``{"kind": "settings", "even_and_odd_headers": true, "mirror_margins": false}``
     Flags of ``word/settings.xml``.
 
@@ -196,6 +199,12 @@ def apply_layout_edits(
             if para.span_index not in closers:
                 raise unsupported(
                     f"{para.address} does not end a section", paragraph=str(para.address)
+                )
+            if next_in_container(doc.index, para) is None:
+                raise unsupported(
+                    "a tracked section break removal cannot be made right before a table or at "
+                    "the end of a container: accepting it would leave the break behind",
+                    paragraph=str(para.address),
                 )
             unbreaks[para.span_index] = n
         elif kind == "settings":
@@ -386,7 +395,18 @@ def apply_layout_edits(
             author=ctx.author,
             tag=tag,
             footprint={DOCUMENT_PART: sorted(elems)},
-            extra={"undo_by_backup": True, "layout": True, "untracked": untracked},
+            extra={
+                "undo_by_backup": True,
+                "layout": True,
+                "untracked": untracked,
+                # The marks revision.accept/reject may remove although they end a section.
+                "break_marks": [
+                    {"id": rid, "author": ctx.author, "date": ctx.date}
+                    for c in changes
+                    if c["kind"] in ("section.break", "section.unbreak")
+                    for rid in c["revision_ids"]
+                ],
+            },
             now=now,
             env=env,
         )
