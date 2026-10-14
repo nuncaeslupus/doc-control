@@ -10,6 +10,7 @@ existed. Regenerate it on purpose with ``uv run python -m tests.ops.test_find_lo
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import zipfile
@@ -188,6 +189,14 @@ def test_phrase_empty_after_folding_refused(tmp_path: Path) -> None:
     assert run(doc, "--", match_level="exact")["total"] == 1
 
 
+def _portable(page: dict[str, Any]) -> dict[str, Any]:
+    # A cursor's token hashes the document's bytes, which differ by platform (zip
+    # metadata); the paragraph and skip after it are what the golden pins.
+    if page["next"] is not None:
+        page["next"] = re.sub(r"^c:find:[0-9a-f]+:", "c:find:*:", page["next"])
+    return page
+
+
 def snapshot() -> dict[str, Any]:
     out: dict[str, Any] = {}
     with tempfile.TemporaryDirectory() as tmp:
@@ -202,7 +211,9 @@ def snapshot() -> dict[str, Any]:
             pages = [run(docs[kind], query, **options)]
             if pages[0]["next"] is not None:
                 pages.append(run(docs[kind], query, **options, cursor=pages[0]["next"]))
-            out[f"{n}:{kind}:{json.dumps(request, ensure_ascii=False)}"] = pages
+            out[f"{n}:{kind}:{json.dumps(request, ensure_ascii=False)}"] = [
+                _portable(page) for page in pages
+            ]
     return out
 
 
