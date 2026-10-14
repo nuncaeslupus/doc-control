@@ -22,11 +22,14 @@ runs are written back, as tracked changes: the old result runs become ``w:del`` 
 the existing ``w:ins`` when the run was a tracked insertion), the new text is a ``w:ins``,
 and the lines of a multi-line result beyond the first are new inserted paragraphs. Nothing
 else changes, except that the ``w:dirty`` flag of an updated field, or of a field whose
-result was already right, is cleared. Fields
-whose copy cannot be paired (LibreOffice turned them into plain text, or the counts differ)
-are listed under ``skipped``. Without LibreOffice the operation refuses with
-``ENGINE_UNAVAILABLE`` naming the stale fields; ``set_update_on_open`` sets ``w:updateFields``
-in ``word/settings.xml`` instead, so Word offers to update the fields when it opens the file.
+result was already right, is cleared. Fields whose copy cannot be paired (LibreOffice turned
+them into plain text, or the counts differ) are listed under ``skipped``. REF takes
+LibreOffice's text, not Word's: a REF to a missing bookmark comes back as an error text, and
+a ``REF \\n`` to an unnumbered paragraph comes back empty; neither is written, the field
+keeps its result and is listed under ``skipped``. Without LibreOffice the operation refuses
+with ``ENGINE_UNAVAILABLE`` naming the stale fields; ``set_update_on_open`` sets
+``w:updateFields`` in ``word/settings.xml`` instead, so Word offers to update the fields
+when it opens the file.
 
 Both writes are one verified write each; their log entry carries ``undo_by_backup``, so undo
 puts the backup back while the file is exactly what the write produced.
@@ -104,6 +107,10 @@ LEFT_ALONE = {
     "sub-entries flat and changes the separators, so the index is left as it is; rebuild "
     "it in Word (select it and press F9)",
 }
+#: LibreOffice's text for a REF it cannot resolve (a missing bookmark), as it writes it to a
+#: .docx. Word would show its own error, or the number LibreOffice leaves empty, so such a
+#: result is not written: the field keeps the result it has and is listed under ``skipped``.
+_REF_ERROR = re.compile(r"^\s*error\b", re.IGNORECASE)
 _LEVELS = re.compile(r"^([1-9])(?:-([1-9]))?$")
 _FLD_TYPE = W + "fldCharType"
 _DIRTY = W + "dirty"
@@ -1025,6 +1032,15 @@ def update_fields(
         at = addresses.get(loc.begin[0], "")
         before = _trim(plan.old)
         after = _trim(fresh.lines)
+        if loc.type == "REF" and (not "".join(after).strip() or _REF_ERROR.match(after[0])):
+            skip(
+                loc,
+                "LibreOffice gave this REF "
+                + ("an error" if "".join(after).strip() else "an empty result")
+                + " (a missing bookmark, or a number it does not compute), so its result "
+                "is left as it is; update it in Word (F9)",
+            )
+            continue
         if before == after:
             unchanged += 1
             if loc.begin_char is not None and _DIRTY in loc.begin_char.attrib:
@@ -1093,7 +1109,9 @@ def update_fields(
     "fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed "
     "(LibreOffice keeps their cached results) and are listed under skipped. INDEX is "
     "never recomputed (LibreOffice ignores its switches and flattens sub-entries): every "
-    "index is left as it is and listed under skipped; rebuild it in Word (F9). Fields it "
+    "index is left as it is and listed under skipped; rebuild it in Word (F9). A REF "
+    "that LibreOffice resolves to an error (a missing bookmark) or to nothing (a number "
+    "of an unnumbered paragraph) keeps its result and is listed under skipped. Fields it "
     "could not pair with LibreOffice's are listed under skipped.",
     {
         "type": "object",
