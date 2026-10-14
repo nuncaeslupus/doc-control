@@ -41,6 +41,7 @@ PART_TYPES: dict[str, tuple[str, str]] = {
     "word/styles.xml": (_CT + "styles+xml", _OD + "styles"),
     "word/settings.xml": (_CT + "settings+xml", _OD + "settings"),
     "word/footnotes.xml": (_CT + "footnotes+xml", _OD + "footnotes"),
+    "word/endnotes.xml": (_CT + "endnotes+xml", _OD + "endnotes"),
     "word/comments.xml": (_CT + "comments+xml", _OD + "comments"),
     "word/commentsExtended.xml": (
         _CT + "commentsExtended+xml",
@@ -73,6 +74,11 @@ KINDS = (
     "kitchen_sink",
     "novel",
 )
+#: Kinds for the stories outside the body (STORIES T1): footnotes and endnotes with a
+#: two-paragraph note, a custom mark and a per-section restart; headers and footers with
+#: first-page and even-page kinds, an inherited header, PAGE fields and numbering restarts.
+#: Kept out of ``KINDS`` so the suites and baselines over ``KINDS`` are unchanged.
+STORY_KINDS = ("notes", "headers")
 FEATURES = ("revisions", "comments", "fields", "hyperlinks", "tables", "footnotes")
 FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
@@ -142,6 +148,10 @@ class _Builder:
     _next_bookmark: int = 0
     comments: list[_Comment] = field(default_factory=list)
     footnotes: list[str] = field(default_factory=list)
+    endnotes: list[str] = field(default_factory=list)
+    #: Footnote texts with more than one paragraph, and those with a custom mark.
+    footnote_extra: dict[int, list[str]] = field(default_factory=dict)
+    custom_marks: dict[int, str] = field(default_factory=dict)
     hyperlinks: list[tuple[str, str]] = field(default_factory=list)
 
     # -- ids -----------------------------------------------------------
@@ -361,6 +371,39 @@ class _Builder:
             f'<w:footnoteReference w:id="{fid}"/></w:r>'
         )
 
+    def endnote_ref(self, text: str) -> str:
+        eid = len(self.endnotes) + 1
+        self.endnotes.append(text)
+        return (
+            '<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr>'
+            f'<w:endnoteReference w:id="{eid}"/></w:r>'
+        )
+
+    def notes_kind(self) -> list[str]:
+        """Footnotes (one of two paragraphs, one with a custom mark), endnotes, and a
+        section break after which footnote numbering restarts."""
+        out = [self.p(_run(self.sentence()) + self.footnote_ref(self.sentence()))]
+        long_ref = self.footnote_ref(self.sentence())
+        self.footnote_extra[len(self.footnotes)] = [self.sentence(), self.sentence()]
+        out.append(self.p(_run(self.sentence()) + long_ref + _run(" " + self.sentence())))
+        fid = len(self.footnotes) + 1
+        self.footnotes.append(self.sentence())
+        self.custom_marks[fid] = "*"
+        out.append(
+            self.p(
+                _run(self.sentence())
+                + '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+                + f'<w:footnoteReference w:customMarkFollows="1" w:id="{fid}"/>'
+                + "<w:t>*</w:t></w:r>"
+            )
+        )
+        out.append(self.p(_run(self.sentence()) + self.endnote_ref(self.sentence())))
+        # Section 1 ends here; footnotes restart in section 2.
+        out.append(self.p(_run(self.sentence()), "<w:sectPr>" + _SECT_PAGE + "</w:sectPr>"))
+        out.append(self.p(_run(self.sentence()) + self.footnote_ref(self.sentence())))
+        out.append(self.p(_run(self.sentence()) + self.endnote_ref(self.sentence())))
+        return out
+
     def footnotes_feature(self) -> list[str]:
         return [
             self.p(_run(self.sentence()) + self.footnote_ref(self.sentence()) + _run(" More."))
@@ -442,12 +485,80 @@ def _root(tag: str, prefixes: tuple[str, ...], ignorable: bool = True) -> str:
 _MAIN = ("w", "r", "mc", "w14", "w15", "wp14")
 
 
-def _document(b: _Builder, blocks: list[str]) -> bytes:
-    sect = (
-        '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
-        '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" '
-        'w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>'
+_SECT_PAGE = (
+    '<w:pgSz w:w="11906" w:h="16838"/>'
+    '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" '
+    'w:header="708" w:footer="708" w:gutter="0"/>'
+)
+
+#: The ``headers`` kind's parts: (part, root tag, relationship type, text).
+_HF_REL = {"hdr": _OD + "header", "ftr": _OD + "footer"}
+HEADER_PARTS = (
+    ("word/header1.xml", "hdr", "Front matter header"),
+    ("word/header2.xml", "hdr", ""),  # section 1's first page: an empty header
+    ("word/footer1.xml", "ftr", "Page {PAGE}"),
+    ("word/header3.xml", "hdr", "Chapter header, odd pages"),
+    ("word/header4.xml", "hdr", "Author name, even pages"),
+    ("word/footer2.xml", "ftr", "{PAGE}"),
+)
+
+
+def _ref(kind: str, which: str, part: str) -> str:
+    tag = "headerReference" if kind == "hdr" else "footerReference"
+    rid = "rIdHF" + part.removeprefix("word/").removesuffix(".xml")
+    return f'<w:{tag} w:type="{which}" r:id="{rid}"/>'
+
+
+def _headers_kind(b: _Builder) -> list[str]:
+    """Three sections: roman-numbered front matter with an empty first-page header,
+    then arabic numbering from 1 with odd and even headers, then a section that starts on
+    an odd page and inherits every header and footer from section 2."""
+    s1 = (
+        _ref("hdr", "default", "word/header1.xml")
+        + _ref("hdr", "first", "word/header2.xml")
+        + _ref("ftr", "default", "word/footer1.xml")
+        + _SECT_PAGE
+        + '<w:pgNumType w:fmt="lowerRoman"/><w:titlePg/>'
     )
+    s2 = (
+        _ref("hdr", "default", "word/header3.xml")
+        + _ref("hdr", "even", "word/header4.xml")
+        + _ref("ftr", "default", "word/footer2.xml")
+        + _ref("ftr", "even", "word/footer2.xml")
+        + _SECT_PAGE
+        + '<w:pgNumType w:fmt="decimal" w:start="1"/>'
+    )
+    return [
+        b.p(_run("Title page")),
+        b.p(_run(b.sentence()), f"<w:sectPr>{s1}</w:sectPr>"),
+        b.heading(1, "Chapter one"),
+        b.p(_run(b.sentence())),
+        b.p(_run(b.sentence()), f"<w:sectPr>{s2}</w:sectPr>"),
+        b.heading(1, "Chapter two"),
+        b.p(_run(b.sentence())),
+    ]
+
+
+def _header_part(b: _Builder, tag: str, text: str) -> bytes:
+    runs = ""
+    for i, piece in enumerate(text.split("{PAGE}")):
+        if i:
+            runs += (
+                '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+                '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+                '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+                "<w:r><w:t>1</w:t></w:r>"
+                '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+            )
+        if piece:
+            runs += _run(piece)
+    style = "Header" if tag == "hdr" else "Footer"
+    xml = XML_DECL + _root(f"w:{tag}", _MAIN) + b.p(runs, f'<w:pStyle w:val="{style}"/>')
+    return (xml + f"</w:{tag}>").encode("utf-8")
+
+
+def _document(b: _Builder, blocks: list[str], last_sect: str = "") -> bytes:
+    sect = "<w:sectPr>" + (last_sect or _SECT_PAGE) + "</w:sectPr>"
     xml = (
         XML_DECL
         + _root("w:document", _MAIN)
@@ -506,10 +617,11 @@ def _styles() -> bytes:
     return xml.encode("utf-8")
 
 
-def _settings() -> bytes:
+def _settings(even_and_odd: bool = False) -> bytes:
     xml = (
         XML_DECL
         + _root("w:settings", _MAIN)
+        + ("<w:evenAndOddHeaders/>" if even_and_odd else "")
         + '<w:defaultTabStop w:val="708"/><w:characterSpacingControl w:val="doNotCompress"/>'
         + '<w:compat><w:compatSetting w:name="compatibilityMode" '
         + 'w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>'
@@ -528,13 +640,36 @@ def _footnotes(b: _Builder) -> bytes:
         + "</w:footnote>",
     ]
     for i, text in enumerate(b.footnotes, start=1):
-        body = b.p(
-            '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
-            + _run(" " + text),
-            '<w:pStyle w:val="FootnoteText"/>',
+        mark = (
+            ""
+            if i in b.custom_marks
+            else '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
         )
+        body = b.p(mark + _run(" " + text), '<w:pStyle w:val="FootnoteText"/>')
+        for more in b.footnote_extra.get(i, []):
+            body += b.p(_run(more), '<w:pStyle w:val="FootnoteText"/>')
         parts.append(f'<w:footnote w:id="{i}">{body}</w:footnote>')
     xml = XML_DECL + _root("w:footnotes", _MAIN) + "".join(parts) + "</w:footnotes>"
+    return xml.encode("utf-8")
+
+
+def _endnotes(b: _Builder) -> bytes:
+    parts = [
+        '<w:endnote w:type="separator" w:id="-1">'
+        + b.p("<w:r><w:separator/></w:r>")
+        + "</w:endnote>",
+        '<w:endnote w:type="continuationSeparator" w:id="0">'
+        + b.p("<w:r><w:continuationSeparator/></w:r>")
+        + "</w:endnote>",
+    ]
+    for i, text in enumerate(b.endnotes, start=1):
+        body = b.p(
+            '<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteRef/></w:r>'
+            + _run(" " + text),
+            '<w:pStyle w:val="EndnoteText"/>',
+        )
+        parts.append(f'<w:endnote w:id="{i}">{body}</w:endnote>')
+    xml = XML_DECL + _root("w:endnotes", _MAIN) + "".join(parts) + "</w:endnotes>"
     return xml.encode("utf-8")
 
 
@@ -603,6 +738,10 @@ def _comment_parts(b: _Builder) -> dict[str, bytes]:
     }
 
 
+def _hf_type(name: str) -> str:
+    return _CT + ("header+xml" if "/header" in name else "footer+xml")
+
+
 def _content_types(parts: list[str]) -> bytes:
     overrides = [
         ("/word/document.xml", _CT + "document.main+xml"),
@@ -612,7 +751,10 @@ def _content_types(parts: list[str]) -> bytes:
             "application/vnd.openxmlformats-officedocument.extended-properties+xml",
         ),
     ]
-    overrides += [("/" + name, PART_TYPES[name][0]) for name in parts]
+    overrides += [
+        ("/" + name, PART_TYPES[name][0] if name in PART_TYPES else _hf_type(name))
+        for name in parts
+    ]
     xml = (
         XML_DECL
         + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -679,13 +821,21 @@ def _app() -> bytes:
 
 def generate_parts(kind: str, seed: int) -> dict[str, bytes]:
     """Return the package members of a synthetic document, in write order."""
-    if kind not in KINDS:
-        raise ValueError(f"unknown corpus kind {kind!r}; expected one of {', '.join(KINDS)}")
+    if kind not in KINDS + STORY_KINDS:
+        known = ", ".join(KINDS + STORY_KINDS)
+        raise ValueError(f"unknown corpus kind {kind!r}; expected one of {known}")
     rng = random.Random(f"{kind}:{seed}")
     b = _Builder(rng, english=kind != "novel")
     blocks: list[str] = []
+    last_sect = ""
     if kind == "novel":
         blocks = b.novel()
+    elif kind == "notes":
+        blocks = [b.heading(1, f"Synthetic {kind} document {seed}"), *b.notes_kind()]
+        last_sect = _SECT_PAGE + '<w:footnotePr><w:numRestart w:val="eachSect"/></w:footnotePr>'
+    elif kind == "headers":
+        blocks = _headers_kind(b)
+        last_sect = '<w:type w:val="oddPage"/>' + _SECT_PAGE
     else:
         blocks.append(b.heading(1, f"Synthetic {kind} document {seed}"))
         blocks += [b.styled_paragraph() for _ in range(rng.randint(2, 4))]
@@ -702,18 +852,25 @@ def generate_parts(kind: str, seed: int) -> dict[str, bytes]:
 
     extra: dict[str, bytes] = {
         "word/styles.xml": _styles(),
-        "word/settings.xml": _settings(),
+        "word/settings.xml": _settings(even_and_odd=kind == "headers"),
     }
     if b.footnotes:
         extra["word/footnotes.xml"] = _footnotes(b)
+    if b.endnotes:
+        extra["word/endnotes.xml"] = _endnotes(b)
     if b.comments:
         extra.update(_comment_parts(b))
-    document = _document(b, blocks)
+    document = _document(b, blocks, last_sect)
 
     doc_rels = [
         (f"rId{i}", PART_TYPES[name][1], name.removeprefix("word/"), False)
         for i, name in enumerate(extra, start=1)
     ]
+    if kind == "headers":
+        for name, tag, text in HEADER_PARTS:
+            extra[name] = _header_part(b, tag, text)
+            rid = "rIdHF" + name.removeprefix("word/").removesuffix(".xml")
+            doc_rels.append((rid, _HF_REL[tag], name.removeprefix("word/"), False))
     doc_rels += [(rid, HYPERLINK_REL, url, True) for rid, url in b.hyperlinks]
 
     parts: dict[str, bytes] = {

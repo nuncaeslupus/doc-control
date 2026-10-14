@@ -242,3 +242,32 @@ def test_round_trip_converts_every_document_across_batches(
     results = validator.libreoffice_round_trip(docs, tmp_path)
     # An empty problem list means the document's HTML output exists and holds its text.
     assert results == {doc_id: [] for doc_id in docs}
+
+
+@pytest.mark.skipif(validator.soffice_path() is None, reason="LibreOffice not installed")
+def test_story_kinds_round_trip_through_libreoffice(tmp_path: Path) -> None:
+    from tests.corpus.generator import STORY_KINDS
+
+    docs = {kind: generate(kind, seed) for kind in STORY_KINDS for seed in (0,)}
+    stories = {
+        kind: {seg.story for seg in validator.expected_segments(data)}
+        for kind, data in docs.items()
+    }
+    assert stories == {
+        "notes": {"body", "footnote", "endnote"},
+        "headers": {"body", "header", "footer"},
+    }
+    # story_fixture_failures == 0: no note, header or footer text is lost.
+    assert validator.validate_documents(docs, tmp_path) == {kind: [] for kind in docs}
+
+
+@pytest.mark.skipif(validator.soffice_path() is None, reason="LibreOffice not installed")
+def test_header_text_missing_from_libreoffice_is_reported(tmp_path: Path) -> None:
+    path = tmp_path / "headers.docx"
+    path.write_bytes(generate("headers", 0))
+    kept = validator.Segment("header", 1, "Chapter header, odd pages")
+    lost = validator.Segment("header", 1, "Not in any page style")
+    soffice = validator.soffice_path()
+    assert soffice is not None
+    missing = validator._missing_page_segments(soffice, path, [kept, lost], tmp_path)
+    assert missing == [lost]
