@@ -89,8 +89,10 @@ jobs:
       - name: Install LibreOffice Writer (headless)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui
+          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui poppler-utils
           soffice --version
+      - name: Page-label checker (LibreOffice PDF, pdftotext)
+        run: uv run pytest -q tests/layout
       - name: Corpus round trip
         run: uv run pytest -q tests/corpus
       - name: Round trip of packages the tool wrote
