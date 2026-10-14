@@ -238,6 +238,21 @@ Chapter, scene, estimated page and the shortest unique first-and-last-words phra
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+## `note.add` (write)
+
+Add a footnote or endnote at a body offset: the reference mark and the note text are both tracked insertions, so rejecting them removes the note. Creates the notes part when the document has none. Returns the note's id, displayed number and address.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `at` | string | yes | Body point p3#fp:10-10 (the mark goes after the offset), a range inside one paragraph (after it) or a paragraph (at its end). |
+| `kind` | `footnote` \| `endnote` | yes |  |
+| `text` | string | yes | The note text, one line. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+
 ## `open` (write)
 
 Back up the document into its store (retention applies) and note it in the history; call it when a session starts. The document is not changed.

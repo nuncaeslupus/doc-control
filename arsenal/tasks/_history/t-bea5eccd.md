@@ -5,6 +5,7 @@ label: "note.add"
 priority: 5
 deps: [t-db820394]
 workspace: STORIES
+status: merged
 ---
 
 ## Acceptance gate

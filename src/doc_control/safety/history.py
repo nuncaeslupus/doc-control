@@ -41,7 +41,8 @@ from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.splice import BODY, Container, scan
-from doc_control.ooxml.zipio import Package
+from doc_control.ooxml.zipio import Package, commit_bytes, sha256_file
+from doc_control.safety import guard_write
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.store import (
     STORE_DIRNAME,
@@ -276,7 +277,13 @@ def undo_entry(
     """Put every paragraph ``entry`` changed back as it was, in one verified write.
 
     Entries that also wrote other parts (comments) are refused: only paragraphs are logged.
+    An entry marked ``undo_by_backup`` (``note.add``, which may create a part) is undone by
+    putting its backup back, but only while the file is exactly what that entry wrote.
     """
+    if entry.get("undo_by_backup"):
+        return _undo_by_backup(
+            doc_path, entry, expect_sha256=expect_sha256, dry_run=dry_run, now=now, env=env
+        )
     if entry.get("parts"):
         raise DocControlError(
             ErrorCode.UNSUPPORTED_CONTENT,
@@ -385,6 +392,55 @@ def undo_entry(
         stage=stage,
     )
     return UndoOutcome(written.before_sha256, written.after_sha256, written.backup, reverted)
+
+
+def _undo_by_backup(
+    doc_path: Path,
+    entry: Mapping[str, Any],
+    *,
+    expect_sha256: str | None,
+    dry_run: bool,
+    now: datetime | None,
+    env: Mapping[str, str] | None,
+) -> UndoOutcome:
+    if not doc_path.is_file():
+        raise DocControlError(
+            ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)
+        )
+    if not dry_run:
+        check_unlocked(doc_path)
+    check_changed(doc_path, expect_sha256)
+    current = sha256_file(doc_path)
+    if current != entry["sha256_after"]:
+        raise _conflict(entry, [], "the document was edited since; it adds a part as a whole")
+    saved = DocStore.open(doc_path, env).backups_dir / str(entry.get("backup"))
+    # Read now: the backup guard_write takes below may prune this one.
+    payload = saved.read_bytes() if saved.is_file() else b""
+    if hashlib.sha256(payload).hexdigest() != entry["sha256_before"]:
+        raise DocControlError(
+            ErrorCode.HISTORY_NOT_FOUND,
+            f"the backup {entry.get('backup')} that {entry['op_id']} needs is gone",
+            op_id=entry["op_id"],
+        )
+    reverted = [
+        {"kind": "revert", "index": c["index"], "before": c["after"], "after": c["before"]}
+        for c in entry.get("changes", [])
+        if c.get("kind") == "replace"
+    ]
+    if dry_run:
+        return UndoOutcome(current, None, None, reverted)
+    taken = guard_write(doc_path, current, now=now, env=env)
+    check_unlocked(doc_path)
+    check_changed(doc_path, current)
+    try:
+        commit_bytes(payload, doc_path, None)
+    except PermissionError as exc:
+        raise DocControlError(
+            ErrorCode.DOC_LOCKED,
+            f"could not replace {doc_path.name}, it is held open: {exc}",
+            path=str(doc_path),
+        ) from exc
+    return UndoOutcome(current, sha256_file(doc_path), taken, reverted)
 
 
 # -- search ---------------------------------------------------------------------------------
