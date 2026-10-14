@@ -357,20 +357,38 @@ def title_block() -> list[str]:
     return out
 
 
+def width(s: str, size: float, face: str) -> float:
+    """Advance of `s` in an installed face (an fc-match pattern)."""
+    from PIL import ImageFont
+
+    path = subprocess.run(
+        ["fc-match", "-f", "%{file}", face], capture_output=True, text=True
+    ).stdout
+    return ImageFont.truetype(path, 100).getlength(s) * size / 100
+
+
+ARSENAL = "#c4623f"  # claude-arsenal's own orange
+
+
 def powered_by() -> list[str]:
-    """A "powered by" stamp for claude-arsenal, set on the frame's bottom edge."""
-    lead, name = "powered by github.com/nuncaeslupus/", "claude-arsenal"
-    size, tile, pad, gap = 9.5, 16, 8, 6
-    lead_w = len(lead) * size * MONO_EM
-    width = pad + tile + gap + lead_w + len(name) * size * MONO_EM + pad
+    """The claude-arsenal stamp, set on the frame's bottom edge: what this repo is built with."""
+    lead, name, url = "built with", "claude-arsenal", "github.com/nuncaeslupus/claude-arsenal"
+    tile, pad, gap = 22, 8, 8
+    lead_w = width(lead, 12, "Inter")
+    name_w = width(name, 15, "Inter:weight=700")
+    url_w = len(url) * 10 * MONO_EM
+    total = pad + tile + gap + lead_w + 6 + name_w + 12 + url_w + pad + 6
     x, cy = 72, H - 30
     tx = x + pad + tile + gap
     return [
-        f'<rect x="{x}" y="{cy - 11}" width="{width:.1f}" height="22" rx="11" '
-        f'fill="{GROUND}" stroke="{DIM}"/>',
+        f'<rect x="{x}" y="{cy - 16}" width="{total:.1f}" height="32" rx="16" '
+        f'fill="{GROUND}" stroke="{ARSENAL}" stroke-width="1.5"/>',
         nested(ROOT / "docs" / "claude-arsenal-logo.svg", x + pad, cy - tile / 2, tile),
-        text(tx, cy + 3.4, lead, size=size, fill=DIM, family=MONO),
-        text(round(tx + lead_w, 1), cy + 3.4, name, size=size, family=MONO, weight=700),
+        text(tx, cy + 4.3, lead, size=12, fill=DIM),
+        text(round(tx + lead_w + 6, 1), cy + 5.3, name, size=15, fill=ARSENAL, weight=700),
+        text(
+            round(tx + lead_w + 6 + name_w + 12, 1), cy + 3.6, url, size=10, fill=DIM, family=MONO
+        ),
     ]
 
 
