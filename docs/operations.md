@@ -182,7 +182,7 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 
 ## `history.search` (read)
 
-Find a quote in the undo log: in the requests, and in the text of every paragraph before and after each write.
+Find a quote in the undo log: in the requests, and in the text of every paragraph before and after each write. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -191,6 +191,7 @@ Find a quote in the undo log: in the requests, and in the text of every paragrap
 | `query` | string | yes | Text to find. |
 | `ignore_case` | boolean |  |  |
 | `ignore_accents` | boolean |  |  |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` keeps the flags. When passed, Word's Find codes in `query` are read as their characters, every hit in a text is returned (not only the first), each with `start` and `end` (its offsets in that text), `match_level` (the strictest level it meets) and `text` cut around it, and the reply gains `matches_by_level`, adding up to `total`. Not with `ignore_case` or `ignore_accents` false at a folded level. |
 | `limit` | integer |  |  |
 
 ## `index.insert` (write)
@@ -663,7 +664,7 @@ Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text),
 
 ## `term.rename` (write)
 
-Rename a term everywhere as one tracked batch: whole word, case, preserve case and inflections; dry_run previews with counts.
+Rename a term everywhere as one tracked batch: whole word, case, preserve case and inflections; dry_run previews with counts. Exact unless `match_level` folds it; then each change says the level it matched at.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -675,6 +676,7 @@ Rename a term everywhere as one tracked batch: whole word, case, preserve case a
 | `preserve_case` | boolean |  | LUCÍA becomes ELENA, lucía becomes elena, Lucía becomes Elena. |
 | `ignore_accents` | boolean |  | `Lucia` also matches `Lucía`. |
 | `inflections` | array |  | Suffixes that follow the term: "s" renames Lucías to Elenas; {"from": "o", "to": "a"} renames Lucíao to Elenaa. |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the rename as without it. When passed, Word's Find codes in `from` are read as their characters, each `preview` change and `skipped` row gains `match_level` (the strictest level it meets) and the reply gains `matches_by_level`, adding up to `counts.matches`. No retry at a looser level. Not with `case_sensitive` or `ignore_accents: false` at a folded level. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Plan and preview only; write nothing. |
 | `preview_limit` | integer |  | Most changes echoed back in `preview`. |

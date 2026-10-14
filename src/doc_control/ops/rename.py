@@ -20,6 +20,12 @@ Options
     to ``Elenas``; an object ``{"from": "o", "to": "a"}`` renames ``Lucíao`` to
     ``Elenaa``. Each form is matched as a whole word too. Where forms overlap, the
     longest wins.
+    ``match_level`` (no default: without it nothing changes): search with ``find``'s
+    levelled matcher. ``default`` also ignores case, accents and punctuation, ``loose``
+    symbols too, and ``exact`` keeps the options above; Word's Find codes in ``from`` are
+    read as their characters. Every change in ``preview`` (and every ``skipped`` row)
+    then carries ``match_level``, the strictest level it meets, and ``matches_by_level``
+    counts ``counts.matches`` by level. It never widens to a looser level on its own.
 
 Deferred: a nested ``{"op": "term.rename"}`` inside ``batch`` (it needs the document to
 expand); ``term.rename`` is its own write operation for now.
@@ -43,7 +49,9 @@ from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex
-from doc_control.model.search import Matcher, SearchOptions
+from doc_control.model.loosefold import LEVELS, Level
+from doc_control.model.search import LevelMatcher, Matcher, SearchOptions
+from doc_control.model.wordcodes import translate_codes
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     ParagraphEditor,
@@ -52,6 +60,7 @@ from doc_control.ooxml.revisions import (
     used_ids,
 )
 from doc_control.ooxml.zipio import Package
+from doc_control.ops.find import check_level
 from doc_control.ops.tracked import ReplaceText, TrackedResult, apply_edits, boundary_ok
 from doc_control.registry import operation
 
@@ -89,6 +98,17 @@ _SCHEMA: dict[str, Any] = {
                 '{"from": "o", "to": "a"} renames Lucíao to Elenaa.'
             ),
             "items": {"type": ["string", "object"]},
+        },
+        "match_level": {
+            "type": "string",
+            "enum": ["exact", "default", "loose"],
+            "description": "Fold the search as `find` does: `default` ignores case, accents"
+            " and punctuation (symbols such as `$` still count), `loose` drops symbols too;"
+            " `exact` is the rename as without it. When passed, Word's Find codes in `from`"
+            " are read as their characters, each `preview` change and `skipped` row gains"
+            " `match_level` (the strictest level it meets) and the reply gains"
+            " `matches_by_level`, adding up to `counts.matches`. No retry at a looser level."
+            " Not with `case_sensitive` or `ignore_accents: false` at a folded level.",
         },
         "expect": {
             "type": "object",
@@ -133,6 +153,7 @@ class _Change:
     before: str
     after: str
     context: str
+    level: Level | None = None
 
 
 @dataclass
@@ -141,6 +162,7 @@ class RenamePlan:
     changes: list[_Change] = field(default_factory=list)
     counts: Counts = field(default_factory=Counts)
     skipped: list[dict[str, Any]] = field(default_factory=list)  # where and why
+    by_level: dict[Level, int] | None = None  # with a match_level: counts.matches per level
 
 
 def _bad(i: int, why: str) -> DocControlError:
@@ -212,51 +234,63 @@ def plan_rename(
     preserve_case: bool = True,
     ignore_accents: bool = False,
     inflections: list[Any] | None = None,
+    match_level: Level | None = None,
 ) -> RenamePlan:
-    """Every match of ``old`` in the body as a ``text.replace``; nothing is written."""
-    matchers = [
-        (
-            Matcher(
-                SearchOptions(
-                    old + sfx_old,
-                    ignore_case=not case_sensitive,
-                    ignore_accents=ignore_accents,
-                    whole_word=whole_word,
-                )
-            ),
-            old + sfx_old,
-            new + sfx_new,
+    """Every match of ``old`` in the body as a ``text.replace``; nothing is written.
+
+    With ``match_level`` the search is ``find``'s :class:`LevelMatcher` at that level, and
+    each change and skip is tagged with the strictest level it meets.
+    """
+    folds = match_level in ("default", "loose")
+    if match_level is not None:
+        old = translate_codes(old)
+
+    def matcher(term: str) -> Matcher | LevelMatcher:
+        options = SearchOptions(
+            term,
+            ignore_case=folds or not case_sensitive,
+            ignore_accents=folds or ignore_accents,
+            whole_word=whole_word,
         )
+        return Matcher(options) if match_level is None else LevelMatcher(options, match_level)
+
+    matchers = [
+        (matcher(old + sfx_old), old + sfx_old, new + sfx_new)
         for sfx_old, sfx_new in _forms(inflections or [])
     ]
     dress = preserve_case and not case_sensitive
     plan = RenamePlan()
     counts = plan.counts
+    by_level: dict[Level, int] = {}
     for para in index.paragraphs:
         text = para.text
         if not text:
             continue
-        found: list[tuple[int, int, str, str]] = []
-        for matcher, exact, target in matchers:
-            found += [(s, e, exact, target) for s, e in matcher.spans(text)]
+        found: list[tuple[int, int, str, str, Level | None]] = []
+        for search, exact, target in matchers:
+            spans = list(search.spans(text))
+            levels = search.levels if isinstance(search, LevelMatcher) else {}
+            found += [(s, e, exact, target, levels.get((s, e))) for s, e in spans]
         if not found:
             continue
         found.sort(key=lambda m: (m[0], -m[1]))
         in_field = any(p.in_field for p in para.pieces)
         edge = 0
         counted = False
-        for s, e, exact, target in found:
+        for s, e, exact, target, level in found:
             if s < edge:
                 continue  # inside a longer form already taken
             edge = e
             counts.matches += 1
+            if level is not None:
+                by_level[level] = by_level.get(level, 0) + 1
             if not (boundary_ok(text, s) and boundary_ok(text, e)):
                 counts.skipped_boundary += 1
-                plan.skipped.append(_skip(para.address, text, s, e, "boundary"))
+                plan.skipped.append(_skip(para.address, text, s, e, "boundary", level))
                 continue
             if in_field and any(p.in_field for p in para.pieces_in(s, e)):
                 counts.skipped_unsupported += 1
-                plan.skipped.append(_skip(para.address, text, s, e, "field"))
+                plan.skipped.append(_skip(para.address, text, s, e, "field", level))
                 continue
             matched = text[s:e]
             after = match_case(matched, exact, target) if dress else target
@@ -267,18 +301,24 @@ def plan_rename(
             lo, hi = max(0, s - CONTEXT), min(len(text), e + CONTEXT)
             context = ("…" if lo else "") + text[lo:hi] + ("…" if hi < len(text) else "")
             plan.edits.append(ReplaceText(at, after))
-            plan.changes.append(_Change(at, para.number, s, e, matched, after, context))
+            plan.changes.append(_Change(at, para.number, s, e, matched, after, context, level))
             counts.replaced += 1
             if not counted:
                 counts.paragraphs += 1
                 counted = True
+    if match_level is not None:
+        plan.by_level = {level: by_level[level] for level in LEVELS if level in by_level}
     return plan
 
 
-def _skip(address: Any, text: str, start: int, end: int, reason: str) -> dict[str, Any]:
+def _skip(
+    address: Any, text: str, start: int, end: int, reason: str, level: Level | None = None
+) -> dict[str, Any]:
     """Where a match was left alone and why: ``field`` (a field result), ``boundary``
-    (it would split a character from its marks) or ``unsupported_structure``."""
-    return {"at": f"{address}:{start}-{end}", "text": text[start:end], "reason": reason}
+    (it would split a character from its marks) or ``unsupported_structure``; with the
+    level it matched at when the rename has a ``match_level``."""
+    out = {"at": f"{address}:{start}-{end}", "text": text[start:end], "reason": reason}
+    return out if level is None else {**out, "match_level": level}
 
 
 def _order(at: str) -> tuple[int, int]:
@@ -289,7 +329,7 @@ def _order(at: str) -> tuple[int, int]:
 def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> RenamePlan:
     """Keep only the edits the editor can make (each tried on a throwaway copy)."""
     ctx = RevisionContext(used_ids(pkg), "check", format_date(None))
-    kept = RenamePlan(counts=plan.counts, skipped=plan.skipped)
+    kept = RenamePlan(counts=plan.counts, skipped=plan.skipped, by_level=plan.by_level)
     for edit, change in zip(plan.edits, plan.changes, strict=True):
         para = index.paragraph(change.paragraph)
         elem = index.spans.parse_paragraph(para.span_index)
@@ -300,9 +340,10 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
                 raise
             plan.counts.skipped_unsupported += 1
             plan.counts.replaced -= 1
-            kept.skipped.append(
-                {"at": change.at, "text": change.before, "reason": "unsupported_structure"}
-            )
+            skip = {"at": change.at, "text": change.before, "reason": "unsupported_structure"}
+            if change.level is not None:
+                skip["match_level"] = change.level
+            kept.skipped.append(skip)
             continue
         kept.edits.append(edit)
         kept.changes.append(change)
@@ -314,12 +355,16 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
     "term.rename",
     "write",
     "Rename a term everywhere as one tracked batch: whole word, case, preserve case and "
-    "inflections; dry_run previews with counts.",
+    "inflections; dry_run previews with counts. Exact unless `match_level` folds it; then "
+    "each change says the level it matched at.",
     _SCHEMA,
 )
 def term_rename(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
     old, new = request["from"], request["to"]
+    level: Level | None = request.get("match_level")
+    if level is not None:
+        _check_level(request, level)
     pkg = Package(path)
     index = DocumentIndex.from_package(pkg)
     plan = plan_rename(
@@ -331,6 +376,7 @@ def term_rename(request: dict[str, Any]) -> Reply:
         preserve_case=request.get("preserve_case", True),
         ignore_accents=request.get("ignore_accents", False),
         inflections=request.get("inflections"),
+        match_level=level,
     )
     dry_run = request.get("dry_run", False)
     expect = request.get("expect", {}).get("sha256") or pkg.sha256
@@ -360,11 +406,10 @@ def term_rename(request: dict[str, Any]) -> Reply:
         "dry_run": dry_run,
         "counts": counts.to_dict(),
         "skipped": sorted(plan.skipped, key=lambda s: _order(s["at"]))[:limit],
-        "preview": [
-            {"at": c.at, "before": c.before, "after": c.after, "context": c.context}
-            for c in plan.changes[:limit]
-        ],
+        "preview": [_preview(c) for c in plan.changes[:limit]],
     }
+    if plan.by_level is not None:
+        result["matches_by_level"] = plan.by_level
     warnings: list[str] = []
     if applied is not None:
         body = applied.to_dict()
@@ -386,3 +431,24 @@ def term_rename(request: dict[str, Any]) -> Reply:
             " and were left unchanged"
         )
     return Reply(result, doc=Document(str(path)).envelope_doc(), warnings=warnings)
+
+
+def _preview(change: _Change) -> dict[str, Any]:
+    out = {
+        "at": change.at,
+        "before": change.before,
+        "after": change.after,
+        "context": change.context,
+    }
+    return out if change.level is None else {**out, "match_level": change.level}
+
+
+def _check_level(request: dict[str, Any], level: Level) -> None:
+    """``find``'s check, and a folded level ignores case: no ``case_sensitive`` with it."""
+    check_level(request, level)
+    if level != "exact" and request.get("case_sensitive"):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"match_level {level!r} ignores case; drop case_sensitive: true",
+            path="$.case_sensitive",
+        )

@@ -44,6 +44,8 @@ from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.model.loosefold import Level
+from doc_control.model.search import LevelMatcher, SearchOptions
 from doc_control.ooxml.splice import BODY, Container, scan
 from doc_control.ooxml.zipio import Package, commit_bytes, sha256_file
 from doc_control.safety import guard_write
@@ -486,9 +488,15 @@ def search_entry(
     ignore_case: bool,
     ignore_accents: bool,
     width: int = 40,
+    match_level: Level | None = None,
 ) -> list[dict[str, Any]]:
-    """Where ``query`` occurs in one entry: its request, and each paragraph before and after."""
-    needle = fold(query, ignore_case=ignore_case, ignore_accents=ignore_accents)
+    """Where ``query`` occurs in one entry: its request, and each paragraph before and after.
+
+    Without ``match_level``, the first hit in each source. With it, every hit, found by
+    ``find``'s :class:`~doc_control.model.search.LevelMatcher` (a folded level implies both
+    folds), each with its offsets in the source (``start``, ``end``), its ``match_level``
+    and ``text`` cut around the hit itself.
+    """
     sources: list[tuple[str, str]] = [
         ("request", json.dumps(entry.get("request"), ensure_ascii=False))
     ]
@@ -496,6 +504,17 @@ def search_entry(
         if change.get("kind") == "replace":
             sources.append((f"change {number} before", str(change.get("text_before", ""))))
         sources.append((f"change {number} after", xml_text(str(change.get("after", "")))))
+    if match_level is not None:
+        return _levelled_hits(
+            entry["op_id"],
+            sources,
+            LevelMatcher(
+                SearchOptions(query, ignore_case=ignore_case, ignore_accents=ignore_accents),
+                match_level,
+            ),
+            width,
+        )
+    needle = fold(query, ignore_case=ignore_case, ignore_accents=ignore_accents)
     hits: list[dict[str, Any]] = []
     for where, text in sources:
         folded = fold(text, ignore_case=ignore_case, ignore_accents=ignore_accents)
@@ -505,6 +524,26 @@ def search_entry(
         # Folding can change the length (accent stripping): then there is no reliable offset.
         start = max(0, at - width) if len(folded) == len(text) else 0
         hits.append({"op_id": entry["op_id"], "in": where, "text": text[start : start + 2 * width]})
+    return hits
+
+
+def _levelled_hits(
+    op_id: str, sources: Sequence[tuple[str, str]], matcher: LevelMatcher, width: int
+) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    for where, text in sources:
+        for start, end in matcher.spans(text):
+            lo = max(0, start - width)
+            hits.append(
+                {
+                    "op_id": op_id,
+                    "in": where,
+                    "text": text[lo : lo + 2 * width],
+                    "start": start,
+                    "end": end,
+                    "match_level": matcher.levels[start, end],
+                }
+            )
     return hits
 
 
