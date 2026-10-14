@@ -21,7 +21,17 @@
 
 - Windows session after #169/#170: the Word suite mirrors the LibreOffice fixes (paragraphs inside a tracked deletion, a deletion over a whole table — made in Word, read under All and Simple Markup — and open through a symlink) and adds a span over two paragraphs of one cell and edits around a hyperlink, each checked against the file engine on a copy (`_same_edits`). Fixed in Word: a whole-table deletion under Simple Markup (cell ends show in every view, and merged the paragraph before the table with its first cell); edits that touch a field or link are now refused before any write as the file engine refuses them (they failed mid-batch or went through). New protocol method `editable(path, span, replace)`, checked for every span of a live batch before the first write. `live_word_failures == 0`, select p95 449 ms.
 - Windows session, 2026-10-14: open documents by name (#193, PR #195). `live.status` without `doc` lists `documents: [{app, path, name}]`. A bare file name as `doc` resolves to the one open document of that name; a same-named file in the working directory also counts as a candidate. Several candidates give `DOC_AMBIGUOUS`; an app that cannot list its documents gives `ENGINE_UNAVAILABLE`. New protocol method `documents()`. Released as **0.6.1** (#198).
-- **Queued, not started**: #196 (literary-critic, relaying the owner): centre the selected passage, a safe select mode (cursor, not selection), bring Word to the front on select/open, and an exploratory `doc-control://` link handler. The link handler needs the owner's decision first (security, and whether the desktop app opens such links). Peer to message when any of it ships: the literary-critic session.
+- Windows session, 2026-10-14 (later): #196 items 1-3 (PR #212), released as **0.6.2** (#215); the literary-critic session was told.
+  - `live.select` centres the passage in Word's page pane, measured within 10 px. It reads `Window.GetPoint` via `InvokeTypes` in physical pixels, against the `_WwG` pane rect, and scrolls by lines.
+  - `mode: "cursor"` collapses the selection to the passage's start.
+  - `live.select` and `live.open` bring the window to the front (`front: false` skips it). The reply's `front` is false when the window cannot come, and never an error.
+  - New protocol method `show(path)`.
+  - Known limits:
+    - A passage on the first screen is not centred.
+    - With a split window, the first pane is used.
+    - LibreOffice's `show` returns true without checking the window came; headless LibreOffice reports its window visible.
+  - The hidden Word suite cannot see centring or focus. Check them on a visible Word of its own, never the owner's.
+- **Item 4 of #196 (#213)**, the `doc-control://` link handler: needs the owner's decision first. Registering even a temporary test URL scheme is a persistent per-user handler; ask before doing it.
 - **LibreOffice, divergence**: `editable` there only refuses a range across containers; a replace inside a hyperlink still goes through live where the file engine refuses it.
 - **Word, not measured**: Microsoft 365 (D-L4 asks for it; none on the owner's machine). CI has no Word: the scenario test is skipped there, so a change to `word_com.py` must be run on Windows with `uv run --no-sync python scripts/live_word_check.py`.
 - **Word, known limits**: whether tracked deletions are hidden is decided from the first one (a reviewer filter hiding only some is not handled); a Selection ending inside a hyperlink grows to the whole field (Word's rule; edits use ranges and are exact); each op of a live batch reads the model again (slow on a heavily revised manuscript); date fields are recomputed by Word.
