@@ -108,6 +108,9 @@ _SCHEMA: dict[str, Any] = {
             " are read as their characters, each `preview` change and `skipped` row gains"
             " `match_level` (the strictest level it meets) and the reply gains"
             " `matches_by_level`, adding up to `counts.matches`. No retry at a looser level."
+            " Two meanings of exact: without `match_level` the rename is today's, with ^"
+            ' codes literal and no levels; `match_level: "exact"` keeps that rule but reads'
+            " the ^ codes and tags each change (`exact` there: character for character)."
             " Not with `case_sensitive` or `ignore_accents: false` at a folded level.",
         },
         "expect": {

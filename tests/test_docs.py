@@ -17,11 +17,30 @@ def test_docs_list_every_error_code() -> None:
     assert missing == []
 
 
-def test_generated_references_are_current() -> None:
+def test_errors_md_is_generated() -> None:
     assert (DOCS / "errors.md").read_text("utf-8") == errors_markdown()
-    assert (DOCS / "operations.md").read_text("utf-8") == operations_markdown(), (
+
+
+def test_operations_md_is_generated() -> None:
+    """FIND T10: no drift, and every op taking ``match_level`` documents it and "exact"."""
+    text = (DOCS / "operations.md").read_text("utf-8")
+    assert text == operations_markdown(), (
         "run `uv run python -m doc_control.reference` and commit docs/"
     )
+    levelled = sorted(n for n, op in REGISTRY.items() if "match_level" in op.schema["properties"])
+    assert levelled == [
+        "anchor.resolve",
+        "find",
+        "history.search",
+        "live.select",
+        "term.rename",
+    ]
+    for name in levelled:
+        section = text.split(f"## `{name}` (", 1)[1].split("\n## ", 1)[0]
+        row = next(line for line in section.splitlines() if line.startswith("| `match_level` |"))
+        assert "`exact`" in row and "`default`" in row and "`loose`" in row, name
+    search = text.split("## `history.search` (", 1)[1].split("\n## ", 1)[0]
+    assert "`start` and `end`" in search
 
 
 def test_operation_reference_names_every_operation() -> None:

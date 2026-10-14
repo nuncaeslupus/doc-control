@@ -399,9 +399,12 @@ def history_list(request: dict[str, Any]) -> Reply:
                 " accents and punctuation (symbols such as `$` still count), `loose` drops"
                 " symbols too; `exact` keeps the flags. When passed, Word's Find codes in"
                 " `query` are read as their characters, every hit in a text is returned"
-                " (not only the first), each with `start` and `end` (its offsets in that"
-                " text), `match_level` (the strictest level it meets) and `text` cut around"
-                " it, and the reply gains `matches_by_level`, adding up to `total`. Not"
+                " (not only the first, `exact` included), each with `start` and `end` (its"
+                " offsets in that text: the request's JSON or the paragraph before or after"
+                " the write, as `in` names it; not offsets into the cut `text`),"
+                " `match_level` (the strictest level it meets) and `text` cut around"
+                " it, and the reply gains `matches_by_level`, adding up to `total`. Without"
+                " it, the first hit per text, with no `start`, `end` or level. Not"
                 " with `ignore_case` or `ignore_accents` false at a folded level.",
             },
             "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},

@@ -60,7 +60,7 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 - [ ] `locate_phrase_changes == 0`: `locate` output on the corpus is byte-identical before and after (direction b is untouched); and every `find_phrase_word` it emits, translated back, equals its source text (`word_code_roundtrip_failures == 0`).
 - [ ] `loose_report_missing == 0`: every response where the level was not exact says so (`match_level` field).
 - [ ] `find_loose_overhead_ratio <= 1.5` against the current literal `find` on the 100k-word novel benchmark in `tests/bench`; `live.select` stays under the current time plus 50 ms on the same document.
-- [ ] No existing test changes behaviour: `match_level: "exact"` reproduces today's results, and plain `find`, `rename` and `history.search` with no `match_level` argument is unchanged (`regression_failures == 0`, D-F5).
+- [ ] No existing test changes behaviour: `match_level: "exact"` keeps today's text rule but returns every hit, not only the first per source (D-F8), and plain `find`, `rename` and `history.search` with no `match_level` argument is unchanged (`regression_failures == 0`, D-F5).
 - [ ] Judged, not measured: the owner re-runs the original `--` dialogue case from literary-critic and it is found.
 
 ## 2. Systems & Impact
@@ -212,6 +212,7 @@ Responses carry `"match_level": "exact" | "case" | "default" | "loose"`, the lev
 | D-F5 | Plain `find` stays exact by default; folding only when `match` is passed | agreed | 2026-10-14 |
 | D-F6 | Agent phrases accept Word's find codes: `^p` (alias for `\r`), `^t`, `^l` where the op supports them, `^^` for a literal caret. `locate`'s generated phrases do not change | agreed | 2026-10-14 |
 | D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; Word codes = the `model/wordfind.py` set (`^p ^l ^t ^s ^- ^~ ^uNNN ^^`); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex `find` | agreed | 2026-10-14 |
+| D-F8 | `match_level: "exact"` keeps today's text rule but returns every hit per source (in `history.search`, not only the first per text), each tagged with its level; callers may check the hits before showing the user. Success criterion "exact reproduces today's results" reworded to match | agreed (owner) | 2026-10-14 |
 
 ---
 
