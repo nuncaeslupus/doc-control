@@ -485,9 +485,9 @@ class Word:
                     deleted.append((int(rng.Start), int(rng.End), str(rng.Text or "")))
             deleted.sort()
         # A range's text holds the deleted text only when the window shows it; the ends
-        # of a deleted table's cells and rows show in every view.
-        first = self._read(doc, *deleted[0][:2]) if deleted else ""
-        hidden = bool(deleted) and not first.replace(_CELL_END, "")
+        # of a deleted table's cells and rows show in every view, so they tell nothing.
+        told = next((d for d in deleted if d[2].replace(_CELL_END, "")), None)
+        hidden = told is not None and not self._read(doc, *told[:2]).replace(_CELL_END, "")
         window = doc.ActiveWindow.View.RevisionsFilter
         model = _Model((*key, int(window.Markup), int(window.View)), hidden)
         model.deletions = [(start, end) for start, end, _ in deleted]
@@ -701,10 +701,17 @@ class Word:
         closes = {close for _, close in fields}
         start += start in closes
         end = max(start, end + (end in closes))
+        # An insertion needs text beside it: none at a paragraph's edge next to a field.
+        around = doc.Range(start, start)
+        around.Expand(_PARAGRAPH)
+        edges = {int(around.Start), int(around.End) - 1}
         for begin, close in fields:
             inside = [begin < at <= close for at in (start, end)]
             if replace:
-                cut = start <= close and end > begin if end > start else inside[0]
+                if end > start:
+                    cut = start <= close and end > begin
+                else:
+                    cut = inside[0] or start in edges & {begin, close + 1}
                 why = "covers text of a field or link, which the live engine does not edit"
             else:
                 cut = any(inside)

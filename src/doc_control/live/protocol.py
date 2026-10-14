@@ -61,7 +61,7 @@ class LiveAdapter(Protocol):
     def editable(self, path: Path, span: Span, replace: bool) -> None:
         """Refuse (``UNSUPPORTED_CONTENT``) a comment on ``span``, or with ``replace`` a
         tracked replace of it, that the file engine would refuse too: one range across
-        containers, or into a field or link."""
+        containers, or (Word only so far) into a field or link."""
 
     def comment(self, path: Path, span: Span, text: str, author: str) -> None: ...
 
