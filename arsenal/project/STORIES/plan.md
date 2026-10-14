@@ -133,6 +133,7 @@ A **story** is one text flow with its own paragraph numbering: the body, one foo
 
 | T# | Gate | Measured | Command | SHA | Env | Date |
 |----|------|----------|---------|-----|-----|------|
+| T2 | `body_address_drift == 0` | 0 | `uv run pytest -q tests/model/test_address.py -k test_story_prefix_round_trips_and_body_unchanged` | (this PR) | cloud container, Python 3.13 | 2026-10-14 |
 
 ---
 

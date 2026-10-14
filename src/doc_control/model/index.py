@@ -296,6 +296,14 @@ class DocumentIndex:
         """The paragraph at ``address``; ``STALE_ADDRESS`` unless position and fingerprint match."""
         if isinstance(address, str):
             address = parse_address(address)
+        if address.story:
+            # ponytail: notes and headers get their own index (STORIES T3).
+            raise DocControlError(
+                ErrorCode.ADDRESS_INVALID,
+                f"{address} is in {address.story}; notes, headers and footers cannot be "
+                "addressed yet",
+                address=str(address),
+            )
         para = self.paragraph(address.number)
         if para.fp != address.fp:
             raise DocControlError(

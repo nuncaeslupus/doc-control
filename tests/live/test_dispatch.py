@@ -122,3 +122,14 @@ def test_a_broken_app_is_reported_not_raised(doc: Path) -> None:
             "reason": "no such program",
         }
     ]
+
+
+def test_story_address_live_is_engine_unavailable(doc: Path) -> None:
+    fake = FakeAdapter({str(doc): ["One.", "Two."]})
+    with using(fake), api.open(doc, engine="live", app="fake") as handle:
+        handle.run("live.open")
+        with pytest.raises(DocControlError) as err:
+            handle.run("live.select", {"at": "fn3/p1#0c9e0c9e"})
+        assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
+        assert "file engine only" in err.value.details["reason"]
+        handle.run("live.close", {"discard": True})
