@@ -18,10 +18,11 @@ round; a formatting change keeps the new (accept) or restores the recorded (reje
 properties; a paragraph mark that goes away joins the paragraph with the next one in
 its container (the next paragraph's properties win, as in Word). A move is two
 revisions, ``move_from`` and ``move_to``: select both. The last paragraph of a cell or
-of the body cannot lose its mark: it stays, and the response says so in ``warnings``. A
-paragraph that ends a section can: accepting the deletion of its mark (or rejecting the
-insertion of the break) removes the section break, and the text before it joins the section
-after it. A section property change (``section_format``, a ``w:sectPrChange`` in a
+of the body cannot lose its mark: it stays, and the response says so in ``warnings``. Nor
+can a paragraph that ends a section, unless the break is one ``layout.apply`` tracked (its
+history log names the mark revision): then accepting the deletion of its mark (or rejecting
+the insertion of the break) removes the section break, and the text before it joins the
+section after it. A section property change (``section_format``, a ``w:sectPrChange`` in a
 paragraph's ``w:sectPr`` or in the body's own, which is reported at the last paragraph) puts
 the recorded page setup back when rejected; header and footer references are not part of it.
 
@@ -60,12 +61,12 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
 from doc_control.model.stories import BODY_STORY, Story, find_story, list_stories, story_index
 from doc_control.ooxml import resolve as xml
-from doc_control.ooxml.revisions import PPR
+from doc_control.ooxml.revisions import DATE, PPR
 from doc_control.ooxml.splice import Container, scan
 from doc_control.ooxml.zipio import Package
 from doc_control.ops.revision_rows import RowPlan, RowScan, apply_rows, plan_rows, scan_rows
 from doc_control.ops.tracked import next_in_container, story_of
-from doc_control.safety.history import has_live_text, record, to_text
+from doc_control.safety.history import has_live_text, log_path_for, read_log, record, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, StoryFootprint, write_verified
 from doc_control.schema import validate
@@ -481,12 +482,15 @@ def prepare_resolutions(
     *,
     dry_run: bool = False,
     index: DocumentIndex | None = None,
+    own_breaks: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> PreparedResolution:
     """Plan and build ``ops`` on ``pkg`` without writing: the part of
     :func:`apply_resolutions` that works on bytes, self-checked (see the module docstring).
 
     ``ids``, ``author`` and ``all`` select in every story (the body, notes, headers and
-    footers); a range ``at`` in its own story. ``index`` is the body's."""
+    footers); a range ``at`` in its own story. ``index`` is the body's. ``own_breaks``: the
+    (id, author, date) of the section-break marks the section writer tracked, the only
+    section-closer marks that may go away (:func:`own_break_marks`)."""
     if not ops:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no operations given")
     found = _stories(pkg, ops, index)
@@ -518,7 +522,7 @@ def prepare_resolutions(
             "they stay as they are"
         )
     for res in resolved:
-        _build(pkg, res)
+        _build(pkg, res, frozenset() if res.story.key else own_breaks)
         warnings += res.warnings
 
     preview = [
@@ -678,12 +682,16 @@ def _choose(
     return _StoryResolution(story, index, parsed, chosen, picked_counts)
 
 
-def _build(pkg: Package, res: _StoryResolution) -> None:
-    """Resolve the chosen revisions of one story, joining paragraphs that lose their mark."""
+def _build(
+    pkg: Package, res: _StoryResolution, own_breaks: frozenset[tuple[str, str, str]] = frozenset()
+) -> None:
+    """Resolve the chosen revisions of one story, joining paragraphs that lose their mark
+    (a section closer only when ``own_breaks`` names its mark revision)."""
     index, parsed, chosen = res.index, res.parsed, res.chosen
     spans = index.spans
     # Decide, paragraph by paragraph.
     removed_marks: set[int] = set()  # paragraph numbers whose mark a decision removes
+    own_marks: set[int] = set()  # of those, closers whose break the section writer tracked
     touched: dict[int, _Parsed] = {}
     for p in parsed:
         actions = {
@@ -693,8 +701,16 @@ def _build(pkg: Package, res: _StoryResolution) -> None:
         }
         if not actions:
             continue
+        own = any(
+            r.kind in _MARK_KINDS
+            and (r.id, r.author, r.elem.get(DATE) or "") in own_breaks
+            and (p.para.number, k) in chosen
+            for k, r in enumerate(p.revs)
+        )
         if xml.resolve_paragraph(p.elem, actions):
             removed_marks.add(p.para.number)
+            if own:
+                own_marks.add(p.para.number)
         touched[p.para.number] = p
 
     elems: dict[int, ET.Element] = {n: p.elem for n, p in touched.items()}
@@ -726,11 +742,11 @@ def _build(pkg: Package, res: _StoryResolution) -> None:
         nxt = next_in_container(index, para)
         inherited = carry.pop(number, [])
         content = inherited + [c for c in elem if c.tag != PPR]
-        if nxt is None:
+        closer = elem.find(f"{PPR}/{xml.SECT_PR}") is not None and number not in own_marks
+        if nxt is None or closer:
             _with_content(elem, inherited)  # nothing to join with: keep the mark
-            res.warnings.append(
-                f"{para.address} keeps its paragraph mark: it ends a container or a section"
-            )
+            why = "a container" if nxt is None else "a section layout.apply did not break"
+            res.warnings.append(f"{para.address} keeps its paragraph mark: it ends {why}")
             continue
         if nxt.number not in elems:
             elems[nxt.number] = spans.parse_paragraph(nxt.span_index)
@@ -875,7 +891,9 @@ def apply_resolutions(
         check_unlocked(doc_path)
     check_changed(doc_path, expect_sha256)
     pkg = Package(doc_path)
-    prepared = prepare_resolutions(pkg, ops, dry_run=dry_run)
+    prepared = prepare_resolutions(
+        pkg, ops, dry_run=dry_run, own_breaks=own_break_marks(doc_path, env)
+    )
     result = prepared.result
     if dry_run or not prepared.written:
         return result
@@ -920,6 +938,25 @@ def apply_resolutions(
         backup=written.backup,
         warnings=warnings,
         op_id=op_id,
+    )
+
+
+def own_break_marks(
+    doc_path: Path, env: Mapping[str, str] | None = None
+) -> frozenset[tuple[str, str, str]]:
+    """The (id, author, date) of every section-break mark revision the section writer
+    tracked in ``doc_path``, from its history log (``break_marks``). An undone write counts
+    too: its bytes may be put back, and the three values together name the mark."""
+    try:
+        log = read_log(log_path_for(doc_path, env))
+    except (DocControlError, OSError):
+        return frozenset()
+    return frozenset(
+        (str(m.get("id")), str(m.get("author")), str(m.get("date")))
+        for entry in log.entries
+        if isinstance(entry.get("break_marks"), list)
+        for m in entry["break_marks"]
+        if isinstance(m, dict)
     )
 
 
