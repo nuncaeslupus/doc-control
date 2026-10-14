@@ -17,16 +17,17 @@ _CODES = {
     "-": "\N{SOFT HYPHEN}",
     "~": "\N{NON-BREAKING HYPHEN}",
 }
-_CODE = re.compile(r"\^(?:u(\d+)|(.))", re.DOTALL)
+_CODE = re.compile(r"\^(?:u([0-9]+)|(.))", re.DOTALL)
 
 
 def _one(match: re.Match[str]) -> str:
     digits, code = match.groups()
     if digits is not None:
-        try:
-            return chr(int(digits))
-        except (ValueError, OverflowError):
+        point = int(digits)
+        # NUL, surrogates and anything past Unicode cannot appear in a document's text.
+        if point == 0 or 0xD800 <= point <= 0xDFFF or point > 0x10FFFF:
             return match.group(0)
+        return chr(point)
     return _CODES.get(code, match.group(0))
 
 

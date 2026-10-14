@@ -15,6 +15,10 @@ from doc_control.model.wordfind import two_forms, word_find
 from tests.corpus.generator import generate
 
 CASES = [
+    ("^u0", "^u0"),
+    ("^u55296", "^u55296"),
+    ("^u9999999", "^u9999999"),
+    ("^u\u0661\u0662", "^u\u0661\u0662"),
     ("^^", "^"),
     ("^p", "\r"),
     ("^l", "\n"),
