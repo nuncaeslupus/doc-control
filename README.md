@@ -77,6 +77,46 @@ removes both); the row operations write tracked row insertions and deletions. Al
 backed up, verified and undoable like any other write. `scripts/real_word_stories.py`
 checks it in real Word (see [docs/real-word-check.md](docs/real-word-check.md)).
 
+### Page layout: front matter, numbering, headers and fields
+
+`layout.get` returns the document's page plan: per section where it starts (`from`), its
+break, its page numbering and its header and footer text per kind (`default`, `first`,
+`even`; `null` inherits the previous section's). `layout.apply` takes a plan in the same
+shape and brings the document to it. This one gives a novel an unnumbered title page,
+then starts chapter 1 on a right-hand page numbered 1, with the chapter title in the odd
+headers and the book title in the even ones:
+
+```bash
+doc-control layout.get --json '{"doc": "Novela.docx"}'
+doc-control layout.apply --json '{"doc": "Novela.docx", "untracked": true, "plan": {
+  "version": 1, "two_sided": true, "mirror_margins": true,
+  "sections": [
+    {"from": "p1#ea7412aa", "break": "nextPage",
+     "numbering": {"shown": false, "start": 1, "format": "lowerRoman"},
+     "header": {"default": "", "even": ""}, "footer": {"default": "", "even": ""}},
+    {"from": "p2#5fac7aad", "break": "oddPage",
+     "numbering": {"shown": true, "start": 1, "format": "decimal"},
+     "header": {"default": "{chapter}", "even": "La casa del río"},
+     "footer": {"default": "{PAGE}", "even": "{PAGE}"}}]}}'
+```
+
+Each `from` is the address of the paragraph the section starts at (from `outline` or
+`paragraphs.list`). `{PAGE}`, `{NUMPAGES}` and `{chapter}` (the current Heading 1) become
+fields. Keys left out stay as they are. Breaks and numbering go in as tracked changes;
+a new header or footer part and the two-sided and mirror settings cannot be tracked in
+Word, so the plan needs `untracked: true` (without it the answer names what needs it).
+Run it with `"dry_run": true` first to see the changes; nothing is written unless the
+plan read back from the result equals the request. A new section break adds a paragraph
+to carry it, so the addresses after it renumber: read them again with `layout.get`.
+
+Fields: `fields.list` shows every field (TOC, PAGE, SEQ, REF, citations) and whether its
+result is stale; `toc.insert`, `caption.add`, `xref.add`, `index.mark` and
+`index.insert` add them as tracked insertions; `fields.update` refreshes the TOC, page,
+sequence and reference results through headless LibreOffice (`ENGINE_UNAVAILABLE`
+without it; `set_update_on_open` asks Word to refresh them on open instead). An index is
+built by Word (F9); citation fields are never changed. `scripts/real_word_layout.py` checks the
+result in real Word (see [docs/real-word-check.md](docs/real-word-check.md)).
+
 ### Live: the document the writer has open
 
 With LibreOffice Writer installed, the same front doors work on the open window: the
