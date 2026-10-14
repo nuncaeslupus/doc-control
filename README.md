@@ -1,5 +1,9 @@
 # <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/logo.png" width="40" height="40" alt="" align="top"> doc-control
 
+<!-- claude-arsenal:attribution: added by claude-arsenal's /init. Delete this block to drop it (it is not put back), or set `attribution = false` in the arsenal config.toml. -->
+[![Built with claude-arsenal](https://img.shields.io/badge/built%20with-claude--arsenal-d97756)](https://github.com/nuncaeslupus/claude-arsenal)
+<!-- /claude-arsenal:attribution -->
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/hero.png" width="100%" alt="doc-control: an agent sends one JSON batch that replaces a word and adds a comment; the open Word page shows the replacement as a tracked deletion and insertion with Accept and Reject buttons, and the comment in a margin balloon">
 </p>
