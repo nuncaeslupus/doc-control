@@ -6,6 +6,7 @@ The definitions live in :mod:`doc_control.model.layout`.
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -64,16 +65,11 @@ def _placeholder(instr: str) -> str | None:
     code = words[0].upper()
     if code in ("PAGE", "NUMPAGES"):
         return "{" + code + "}"
-    if (
-        code == "STYLEREF"
-        and len(words) > 1
-        and words[1].replace('"', " ").split()[:2]
-        == [
-            "Heading",
-            "1",
-        ]
-    ):
-        return "{chapter}"
+    if code == "STYLEREF" and len(words) > 1:
+        arg = re.match(r'\s*(?:"([^"]*)"|(\S+))', words[1])
+        name = ((arg.group(1) or arg.group(2)) if arg else "").strip().lower()
+        if name in ("heading 1", "1"):
+            return "{chapter}"
     return None
 
 
@@ -99,7 +95,22 @@ class _Text:
     def walk(self, parent: ET.Element) -> None:
         for child in parent:
             name = _local(child)
-            if name in ("del", "delText", "pPr", "rPr", "moveFrom"):
+            if name in (
+                "del",
+                "delText",
+                "pPr",
+                "rPr",
+                "moveFrom",
+                "txbxContent",
+                "sdtPr",
+                "sdtEndPr",
+            ):
+                continue
+            if name == "AlternateContent":
+                branches = [c for c in child if _local(c) in ("Choice", "Fallback")]
+                branches.sort(key=lambda c: _local(c) != "Choice")  # Choice first
+                if branches:
+                    self.walk(branches[0])
                 continue
             if name == "fldSimple":
                 found = _placeholder(child.get(W + "instr", ""))
@@ -122,13 +133,28 @@ class _Text:
                 self.emit(child.text or "")
             elif name == "tab":
                 self.emit("\t")
+            elif name == "cr" or (name == "br" and child.get(W + "type") not in ("page", "column")):
+                self.emit("\n")  # as the body index reads them
             else:
                 self.walk(child)
 
 
+def _paragraphs(parent: ET.Element) -> list[ET.Element]:
+    """The story's paragraphs in order: also those in content controls (Word's page-number
+    footers) and table cells, never text-box content."""
+    out: list[ET.Element] = []
+    for child in parent:
+        name = _local(child)
+        if name == "p":
+            out.append(child)
+        elif name in ("sdt", "sdtContent", "tbl", "tr", "tc"):
+            out += _paragraphs(child)
+    return out
+
+
 def _story_text(root: ET.Element) -> str:
     paragraphs = []
-    for para in root.findall(W + "p"):
+    for para in _paragraphs(root):
         text = _Text()
         text.walk(para)
         while text.fields:  # a field left open by a truncated part
