@@ -68,33 +68,48 @@ def _fresh(adapter: LiveAdapter, path: Path, count: int, address: Address) -> st
     return text
 
 
-def _open_documents(probes: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    """Every document the reachable live apps have open: ``{"app", "path", "name"}``."""
+def _open_documents(
+    probes: list[dict[str, Any]] | None = None, strict: bool = False
+) -> list[dict[str, Any]]:
+    """Every document the reachable live apps have open: ``{"app", "path", "name"}``.
+
+    An app that cannot list them gets its ``reason`` in ``probes``, or, ``strict``, raises
+    ``ENGINE_UNAVAILABLE``: a name looked up while an app is busy is not "not open".
+    """
     found = []
     for adapter, probe in zip(adapters(), probes or apps(), strict=True):
         try:
             paths = adapter.documents() if probe.get("reachable") else []
-        except LiveUnavailable:
-            continue  # the app went away after its probe
+        except LiveUnavailable as err:
+            if strict:
+                raise unavailable(f"{adapter.app}: {err}") from err
+            probe["reason"] = str(err)
+            continue
         found += [{"app": adapter.app, "path": str(p), "name": p.name} for p in paths]
     return found
 
 
 def _named(doc: str, probes: list[dict[str, Any]] | None = None) -> Path:
-    """``doc`` as a path; a bare file name is the one open document of that name, if any."""
+    """``doc`` as a path; a bare file name is the one open document of that name, if any.
+
+    A file of that name in the working directory counts as a candidate too, so a bare
+    name never acts on another document when it could mean that one.
+    """
     path = Path(doc)
     if path.name != doc or os.sep in doc or "/" in doc:
         return path
     want = os.path.normcase(doc)
     matches = {
         os.path.normcase(str(Path(d["path"]).resolve())): d["path"]
-        for d in _open_documents(probes)
+        for d in _open_documents(probes, strict=True)
         if os.path.normcase(d["name"]) == want
     }
+    if matches and path.is_file():
+        matches.setdefault(os.path.normcase(str(path.resolve())), str(path.resolve()))
     if len(matches) > 1:
         raise DocControlError(
             ErrorCode.DOC_AMBIGUOUS,
-            f"{len(matches)} open documents are named {doc}",
+            f"{len(matches)} documents are named {doc}",
             candidates=sorted(matches.values()),
         )
     return Path(next(iter(matches.values()))) if matches else path

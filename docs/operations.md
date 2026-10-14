@@ -31,7 +31,7 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |

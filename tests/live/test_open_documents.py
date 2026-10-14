@@ -11,7 +11,7 @@ import pytest
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import using
-from doc_control.live.protocol import FakeAdapter
+from doc_control.live.protocol import FakeAdapter, LiveUnavailable
 from doc_control.model.address import fingerprint
 from tests.helpers import make_docx
 
@@ -138,3 +138,38 @@ def test_a_path_is_never_matched_by_name(two: tuple[Path, Path], tmp_path: Path)
 
 def _folds() -> bool:
     return os.path.normcase("A") == "a"
+
+
+def test_a_file_of_that_name_in_the_working_directory_is_a_candidate(
+    two: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = two
+    monkeypatch.chdir(second.parent)  # Novel.docx here is not the one open
+    fake = _opened(first)
+    with using(fake):
+        with pytest.raises(DocControlError) as err:
+            _run("live.close", {"doc": "Novel.docx", "discard": True})
+        assert err.value.code is ErrorCode.DOC_AMBIGUOUS
+        assert set(err.value.details["candidates"]) == {
+            str(first.resolve()),
+            str(second.resolve()),
+        }
+        assert fake.docs  # nothing closed
+    monkeypatch.chdir(first.parent)  # the one open is the one here
+    with using(_opened(first)):
+        assert _run("live.status", {"doc": "Novel.docx"})["path"] == str(first.resolve())
+
+
+def test_an_app_that_cannot_list_is_not_read_as_nothing_open(two: tuple[Path, Path]) -> None:
+    class Busy(FakeAdapter):
+        def documents(self) -> list[Path]:
+            raise LiveUnavailable("busy")
+
+    with using(Busy()):
+        status = _run("live.status", {})
+        assert status["documents"] == []
+        assert status["apps"][0]["reason"] == "busy"
+        with pytest.raises(DocControlError) as err:
+            _run("live.save", {"doc": "Novel.docx"})
+        assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
+        assert err.value.details["reason"] == "fake: busy"
