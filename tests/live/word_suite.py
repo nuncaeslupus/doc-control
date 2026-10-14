@@ -220,6 +220,9 @@ def select(word: Word, home: Path) -> list[str]:
                         except DocControlError as err:
                             bad.append(f"{where}: {how} {row['at']}: {err.code.value}")
                             continue
+                        got = {
+                            k: v for k, v in got.items() if k not in ("match_level", "matched_text")
+                        }
                         ok = got == want and seen == {"text": want["text"], "paragraph": want}
                         bad.check(ok, f"{where}: {how} {row['at']}", got["text"][:40])
             bad.check(_run("live.status", base)["dirty"] is False, f"{kind}: select dirtied it")

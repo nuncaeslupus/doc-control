@@ -162,7 +162,7 @@ def test_a_phrase_of_punctuation_survives_at_case() -> None:
 def test_fold_rejects_an_unknown_level() -> None:
     assert LEVELS == ("exact", "case", "default", "loose")
     with pytest.raises(ValueError, match="unknown fold level"):
-        fold("x", "fuzzy")
+        fold("x", "fuzzy")  # type: ignore[arg-type]
 
 
 def test_fold_drops_cf_like_normalised_tier() -> None:

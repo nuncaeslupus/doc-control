@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import bisect
 import functools
+import itertools
+import re
 import unicodedata
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -50,10 +52,13 @@ __all__ = [
     "Folded",
     "Hit",
     "Level",
+    "exact_spans",
     "first_hits",
     "fold",
     "fold_phrase",
+    "fold_text",
     "hits",
+    "joined_hits",
     "ladder",
     "to_original",
 ]
@@ -74,11 +79,22 @@ class Folded:
     source: str
 
 
-# Sized so every paragraph of a large document stays cached at all three folded levels
-# (``exact`` is searched on the raw text): a search folds each text once per level.
-@functools.lru_cache(maxsize=16384)
+# Only texts up to this size go through the caches: a paragraph, a phrase, a window of a
+# few paragraphs. A whole document is folded uncached, or every version of it would stay.
+CACHED_TEXT_MAX = 8192
+
+
 def fold(text: str, level: Level) -> Folded:
-    """``text`` folded at ``level``, with the original start and end of each character."""
+    """``text`` folded at ``level``, with the original start and end of each character.
+
+    Cached per ``(text, level)`` when ``text`` is at most :data:`CACHED_TEXT_MAX` long.
+    """
+    if len(text) <= CACHED_TEXT_MAX:
+        return _fold_cached(text, level)
+    return _fold(text, level)
+
+
+def _fold(text: str, level: Level) -> Folded:
     if level not in LEVELS:
         raise ValueError(f"unknown fold level: {level!r}")
     if level == "exact":
@@ -110,6 +126,183 @@ def fold(text: str, level: Level) -> Folded:
     while hi > lo and chars[hi - 1] == " ":
         hi -= 1
     return Folded("".join(chars[lo:hi]), tuple(starts[lo:hi]), tuple(ends[lo:hi]), text)
+
+
+# Sized so every paragraph of a large document stays cached at all three folded levels.
+_fold_cached = functools.lru_cache(maxsize=16384)(_fold)
+
+# Marks a character that may join the cluster before it (see ``normalized._chunks``).
+_JOINER = "\uffff"
+
+
+def _joins(ch: str) -> bool:
+    """Whether ``ch`` may belong to the cluster before it: a mark, or a Hangul jamo.
+
+    ``_chunks`` joins a character to the one before when it has a combining class or NFC
+    composes the two. Every character with a combining class is a mark (M*), and the only
+    other characters that compose as a second element are Hangul jamo.
+    """
+    cp = ord(ch)
+    return (
+        unicodedata.category(ch)[0] == "M"
+        or unicodedata.combining(ch) != 0
+        or 0x1100 <= cp <= 0x11FF
+        or 0xD7B0 <= cp <= 0xD7FF
+        or ch == _JOINER
+    )
+
+
+class _Table(dict[int, str]):
+    """A ``str.translate`` table folding one character on its own, filled on demand."""
+
+    def __init__(self, level: Level) -> None:
+        super().__init__()
+        self.level: Level = level
+
+    def __missing__(self, cp: int) -> str:
+        ch = chr(cp)
+        if unicodedata.category(ch) == "Cf":
+            out = ""
+        elif _joins(ch):
+            out = _JOINER
+        else:
+            out = _fold_cluster(ch, self.level)
+        self[cp] = out
+        return out
+
+
+_TABLES: dict[Level, _Table] = {level: _Table(level) for level in LEVELS[1:]}
+_SPACE_RUN = re.compile(" {2,}")
+
+
+def fold_text(text: str, level: Level) -> str:
+    """``fold(text, level).text``, without the offset map, and fast.
+
+    Where every cluster of ``text`` is one character (no marks, no Hangul jamo), each
+    character folds on its own, so a translation table and a pass over the spaces give
+    the same string in C. Otherwise it is :func:`fold`'s. Cached like :func:`fold`.
+    """
+    if len(text) <= CACHED_TEXT_MAX:
+        return _fold_text_cached(text, level)
+    return _fold_text(text, level)
+
+
+def _fold_text(text: str, level: Level) -> str:
+    if level == "exact":
+        return text
+    bulk = _bulk_fold(text, level)
+    if bulk is not None:
+        return bulk
+    out = text.translate(_TABLES[level])
+    if _JOINER in out:
+        return _fold(text, level).text
+    out = _SPACE_RUN.sub(" ", out)
+    if PARAGRAPH_MARK in out:
+        out = out.replace(" " + PARAGRAPH_MARK, PARAGRAPH_MARK).replace(
+            PARAGRAPH_MARK + " ", PARAGRAPH_MARK
+        )
+    return out.strip(" ")
+
+
+# Placeholders for what a character folds to when that is not one Latin-1 character: C1
+# controls, which fold to themselves (U+0085 is whitespace, so it is left out).
+_PLACEHOLDERS = tuple(chr(cp) for cp in range(0x80, 0xA0) if cp != 0x85)
+_WIDE = re.compile("[^\x00-\xff]")
+# More distinct characters than this outside Latin-1 and the translation table is faster.
+_BULK_MAX_WIDE = 48
+
+
+class _Bytes:
+    """The Latin-1 part of one level's fold as a ``bytes.translate`` table."""
+
+    def __init__(self, level: Level) -> None:
+        table = _TABLES[level]
+        self.table = bytearray(range(256))
+        self.delete = bytearray()
+        # Latin-1 characters that fold to anything but one Latin-1 character (``ß``).
+        self.special: list[str] = []
+        for cp in range(256):
+            out = table[cp]
+            if out == "":
+                self.delete.append(cp)
+            elif len(out) == 1 and ord(out) < 256 and out != _JOINER:
+                self.table[cp] = ord(out)
+            else:
+                self.special.append(chr(cp))
+        self.bytes_table = bytes(self.table)
+        # What a character may be replaced by before the pass: Latin-1 that folds to itself.
+        self.fixed = frozenset(
+            chr(cp)
+            for cp in range(256)
+            if self.bytes_table[cp] == cp
+            and chr(cp) not in self.special
+            and chr(cp) not in _PLACEHOLDERS
+        )
+
+
+_BYTES: dict[Level, _Bytes] = {}
+
+
+def _bulk_fold(text: str, level: Level) -> str | None:
+    """``fold(text, level).text`` through ``bytes.translate``, or None where it cannot.
+
+    The characters outside Latin-1 are few in most prose: each is replaced first by what
+    it folds to (or by a placeholder restored at the end), so the rest is one pass over
+    bytes. None when a character may join the one before it, or there are too many.
+    """
+    info = _BYTES.get(level)
+    if info is None:
+        info = _BYTES[level] = _Bytes(level)
+    table = _TABLES[level]
+    restore: list[tuple[str, str]] = []
+    free = iter([p for p in _PLACEHOLDERS if p not in text])
+
+    def replace(ch: str) -> bool:
+        nonlocal text
+        out = table[ord(ch)]
+        if out == _JOINER:
+            return False
+        if all(c in info.fixed for c in out):
+            text = text.replace(ch, out)
+            return True
+        holder = next(free, None)
+        if holder is None or " " in out or PARAGRAPH_MARK in out:
+            return False
+        text = text.replace(ch, holder)
+        restore.append((holder, out))
+        return True
+
+    if not all(replace(ch) for ch in info.special if ch in text):
+        return None
+    # The first few characters outside Latin-1 are found by encoding, which stops at
+    # each; past those, one scan of the rest finds them all.
+    seen = 0
+    while True:
+        try:
+            data = text.encode("latin-1")
+            break
+        except UnicodeEncodeError as err:
+            wide = [text[err.start]] if seen < 4 else list(set(_WIDE.findall(text, err.start)))
+            seen += len(wide)
+            if seen > _BULK_MAX_WIDE or not all(replace(ch) for ch in wide):
+                return None
+    data = _SPACES.sub(b" ", data.translate(info.bytes_table, info.delete))
+    out = data.decode("latin-1")
+    for holder, folded in restore:
+        out = out.replace(holder, folded)
+    # No space is kept beside a paragraph mark, nor at either end.
+    if PARAGRAPH_MARK in out:
+        out = out.replace(" " + PARAGRAPH_MARK, PARAGRAPH_MARK).replace(
+            PARAGRAPH_MARK + " ", PARAGRAPH_MARK
+        )
+    return out.strip(" ")
+
+
+# Two spaces or more; spelt so ``re`` scans for the literal pair (``" {2,}"`` is 3x slower).
+_SPACES = re.compile(rb"  [ ]*")
+
+
+_fold_text_cached = functools.lru_cache(maxsize=1 << 16)(_fold_text)
 
 
 def _fold_cluster(cluster: str, level: Level) -> str:
@@ -251,9 +444,7 @@ def first_hits(texts: Sequence[str], phrase: str, requested: Level, *, retry: bo
 
 def _levelled(texts: Sequence[str], phrase: str, count: int) -> Iterator[tuple[Level, list[Hit]]]:
     """The new hits of each of the first ``count`` levels, strictest first."""
-    bare = "".join(ch for ch in phrase if unicodedata.category(ch) != "Cf")
-    widen_left = bool(bare) and unicodedata.category(bare[0])[0] == "P"
-    widen_right = bool(bare) and unicodedata.category(bare[-1])[0] == "P"
+    widen_left, widen_right = _widens(phrase)
     # Per text, the spans kept at stricter levels: sorted by start and disjoint.
     kept: dict[int, list[tuple[int, int]]] = {}
     for current in LEVELS[:count]:
@@ -265,7 +456,7 @@ def _levelled(texts: Sequence[str], phrase: str, count: int) -> Iterator[tuple[L
         found: list[Hit] = []
         for index, text in enumerate(texts):
             if current == "exact":
-                spans = _exact_spans(text, needle)
+                spans = exact_spans(text, needle)
             else:
                 spans = _folded_spans(
                     fold(text, current), needle, widen and widen_left, widen and widen_right
@@ -286,7 +477,7 @@ def _levelled(texts: Sequence[str], phrase: str, count: int) -> Iterator[tuple[L
         yield current, found
 
 
-def _exact_spans(text: str, needle: str) -> Iterator[tuple[int, int]]:
+def exact_spans(text: str, needle: str) -> Iterator[tuple[int, int]]:
     """Verbatim matches of ``needle`` that do not split a base from its marks."""
     pos = text.find(needle)
     while pos >= 0:
@@ -315,3 +506,70 @@ def _folded_spans(
             pos = text.find(needle, end)
         else:
             pos = text.find(needle, pos + 1)
+
+
+def _widens(phrase: str) -> tuple[bool, bool]:
+    """Whether a hit of ``phrase`` takes the punctuation touching its start, and its end."""
+    bare = "".join(ch for ch in phrase if unicodedata.category(ch) != "Cf")
+    widen_left = bool(bare) and unicodedata.category(bare[0])[0] == "P"
+    widen_right = bool(bare) and unicodedata.category(bare[-1])[0] == "P"
+    return widen_left, widen_right
+
+
+def joined_hits(texts: Sequence[str], phrase: str, level: Level, *, limit: int) -> list[Hit]:
+    """The first ``limit`` hits of ``phrase`` at folded ``level`` in the joined texts.
+
+    The texts are joined as ``"\\r".join(texts) + "\\r"`` (a paragraph and its mark), and
+    every hit is ``Hit(0, start, end, level)`` in that string: the same spans as
+    ``hits([joined], phrase, level)`` keeps at ``level``, ignoring the stricter levels.
+    The joined text is folded in one uncached pass where :func:`_bulk_fold` can, else
+    paragraph by paragraph with :func:`fold_text`, cached; either way no document-sized
+    text is cached. Only the paragraphs a folded match touches are folded with their
+    offset map, to find the original span.
+    """
+    if level == "exact":
+        raise ValueError("joined_hits searches a folded level")
+    needle = fold_phrase(phrase, level).text
+    widen = level in ("default", "loose")
+    widen_left, widen_right = _widens(phrase) if widen else (False, False)
+    joined = PARAGRAPH_MARK.join(texts) + PARAGRAPH_MARK
+    # One pass over the whole text, never cached, where no paragraph holds a mark itself.
+    bulk = _bulk_fold(joined, level) if joined.count(PARAGRAPH_MARK) == len(texts) else None
+    folded = (
+        bulk
+        if bulk is not None
+        else PARAGRAPH_MARK.join([fold_text(text, level) for text in texts]) + PARAGRAPH_MARK
+    )
+    size = len(needle)
+    out: list[Hit] = []
+    pos = folded.find(needle)
+    if pos < 0:
+        return out
+    # The folded start of each paragraph, and its original start in the joined text.
+    pieces = folded.split(PARAGRAPH_MARK)[:-1]  # a mark ends each paragraph's fold
+    fstarts = list(itertools.accumulate((len(p) + 1 for p in pieces), initial=0))
+    starts = list(itertools.accumulate((len(t) + 1 for t in texts), initial=0))
+    # A hit ending on a mark widens into the paragraph after it.
+    after = 1 if widen_right and needle.endswith(PARAGRAPH_MARK) else 0
+    while pos >= 0 and len(out) < limit:
+        first = bisect.bisect_right(fstarts, pos) - 1
+        last = bisect.bisect_right(fstarts, pos + size - 1) - 1
+        # A later match that starts in these paragraphs may run on past them.
+        while True:
+            later = folded.rfind(needle, pos + 1, fstarts[last + 1] - 1 + size)
+            if later < 0:
+                break
+            ends_in = bisect.bisect_right(fstarts, later + size - 1) - 1
+            if ends_in <= last:
+                break
+            pos, last = later, ends_in
+        window = PARAGRAPH_MARK.join(texts[first : last + 1 + after]) + PARAGRAPH_MARK
+        base = starts[first]
+        for start, end in _folded_spans(fold(window, level), needle, widen_left, widen_right):
+            if base + start >= starts[last + 1]:
+                break  # in the paragraph after, which is there for its punctuation only
+            if out and base + start < out[-1].end:
+                continue
+            out.append(Hit(0, base + start, base + end, level))
+        pos = folded.find(needle, fstarts[last + 1])
+    return out[:limit]

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 from bisect import bisect_right
-from itertools import accumulate, pairwise
+from itertools import accumulate, islice, pairwise
 from math import inf
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,16 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
 from doc_control.model.address import Address, fingerprint, parse_address, parse_range
+from doc_control.model.loosefold import (
+    LEVELS,
+    Hit,
+    Level,
+    exact_spans,
+    fold_phrase,
+    joined_hits,
+    ladder,
+)
+from doc_control.model.wordcodes import translate_codes
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author
 from doc_control.ops.comments import AddComment
 from doc_control.ops.tracked import InsertParagraph
@@ -223,22 +233,143 @@ def close(request: dict[str, Any]) -> dict[str, Any]:
     return {"closed": True, "saved": save_first}
 
 
-def _found(texts: list[str], phrase: str, across: str | None) -> int:
-    """The paragraph (from 0) a find phrase names: its one match, under ``locate``'s rules."""
-    if across and "\r" not in phrase:
-        raise DocControlError(
-            ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+# Enough hits to tell one from several and to list five candidates.
+_HIT_LIMIT = 8
+
+
+def _found(
+    texts: list[str], phrase: str, across: str | None, requested: Level = "default"
+) -> tuple[int, Level, str]:
+    """The paragraph (from 0) a find phrase names, the level it matched at and its text.
+
+    ``requested`` ``exact`` is ``locate``'s rule of today: one casefold match in the
+    joined text, the phrase taken as given. Otherwise the ladder runs from ``exact`` to
+    ``loose`` over the joined text, and the first level with any hit must have exactly
+    one. A phrase holding a caret is tried raw, verbatim, before its Word codes are
+    translated. The ``case`` level is today's casefold rule first, and the ``case`` fold
+    (format characters dropped, whitespace collapsed) only when that finds nothing.
+    """
+    if requested == "exact":
+        if across and "\r" not in phrase:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+            )
+        spans = _casefold_spans(texts, phrase, 2)
+        if not spans:
+            raise DocControlError(
+                ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}", tried=["exact"]
+            )
+        if len(spans) > 1:
+            raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
+        joined = "\r".join(texts) + "\r"
+        start, end = spans[0]
+        level: Level = "exact" if joined[start:end] == phrase else "case"
+        found = [Hit(0, start, end, level)]
+    else:
+        translated = translate_codes(phrase)
+        if across and "\r" not in translated:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, "find_phrase_across needs a phrase with a paragraph mark"
+            )
+        joined = "\r".join(texts) + "\r"
+        found = _ladder_hits(texts, joined, phrase, translated)
+        if not found:
+            raise DocControlError(
+                ErrorCode.ANCHOR_NOT_FOUND,
+                f"no match for {phrase!r}",
+                tried=list(ladder(requested, retry=True)),
+            )
+    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
+
+    def paragraph(hit: Hit) -> int:
+        # A phrase that opens with the paragraph before (or with its mark) names the next one.
+        return (
+            bisect_right(starts, hit.start)
+            - 1
+            + (across in ("previous", "both") or joined[hit.start] == "\r")
         )
+
+    # A hit naming no paragraph (past the last mark) is no candidate.
+    named = [hit for hit in found if paragraph(hit) < len(texts)]
+    if len(named) > 1:
+        raise DocControlError(
+            ErrorCode.ANCHOR_AMBIGUOUS,
+            f"more than one match for {phrase!r} at match level {named[0].level!r}",
+            match_level=named[0].level,
+            candidates=[
+                {
+                    "at": str(Address(paragraph(hit) + 1, fingerprint(texts[paragraph(hit)]))),
+                    "matched_text": joined[hit.start : hit.end],
+                }
+                for hit in named[:5]
+            ],
+        )
+    hit = named[0] if named else found[0]
+    return paragraph(hit), hit.level, joined[hit.start : hit.end]
+
+
+def _ladder_hits(texts: list[str], joined: str, phrase: str, translated: str) -> list[Hit]:
+    """The hits of the first level of the ladder that has any, over ``joined``."""
+
+    def verbatim(needle: str) -> list[Hit]:
+        spans = exact_spans(joined, needle)
+        return [Hit(0, start, end, "exact") for start, end in islice(spans, _HIT_LIMIT)]
+
+    found = verbatim(phrase) if "^" in phrase else []
+    if not found:
+        fold_phrase(translated, "exact")
+        found = verbatim(translated)
+    if not found:
+        fold_phrase(translated, "case")
+        spans = _casefold_spans(texts, translated, _HIT_LIMIT)
+        found = [Hit(0, start, end, "case") for start, end in spans]
+    for level in LEVELS[1:]:
+        if found:
+            break
+        found = joined_hits(texts, translated, level, limit=_HIT_LIMIT)
+    return found
+
+
+def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int, int]]:
+    """Today's rule: the first ``limit`` casefold matches in the joined text, overlapping.
+
+    Spans are original offsets in ``"\\r".join(texts) + "\\r"``. casefold maps each
+    character on its own, so only the paragraphs a match starts and ends in are mapped
+    back, one character at a time, and only when casefold changed their length.
+    """
+    needle = phrase.casefold()
+    if not needle:
+        return []
+    raw = "\r".join(texts) + "\r"
+    whole = raw.casefold()
+    spans: list[tuple[int, int]] = []
+    if len(whole) == len(raw):  # every character casefolds to one: offsets are the same
+        at = whole.find(needle)
+        while at >= 0 and len(spans) < limit:
+            spans.append((at, at + len(needle)))
+            at = whole.find(needle, at + 1)
+        return spans
     folded = [text.casefold() for text in texts]
-    joined, needle = "\r".join(folded) + "\r", phrase.casefold()
+    joined = "\r".join(folded) + "\r"
+    fstarts = list(accumulate((len(text) + 1 for text in folded), initial=0))
+    starts = list(accumulate((len(text) + 1 for text in texts), initial=0))
+
+    def original(at: int) -> int:
+        n = bisect_right(fstarts, at) - 1
+        offset, text = at - fstarts[n], texts[n]
+        if offset >= len(folded[n]) or len(folded[n]) == len(text):
+            return starts[n] + min(offset, len(text))
+        for i, ch in enumerate(text):
+            offset -= len(ch.casefold())
+            if offset < 0:
+                return starts[n] + i
+        return starts[n] + len(text)  # pragma: no cover - offset is inside the text
+
     at = joined.find(needle)
-    if at < 0:
-        raise DocControlError(ErrorCode.ANCHOR_NOT_FOUND, f"no match for {phrase!r}")
-    if joined.find(needle, at + 1) >= 0:
-        raise DocControlError(ErrorCode.ANCHOR_AMBIGUOUS, f"more than one match for {phrase!r}")
-    starts = list(accumulate((len(text) + 1 for text in folded), initial=0))
-    # A phrase that opens with the paragraph before (or with its mark) names the next one.
-    return bisect_right(starts, at) - 1 + (across in ("previous", "both") or needle[0] == "\r")
+    while at >= 0 and len(spans) < limit:
+        spans.append((original(at), original(at + len(needle) - 1) + 1))
+        at = joined.find(needle, at + 1)
+    return spans
 
 
 @operation(
@@ -257,6 +388,16 @@ def _found(texts: list[str], phrase: str, across: str | None) -> int:
         find_phrase_across={
             "enum": ["previous", "next", "both"],
             "description": "`locate`'s `find_phrase_across`, for a phrase spanning a mark.",
+        },
+        match_level={
+            "enum": ["exact", "default", "loose"],
+            "description": "How loosely `find_phrase` matches. `default` (the default) "
+            "ignores case, accents and punctuation; `loose` symbols too. Either tries "
+            "the levels from verbatim on and takes the first that matches, so one "
+            "verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case "
+            "ignored, nothing else. The reply's `match_level` (`exact`, `case`, "
+            "`default`, `loose`) names the level that matched, with `matched_text` "
+            "when it is not `exact`.",
         },
         mode={
             "enum": ["select", "cursor"],
@@ -282,7 +423,12 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
         n = address.number - 1
         _fresh(adapter, path, len(texts), address)
     else:
-        n = _found(texts, request["find_phrase"], request.get("find_phrase_across"))
+        n, level, matched = _found(
+            texts,
+            request["find_phrase"],
+            request.get("find_phrase_across"),
+            request.get("match_level", "default"),
+        )
     n += request.get("paragraphs_after", 0)
     if n >= len(texts):
         raise DocControlError(
@@ -290,6 +436,10 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
         )
     text = guarded(adapter.select, path, Span(n, n), cursor)
     out: dict[str, Any] = {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
+    if "find_phrase" in request:
+        out["match_level"] = level
+        if level != "exact":
+            out["matched_text"] = matched
     if request.get("front", True):
         out["front"] = _front(adapter, path)
     return out

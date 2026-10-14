@@ -304,6 +304,7 @@ Select a paragraph in the app's window, by address (`at`) or by a `locate` find 
 | `at` | string |  | Paragraph address, e.g. `p142#a7b2a7b2`. |
 | `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `locate` gives it. |
 | `find_phrase_across` | `previous` \| `next` \| `both` |  | `locate`'s `find_phrase_across`, for a phrase spanning a mark. |
+| `match_level` | `exact` \| `default` \| `loose` |  | How loosely `find_phrase` matches. `default` (the default) ignores case, accents and punctuation; `loose` symbols too. Either tries the levels from verbatim on and takes the first that matches, so one verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case ignored, nothing else. The reply's `match_level` (`exact`, `case`, `default`, `loose`) names the level that matched, with `matched_text` when it is not `exact`. |
 | `mode` | `select` \| `cursor` |  | `select` (default) selects the paragraph; `cursor` only puts the cursor at its start, so typing or Delete cannot replace it. |
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 | `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
