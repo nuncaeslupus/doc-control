@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -90,6 +90,10 @@ class Footprint:
     #: Paragraph-level allowances in other parts; every byte of those parts outside them
     #: must stay, as for the body.
     stories: tuple[StoryFootprint, ...] = ()
+    #: Byte spans ``(start, end)`` of the original ``word/document.xml`` that may change as a
+    #: whole (``start == end``: something is inserted there): a table row, which is not a
+    #: paragraph. Every byte outside them and the paragraphs must stay.
+    spans: frozenset[tuple[int, int]] = frozenset()
 
     @property
     def story_parts(self) -> frozenset[str]:
@@ -161,14 +165,24 @@ def _changed(original: Package, result: Package, name: str) -> bool:
 def _document_problems(original: Package, result: Package, footprint: Footprint) -> list[str]:
     region = (BODY, footprint.replaced, footprint.inserted_after, footprint.inserted_before)
     return _part_problems(
-        original.read(DOCUMENT_PART), result.read(DOCUMENT_PART), DOCUMENT_PART, [region]
+        original.read(DOCUMENT_PART),
+        result.read(DOCUMENT_PART),
+        DOCUMENT_PART,
+        [region],
+        sorted(footprint.spans),
     )
 
 
 _Region = tuple[Container, frozenset[int], frozenset[int], frozenset[int]]
 
 
-def _part_problems(old: bytes, new: bytes, part: str, regions: list[_Region]) -> list[str]:
+def _part_problems(
+    old: bytes,
+    new: bytes,
+    part: str,
+    regions: list[_Region],
+    extra: Sequence[tuple[int, int]] = (),
+) -> list[str]:
     """Every byte of ``part`` outside the declared paragraphs of its ``regions`` (one per
     story it holds) must reappear, in order."""
     try:
@@ -177,7 +191,9 @@ def _part_problems(old: bytes, new: bytes, part: str, regions: list[_Region]) ->
         ET.fromstring(new)
     except (DocControlError, ET.ParseError) as exc:
         return [f"{part} does not parse: {exc}"]
-    cuts: list[tuple[int, int]] = []
+    if any(not 0 <= start <= end <= len(old) for start, end in extra):
+        return [f"footprint names a span outside {part}"]
+    cuts: list[tuple[int, int]] = list(extra)
     for container, replaced, inserted_after, inserted_before in regions:
         try:
             spans = scan(old, container, part)

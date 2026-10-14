@@ -27,12 +27,12 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 
 ## `batch` (write)
 
-Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve together, all or nothing, or style.create/update/rename/merge together, or revision.accept and revision.reject to resolve revisions (by ids, author, address range or all); dry_run previews.
+Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve together, all or nothing, or table.row.insert and table.row.delete (tracked table rows) together, or style.create/update/rename/merge together, or revision.accept and revision.reject to resolve revisions (by ids, author, address range or all); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']. |
+| `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']; table.row.insert ['after_row', 'cells', 'table']; table.row.delete ['row', 'table']. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `tracked` | boolean |  | Tracked changes (the only mode, true). |
@@ -506,13 +506,42 @@ Install a JSON style set into the document: new styles are added, existing ones 
 
 ## `table.get` (read)
 
-One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it.
+One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it; an empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` works in any story (a footnote's table is numbered within that footnote's story).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `table` | integer |  | Table number, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. |
-| `at` | string |  | Instead of `table`: any paragraph address in the table. |
+| `table` | integer |  | Table number in the main story, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. Tables of notes, headers and footers are reached with `at`. |
+| `at` | string |  | Instead of `table`: any paragraph address in the table, in any story (`fn3/p1#…`, `hdr1.default/p1#…`); the reply's `table` is then numbered within that story. |
+
+## `table.row.delete` (write)
+
+Delete a row of a body table as a tracked change (w:trPr/w:del, tracked deleted runs). Refused for a row with a vertical merge (w:vMerge) cell.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
+| `row` | integer | yes | The row, 1-based. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+
+## `table.row.insert` (write)
+
+Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text), after row `after_row`, one text per cell. Refused between two rows that a vertical merge spans.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
+| `after_row` | integer | yes | Insert after this row (1-based); 0 inserts before the first row. |
+| `cells` | array | yes | One text per cell of the row it follows (the first row for after_row 0); a horizontally merged cell is one cell. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
 
 ## `term.rename` (write)
 
@@ -704,6 +733,23 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | `quick` | boolean |  | Show in the quick-style gallery. |
 | `run` | object |  | Character formatting: bold, italic, small_caps, strike, underline, font, size_pt, color, highlight, vertical_align; null removes a key. |
 | `paragraph` | object |  | Paragraph formatting (twips): alignment, indent{left,right,first_line,hanging}, spacing{before,after,line,line_rule}, keep_next, keep_lines, page_break_before, outline_level; null removes a key. |
+
+## `table.row.delete`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `op` | `table.row.delete` | yes |  |
+| `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
+| `row` | integer | yes | The row, 1-based. |
+
+## `table.row.insert`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `op` | `table.row.insert` | yes |  |
+| `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
+| `after_row` | integer | yes | Insert after this row (1-based); 0 inserts before the first row. |
+| `cells` | array | yes | One text per cell of the row it follows (the first row for after_row 0); a horizontally merged cell is one cell. |
 
 ## `text.replace`
 
