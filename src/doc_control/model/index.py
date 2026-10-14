@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import Address, AddressRange, fingerprint, parse_address, parse_range
 from doc_control.model.segment import DEFAULT_LANGUAGE, sentence_span
-from doc_control.ooxml.splice import MC_NS, W_NS, DocumentSpans, scan
+from doc_control.ooxml.splice import BODY, MC_NS, W_NS, Container, DocumentSpans, scan
 from doc_control.ooxml.zipio import Package
 
 W = f"{{{W_NS}}}"
@@ -109,10 +109,11 @@ class Paragraph:
     fp: str
     pieces: tuple[Piece, ...] = field(repr=False)
     typed: tuple[int, ...] = field(default=(), repr=False)
+    story: str = ""  # the address prefix of its story; "" for the main story
 
     @property
     def address(self) -> Address:
-        return Address(self.number, self.fp)
+        return Address(self.number, self.fp, self.story)
 
     def pieces_in(self, start: int, end: int) -> list[Piece]:
         """The pieces overlapping visible characters ``[start, end)``."""
@@ -272,11 +273,15 @@ def _understood(uri: str | None) -> bool:
 
 
 class DocumentIndex:
-    """Every main-story paragraph of one ``word/document.xml``, addressable."""
+    """Every paragraph of one story, addressable: the main story of a
+    ``word/document.xml`` unless ``story`` names a note, header or footer."""
 
-    def __init__(self, spans: DocumentSpans, paragraphs: Sequence[Paragraph]) -> None:
+    def __init__(
+        self, spans: DocumentSpans, paragraphs: Sequence[Paragraph], story: str = ""
+    ) -> None:
         self.spans = spans
         self.paragraphs: tuple[Paragraph, ...] = tuple(paragraphs)
+        self.story = story
 
     def __len__(self) -> int:
         return len(self.paragraphs)
@@ -296,12 +301,10 @@ class DocumentIndex:
         """The paragraph at ``address``; ``STALE_ADDRESS`` unless position and fingerprint match."""
         if isinstance(address, str):
             address = parse_address(address)
-        if address.story:
-            # ponytail: notes and headers get their own index (STORIES T3).
+        if address.story != self.story:
             raise DocControlError(
                 ErrorCode.ADDRESS_INVALID,
-                f"{address} is in {address.story}; notes, headers and footers cannot be "
-                "addressed yet",
+                f"{address} is in {address.story or 'the body'}, not in {self.story or 'the body'}",
                 address=str(address),
             )
         para = self.paragraph(address.number)
@@ -352,7 +355,9 @@ class DocumentIndex:
         return build_index(pkg.read(DOCUMENT_PART))
 
 
-def build_index(data: bytes) -> DocumentIndex:
+def build_index(
+    data: bytes, container: Container = BODY, part: str = "word/document.xml", story: str = ""
+) -> DocumentIndex:
     """Index the bytes of a ``word/document.xml``; tokenizer errors propagate.
 
     Field state carries from one paragraph to the next so a field that spans
@@ -361,14 +366,16 @@ def build_index(data: bytes) -> DocumentIndex:
     blank every later paragraph, so the document is indexed again with the field
     state reset at each paragraph.
     """
-    spans = scan(data)
-    paragraphs, open_fields = _paragraphs(spans, carry=True)
+    spans = scan(data, container, part)
+    paragraphs, open_fields = _paragraphs(spans, carry=True, story=story)
     if open_fields:
-        paragraphs, _ = _paragraphs(spans, carry=False)
-    return DocumentIndex(spans, paragraphs)
+        paragraphs, _ = _paragraphs(spans, carry=False, story=story)
+    return DocumentIndex(spans, paragraphs, story)
 
 
-def _paragraphs(spans: DocumentSpans, *, carry: bool) -> tuple[list[Paragraph], bool]:
+def _paragraphs(
+    spans: DocumentSpans, *, carry: bool, story: str = ""
+) -> tuple[list[Paragraph], bool]:
     walker = _Walker()
     paragraphs: list[Paragraph] = []
     for span in spans.paragraphs:
@@ -379,5 +386,7 @@ def _paragraphs(spans: DocumentSpans, *, carry: bool) -> tuple[list[Paragraph], 
         text, pieces = walker.paragraph(spans.parsed(span.index), span.scope)
         number = len(paragraphs) + 1
         typed = walker.typed_offsets(pieces)
-        paragraphs.append(Paragraph(number, span.index, text, fingerprint(text), pieces, typed))
+        paragraphs.append(
+            Paragraph(number, span.index, text, fingerprint(text), pieces, typed, story)
+        )
     return paragraphs, bool(walker.fields)
