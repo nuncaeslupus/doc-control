@@ -21,6 +21,8 @@ import pytest
 
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
+from doc_control.model.loosefold import Level
+from doc_control.model.search import LevelMatcher, SearchOptions
 from doc_control.registry import REGISTRY, load_operations
 from tests.conftest import write_corpus_doc
 from tests.helpers import CONTENT_TYPES, RELS, document_xml
@@ -228,6 +230,28 @@ def snapshot() -> dict[str, Any]:
                 _portable(page, docs[kind], request) for page in pages
             ]
     return out
+
+
+@pytest.mark.parametrize("level", ["default", "loose"])
+def test_candidates_keep_every_paragraph_with_a_hit(level: Level) -> None:
+    """The one-pass prefilter (FIND T9) never drops a paragraph the folded search hits."""
+    texts = [
+        *SPANISH,
+        "",
+        "Straße und STRASSE",
+        "éte et été",
+        "sof­t hyphen, soft-hyphen",
+        "estas",
+        "ESTÁS",
+        "dijo María",
+    ]
+    items = list(enumerate(texts, start=1))
+    for query in ("estas", "Maria", "strasse", "ete", "soft hyphen", "5", "dijo -María", "kilo"):
+        matcher = LevelMatcher(SearchOptions(query, ignore_case=True, ignore_accents=True), level)
+        hit = [(n, t) for n, t in items if t and list(matcher.spans(t))]
+        kept = matcher.candidates(items)
+        assert set(hit) <= set(kept), query
+        assert list(kept) == sorted(kept)
 
 
 def test_find_without_match_level_unchanged() -> None:
