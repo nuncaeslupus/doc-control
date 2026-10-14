@@ -85,6 +85,7 @@ OPERATION_MODULES: dict[str, str] = {
     "live.select": "live",
     "live.selection": "live",
     "live.open": "live",
+    "live.places": "live",
     "live.save": "live",
     "live.status": "live",
     "locate": "locate",

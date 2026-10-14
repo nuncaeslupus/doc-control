@@ -227,6 +227,17 @@ Attach to the app window holding the document, or open it in a live app.
 | `app` | string |  | `word` or `libreoffice`. |
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 
+## `live.places` (read)
+
+Show a list of places in the document as buttons; in a client that renders MCP Apps, a click calls `live.select` on that place directly, with no assistant turn.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+| `places` | array | yes | The buttons, in order: a `label` and `at` or `find_phrase` each (with both, `find_phrase` is tried when `at` fails). |
+| `mode` | `cursor` \| `select` |  | What a click does: `cursor` (default) puts the cursor at the place's start; `select` selects its paragraph. |
+
 ## `live.save` (write)
 
 Save the open document in its app.

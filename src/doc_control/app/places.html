@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- The MCP App behind `live.places`: one button per place; a click calls the `live_select`
+     tool through the host, so moving Word takes no assistant turn. Self-contained (no CDN):
+     hosts sandbox app frames. -->
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px system-ui, sans-serif; margin: 8px; background: transparent; color: CanvasText; }
+  #status { font-size: 12px; opacity: .7; margin-bottom: 4px; }
+  button {
+    display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left;
+    margin: 4px 0; padding: 8px 10px; border-radius: 8px; border: 1px solid #8886;
+    background: #8881; color: inherit; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #8882; }
+  button .mark { opacity: .8; white-space: nowrap; }
+  button.ok { border-color: #2a2; }
+  button.err { border-color: #c33; }
+  button.busy { opacity: .6; }
+</style>
+</head>
+<body>
+<div id="status">Loading places…</div>
+<div id="list"></div>
+<script>
+"use strict";
+let nextId = 0;
+const pending = {};
+const status = text => { document.getElementById("status").textContent = text; };
+const send = message => window.parent.postMessage(message, "*");
+
+function request(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = ++nextId;
+    pending[id] = { resolve, reject };
+    send({ jsonrpc: "2.0", id, method, params });
+  });
+}
+
+function resize() {
+  send({
+    jsonrpc: "2.0", method: "ui/notifications/size-changed",
+    params: { width: document.body.scrollWidth, height: document.body.scrollHeight + 16 },
+  });
+}
+
+// A tool result's envelope: {ok, result} or {ok: false, error: {code, message}}.
+function envelope(result) {
+  try { return JSON.parse(result.content[0].text); }
+  catch (e) { return { ok: false, error: { code: "NO_ENVELOPE", message: String(e) } }; }
+}
+
+async function select(doc, mode, place) {
+  const base = { doc, mode, front: true };
+  const tries = [];
+  if (place.at) tries.push({ ...base, at: place.at });
+  if (place.find_phrase) {
+    const byPhrase = { ...base, find_phrase: place.find_phrase };
+    if (place.find_phrase_across) byPhrase.find_phrase_across = place.find_phrase_across;
+    tries.push(byPhrase);
+  }
+  let last = null;
+  for (const args of tries) {
+    last = envelope(await request("tools/call", { name: "live_select", arguments: args }));
+    if (last.ok) return last;
+  }
+  return last;
+}
+
+function render(data) {
+  const list = document.getElementById("list");
+  list.replaceChildren();
+  const mode = data.mode || "cursor";
+  for (const place of data.places || []) {
+    const button = document.createElement("button");
+    const label = document.createElement("span");
+    const mark = document.createElement("span");
+    label.textContent = place.label;
+    mark.className = "mark";
+    button.title = place.at || place.find_phrase || "";
+    button.append(label, mark);
+    button.onclick = async () => {
+      button.className = "busy";
+      mark.textContent = "…";
+      try {
+        const reply = await select(data.doc, mode, place);
+        button.className = reply.ok ? "ok" : "err";
+        mark.textContent = reply.ok ? "✓" : "✗ " + ((reply.error || {}).code || "error");
+        button.title = reply.ok ? button.title : ((reply.error || {}).message || "");
+      } catch (e) {
+        button.className = "err";
+        mark.textContent = "✗ " + ((e && e.message) || "error");
+      }
+    };
+    list.appendChild(button);
+  }
+  status(mode === "select" ? "Click a place to select it in Word." : "Click a place to put Word's cursor there.");
+  resize();
+}
+
+window.addEventListener("message", event => {
+  const m = event.data;
+  if (event.source !== window.parent || !m || m.jsonrpc !== "2.0") return;
+  if (m.id !== undefined && !m.method && pending[m.id]) {
+    const p = pending[m.id];
+    delete pending[m.id];
+    m.error ? p.reject(m.error) : p.resolve(m.result);
+    return;
+  }
+  if (m.method === "ui/notifications/tool-result") {
+    const sc = (m.params || {}).structuredContent;
+    if (sc && sc.places) render(sc);
+    else status("No places to show.");
+  }
+  if (m.method === "ping" && m.id !== undefined) send({ jsonrpc: "2.0", id: m.id, result: {} });
+});
+
+let initialized = false;
+function markInitialized() {
+  if (initialized) return;
+  initialized = true;
+  send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+}
+const info = { name: "doc-control-places", version: "1" };
+request("ui/initialize", {
+  protocolVersion: "2026-01-26", appInfo: info, clientInfo: info, appCapabilities: {}, capabilities: {},
+}).then(markInitialized, markInitialized);
+setTimeout(markInitialized, 1500);
+resize();
+</script>
+</body>
+</html>

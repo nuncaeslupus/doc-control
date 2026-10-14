@@ -35,6 +35,7 @@ def _calls(doc: Path) -> list[tuple[str, dict[str, Any]]]:
         ("live.save", path),
         ("live.close", path),
         ("live.save", path),  # ENGINE_UNAVAILABLE: no longer open
+        ("live.places", {**path, "places": [{"label": "One", "at": first}]}),
     ]
 
 
@@ -78,7 +79,10 @@ def test_cli_and_mcp_route_live(tmp_path: Path, capsys: pytest.CaptureFixture[st
             replies[door] = [run(op, request) for op, request in calls]
 
     assert {name for name, _ in calls} >= {n for n in load_operations() if n.startswith("live.")}
-    assert [r["ok"] for r in replies["api"]] == [True] * 6 + [False] * 2 + [True] * 2 + [False]
+    assert [r["ok"] for r in replies["api"]] == [True] * 6 + [False] * 2 + [True] * 2 + [
+        False,
+        True,
+    ]
     assert replies["cli"] == replies["mcp"]
     mismatches = sum(
         (front["ok"], front.get("result"), front.get("error"))

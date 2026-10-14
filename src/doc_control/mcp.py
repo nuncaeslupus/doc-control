@@ -4,12 +4,20 @@ A thin wrapper over the operation registry (decision D-8): one tool per operatio
 operation's JSON Schema as the tool's input schema, and the usual response envelope as
 the tool result. The transport is newline-delimited JSON-RPC 2.0 on stdin/stdout, which
 is all a tools-only MCP server needs, so this stays standard library only.
+
+One tool also has a UI (the MCP Apps extension, ``io.modelcontextprotocol/ui``):
+``live_places`` names the page ``app/places.html`` as a ``ui://`` resource, and a client
+that renders MCP Apps shows it with the tool's result; its buttons call ``live_select``
+through the client. Other clients just get the envelope as text.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+from functools import cache
+from pathlib import Path
 from typing import IO, Any
 
 from doc_control import __version__
@@ -17,7 +25,33 @@ from doc_control.cli import execute
 from doc_control.registry import Operation, load_operations
 
 # Protocol revisions this server speaks; the newest is offered to a client that asks for another.
-PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+
+UI_EXTENSION = "io.modelcontextprotocol/ui"
+UI_MIME = "text/html;profile=mcp-app"
+# Tool name -> the page that renders its result.
+APPS = {"live_places": Path(__file__).with_name("app") / "places.html"}
+
+
+@cache
+def _app(tool: str) -> tuple[str, str]:
+    """``(uri, html)`` for a tool's page; the URI carries a hash so a client never shows a
+    page cached from another version."""
+    html = APPS[tool].read_text(encoding="utf-8")
+    digest = hashlib.sha256(html.encode()).hexdigest()[:8]
+    return f"ui://doc-control/{APPS[tool].stem}-{digest}.html", html
+
+
+def _resources() -> list[dict[str, Any]]:
+    return [
+        {
+            "uri": _app(tool)[0],
+            "name": APPS[tool].stem,
+            "mimeType": UI_MIME,
+            "_meta": {"ui": {"prefersBorder": True}},
+        }
+        for tool in sorted(APPS)
+    ]
 
 
 def tool_name(op: str) -> str:
@@ -26,15 +60,20 @@ def tool_name(op: str) -> str:
 
 
 def _tools(registry: dict[str, Operation]) -> list[dict[str, Any]]:
-    return [
-        {
+    tools = []
+    for op in sorted(registry.values(), key=lambda o: o.name):
+        tool: dict[str, Any] = {
             "name": tool_name(op.name),
             "description": op.summary,
             "inputSchema": op.schema,
             "annotations": {"readOnlyHint": op.kind == "read"},
         }
-        for op in sorted(registry.values(), key=lambda o: o.name)
-    ]
+        if tool["name"] in APPS:
+            tool["_meta"] = {
+                "ui": {"resourceUri": _app(tool["name"])[0], "visibility": ["model", "app"]}
+            }
+        tools.append(tool)
+    return tools
 
 
 def handle(registry: dict[str, Operation], message: Any) -> dict[str, Any] | None:
@@ -50,13 +89,36 @@ def handle(registry: dict[str, Operation], message: Any) -> dict[str, Any] | Non
         asked = params.get("protocolVersion")
         result: dict[str, Any] = {
             "protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {},
+                "resources": {},
+                "extensions": {UI_EXTENSION: {"mimeTypes": [UI_MIME]}},
+            },
             "serverInfo": {"name": "doc-control", "version": __version__},
         }
     elif method == "ping":
         result = {}
     elif method == "tools/list":
         result = {"tools": _tools(registry)}
+    elif method == "resources/list":
+        result = {"resources": _resources()}
+    elif method == "resources/templates/list":
+        result = {"resourceTemplates": []}
+    elif method == "resources/read":
+        pages = {_app(tool)[0]: _app(tool)[1] for tool in APPS}
+        uri = params.get("uri")
+        if uri not in pages:
+            return _error(msg_id, -32002, f"resource not found: {uri}")
+        result = {
+            "contents": [
+                {
+                    "uri": uri,
+                    "mimeType": UI_MIME,
+                    "text": pages[uri],
+                    "_meta": {"ui": {"prefersBorder": True}},
+                }
+            ]
+        }
     elif method == "tools/call":
         ops = {tool_name(name): name for name in registry}
         name, arguments = params.get("name"), params.get("arguments", {})
@@ -67,6 +129,9 @@ def handle(registry: dict[str, Operation], message: Any) -> dict[str, Any] | Non
             "content": [{"type": "text", "text": json.dumps(envelope, ensure_ascii=False)}],
             "isError": not envelope["ok"],
         }
+        if name in APPS and envelope["ok"]:
+            result["structuredContent"] = envelope["result"]
+            result["_meta"] = {"ui": {"resourceUri": _app(name)[0]}}
     else:
         return _error(msg_id, -32601, f"method not found: {method}")
     return {"jsonrpc": "2.0", "id": msg_id, "result": result}

@@ -22,10 +22,15 @@ def doc(tmp_path: Path) -> Path:
 
 
 def _live_calls(doc: Path) -> list[tuple[str, dict[str, object]]]:
-    """Every live operation, plus ``batch`` and a file-only operation asked to run live."""
+    """Every live operation, plus ``batch`` and a file-only operation asked to run live.
+
+    ``live.places`` is left out: it only hands places to the MCP App and never asks the app.
+    """
     ops = load_operations()
     calls: list[tuple[str, dict[str, object]]] = [
-        (name, {"doc": str(doc)}) for name in ops if name.startswith("live.")
+        (name, {"doc": str(doc)})
+        for name in ops
+        if name.startswith("live.") and name != "live.places"
     ]
     assert len(calls) >= 4
     calls.append(("batch", {"doc": str(doc), "engine": "live", "ops": []}))
