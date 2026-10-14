@@ -623,10 +623,10 @@ def links(word: Word, home: Path) -> list[str]:
             _same_edits(bad, word, doc, ops, f"link {op} {a}-{b}")
     # A link that starts or ends its paragraph: an insertion there has no text beside it.
     edge = _LINK.format("Linked") + "and" + _LINK.format("linked")
-    for n, at in enumerate([0, 6, 9, 15]):
+    for n, point in enumerate([0, 6, 9, 15]):
         doc = make_docx(home / f"edge{n}.docx", "Lead.", edge, "Tail.")
-        ops = [{"op": "text.replace", "at": f"{_read(doc)[1]['at']}:{at}-{at}", "text": "X"}]
-        _same_edits(bad, word, doc, ops, f"link edge insert at {at}")
+        ops = [{"op": "text.replace", "at": f"{_read(doc)[1]['at']}:{point}-{point}", "text": "X"}]
+        _same_edits(bad, word, doc, ops, f"link edge insert at {point}")
     return bad
 
 
