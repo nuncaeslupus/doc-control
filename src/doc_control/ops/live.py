@@ -42,6 +42,11 @@ _DOC = {
     "description": "Path to the document, or the file name of one open in a live app.",
 }
 _ENGINE = {"enum": ["live"], "description": "Always the live engine; may be left out."}
+_FRONT = {
+    "type": "boolean",
+    "description": "Bring the app's window to the front (default true); the reply's "
+    "`front` says whether it came.",
+}
 
 
 def _schema(required: bool = True, **extra: dict[str, Any]) -> dict[str, Any]:
@@ -158,7 +163,10 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
     "live.open",
     "write",
     "Attach to the app window holding the document, or open it in a live app.",
-    _schema(app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."}),
+    _schema(
+        app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."},
+        front=_FRONT,
+    ),
 )
 def open_(request: dict[str, Any]) -> dict[str, Any]:
     path = _named(request["doc"])
@@ -166,7 +174,10 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
         raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
     adapter = adapter_for(path, request.get("app"))
     guarded(adapter.open, path)
-    return {"app": adapter.app, "path": str(path.resolve()), "dirty": guarded(adapter.dirty, path)}
+    out = {"app": adapter.app, "path": str(path.resolve()), "dirty": guarded(adapter.dirty, path)}
+    if request.get("front", True):
+        out["front"] = guarded(adapter.show, path)
+    return out
 
 
 @operation("live.save", "write", "Save the open document in its app.", _schema())
@@ -237,6 +248,12 @@ def _found(texts: list[str], phrase: str, across: str | None) -> int:
             "enum": ["previous", "next", "both"],
             "description": "`locate`'s `find_phrase_across`, for a phrase spanning a mark.",
         },
+        mode={
+            "enum": ["select", "cursor"],
+            "description": "`select` (default) selects the paragraph; `cursor` only puts "
+            "the cursor at its start, so typing or Delete cannot replace it.",
+        },
+        front=_FRONT,
         paragraphs_after={
             "type": "integer",
             "minimum": 0,
@@ -246,6 +263,7 @@ def _found(texts: list[str], phrase: str, across: str | None) -> int:
 )
 def select(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
+    cursor = request.get("mode") == "cursor"
     if ("at" in request) == ("find_phrase" in request):
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "pass at or find_phrase, one of them")
     texts = guarded(adapter.paragraphs, path)
@@ -260,8 +278,11 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
         raise DocControlError(
             ErrorCode.ANCHOR_NOT_FOUND, f"the open document has no paragraph {n + 1}"
         )
-    text = guarded(adapter.select, path, Span(n, n))
-    return {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
+    text = guarded(adapter.select, path, Span(n, n), cursor)
+    out: dict[str, Any] = {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
+    if request.get("front", True):
+        out["front"] = guarded(adapter.show, path)
+    return out
 
 
 @operation(

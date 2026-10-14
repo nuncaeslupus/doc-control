@@ -42,6 +42,7 @@ def test_close_dirty_without_flag_refused(live: LibreOffice, lo_home: Path) -> N
         "app": "libreoffice",
         "path": str(doc.resolve()),
         "dirty": False,
+        "front": False,  # the test LibreOffice is headless
     }
     assert _run("live.open", request)["app"] == "libreoffice"  # attaches, no second window
     _type(live, doc, " More.")

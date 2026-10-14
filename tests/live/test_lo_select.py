@@ -69,7 +69,7 @@ def test_select_matches_file_engine_text(live: LibreOffice, lo_home: Path, kind:
                     asks["context"]["find_phrase_across"] = context["across"]
             for how, ask in asks.items():
                 try:
-                    got = _run("live.select", {**base, **ask})
+                    got = _run("live.select", {**base, **ask, "front": False})
                     seen = _run("live.selection", base)
                 except DocControlError as err:
                     mismatches.append((f"{how} {row['at']}", err.code.value))

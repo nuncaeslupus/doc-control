@@ -123,7 +123,8 @@ def session(word: Word, home: Path) -> list[str]:
     bad.check(_run("live.status", request)["open_in"] is None, "status before open")
     opened = _run("live.open", request)
     try:
-        want = {"app": "word", "path": str(doc.resolve()), "dirty": False}
+        # a hidden Word has no window to bring to the front
+        want = {"app": "word", "path": str(doc.resolve()), "dirty": False, "front": False}
         bad.check(opened == want, "open", opened)
         _run("live.open", request)  # attaches, no second window
         bad.check(int(word._application().Documents.Count) == 1, "open twice")
@@ -214,7 +215,7 @@ def select(word: Word, home: Path) -> list[str]:
                             asks["context"]["find_phrase_across"] = context["across"]
                     for how, ask in asks.items():
                         try:
-                            got = _run("live.select", {**base, **ask})
+                            got = _run("live.select", {**base, **ask, "front": False})
                             seen = _run("live.selection", base)
                         except DocControlError as err:
                             bad.append(f"{where}: {how} {row['at']}: {err.code.value}")
@@ -315,7 +316,7 @@ def deletions(word: Word, home: Path) -> list[str]:
                 ({"find_phrase": "unicorn"}, 3, "Third unicorn here."),
                 ({"at": found[1]["at"]}, 1, "Keep one"),
             ]:
-                got = _run("live.select", {**base, **ask})
+                got = _run("live.select", {**base, **ask, "front": False})
                 bad.check(got == {"text": text, "at": found[n]["at"]}, f"{where}: {ask}", got)
                 chosen = _run("live.selection", base)
                 bad.check(chosen["paragraph"] == got, f"{where}: selection of {ask}", chosen)
@@ -573,6 +574,24 @@ def named(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def cursor(word: Word, home: Path) -> list[str]:
+    """``mode: cursor`` leaves the passage unselected, the cursor at its start (#196)."""
+    bad = Failures()
+    doc = make_docx(home / "cursor.docx", "One.", "Two words.", "Three.")
+    with _opened(doc) as base:
+        at = f"p2#{fingerprint('Two words.')}"
+        got = _run("live.select", {**base, "at": at, "mode": "cursor"})
+        bad.check(got["text"] == "Two words.", "cursor text", got)
+        bad.check(got["front"] is False, "hidden Word not brought to the front", got)
+        chosen = word._doc(doc).ActiveWindow.Selection
+        bad.check(int(chosen.Start) == int(chosen.End), "collapsed", chosen.Text)
+        bad.check(_run("live.selection", base)["paragraph"]["at"] == at, "cursor paragraph")
+        got = _run("live.select", {**base, "at": at, "front": False})
+        bad.check("front" not in got, "front: false skips it", got)
+        bad.check(_run("live.selection", base)["text"] == "Two words.", "select mode")
+    return bad
+
+
 def _same_edits(
     bad: Failures, word: Word, doc: Path, ops: list[dict[str, Any]], where: str
 ) -> None:
@@ -668,6 +687,7 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     buried,
     linked,
     named,
+    cursor,
     cells,
     links,
 ]

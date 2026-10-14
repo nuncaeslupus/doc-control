@@ -490,11 +490,23 @@ class LibreOffice:
             self._range(self._doc(path), span)  # refuses a span across containers
 
     @_guard
-    def select(self, path: Path, span: Span) -> str:
+    def select(self, path: Path, span: Span, cursor: bool = False) -> str:
         doc = self._doc(path)
-        cursor, text = self._range(doc, span)
-        doc.CurrentController.select(cursor)
+        chosen, text = self._range(doc, span)
+        doc.CurrentController.select(chosen)  # scrolls it into view
+        if cursor:
+            chosen.collapseToStart()
+            doc.CurrentController.select(chosen)
         return text
+
+    @_guard
+    def show(self, path: Path) -> bool:
+        window = self._doc(path).CurrentController.Frame.ContainerWindow
+        if not window.isVisible():
+            return False
+        window.toFront()
+        window.setFocus()
+        return True
 
     @_guard
     def selection(self, path: Path) -> tuple[str, int]:

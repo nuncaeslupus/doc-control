@@ -180,6 +180,7 @@ Attach to the app window holding the document, or open it in a live app.
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 | `app` | string |  | `word` or `libreoffice`. |
+| `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 
 ## `live.save` (write)
 
@@ -201,6 +202,8 @@ Select a paragraph in the app's window, by address (`at`) or by a `locate` find 
 | `at` | string |  | Paragraph address, e.g. `p142#a7b2a7b2`. |
 | `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `locate` gives it. |
 | `find_phrase_across` | `previous` \| `next` \| `both` |  | `locate`'s `find_phrase_across`, for a phrase spanning a mark. |
+| `mode` | `select` \| `cursor` |  | `select` (default) selects the paragraph; `cursor` only puts the cursor at its start, so typing or Delete cannot replace it. |
+| `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 | `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
 
 ## `live.selection` (read)
