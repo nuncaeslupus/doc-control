@@ -93,6 +93,7 @@ OPERATION_MODULES: dict[str, str] = {
     "recipe.run": "recipe",
     "restore": "history",
     "revisions.list": "read",
+    "sections.list": "sections",
     "segment": "segment",
     "stats": "read",
     "style.create": "stylewrite",
