@@ -3,10 +3,11 @@
 **Date**: 2026-10-14
 **Ticket / PR**: — (workspace `LAYOUT`)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: draft
+**Revision**: 2
+**Status**: approved (2026-10-14, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft, from sub-project S-9 of `status/ideas.md` and the owner's notes on the STORIES spec
+- r2 — the owner approved Option B and answered Q1–Q5 in chat (no notes export): Q1–Q4 as recommended, Q5 front matter stays in consumers (D-L1..D-L5)
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -135,15 +136,99 @@ Example plan:
 1. Finish STORIES T3 and T8 (story index, `sections.list`); this spec builds on them.
 2. After approval, `design` writes the plan, starting with the page-label checker: a LibreOffice PDF export plus page text, so every later task has its gate.
 
-**Open questions**:
-- [ ] Q1. Tracking: Word cannot reject every section-property change cleanly. Should a layout change that Word cannot track (for example, creating a new header part) go in untracked but logged, with undo, or be refused unless `untracked: true` is passed? Recommendation: refuse unless `untracked: true`, and always log it for undo.
-- [ ] Q2. Field refresh: when LibreOffice is not installed, set `updateFields` so Word refreshes the TOC on open (Word then shows a prompt), or leave the results stale and report it? Recommendation: report stale fields, and set `updateFields` only on request.
-- [ ] Q3. Citations: only keep them intact and list them (proposed), or also insert citation fields from a reference list (Word's own sources part)?
-- [ ] Q4. Should the plan's header text support placeholders such as `{chapter}` (the current Heading 1, through `STYLEREF`), `{PAGE}` and `{NUMPAGES}`? Recommendation: yes, those three only.
-- [ ] Q5. Front matter (title page, epigraph, dedication): stay in consumers such as literary-critic, with doc-control providing only sections and numbering (proposed, per D-19)? Or ship a small `frontmatter` recipe in doc-control?
+**Open questions**: none. The owner answered Q1–Q5 in r2; see D-L1..D-L5.
 
 **Decisions log** (from `status/ideas.md`):
 
 | ID | Decision | Status | Date |
 |----|----------|--------|------|
 | D-2 | STORIES reads section page setup; changing it is this sub-project (S-9) | agreed | 2026-10-14 |
+| D-L1 | Option B: a declarative page plan (`layout.get`/`layout.apply`) plus field primitives | agreed | 2026-10-14 |
+| D-L2 | A layout change Word cannot track is refused unless `untracked: true`, and is always logged for undo | agreed | 2026-10-14 |
+| D-L3 | Without LibreOffice, stale fields are reported; `updateFields` is set only on request | agreed | 2026-10-14 |
+| D-L4 | Citations are listed and kept intact on edit, not generated | agreed | 2026-10-14 |
+| D-L5 | Header text placeholders: `{chapter}` (STYLEREF), `{PAGE}`, `{NUMPAGES}` only. Front matter (title page, epigraph, dedication) is built by consumers such as literary-critic; doc-control provides the sections, numbering and headers it needs | agreed | 2026-10-14 |
+
+## 5. Contracts
+
+All changes are additive registry operations, so CLI, MCP and Python get them the same way. The plan JSON carries `"version": 1`; a later version adds fields, never renames them.
+
+### Page plan (`layout.get` result, `layout.apply` request)
+
+```json
+{"version": 1, "two_sided": false, "mirror_margins": false,
+ "sections": [
+  {"from": "p1#…", "break": "nextPage", "numbering": {"shown": false, "start": null, "format": "lowerRoman"},
+   "header": {"default": "Title", "first": "", "even": null},
+   "footer": {"default": "{PAGE}", "first": null, "even": null},
+   "first_page_different": true},
+  {"from": "p9#…", "break": "oddPage", "numbering": {"shown": true, "start": 1, "format": "decimal"},
+   "header": {"default": "{chapter}", "even": "Author Name"}, "footer": {"default": "{PAGE}"}}
+ ]}
+```
+
+**Fields**:
+- `from`: the body address where the section starts (the first section always starts at `p1`).
+- `break`: one of `nextPage`, `oddPage`, `evenPage`, `continuous`.
+- `header` and `footer` values:
+  - a string sets that kind's text;
+  - `""` sets an empty header;
+  - `null` inherits from the previous section;
+  - placeholders are `{PAGE}`, `{NUMPAGES}` and `{chapter}` (a `STYLEREF "Heading 1"` field), D-L5.
+- `numbering.shown: false` keeps the count but shows no number: the plan's header/footer text has no `{PAGE}` for that section.
+
+**Requests and results**:
+- `layout.get` returns the plan the document has now; its `sections[].header` values read the header stories (STORIES T3).
+- `layout.apply` takes `{"doc", "plan", "dry_run"?, "untracked"?}`. It returns the changes it made, or would make, as `[{"kind": "section.break" | "section.props" | "header.text" | "settings", "at": …, "tracked": true}]` and the new plan.
+
+### Field operations
+
+| Op | Kind | Request | Notes |
+|----|------|---------|-------|
+| `fields.list` | read | `{"doc", "stories"?}` | `[{"at", "code": "TOC \\o \"1-3\" \\h", "type": "TOC", "result": "…", "stale": bool}]`; citations show `type: "CITATION"` or `ADDIN ZOTERO_ITEM` and are never changed by other ops (D-L4) |
+| `toc.insert` | write (batchable) | `{"after": "p3#…", "levels": "1-3", "title": "Contents"}` | Inserted as a tracked insertion; result text is filled by `fields.update` |
+| `caption.add` | write (batchable) | `{"at": "p20#…", "label": "Table" \| "Figure" \| "Equation", "text": "…", "position": "above" \| "below"}` | `SEQ` field plus a bookmark |
+| `xref.add` | write (batchable) | `{"at": "p30#…:12", "to": "<caption or heading address>", "show": "number" \| "page" \| "text"}` | `REF`/`PAGEREF` field |
+| `index.mark` / `index.insert` | write (batchable) | `{"at": range, "entry": "Term:Sub"}` / `{"after": address}` | `XE` / `INDEX` fields |
+| `fields.update` | write | `{"doc"}` | Recomputes field results through headless LibreOffice and writes only those result runs, as tracked changes. Without LibreOffice: `ENGINE_UNAVAILABLE` naming the stale fields (D-L3). `{"set_update_on_open": true}` sets `w:updateFields` instead. |
+
+### Errors (existing codes)
+
+- `SCHEMA_INVALID`: a bad plan.
+- `STALE_ADDRESS`: a `from` address that no longer matches.
+- `UNSUPPORTED_CONTENT`: a section break inside a table, or a change Word cannot track without `untracked: true` (D-L2).
+- `ENGINE_UNAVAILABLE`: `fields.update` without LibreOffice.
+
+### Safety contracts
+
+- A layout footprint family allows changes only to:
+  - the `w:sectPr` of the sections touched (and the paragraphs that gain or lose a section break);
+  - `settings.xml` (`evenAndOddHeaders`, `mirrorMargins`, `updateFields`);
+  - the header/footer parts named;
+  - when a part is created, `[Content_Types].xml` and `document.xml.rels`.
+- Section property changes carry `w:sectPrChange` with the old properties.
+- History logs every part, so undo restores all of them together (STORIES T5).
+
+### Inter-component contracts
+
+| Caller | Callee | Protocol | Contract | Failure handling |
+|--------|--------|----------|----------|-----------------|
+| literary-critic | `layout.get`/`layout.apply` | JSON | Builds front matter by composing a plan (D-L5) | `dry_run` first; errors as above |
+| `fields.update`, page-label checker | LibreOffice headless | subprocess (`soffice --convert-to`) | Same discovery as the validator (`soffice_path`) | Absent: `ENGINE_UNAVAILABLE` / test skip, failure under `DOC_CONTROL_REQUIRE_SOFFICE` |
+
+### Database migrations
+
+| Service | Database | Change | Reversible | Forward-compatible |
+|---------|----------|--------|------------|-------------------|
+| — | none | — | yes | yes |
+
+## 6. Risks & Validation
+
+| Risk | Likelihood | Impact | Mitigation | Validation |
+|------|-----------|--------|------------|------------|
+| Word's header inheritance (an unset `first`/`even` kind, `titlePg`, `evenAndOddHeaders` being document-wide) makes the applied plan differ from what Word shows | High | High | One tested resolver (STORIES `used_by_sections`); `layout.get` after `apply` must equal the plan; real-Word check | integration + manual |
+| Page numbers in the PDF depend on LibreOffice's layout, not Word's | Med | Med | The gate checks labels (numbering), not where a page breaks; scenarios use page breaks, not text flow | integration |
+| `w:sectPrChange` is rejected or ignored by some Word versions | Med | Med | Follow ECMA-376 order; owner's Word check; D-L2 refusal for what cannot be tracked | manual (Word) |
+| `fields.update` rewrites more than field results | Med | High | Read results from the LibreOffice-converted copy and splice only result runs into the original; footprint check | unit + integration |
+| Citation fields broken by other edits (Zotero JSON in `instrText`) | Low | High | Treated as opaque; `field_loss == 0` over a fields corpus after every write op | integration |
+| The CI runner has no `pdftotext` | Low | Low | Install `poppler-utils` in the `libreoffice` job | CI |

@@ -443,6 +443,21 @@ def _resolve(qname: bytes, scope: Scope, pos: int) -> tuple[str, str]:
     return uri, local
 
 
+@dataclass(frozen=True)
+class Container:
+    """Where a story's paragraphs live in its part: the root element's local name, and
+    the element under it that holds them (``None``: the root itself), picked by its
+    ``w:id`` when ``ident`` is set (one footnote among many)."""
+
+    root: str
+    element: str | None = None
+    ident: str | None = None
+
+
+#: The main story: the paragraphs of ``w:document/w:body``.
+BODY = Container("document", "body")
+
+
 @dataclass
 class _Open:
     qname: bytes
@@ -451,10 +466,25 @@ class _Open:
     body: bool
 
 
-def scan(data: bytes) -> DocumentSpans:
-    """Tokenize ``data`` and return the span of every body paragraph."""
+def _w_id(attrs: list[tuple[bytes, bytes]], scope: Scope, pos: int) -> str | None:
+    """The value of the ``w:id`` attribute among a start tag's raw ``attrs``."""
+    for aname, aval in attrs:
+        prefix, sep, local = aname.decode("utf-8").partition(":")
+        if sep and local == "id" and scope.get(prefix) == W_NS:
+            return _unescape(aval.decode("utf-8"), pos)
+    return None
+
+
+def scan(
+    data: bytes, container: Container = BODY, part: str = "word/document.xml"
+) -> DocumentSpans:
+    """Tokenize ``data`` and return the span of every paragraph in ``container`` (by
+    default the body of a ``word/document.xml``; a note or a header part otherwise).
+
+    ``body_content`` and ``body_scope`` then describe the container's start tag.
+    """
     if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        raise DocControlError(ErrorCode.UNSUPPORTED_CONTENT, "word/document.xml is not UTF-8")
+        raise DocControlError(ErrorCode.UNSUPPORTED_CONTENT, f"{part} is not UTF-8")
     try:
         data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -500,7 +530,7 @@ def scan(data: bytes) -> DocumentSpans:
             continue
         if data.startswith(b"<!", lt):
             raise DocControlError(
-                ErrorCode.UNSUPPORTED_CONTENT, "word/document.xml has a DOCTYPE or declaration"
+                ErrorCode.UNSUPPORTED_CONTENT, f"{part} has a DOCTYPE or declaration"
             )
         if data.startswith(b"</", lt):
             m = _END_TAG.match(data, lt)
@@ -562,8 +592,21 @@ def scan(data: bytes) -> DocumentSpans:
         is_body = False
         if root is None:
             root = (lt, end, scope, uri, local)
+            if container.element is None and uri == W_NS and local == container.root:
+                is_body = True
+                body_content = end
+                body_scope = scope
         elif uri == W_NS:
-            if local == "body" and body_depth == 0 and len(stack) == 1:
+            if (
+                local == container.element
+                and body_depth == 0
+                and len(stack) == 1
+                and (
+                    container.ident is None
+                    # one note per id: a repeated w:id is not read as the same story
+                    or (body_content is None and _w_id(attrs, scope, lt) == container.ident)
+                )
+            ):
                 is_body = True
                 body_content = end
                 body_scope = scope
@@ -593,9 +636,9 @@ def scan(data: bytes) -> DocumentSpans:
     if stack:
         raise _malformed(f"unclosed element {stack[-1].qname!r}", n)
     root_start, root_end, root_scope, root_uri, root_local = root
-    if (root_uri, root_local) != (W_NS, "document"):
+    if (root_uri, root_local) != (W_NS, container.root):
         raise DocControlError(
-            ErrorCode.NOT_A_DOCX, "word/document.xml root is not a WordprocessingML w:document"
+            ErrorCode.NOT_A_DOCX, f"{part} root is not a WordprocessingML w:{container.root}"
         )
     paragraphs = tuple(
         ParagraphSpan(i, starts[i], ends[i], depths[i], parents[i], outer_scopes[i], own[i])
