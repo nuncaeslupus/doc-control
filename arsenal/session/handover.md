@@ -31,7 +31,20 @@
     - With a split window, the first pane is used.
     - LibreOffice's `show` returns true without checking the window came; headless LibreOffice reports its window visible.
   - The hidden Word suite cannot see centring or focus. Check them on a visible Word of its own, never the owner's.
-- **Item 4 of #196 (#213)**, the `doc-control://` link handler: needs the owner's decision first. Registering even a temporary test URL scheme is a persistent per-user handler; ask before doing it.
+- Windows session, 2026-10-14 (evening): **`live.places`, an MCP App** (PR #262), released as **0.6.3**.
+  - Two plan PRs were approved by the owner and merged: FIND (#217, tasks #233–#242) and PACKAGE (#216, tasks #243–#252). `merge_ready.sh` reported `review: absent` for both: there was no second-reader review, and they were merged on the owner's approval.
+  - #213, the `doc-control://` link handler, was closed as not planned: links in chat are not clickable.
+  - `live.places {doc, places: [{label, at?, find_phrase?, find_phrase_across?}], mode?}` returns its places and never touches the app.
+  - Over MCP, the `live_places` tool carries `_meta.ui.resourceUri` (`ui://doc-control/places-<sha8>.html`, from `src/doc_control/app/places.html`).
+  - The server now declares `resources` and the `io.modelcontextprotocol/ui` extension, answers `resources/list|templates/list|read`, and speaks protocol 2025-11-25.
+  - Each button calls `live_select` through the client, with no model turn. It falls back from `at` to `find_phrase`.
+  - Measured on Claude Desktop:
+    - The owner tested it: the buttons work and are fast.
+    - Claude Desktop starts two clients per server (`local-agent-mode-*` and `claude-ai`).
+    - A first probe with non-spec metadata rendered nothing in Code and Cowork.
+  - literary-critic adopted it (`lc docx places`, literary-critic#171) and is moving to a local `lc` MCP server for the plain Chat tab. It was told `doc_control.mcp` is not a public API. An app's `tools/call` reaches only its own server, so `doc_control.api.run` is the entry point for a proxy.
+  - A probe server remains in `~/.dc-mcp-app-probe/`. Its Claude Desktop config entry was removed. The folder is safe to delete.
+- **Item 4 of #196 (#213)**: closed as not planned (see above).
 - **LibreOffice, divergence**: `editable` there only refuses a range across containers; a replace inside a hyperlink still goes through live where the file engine refuses it.
 - **Word, not measured**: Microsoft 365 (D-L4 asks for it; none on the owner's machine). CI has no Word: the scenario test is skipped there, so a change to `word_com.py` must be run on Windows with `uv run --no-sync python scripts/live_word_check.py`.
 - **Word, known limits**: whether tracked deletions are hidden is decided from the first one (a reviewer filter hiding only some is not handled); a Selection ending inside a hyperlink grows to the whole field (Word's rule; edits use ranges and are exact); each op of a live batch reads the model again (slow on a heavily revised manuscript); date fields are recomputed by Word.
