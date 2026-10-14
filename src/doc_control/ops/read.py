@@ -519,7 +519,8 @@ def comments_list(request: dict[str, Any]) -> Reply:
             **STORIES_PROPERTY,
             "description": 'Stories to list (default ["body"]): "notes" adds footnotes and '
             'endnotes, "headers" headers and footers, after the body\'s revisions; their '
-            "addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…).",
+            "addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). Row and cell "
+            "revisions are listed for the body's tables only.",
         },
     ),
 )
