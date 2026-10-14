@@ -11,9 +11,12 @@ Matching
     own text normalises to the quote but is not equal to it) (``text.normalized``: soft hyphens and
     zero-width characters removed, whitespace collapsed, NFC), mapped back to the
     original offsets, so a quote copied from normalised text is found across a soft
-    hyphen, a tab or a double space. Only when no exact
-    candidate is good enough does the fuzzy search run, over a short list of paragraphs
-    (the paragraph with the anchor's fingerprint, the ones near the hint, and the ones
+    hyphen, a tab or a double space. When neither finds a span, the folded stages of
+    :mod:`doc_control.model.loosefold` (``case``, then ``default``, then ``loose``, as far
+    as the requested ``match_level``'s ladder goes) look for it, strictest first, and
+    their spans are candidates of kind ``normalized`` too, tagged with their level. Only
+    when no such candidate is good enough does the fuzzy search run, over a short list of
+    paragraphs (the paragraph with the anchor's fingerprint, the ones near the hint, and the ones
     sharing the most character runs of the quote, rare runs counting more). In each,
     ``difflib`` aligns the quote with the text and the densest run of matching blocks gives
     a window, whose ends are then moved by whole words while that helps; the same paragraph
@@ -53,6 +56,7 @@ from typing import Any, Literal
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex, Paragraph
+from doc_control.model.loosefold import Level, first_hits
 from doc_control.model.normalized import IGNORABLE, normalize, normalized_text
 from doc_control.model.segment import DEFAULT_LANGUAGE, split_sentences
 
@@ -140,6 +144,7 @@ class Candidate:
     score: float
     kind: MatchKind
     near: bool = True  # in the anchor's own paragraph (by fingerprint) or close to its hint
+    level: Level | None = None  # the strictest fold level of the span; None when fuzzy
 
     @property
     def threshold(self) -> float:
@@ -398,6 +403,7 @@ def _candidate(
     end: int,
     quote_score: float,
     kind: MatchKind,
+    level: Level | None = None,
 ) -> Candidate:
     near = (para.fp == anchor.fingerprint) or (
         anchor.hint is not None and abs(para.number - anchor.hint) <= NEAR_PARAGRAPHS
@@ -421,7 +427,7 @@ def _candidate(
     score = (W_QUOTE * quote_score + W_PREFIX * prefix + W_SUFFIX * suffix) / (
         W_QUOTE + W_PREFIX + W_SUFFIX
     )
-    return Candidate(para.number, para.fp, start, end, score, kind, near)
+    return Candidate(para.number, para.fp, start, end, score, kind, near, level)
 
 
 def _exact_spans(text: str, quote: str) -> list[tuple[int, int]]:
@@ -462,12 +468,19 @@ def _normalised_spans(text: str, plain: str) -> list[tuple[int, int]]:
     return out
 
 
-def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -> Resolution:
+def resolve(
+    index: DocumentIndex,
+    anchor: Anchor,
+    *,
+    exact_only: bool = False,
+    match_level: Level = "exact",
+) -> Resolution:
     """Find ``anchor`` in ``index``.
 
     With ``exact_only`` (``anchor.resolve`` ``mode: "exact"``) the fuzzy search is skipped
     and every verbatim occurrence of the quote is accepted whatever its context score: the
     score only breaks ties, and several occurrences about equally good are ambiguous.
+    ``match_level`` other than ``"exact"`` adds the folded stages after the normalised one.
     """
     quote = anchor.exact
     found: list[Candidate] = []
@@ -477,13 +490,21 @@ def resolve(index: DocumentIndex, anchor: Anchor, *, exact_only: bool = False) -
             continue
         for start, end in _exact_spans(para.text, quote):
             taken.setdefault(para.number, []).append((start, end))
-            found.append(_candidate(index, anchor, para, start, end, 1.0, "exact"))
+            found.append(_candidate(index, anchor, para, start, end, 1.0, "exact", "exact"))
     if not found:  # verbatim wins; normalised text is the fallback, not a rival
         plain = normalized_text(quote)
         for para in index.paragraphs:
             for start, end in _normalised_spans(para.text, plain):
                 taken.setdefault(para.number, []).append((start, end))
-                found.append(_candidate(index, anchor, para, start, end, 1.0, "normalized"))
+                found.append(_candidate(index, anchor, para, start, end, 1.0, "normalized", "case"))
+    if not found and match_level != "exact":
+        texts = [para.text for para in index.paragraphs]
+        for hit in first_hits(texts, quote, match_level, retry=True):
+            para = index.paragraphs[hit.index]
+            taken.setdefault(para.number, []).append((hit.start, hit.end))
+            found.append(
+                _candidate(index, anchor, para, hit.start, hit.end, 1.0, "normalized", hit.level)
+            )
     short = len(_WORD.findall(quote)) <= SHORT_QUOTE_WORDS
 
     def accepted_of(pool: list[Candidate]) -> list[Candidate]:

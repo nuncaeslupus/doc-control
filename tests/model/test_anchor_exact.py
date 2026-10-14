@@ -101,9 +101,10 @@ def test_default_mode_is_best_and_reports_match_kind(tmp_path: Path) -> None:
     for mode in ({}, {"mode": "best"}, {"mode": "exact"}):
         assert run("anchor.resolve", doc=str(before), anchor=anchor, **mode)["match"] == "exact"
     typo = make_docx(tmp_path / "b.docx", "Uno.", "Al final, María cerro la puerta sin mirar.")
-    assert run("anchor.resolve", doc=str(typo), anchor=anchor)["match"] == "fuzzy"
+    exact = {"match_level": "exact"}  # the accent change would fold away at default
+    assert run("anchor.resolve", doc=str(typo), anchor=anchor, **exact)["match"] == "fuzzy"
     with pytest.raises(DocControlError) as err:
-        run("anchor.resolve", doc=str(typo), anchor=anchor, mode="exact")
+        run("anchor.resolve", doc=str(typo), anchor=anchor, mode="exact", **exact)
     assert err.value.code is ErrorCode.ANCHOR_NOT_FOUND
     assert err.value.details["mode"] == "exact"
 
