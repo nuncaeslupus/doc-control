@@ -10,7 +10,8 @@ from doc_control import api
 from doc_control.cli import execute
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import using
-from doc_control.live.protocol import FakeAdapter, LiveUnavailable
+from doc_control.live.protocol import FakeAdapter, LiveUnavailable, Span
+from doc_control.model.address import fingerprint
 from doc_control.registry import load_operations
 from tests.helpers import make_docx
 
@@ -68,6 +69,28 @@ def test_app_that_dies_mid_call_is_engine_unavailable(doc: Path) -> None:
         with pytest.raises(DocControlError) as err:
             handle.run("live.save")
         assert err.value.details["reason"] == "connection to fake lost"
+
+
+def test_a_refused_span_stops_the_batch_before_any_write(doc: Path) -> None:
+    class Linked(FakeAdapter):
+        def editable(self, path: Path, span: Span, replace: bool) -> None:
+            if span.start == 1 and replace:
+                raise DocControlError(ErrorCode.UNSUPPORTED_CONTENT, "a link")
+
+    fake = Linked({str(doc): ["One.", "Two."]})
+    ops = [
+        {"op": "comment.add", "at": f"p1#{fingerprint('One.')}", "text": "Sure?"},
+        {"op": "text.replace", "at": f"p2#{fingerprint('Two.')}:0-3", "text": "Six"},
+    ]
+    with using(fake):
+        api.run("live.open", {"doc": str(doc)})
+        with pytest.raises(DocControlError) as err:
+            api.run("batch", {"doc": str(doc), "engine": "live", "ops": ops})
+        assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
+        assert not fake.dirty(doc) and not fake.docs[str(doc.resolve())].comments
+        ops[1]["op"] = "comment.add"
+        api.run("batch", {"doc": str(doc), "engine": "live", "ops": ops})
+        assert len(fake.docs[str(doc.resolve())].comments) == 2
 
 
 def test_open_save_close_through_the_handle(doc: Path) -> None:

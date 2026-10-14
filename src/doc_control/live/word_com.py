@@ -50,10 +50,12 @@ _ONEDRIVE_KEY = r"Software\SyncEngines\Providers\OneDrive"
 
 _DELETED = frozenset({2, 14})  # wdRevisionDelete, wdRevisionMovedFrom
 _MAIN_STORY = 1  # wdMainTextStory
+_PARAGRAPH = 4  # wdParagraph
 _END_OF_ROW = 31  # wdAtEndOfRowMarker
 _NO_SAVE = 0  # wdDoNotSaveChanges
 
 _CELL = "\x07"
+_CELL_END = "\r\x07"  # the end of a cell or a row: one position in Word
 #: Word's characters for what the file engine reads as other text.
 _AS_FILE = str.maketrans(
     {
@@ -482,8 +484,10 @@ class Word:
                     rng = revision.Range
                     deleted.append((int(rng.Start), int(rng.End), str(rng.Text or "")))
             deleted.sort()
-        # A range's text holds the deleted text only when the window shows it.
-        hidden = bool(deleted) and not self._read(doc, deleted[0][0], deleted[0][1])
+        # A range's text holds the deleted text only when the window shows it; the ends
+        # of a deleted table's cells and rows show in every view.
+        first = self._read(doc, *deleted[0][:2]) if deleted else ""
+        hidden = bool(deleted) and not first.replace(_CELL_END, "")
         window = doc.ActiveWindow.View.RevisionsFilter
         model = _Model((*key, int(window.Markup), int(window.View)), hidden)
         model.deletions = [(start, end) for start, end, _ in deleted]
@@ -494,8 +498,9 @@ class Word:
             # A paragraph whose mark is deleted reads as one with the next: split it.
             for start, _, gone in deleted:
                 for at, char in enumerate(gone):
-                    if char == "\r":
-                        model.marks.append(start + _units(gone[:at]))
+                    if char == "\r" and not gone.startswith(_CELL, at + 1):
+                        cells = gone.count(_CELL_END, 0, at)  # one position each
+                        model.marks.append(start + _units(gone[:at]) - cells)
             cuts: dict[int, list[int]] = {}
             for mark in model.marks:
                 w = self._index(doc, mark)
@@ -518,10 +523,19 @@ class Word:
                 model.of_word[w].append(len(model.texts))
                 model.texts.append(_clean(shown))
                 model.where.append((w, part))
-                model.container.append(rows.get(w))
+                model.container.append(self._container(doc, model, rows.get(w)))
         model.checked = time.monotonic()
         self._models = {name: model}
         return model
+
+    def _container(self, doc: Any, model: _Model, inside: Any) -> Any:
+        """The container of the paragraph last added to ``model``, whose Word paragraph is
+        in ``inside``: deleted marks hidden, a paragraph before a table reads as one with
+        its first cell, and only the part from the cell on is in the table."""
+        if inside is None or not model.hidden:
+            return inside
+        low = self._gaps(doc, model, len(model.where) - 1)[0]
+        return inside if low >= int(doc.Tables(inside[0]).Range.Start) else None
 
     def _position(self, doc: Any, gaps: list[tuple[int, int]], offset: int) -> int:
         """The position with ``offset`` characters of the paragraph's text before it."""
@@ -661,6 +675,50 @@ class Word:
 
     # -- writing -----------------------------------------------------------------
 
+    @staticmethod
+    def _fields(doc: Any, start: int, end: int) -> list[tuple[int, int]]:
+        """The fields (a hyperlink, a date) in the paragraphs of ``start``-``end``, each
+        from its begin mark to its end mark."""
+        around = doc.Range(start, end)
+        around.Expand(_PARAGRAPH)
+        fields = around.Fields
+        if not int(fields.Count):
+            return []
+        return [
+            (int(field.Code.Start) - 1, max(int(field.Result.End), int(field.Code.End)))
+            for field in fields
+        ]
+
+    def _edited(self, doc: Any, span: Span, replace: bool) -> Any:
+        """The range an edit of ``span`` takes, refused as the file engine refuses an
+        edit inside a field or link (``UNSUPPORTED_CONTENT``), before anything is written."""
+        rng, _ = self._range(doc, span)
+        start, end = int(rng.Start), int(rng.End)
+        fields = self._fields(doc, start, end)
+        if not fields:
+            return rng
+        # An offset just after a field's text is its end mark: the text there is after it.
+        closes = {close for _, close in fields}
+        start += start in closes
+        end = max(start, end + (end in closes))
+        for begin, close in fields:
+            inside = [begin < at <= close for at in (start, end)]
+            if replace:
+                cut = start <= close and end > begin if end > start else inside[0]
+                why = "covers text of a field or link, which the live engine does not edit"
+            else:
+                cut = any(inside)
+                why = "starts or ends inside a field or link: anchor it around the field"
+            if cut:
+                raise DocControlError(
+                    ErrorCode.UNSUPPORTED_CONTENT, f"paragraph {span.start + 1}: the range {why}"
+                )
+        return doc.Range(start, end)
+
+    @_guard
+    def editable(self, path: Path, span: Span, replace: bool) -> None:
+        self._edited(self._doc(path), span, replace)
+
     @contextmanager
     def _as(self, doc: Any, author: str, track: bool = True) -> Iterator[None]:
         """Tracked changes on and ``author`` as the user's name, all put back after.
@@ -710,14 +768,14 @@ class Word:
     @_guard
     def comment(self, path: Path, span: Span, text: str, author: str) -> None:
         doc = self._doc(path)
-        rng, _ = self._range(doc, span)
+        rng = self._edited(doc, span, replace=False)
         with self._as(doc, author, track=bool(doc.TrackRevisions)):
             doc.Comments.Add(rng, text)
 
     @_guard
     def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
         doc = self._doc(path)
-        rng, _ = self._range(doc, span)
+        rng = self._edited(doc, span, replace=True)
         with self._as(doc, author):
             if text:
                 rng.Text = text

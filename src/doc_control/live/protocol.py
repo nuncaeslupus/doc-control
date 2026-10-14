@@ -58,6 +58,11 @@ class LiveAdapter(Protocol):
     def selection(self, path: Path) -> tuple[str, int]:
         """The selected text and the index of the paragraph holding the cursor."""
 
+    def editable(self, path: Path, span: Span, replace: bool) -> None:
+        """Refuse (``UNSUPPORTED_CONTENT``) a comment on ``span``, or with ``replace`` a
+        tracked replace of it, that the file engine would refuse too: one range across
+        containers, or into a field or link."""
+
     def comment(self, path: Path, span: Span, text: str, author: str) -> None: ...
 
     def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None: ...
@@ -125,6 +130,9 @@ class FakeAdapter:
     def selection(self, path: Path) -> tuple[str, int]:
         doc = self._doc(path)
         return self._text(doc, doc.selection), doc.selection.end
+
+    def editable(self, path: Path, span: Span, replace: bool) -> None:
+        self.text(path, span)
 
     def comment(self, path: Path, span: Span, text: str, author: str) -> None:
         doc = self._doc(path)

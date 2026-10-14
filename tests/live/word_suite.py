@@ -23,7 +23,7 @@ from doc_control.live.protocol import Span
 from doc_control.live.word_com import Word
 from doc_control.ooxml.zipio import sha256_file
 from tests.corpus.generator import KINDS, generate
-from tests.helpers import make_docx
+from tests.helpers import make_docx, table
 
 AUTHOR = "Rev Iewer"
 SAMPLES = 8
@@ -456,6 +456,174 @@ def refused_batch(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def _as_file(bad: Failures, word: Word, doc: Path, where: str) -> None:
+    """The open document reads, paragraph by paragraph, as the file engine reads the file."""
+    rows = _read(doc)
+    texts = [p["text"] for p in rows]
+    bad.check(word.paragraphs(doc) == texts, f"{where}: paragraphs", word.paragraphs(doc), texts)
+    base = {"doc": str(doc)}
+    for row in rows:
+        try:
+            got = _run("live.select", {**base, "at": row["at"]})["text"]
+        except DocControlError as err:
+            bad.append(f"{where}: {row['at']}: {err.code.value}")
+            continue
+        bad.check(got == row["text"], f"{where}: {row['at']}", got, row["text"])
+
+
+def buried(word: Word, home: Path) -> list[str]:
+    """Paragraphs wholly inside a tracked deletion, and a deletion over a whole table,
+    read as the file engine reads them (the fixes LibreOffice needed in #166 and #169)."""
+    bad = Failures()
+    doc = make_docx(
+        home / "scene.docx",
+        "Lead.",
+        "Keep one gone tail",
+        "A whole unicorn paragraph, deleted.",
+        "Another one, deleted too.",
+        "unicorn head stays two.",
+        "Third unicorn here.",
+    )
+    with api.open(doc) as handle:
+        at = [p["at"] for p in handle.paragraphs()]
+        cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
+        handle.run("batch", {"ops": [cut]})
+        rows = handle.paragraphs()
+    with _opened(doc) as base:
+        for markup in (ALL_MARKUP, SIMPLE_MARKUP):
+            _markup(word, doc, markup)
+            where = f"inside a deletion, markup {markup}"
+            _as_file(bad, word, doc, where)
+            got = _run("live.select", {**base, "find_phrase": "unicorn"})
+            bad.check(got["at"] == rows[-1]["at"], f"{where}: find phrase", got)
+
+    # The file engine cannot cut across a table, so the writer does it in Word.
+    doc = make_docx(
+        home / "table.docx", "Lead.", f"Keep gone{table('c1', 'c2 last')}Gone kept", "Tail."
+    )
+    with _opened(doc) as base:
+        bad.check(
+            word.paragraphs(doc) == ["Lead.", "Keep gone", "c1", "c2 last", "Gone kept", "Tail."],
+            "table: before",
+            word.paragraphs(doc),
+        )
+        live = word._doc(doc)
+        live.TrackRevisions = True
+        start = int(live.Paragraphs(2).Range.Start) + 4
+        end = int(live.Paragraphs(6).Range.Start) + 4  # the row adds a paragraph
+        live.Range(start, end).Delete()
+        live.TrackRevisions = False
+        _run("live.save", base)
+        bad.check(
+            _texts(doc) == ["Lead.", "Keep", "", "", " kept", "Tail."],
+            "table: the file",
+            _texts(doc),
+        )
+        for markup in (ALL_MARKUP, SIMPLE_MARKUP):
+            _markup(word, doc, markup)
+            _as_file(bad, word, doc, f"table, markup {markup}")
+    return bad
+
+
+def linked(word: Word, home: Path) -> list[str]:
+    """A document opened through a symbolic link is found by the file it points at."""
+    bad = Failures()
+    doc = make_docx(home / "target.docx", "One.")
+    link = home / "link.docx"
+    try:
+        link.symlink_to(doc)
+    except OSError:
+        return bad  # the account may not make links: nothing to check
+    _run("live.open", {"doc": str(link)})
+    try:
+        bad.check(word.is_open(doc), "the target is open")
+        opened = _run("live.open", {"doc": str(doc)})
+        bad.check(opened["app"] == "word", "open the target", opened)
+        bad.check(int(word._application().Documents.Count) == 1, "a second window")
+    finally:
+        _run("live.close", {"doc": str(doc), "discard": True})
+    bad.check(not word.is_open(link), "closed")
+    return bad
+
+
+def _same_edits(
+    bad: Failures, word: Word, doc: Path, ops: list[dict[str, Any]], where: str
+) -> None:
+    """The live engine makes of ``doc`` what the file engine makes of a copy of it, or
+    refuses the batch as it does."""
+    copy = doc.with_name(f"file-{doc.name}")
+    copy.write_bytes(doc.read_bytes())
+    try:
+        _run("batch", {"doc": str(copy), "author": AUTHOR, "ops": ops})
+        refused = None
+    except DocControlError as err:
+        refused = err.code
+    with _opened(doc) as base:
+        request = {**base, "engine": "live", "author": AUTHOR, "ops": ops}
+        if refused is not None:
+            bad.refused(f"{where}: as the file engine", "batch", request, refused)
+            bad.check(_run("live.status", base)["dirty"] is False, f"{where}: dirty")
+            return
+        try:
+            _run("batch", request)
+        except DocControlError as err:
+            bad.append(f"{where}: the file engine made it, live: {err.code.value} {err}")
+            return
+        _run("live.save", base)
+        _as_file(bad, word, doc, f"{where}: after the batch")
+    bad.check(_texts(doc) == _texts(copy), f"{where}: text", _texts(doc), _texts(copy))
+    comments = [
+        [(c["author"], c["text"]) for c in _run("comments.list", {"doc": str(d)})["comments"]]
+        for d in (doc, copy)
+    ]
+    bad.check(comments[0] == comments[1], f"{where}: comments", *comments)
+
+
+def cells(word: Word, home: Path) -> list[str]:
+    """A span over two paragraphs of one table cell is read and edited as in the file."""
+    bad = Failures()
+    doc = make_docx(
+        home / "cell.docx",
+        f"Before.{table(['First line here.', 'Second line there.'], 'Other cell.')}After.",
+    )
+    at = [p["at"] for p in _read(doc)]
+    with _opened(doc) as base:
+        got = word.select(doc, Span(1, 2, 6, 6))
+        bad.check(got == "line here.\nSecond", "select across the cell", got)
+        chosen = _run("live.selection", base)
+        bad.check(chosen["text"] == got, "selection across the cell", chosen)
+    ops = [
+        {"op": "text.replace", "at": f"{at[1]}:6..{at[2]}:6", "text": "and"},
+        {"op": "comment.add", "at": f"{at[3]}:0-5", "text": "Which?"},
+    ]
+    _same_edits(bad, word, doc, ops, "cell")
+    return bad
+
+
+_LINK = '</w:t></w:r><w:hyperlink w:anchor="top"><w:r><w:t>{}</w:t></w:r></w:hyperlink><w:r><w:t>'
+
+
+def links(word: Word, home: Path) -> list[str]:
+    """Edits that start or end inside a hyperlink (a field to Word) are refused as the
+    file engine refuses them, before anything is written; the others land as in the file."""
+    bad = Failures()
+    text = f"Read({_LINK.format('the linked words')})and more."
+    shown = "Read(the linked words)and more."
+    spans = [(0, 9), (9, 18), (12, 26), (5, 21), (0, 3), (22, 26), (21, 21)]
+    for n, (a, b) in enumerate(spans):
+        for op, extra in [("text.replace", {"text": "X"}), ("comment.add", {"text": "Why?"})]:
+            if op == "comment.add" and a == b:
+                continue
+            doc = make_docx(home / f"link{n}-{op}.docx", "Lead.", text, "Tail.")
+            at = [p["at"] for p in _read(doc)]
+            with _opened(doc):
+                got = word.text(doc, Span(1, 1, a, b))
+                bad.check(got == shown[a:b], f"link {a}-{b}: text", got, shown[a:b])
+            ops = [{"op": op, "at": f"{at[1]}:{a}-{b}", **extra}]
+            _same_edits(bad, word, doc, ops, f"link {op} {a}-{b}")
+    return bad
+
+
 SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     session,
     select,
@@ -464,6 +632,10 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     roundtrip,
     marks,
     refused_batch,
+    buried,
+    linked,
+    cells,
+    links,
 ]
 
 

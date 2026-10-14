@@ -11,7 +11,7 @@ from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.lo_uno import LibreOffice, _point
 from tests.corpus.generator import KINDS, generate
-from tests.helpers import make_docx
+from tests.helpers import make_docx, table
 
 SAMPLES = 8
 
@@ -206,18 +206,11 @@ def test_paragraphs_wholly_inside_a_deletion_read_as_the_file_engine(
         _run("live.close", {**base, "discard": True})
 
 
-def _table(*cells: str) -> str:
-    """A one-row table, written as a ``make_docx`` paragraph: it closes the paragraph
-    before and opens the one after."""
-    row = "".join(f"<w:tc><w:p><w:r><w:t>{cell}</w:t></w:r></w:p></w:tc>" for cell in cells)
-    return f"</w:t></w:r></w:p><w:tbl><w:tr>{row}</w:tr></w:tbl><w:p><w:r><w:t>"
-
-
 def test_deletion_over_a_whole_table_reads_as_the_file_engine(
     live: LibreOffice, lo_home: Path
 ) -> None:
     doc = make_docx(
-        lo_home / "table.docx", "Lead.", f"Keep gone{_table('c1', 'c2 last')}Gone kept", "Tail."
+        lo_home / "table.docx", "Lead.", f"Keep gone{table('c1', 'c2 last')}Gone kept", "Tail."
     )
     base = {"doc": str(doc)}
     _run("live.open", base)
