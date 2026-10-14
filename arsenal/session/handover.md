@@ -2,14 +2,18 @@
 
 ## Last task
 
-- **ID**: Word COM live adapter (t-9e24ff41, #145), LIVE T8, merged as #164; this handover follows it.
-- **Status at handover**: the LIVE plan is done (T1-T8 merged). The only open task is `list the MCP server (t-954cacd8, #89)`, which waits on the owner.
+- **ID**: STORIES T3, story index (t-0a709c5e, #173), in PR #194, which also records the LAYOUT spec r2 approval.
+- **Status at handover**: the STORIES plan is approved (`arsenal/project/STORIES/plan.md`, T1–T11, issues #173–#183). T1 and T2 were merged in #192. T3 is in #194. T4–T11 are open.
 
-## What was done this session
+## What was done this session (cloud, 2026-10-13/14)
 
-The live engine on LibreOffice, on the owner's Ubuntu PC: protocol, fake adapter and dispatch (#152), lock awareness (#157), LibreOffice session open/save/close (#158), select by address and find phrase (#159), latency bench (#160), comments and tracked edits through `batch` with `engine: "live"` plus the `live-libreoffice` CI job (#161), CLI/MCP parity test and README (T7). Reviews were done by a second desktop session ("distinct-session"), since the headless `claude -p` login had expired and CodeRabbit skips this repository.
-
-On the owner's Windows 11 machine (Word 16.0.17932, Spanish), a later session: no Word Find string for text with a soft or no-break hyphen (#153), then Find strings that carry each hyphen's code (#162), and the Word live adapter (#164): `src/doc_control/live/word_com.py`, the extra `doc-control[live]` (pywin32), `tests/live/word_suite.py` + `tests/live/test_word_com.py`, `scripts/live_word_check.py`. Gate measured there: `live_word_failures == 0`; `live.select` by find phrase on the 2 033-paragraph novel p95 369 ms (not gated). #164 was reviewed by one cold subagent (the owner's standing rule for that machine: merge on green after such a review); its findings were fixed before the merge.
+- #169: a tracked deletion over a whole table read wrong live (LibreOffice gave its ends swapped); fixed. Also a symlink `_find` test and `tests.helpers.soffice_dir` for snap LibreOffice. Plus `status/ideas.md` (42 ideas, S-1..S-9).
+- STORIES (S-1): spec r2 approved (#171); contracts, risks and plan (#172); T1 and T2 (#192); T3 (#194).
+- LAYOUT (S-9): spec r2 approved (in #194). The next step is `design` for its plan, after STORIES T8.
+- Live tests run in a cloud container with `UV_PROJECT_ENVIRONMENT=<dir> uv venv --python /usr/bin/python3 --system-site-packages`, then `uv run --python /usr/bin/python3 pytest tests/live`.
+- This cloud session pushes to one designated branch only, so PRs went out one at a time. A session allowed per-task branches can parallelise T4/T5/T8/T9.
+- Duplicate issues #184–#190 were created by mistake (LIVE tasks already archived) and closed with their labels removed.
+- Reviews were cold subagents of the implementing session, and their CLEAR markers carry a `cse_` session id that `merge_ready.sh` counts as distinct from the implementer's `session_` id. That is a claude-arsenal quirk to fix upstream.
 
 ## What remains
 
