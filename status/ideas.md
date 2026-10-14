@@ -83,7 +83,7 @@ on LibreOffice and on Word (Windows).
 | S-6 | Checks                                 | E           | parked |              |
 | S-7 | Live engine, next                      | F           | parked |              |
 | S-8 | Packaging and reach                    | G           | parked |              |
-| S-9 | Page layout and long documents         | H           | parked |              |
+| S-9 | Page layout and long documents         | H           | specified | arsenal/project/LAYOUT/spec.md |
 
 Suggested order, for the owner to confirm: S-1 first, because the file engine is blind to
 footnotes and headers today, which literary-critic and every other consumer hit. Then I-15
