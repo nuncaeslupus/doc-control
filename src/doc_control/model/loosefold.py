@@ -27,19 +27,34 @@ it comes from (a base character with its combining marks, cut as
 All the characters a cluster folds to share its range (``ß`` folds to ``ss``), and a
 collapsed run of spaces takes the range from its first to its last character.
 :func:`to_original` maps folded positions back to a span of whole clusters.
+
+Levelled search: :func:`hits` finds a phrase at one level over a list of texts and tags
+every hit with the strictest level it meets; :func:`ladder` is the order in which a
+single-target op tries the levels.
 """
 
 from __future__ import annotations
 
 import functools
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.normalized import _chunks
 
-__all__ = ["LEVELS", "Folded", "Level", "fold", "fold_phrase", "to_original"]
+__all__ = [
+    "LEVELS",
+    "Folded",
+    "Hit",
+    "Level",
+    "fold",
+    "fold_phrase",
+    "hits",
+    "ladder",
+    "to_original",
+]
 
 Level = Literal["exact", "case", "default", "loose"]
 LEVELS: tuple[Level, ...] = ("exact", "case", "default", "loose")
@@ -165,3 +180,69 @@ def to_original(
                 break
             pos += 1
     return start, end
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One hit: ``texts[index][start:end]``, matched at ``level`` (its strictest)."""
+
+    index: int
+    start: int
+    end: int
+    level: Level
+
+
+def ladder(requested: Level, *, retry: bool) -> tuple[Level, ...]:
+    """The levels to try, strictest first; each runs only when those before found nothing.
+
+    ``exact`` never retries. With ``retry`` (the single-target ops) any other request walks
+    every level from ``exact`` to ``loose``, so a stricter match always wins. Without it
+    (the multi-hit ops) only the requested level runs.
+    """
+    if requested not in LEVELS:
+        raise ValueError(f"unknown fold level: {requested!r}")
+    if requested == "exact":
+        return ("exact",)
+    return LEVELS if retry else (requested,)
+
+
+def hits(texts: Sequence[str], phrase: str, level: Level) -> list[Hit]:
+    """Every hit of ``phrase`` in ``texts`` at ``level`` or stricter, in text order.
+
+    Each level from ``exact`` up to ``level`` is searched in turn. A hit is kept with the
+    strictest level that finds it: a looser hit overlapping a stricter one in the same
+    text is dropped. Hits at one level do not overlap each other. At ``default`` and
+    ``loose`` a hit's span takes the punctuation touching it on a side where the phrase
+    itself has punctuation. The phrase is matched as given (Word codes are the caller's).
+    A phrase that folds to nothing at ``level`` is refused (:func:`fold_phrase`).
+    """
+    if level not in LEVELS:
+        raise ValueError(f"unknown fold level: {level!r}")
+    fold_phrase(phrase, level)
+    bare = "".join(ch for ch in phrase if unicodedata.category(ch) != "Cf")
+    widen_left = bool(bare) and unicodedata.category(bare[0])[0] == "P"
+    widen_right = bool(bare) and unicodedata.category(bare[-1])[0] == "P"
+    kept: list[Hit] = []
+    for current in LEVELS[: LEVELS.index(level) + 1]:
+        needle = fold(phrase, current).text
+        if not needle:
+            continue
+        widen = current in ("default", "loose")
+        found: list[Hit] = []
+        for index, text in enumerate(texts):
+            folded = fold(text, current)
+            pos = folded.text.find(needle)
+            while pos >= 0:
+                start, end = to_original(
+                    folded,
+                    pos,
+                    pos + len(needle),
+                    widen_left=widen and widen_left,
+                    widen_right=widen and widen_right,
+                )
+                if not any(h.index == index and h.start < end and start < h.end for h in kept):
+                    found.append(Hit(index, start, end, current))
+                pos = folded.text.find(needle, pos + len(needle))
+        kept.extend(found)
+    kept.sort(key=lambda h: (h.index, h.start))
+    return kept
