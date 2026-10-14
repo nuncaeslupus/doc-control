@@ -44,6 +44,22 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 
 API version, engines and the list of operations.
 
+## `caption.add` (write)
+
+Add a caption paragraph above or below a body paragraph, as tracked insertions: the label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a hidden bookmark around the label and number for cross-references. The number is refreshed by fields.update. Returns the address of the caption.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `at` | string | yes | Address of the body paragraph the caption goes next to. |
+| `label` | `Table` \| `Figure` \| `Equation` | yes | The caption label. |
+| `text` | string | yes | Caption text after the number; may be empty. |
+| `position` | `above` \| `below` |  | Default: above for a Table, below for a Figure or Equation. |
+
 ## `comments.list` (read)
 
 Comments in thread order (each root then its replies) with resolved state and location.
@@ -93,7 +109,7 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 
 ## `fields.update` (write)
 
-Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
+Recompute the results of the body's TOC, INDEX, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -174,6 +190,34 @@ Find a quote in the undo log: in the requests, and in the text of every paragrap
 | `ignore_case` | boolean |  |  |
 | `ignore_accents` | boolean |  |  |
 | `limit` | integer |  |  |
+
+## `index.insert` (write)
+
+Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The entries and page numbers are filled by fields.update from the index.mark marks. Returns the address of the field's paragraph.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `after` | string | yes | Address of the body paragraph it goes after. |
+| `title` | string |  | Title paragraph above it (default "Index"); "" for none. |
+
+## `index.mark` (write)
+
+Mark an index entry: an XE field, as a tracked insertion, right after a range. The entry is "Term" or "Term:Sub" (up to three levels). index.insert builds the index from the marks.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `at` | string | yes | A range inside one paragraph; the mark goes after it. |
+| `entry` | string | yes | The index entry, e.g. "Term" or "Term:Sub". |
 
 ## `info` (read)
 
@@ -646,6 +690,21 @@ Take back a logged batch or restore (the latest one that is still in effect by d
 | `op_id` | string |  | The op to undo (default: the latest in effect). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Check and preview; write nothing. |
+
+## `xref.add` (write)
+
+Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, as a tracked insertion, pointing at a caption or another body paragraph. The target gets a hidden bookmark when it has none that fits. fields.update fills in the shown number, text or page.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `at` | string | yes | Insertion point: p<n>#<fp>:<k>-<k>, or a paragraph address for its end. |
+| `to` | string | yes | Address of the caption or heading it points at. |
+| `show` | `number` \| `page` \| `text` |  | number (default): a caption's label and number, or a paragraph's number; page: the page it is on; text: the caption or paragraph text. |
 
 # Batch operation kinds
 

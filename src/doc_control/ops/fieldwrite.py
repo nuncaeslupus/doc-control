@@ -6,9 +6,13 @@ placeholder result, and a paragraph closing the field (the shape Word writes). T
 ``TOC \\o "1-3" \\h \\z \\u`` and the field is marked dirty, so ``fields.list`` shows it as
 stale until ``fields.update`` fills it.
 
-``fields.update`` recomputes the results of the body's TOC, page, page-count, word/character-count,
-sequence and reference fields. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice
-keeps their cached results, so a stale value cannot be told from a current one): they are
+``fields.update`` recomputes the results of the body's TOC, INDEX, page, page-count,
+word/character-count, sequence and reference fields (REF, PAGEREF; SEQ, which numbers
+captions). LibreOffice recomputes all of these from a wrong cached result (the layout tests
+check REF, PAGEREF, SEQ and INDEX with deliberately wrong values), and it puts an index entry
+and its page number in two paragraphs, which are joined again. SECTIONPAGES, SECTION and
+NOTEREF are not recomputed (LibreOffice keeps their cached results, so a stale value cannot
+be told from a current one): they are
 listed under ``skipped``. A copy of the document goes through headless LibreOffice (see
 :mod:`doc_control.ooxml.soffice`), which rebuilds the indexes and refreshes the fields; the
 fields of that copy are paired with the original's by type and order, and only the result
@@ -80,6 +84,7 @@ PLACEHOLDER = "Update the field to build the table of contents."
 UPDATABLE = frozenset(
     {
         "TOC",
+        "INDEX",
         "PAGEREF",
         "REF",
         "SEQ",
@@ -215,36 +220,37 @@ def _commit(
 # --- toc.insert ---------------------------------------------------------------------------
 
 
-def insert_toc(
+def insert_field_block(
     doc_path: Path,
     after: str,
     *,
-    levels: str = "1-3",
-    title: str = "Contents",
-    expect_sha256: str | None = None,
-    author: str = DEFAULT_AUTHOR,
-    tag: str | None = None,
-    now: datetime | None = None,
-    dry_run: bool = False,
-    env: Mapping[str, str] | None = None,
+    op: str,
+    code: str,
+    title: str,
+    title_style: str,
+    entry_style: str,
+    placeholder: str,
+    request: dict[str, Any],
+    expect_sha256: str | None,
+    author: str,
+    tag: str | None,
+    now: datetime | None,
+    dry_run: bool,
+    env: Mapping[str, str] | None,
 ) -> dict[str, Any]:
-    """Insert a tracked table-of-contents field after the body paragraph ``after``."""
+    """Insert, after the body paragraph ``after``, a field that builds a list (TOC or INDEX):
+    an optional title paragraph, a paragraph with the field's code and a placeholder
+    result, and a paragraph closing the field, all tracked insertions."""
     check_name(author, "author")
     if tag is not None:
         check_name(tag, "tag")
-    match = _LEVELS.match(levels)
-    if match is None or (match[2] is not None and int(match[2]) < int(match[1])):
-        raise DocControlError(
-            ErrorCode.SCHEMA_INVALID, f'levels must be like "1-3" or "2", not {levels!r}'
-        )
     check_text(title, "title")
     if "\n" in title:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "the title must be one line")
     if story_of(after):
         raise DocControlError(
             ErrorCode.UNSUPPORTED_CONTENT,
-            "toc.insert works at a body address: a table of contents cannot go in a note, "
-            "header or comment",
+            f"{op} works at a body address: it cannot go in a note, header or comment",
             address=after,
         )
     _refuse_file(doc_path)
@@ -259,7 +265,7 @@ def insert_toc(
     if spans.paragraphs[anchor.span_index].nested:
         raise DocControlError(
             ErrorCode.UNSUPPORTED_CONTENT,
-            "a table of contents cannot go after a paragraph inside a text box",
+            f"{op} cannot go after a paragraph inside a text box",
             address=after,
         )
 
@@ -267,8 +273,6 @@ def insert_toc(
     width = _text_width(pkg.read(DOCUMENT_PART))
     full_author = format_author(author, tag)
     ctx = RevisionContext(used_ids(pkg), full_author, format_date(now))
-    low, high = match[1], match[2] or match[1]
-    code = f' TOC \\o "{low}-{high}" \\h \\z \\u '
 
     new: list[ET.Element] = []
     if title:
@@ -276,8 +280,8 @@ def insert_toc(
         ppr = para.find(PPR)
         assert ppr is not None
         run = _el("r", None, *text_children(title))
-        if "TOCHeading" in styles:
-            ppr.insert(0, _el("pStyle", {W + "val": "TOCHeading"}))
+        if title_style in styles:
+            ppr.insert(0, _el("pStyle", {W + "val": title_style}))
         else:
             run.insert(0, _el("rPr", None, _el("b")))
         para.append(_ins(ctx, [run]))
@@ -285,9 +289,9 @@ def insert_toc(
     body, _ = new_paragraph(None, ctx, inserted_mark=True)
     body_ppr = body.find(PPR)
     assert body_ppr is not None
-    _style_or_tabs(body_ppr, "TOC1", styles, width)
+    _style_or_tabs(body_ppr, entry_style, styles, width)
     opening = [_field_char("begin", dirty=True), _code_run(code), _field_char("separate")]
-    holder = _el("r", None, *text_children(PLACEHOLDER))
+    holder = _el("r", None, *text_children(placeholder))
     for runs in (opening, [holder]):
         body.append(_ins(ctx, runs))
     new.append(body)
@@ -298,11 +302,11 @@ def insert_toc(
     added = [spans.serialize(para, anchor.span_index) for para in new]
     data = spans.splice(insert_after={anchor.span_index: added})
     footprint = Footprint(inserted_after=frozenset({anchor.span_index}))
-    toc_number = anchor.number + (2 if title else 1)
-    toc_at = str(build_index(data).paragraph(toc_number).address)
+    field_number = anchor.number + (2 if title else 1)
+    field_at = str(build_index(data).paragraph(field_number).address)
     result: dict[str, Any] = {
         "dry_run": dry_run,
-        "at": toc_at,
+        "at": field_at,
         "after": str(anchor.address),
         "code": code.strip(),
         "title": title or None,
@@ -321,18 +325,57 @@ def insert_toc(
         {DOCUMENT_PART: data},
         footprint,
         changes=changes,
-        request={"op": "toc.insert", "after": after, "levels": levels, "title": title},
+        request={"op": op, "after": after, **request},
         author=full_author,
         tag=tag,
         now=now,
         env=env,
-        extra={"toc": toc_at},
+        extra={op.split(".")[0]: field_at},
         result=result,
         warnings=warnings,
     )
     if warnings:
         result["warnings"] = warnings
     return result
+
+
+def insert_toc(
+    doc_path: Path,
+    after: str,
+    *,
+    levels: str = "1-3",
+    title: str = "Contents",
+    expect_sha256: str | None = None,
+    author: str = DEFAULT_AUTHOR,
+    tag: str | None = None,
+    now: datetime | None = None,
+    dry_run: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Insert a tracked table-of-contents field after the body paragraph ``after``."""
+    match = _LEVELS.match(levels)
+    if match is None or (match[2] is not None and int(match[2]) < int(match[1])):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, f'levels must be like "1-3" or "2", not {levels!r}'
+        )
+    low, high = match[1], match[2] or match[1]
+    return insert_field_block(
+        doc_path,
+        after,
+        op="toc.insert",
+        code=f' TOC \\o "{low}-{high}" \\h \\z \\u ',
+        title=title,
+        title_style="TOCHeading",
+        entry_style="TOC1",
+        placeholder=PLACEHOLDER,
+        request={"levels": levels, "title": title},
+        expect_sha256=expect_sha256,
+        author=author,
+        tag=tag,
+        now=now,
+        dry_run=dry_run,
+        env=env,
+    )
 
 
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
@@ -573,6 +616,20 @@ def _fresh_fields(docx: bytes) -> list[_Fresh]:
                         out.append(cur)
                         cur = None
     return out
+
+
+def _join_wrapped(fresh: _Fresh) -> _Fresh:
+    """An index entry whose page number LibreOffice put in a paragraph of its own (the entry
+    ends in a tab, the next line starts with one) is joined back into one line."""
+    lines: list[str] = []
+    styles: list[str | None] = []
+    for line, style in zip(fresh.lines, fresh.styles, strict=True):
+        if lines and lines[-1].endswith("\t") and line.startswith("\t"):
+            lines[-1] += line[1:]
+        else:
+            lines.append(line)
+            styles.append(style)
+    return _Fresh(fresh.type, lines, styles)
 
 
 # --- tracked replacement of a result ---------------------------------------------------------
@@ -921,6 +978,8 @@ def update_fields(
         )
     fresh_by_type: dict[str, list[_Fresh]] = {}
     for item in _fresh_fields(refresh_fields(doc_path, soffice)):
+        if item.type == "INDEX":
+            item = _join_wrapped(item)
         fresh_by_type.setdefault(item.type, []).append(item)
     known = frozenset(s.id for s in load_styles(pkg).styles)
     width = _text_width(pkg.read(DOCUMENT_PART))
@@ -1030,7 +1089,7 @@ def update_fields(
 @operation(
     "fields.update",
     "write",
-    "Recompute the results of the body's TOC, page, page-count, sequence and reference "
+    "Recompute the results of the body's TOC, INDEX, page, page-count, sequence and reference "
     "fields through headless LibreOffice and write only those result runs, as tracked "
     "changes (the old result is struck, the new one inserted). Without LibreOffice it "
     "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
