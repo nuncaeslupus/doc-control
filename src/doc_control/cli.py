@@ -44,8 +44,20 @@ def main(argv: list[str] | None = None) -> int:
         envelope, code = failure(op, err), 2
     else:
         envelope, code = execute(registry, op, request)
-    print(json.dumps(envelope, ensure_ascii=False))
+    _write_utf8(json.dumps(envelope, ensure_ascii=False) + "\n")
     return code
+
+
+def _utf8(stream: Any) -> None:
+    """UTF-8 on ``stream`` whatever the locale (Windows pipes default to cp1252)."""
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8")
+
+
+def _write_utf8(text: str) -> None:
+    _utf8(sys.stdout)
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 
 def execute(
@@ -73,6 +85,8 @@ def _read_request(rest: list[str]) -> dict[str, Any]:
     if rest[:1] == ["--json"]:
         if len(rest) < 2:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, "--json needs a value")
+        if rest[1] == "-":
+            _utf8(sys.stdin)
         raw = sys.stdin.read() if rest[1] == "-" else rest[1]
         if len(rest) > 2:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unexpected arguments: {rest[2:]}")
