@@ -137,3 +137,58 @@ It reads back the six files, checks that no tracked change is left and that ever
 paragraph of every story (body, notes, headers and footers) is what accepting or rejecting
 should leave, prints each `MISMATCH`, then `real_word_stories_mismatches == <n>`. Report
 it, and the names of any file that asked to repair, per Word version as in step 7.
+
+## Layout: sections, page numbers, headers and a TOC
+
+A third check, for `layout.apply` and `toc.insert`: the page plans of the LAYOUT spec, each
+applied to the corpus novel (a title, then 40 chapters, with a footer printing the page
+number). Same setup as above (Windows, Word 2016 or later, `uv`, `git`); about 20 minutes.
+The gate is `real_word_layout_mismatches == 0`, with no repair prompt and every page
+number as described below.
+
+```powershell
+uv run python scripts/real_word_layout.py build C:\layout
+```
+
+`C:\layout` now holds the documents below and `expected.json`; `build` prints what to
+look for in each. `toc.docx` is built only when LibreOffice is installed (its page
+numbers come from `fields.update`); without it, the script says so and leaves it out.
+
+| Document | What Word must show |
+|---|---|
+| `front_matter.docx` | the title page has no number; the first page of Capítulo 1 shows 1 |
+| `roman_then_arabic.docx` | i, ii, iii, … up to Capítulo 2, which starts again at 1 |
+| `part_page.docx` | Capítulo 2's heading alone on a page with no number; the next page shows the count, two or more past the page before the heading |
+| `restart_per_part.docx` | the count starts at 1 on the title, again at Capítulo 3 and at Capítulo 5 |
+| `recto_chapters.docx` | Capítulo 2 and Capítulo 3 start on odd page numbers (Word leaves a blank even page before them when needed) |
+| `two_sided.docx` | the README's plan: odd pages show the chapter title in the header, even pages "La casa del río", the title page neither; mirrored margins (**View → Multiple Pages**) |
+| `toc.docx` | a "Contents" list after the title, every chapter with a page number |
+
+For each document:
+
+1. Open it in Word. Did Word offer to repair it? (Must be no; write the name down.)
+2. With **All Markup** on, the section breaks and page-number changes show as tracked
+   formatting changes by "doc-control LAYOUT". Check the pages against the table (the
+   number is in the footer; double-click it if the footer is hidden).
+3. **Review → Accept → Accept All Changes**. For `toc.docx` only, then right-click the
+   table of contents → **Update Field** → **Update entire table**: the page numbers must
+   stay the same.
+4. **Save As** `<name>-accepted.docx` in `C:\layout` (for example
+   `front_matter-accepted.docx`). Close.
+
+`roman_then_arabic.docx` is reached with tracked changes alone, so rejecting them must
+give the original back: open it again, **Reject All Changes**, check that the pages show
+1, 2, 3, … throughout, and **Save As** `roman_then_arabic-rejected.docx`. Close.
+
+Then:
+
+```powershell
+uv run python scripts/real_word_layout.py verify C:\layout
+```
+
+It reads back each saved file, checks that no tracked change is left, that `layout.get`
+reads the planned sections, breaks, numbering and header and footer text (and the
+original plan for the rejected file), and that Word's updated TOC equals the one
+doc-control wrote. It prints each `MISMATCH`, then `real_word_layout_mismatches == <n>`.
+Report it, the names of any file that asked to repair and any page that did not show as
+the table says, per Word version as in step 7.
