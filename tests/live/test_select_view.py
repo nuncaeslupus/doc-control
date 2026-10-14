@@ -8,7 +8,7 @@ from typing import Any
 
 from doc_control import api
 from doc_control.live.dispatch import using
-from doc_control.live.protocol import FakeAdapter, Span
+from doc_control.live.protocol import FakeAdapter, LiveUnavailable, Span
 from doc_control.model.address import fingerprint
 from tests.helpers import make_docx
 
@@ -61,3 +61,17 @@ def test_a_window_that_will_not_come_says_so(tmp_path: Path) -> None:
     fake = Hidden({str(doc): ["One."]})
     with using(fake):
         assert _run("live.open", {"doc": str(doc)})["front"] is False
+
+
+def test_a_failure_to_come_to_the_front_does_not_fail_the_select(tmp_path: Path) -> None:
+    class Busy(FakeAdapter):
+        def show(self, path: Path) -> bool:
+            raise LiveUnavailable("busy")
+
+    doc = make_docx(tmp_path / "a.docx", "One.")
+    fake = Busy({str(doc): ["One."]})
+    fake.open(doc)
+    with using(fake):
+        got = _run("live.select", {"doc": str(doc), "at": f"p1#{fingerprint('One.')}"})
+        assert got["front"] is False
+        assert _run("live.selection", {"doc": str(doc)})["text"] == "One."

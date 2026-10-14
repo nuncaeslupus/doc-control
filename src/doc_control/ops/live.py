@@ -49,6 +49,15 @@ _FRONT = {
 }
 
 
+def _front(adapter: Any, path: Path) -> bool:
+    """Bring the app's window to the front. The open or select has already happened, so a
+    window that cannot come (a busy app, a frame going away) is ``False``, not a failure."""
+    try:
+        return bool(adapter.show(path))
+    except Exception:
+        return False
+
+
 def _schema(required: bool = True, **extra: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "object",
@@ -176,7 +185,7 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
     guarded(adapter.open, path)
     out = {"app": adapter.app, "path": str(path.resolve()), "dirty": guarded(adapter.dirty, path)}
     if request.get("front", True):
-        out["front"] = guarded(adapter.show, path)
+        out["front"] = _front(adapter, path)
     return out
 
 
@@ -281,7 +290,7 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
     text = guarded(adapter.select, path, Span(n, n), cursor)
     out: dict[str, Any] = {"text": text, "at": str(Address(n + 1, fingerprint(text)))}
     if request.get("front", True):
-        out["front"] = guarded(adapter.show, path)
+        out["front"] = _front(adapter, path)
     return out
 
 

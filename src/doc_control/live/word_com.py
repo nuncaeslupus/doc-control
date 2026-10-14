@@ -678,9 +678,9 @@ class Word:
     @_guard
     def show(self, path: Path) -> bool:
         doc = self._doc(path)
-        if not self._application().Visible:
-            return False
         window = doc.ActiveWindow
+        if not (self._application().Visible and window.Visible):
+            return False
         if int(window.WindowState) == _MINIMIZED:
             window.WindowState = _NORMAL
         window.Activate()
