@@ -45,7 +45,7 @@ schemaLibrary shapeDefaults doNotEmbedSmartTags decimalSymbol listSeparator
 _RANK = {name: i for i, name in enumerate(_NAMES.split())}
 
 _TOKEN = re.compile(
-    rb"<!--.*?-->|<\?.*?\?>|<!\[CDATA\[.*?\]\]>"
+    rb"<!--.*?-->|<\?.*?\?>|<!\[CDATA\[.*?\]\]>|<!DOCTYPE(?:[^>\[]|\[.*?\])*>"
     rb"|</([^\s>]+)\s*>"
     rb"|<([^\s/>]+)((?:[^>\"']|\"[^\"]*\"|'[^']*')*?)(/?)>",
     re.S,
@@ -129,6 +129,18 @@ def set_flag(data: bytes, name: str, on: bool) -> bytes:
         return data[:start] + (_element(data, name) if on else b"") + data[end:]
     if not on:
         return data
+    root = next((m for m in _TOKEN.finditer(data) if m.group(2) is not None), None)
+    if root is not None and root.group(4):  # `<w:settings/>`: open it up
+        tag = root.group(2) + root.group(3)
+        return (
+            data[: root.start()]
+            + b"<"
+            + tag
+            + b">"
+            + _element(data, name)
+            + (b"</" + root.group(2) + b">")
+            + data[root.end() :]
+        )
     at = data.rfind(b"</")
     for local, start, _ in children:
         if _RANK.get(local, -1) > _RANK[name]:

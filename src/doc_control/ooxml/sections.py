@@ -371,6 +371,14 @@ def new_break(source: ET.Element, ctx: RevisionContext) -> ET.Element:
     return p
 
 
+def middle_setup(source: ET.Element, break_type: str) -> ET.Element:
+    """A copy of ``source`` for a section made by an earlier break of type ``break_type``:
+    it starts as that break says, without the page-number restart or the title page."""
+    work = copy.deepcopy(source)
+    _apply(work, {"break": break_type, "page_number_start": None, "title_page": False}, refs=False)
+    return work
+
+
 def mark_break_removed(p: ET.Element, ctx: RevisionContext) -> None:
     """Track the removal of the section break that ends paragraph ``p``: its mark is
     deleted. (Accepting joins ``p`` with the next paragraph and the break goes.)"""
@@ -395,6 +403,7 @@ __all__ = [
     "drop_change",
     "effective",
     "mark_break_removed",
+    "middle_setup",
     "new_break",
     "previous_setup",
     "restore_section",

@@ -56,12 +56,14 @@ from doc_control.ooxml.sections import (
     effective,
     has_refs,
     mark_break_removed,
+    middle_setup,
     new_break,
     section_closers,
 )
 from doc_control.ooxml.settingsflags import SETTINGS_PART, read_flag, set_flag
 from doc_control.ooxml.splice import DocumentSpans, scan
 from doc_control.ooxml.zipio import build_package
+from doc_control.ops.tracked import next_in_container
 from doc_control.safety.history import record, to_text
 from doc_control.safety.layout import layout_footprint, untracked_section_changes
 from doc_control.safety.lock import check_changed, check_unlocked
@@ -84,6 +86,10 @@ class LayoutWriteResult:
 
 def _bad(message: str, **details: object) -> DocControlError:
     return DocControlError(ErrorCode.SCHEMA_INVALID, message, **details)
+
+
+def _section_of(closers: Sequence[int | None], span_index: int) -> int:
+    return next((k + 1 for k, c in enumerate(closers) if c is None or c > span_index), len(closers))
 
 
 def _closing_sect(elem: ET.Element) -> ET.Element:
@@ -162,6 +168,12 @@ def apply_layout_edits(
                     "no content follows the last paragraph: a break there starts an empty section",
                     paragraph=str(para.address),
                 )
+            if next_in_container(doc.index, para) is None:
+                raise unsupported(
+                    "a tracked section break cannot go right before a table or at the end of "
+                    "a container: rejecting it would leave the break behind",
+                    paragraph=str(para.address),
+                )
             if para.span_index in breaks:
                 raise DocControlError(
                     ErrorCode.BATCH_CONFLICT, f"two breaks after {para.address}", edits=[n]
@@ -185,22 +197,20 @@ def apply_layout_edits(
         else:
             raise _bad(f"edit {n}: unknown kind {kind!r}")
 
+    by_section: dict[int, list[int]] = {}
     for span_index in sorted(breaks):
         # The section a break splits is closed by the first closer at or after the paragraph;
-        # that closer stays and becomes the section after the break.
-        number = next(
-            (k + 1 for k, c in enumerate(closers) if c is None or c > span_index),
-            len(closers),
-        )
-        _, value = breaks[span_index]
+        # that closer stays and becomes the section after the last break.
+        by_section.setdefault(_section_of(closers, span_index), []).append(span_index)
+    for number, group in by_section.items():
+        value = breaks[group[-1]][1]
         source = _source_setup(spans, closers[number - 1])
         implied: dict[str, Any] = {"break": value}
         if source["page_number_start"] is not None:
             implied["page_number_start"] = None
         if source["title_page"]:
             implied["title_page"] = False
-        merged = {**implied, **props_by_section.get(number, {})}
-        props_by_section[number] = merged
+        props_by_section[number] = {**implied, **props_by_section.get(number, {})}
 
     if any(has_refs(p) for p in props_by_section.values()) and not untracked:
         raise unsupported(
@@ -256,15 +266,18 @@ def apply_layout_edits(
 
     for span_index in sorted(breaks):
         before_ids = len(ctx.revision_ids)
-        number = next(
-            (k + 1 for k, c in enumerate(closers) if c is None or c > span_index), len(closers)
-        )
+        number = _section_of(closers, span_index)
         closer = closers[number - 1]
         source_sect = (
             spans.parse_body_sect()
             if closer is None
             else _closing_sect(spans.parse_paragraph(closer))
         )
+        group = by_section[number]
+        if span_index != group[0]:
+            # A later break in the same section: it starts as the earlier break made it, and
+            # carries neither the page-number restart nor the title page of the first part.
+            source_sect = middle_setup(source_sect, breaks[group[group.index(span_index) - 1]][1])
         inserted[span_index] = new_break(source_sect, ctx)
         para = next(p for p in doc.index.paragraphs if p.span_index == span_index)
         mark("section.break", str(para.address), True, before_ids, type=breaks[span_index][1])

@@ -347,3 +347,56 @@ def test_the_metric_flags_an_untracked_section_change(tmp_path: Path) -> None:
     assert swapped != original
     assert len(untracked_section_changes(original, swapped)) == 1
     assert untracked_section_changes(original, swapped, allow_refs=True) == []
+
+
+def _with_table_after(path: Path, text: str) -> Path:
+    """``path`` with a one-cell table right after the paragraph holding ``text``."""
+    with zipfile.ZipFile(path) as zf:
+        members = {n: zf.read(n) for n in zf.namelist()}
+    table = b"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    doc = members[DOCUMENT]
+    at = doc.index(b"</w:p>", doc.index(text.encode())) + len(b"</w:p>")
+    members[DOCUMENT] = doc[:at] + table + doc[at:]
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return path
+
+
+def test_a_break_before_a_table_is_refused_not_left_unrejectable(tmp_path: Path) -> None:
+    path = _with_table_after(make(tmp_path), "Section 1 paragraph 2")
+    before = path.read_bytes()
+    with pytest.raises(DocControlError, match="before a table") as raised:
+        edit(path, {"kind": "section.break", "after": address(path, 2)})
+    assert raised.value.code is ErrorCode.UNSUPPORTED_CONTENT
+    assert path.read_bytes() == before
+
+
+def test_two_breaks_in_one_section_each_get_their_own_setup(tmp_path: Path) -> None:
+    path = make(tmp_path, plan(section(), section(start=1, first_page_different=True)))
+    original = part(path)
+    out = edit(
+        path,
+        {"kind": "section.break", "after": address(path, 4), "type": "evenPage"},
+        {"kind": "section.break", "after": address(path, 5), "type": "oddPage"},
+    )
+    assert sum(c["kind"] == "section.break" for c in out.changes) == 2
+    rows = sections(path)
+    assert [r["break"] for r in rows] == ["nextPage", "nextPage", "evenPage", "oddPage"]
+    assert [r["page_numbers"]["start"] for r in rows] == [None, 1, None, None]
+    assert [r["title_page"] for r in rows] == [False, True, False, False]
+
+    resolve(path, "reject", all=True)
+    assert part(path) == original
+
+
+def test_set_flag_on_a_self_closing_root_and_a_doctype(tmp_path: Path) -> None:
+    from doc_control.ooxml.settingsflags import read_flag, set_flag
+
+    ns = b'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    out = set_flag(b"<w:settings " + ns + b"/>", "mirrorMargins", True)
+    assert out == b"<w:settings " + ns + b"><w:mirrorMargins/></w:settings>"
+    doctype = b'<?xml version="1.0"?><!DOCTYPE w:settings [<!ENTITY a "b">]>'
+    full = doctype + b"<w:settings " + ns + b"><w:mirrorMargins/></w:settings>"
+    assert read_flag(full, "mirrorMargins") is True
+    assert set_flag(full, "mirrorMargins", False).endswith(b"<w:settings " + ns + b"></w:settings>")
