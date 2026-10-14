@@ -23,6 +23,8 @@ _CODE = re.compile(r"\^(?:u([0-9]+)|(.))", re.DOTALL)
 def _one(match: re.Match[str]) -> str:
     digits, code = match.groups()
     if digits is not None:
+        if len(digits) > 7:  # past U+10FFFF anyway, and int() caps very long digit runs
+            return match.group(0)
         point = int(digits)
         # NUL, surrogates and anything past Unicode cannot appear in a document's text.
         if point == 0 or 0xD800 <= point <= 0xDFFF or point > 0x10FFFF:
