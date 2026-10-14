@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
@@ -107,6 +108,8 @@ def _lo_rejected(doc: Path, work: Path) -> ET.Element | None:
     """The document after LibreOffice rejects every tracked change, or None without uno."""
     python = _lo_python()
     if python is None:
+        if os.environ.get("DOC_CONTROL_REQUIRE_SOFFICE"):
+            pytest.fail("DOC_CONTROL_REQUIRE_SOFFICE is set but no Python can import uno")
         return None
     with socket.socket() as sock:
         sock.bind(("localhost", 0))

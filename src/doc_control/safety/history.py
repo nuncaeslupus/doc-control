@@ -41,7 +41,7 @@ from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.splice import BODY, Container, scan
-from doc_control.ooxml.zipio import Package, restore_file, sha256_file
+from doc_control.ooxml.zipio import Package, commit_bytes, sha256_file
 from doc_control.safety import guard_write
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.store import (
@@ -414,7 +414,9 @@ def _undo_by_backup(
     if current != entry["sha256_after"]:
         raise _conflict(entry, [], "the document was edited since; it adds a part as a whole")
     saved = DocStore.open(doc_path, env).backups_dir / str(entry.get("backup"))
-    if not saved.is_file() or sha256_file(saved) != entry["sha256_before"]:
+    # Read now: the backup guard_write takes below may prune this one.
+    payload = saved.read_bytes() if saved.is_file() else b""
+    if hashlib.sha256(payload).hexdigest() != entry["sha256_before"]:
         raise DocControlError(
             ErrorCode.HISTORY_NOT_FOUND,
             f"the backup {entry.get('backup')} that {entry['op_id']} needs is gone",
@@ -428,7 +430,16 @@ def _undo_by_backup(
     if dry_run:
         return UndoOutcome(current, None, None, reverted)
     taken = guard_write(doc_path, current, now=now, env=env)
-    restore_file(saved, doc_path)
+    check_unlocked(doc_path)
+    check_changed(doc_path, current)
+    try:
+        commit_bytes(payload, doc_path, None)
+    except PermissionError as exc:
+        raise DocControlError(
+            ErrorCode.DOC_LOCKED,
+            f"could not replace {doc_path.name}, it is held open: {exc}",
+            path=str(doc_path),
+        ) from exc
     return UndoOutcome(current, sha256_file(doc_path), taken, reverted)
 
 

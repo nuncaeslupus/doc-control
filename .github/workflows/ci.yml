@@ -89,7 +89,7 @@ jobs:
       - name: Install LibreOffice Writer (headless)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui
+          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui python3-uno
           soffice --version
       - name: Corpus round trip
         run: uv run pytest -q tests/corpus
