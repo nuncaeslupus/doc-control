@@ -1,4 +1,4 @@
-.PHONY: sync build lint format test check bench clean
+.PHONY: sync build lint format test check bench clean hero
 
 sync:
 	uv sync
@@ -27,3 +27,6 @@ bench:
 clean:
 	rm -rf dist build .mypy_cache .pytest_cache .ruff_cache .coverage
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+hero:  ## redraw the README banner, docs/hero.svg and docs/hero.png (needs Chromium + Pillow)
+	uv run --with pillow python tools/hero.py

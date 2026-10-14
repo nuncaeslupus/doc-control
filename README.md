@@ -1,7 +1,7 @@
-# doc-control
+# <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/logo.png" width="40" height="40" alt="" align="top"> doc-control
 
 <p align="center">
-  <img src="docs/social-preview.png" width="100%" alt="doc-control: let AI agents edit Word documents safely. Deterministic .docx edits, every change a tracked change the writer can reject.">
+  <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/hero.png" width="100%" alt="doc-control: an agent sends one JSON batch that replaces a word and adds a comment; the open Word page shows the replacement as a tracked deletion and insertion with Accept and Reject buttons, and the comment in a margin balloon">
 </p>
 
 > Status: **file engine working** (pre-1.0; the API may still change). The live engine
