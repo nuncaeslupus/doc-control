@@ -82,6 +82,7 @@ OPERATION_MODULES: dict[str, str] = {
     "index.insert": "crossref",
     "index.mark": "crossref",
     "info": "read",
+    "layout.apply": "layout",
     "layout.get": "layout",
     "live.close": "live",
     "live.select": "live",

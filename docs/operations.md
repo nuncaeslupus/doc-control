@@ -227,6 +227,20 @@ File facts: size, hash, paragraph count, properties and which parts exist.
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+## `layout.apply` (write)
+
+Bring the document's section breaks and page numbering to a page plan (as layout.get returns it): where each section starts (from), its break (nextPage, oddPage for a right-hand start, evenPage, continuous), the page-number start and format, and a different first page. Keys left out stay as they are. Changes are tracked; sections already in the document must all be kept. All or nothing: the plan read back from the result must equal the request, else nothing is written (UNSUPPORTED_CONTENT; header and footer text, shown, two_sided and mirror_margins are checked, not changed). dry_run lists the changes and the plan that would result.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `plan` | object | yes | The page plan: version 1 and sections, each with a from address. |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `untracked` | boolean |  | Allow a change Word cannot track (LAYOUT D-L2). |
+| `expect` | object |  |  |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+
 ## `layout.get` (read)
 
 The document's page plan: per section where it starts, its break, page numbering, title page, and the header and footer text per kind (default, first, even), with PAGE, NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the section does not define is null (inherited). The plan carries "version": 1.

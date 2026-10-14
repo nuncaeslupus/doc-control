@@ -7,16 +7,23 @@ The definitions live in :mod:`doc_control.model.layout`.
 from __future__ import annotations
 
 import re
+import tempfile
 import xml.etree.ElementTree as ET
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 from doc_control.envelope import Reply
+from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.layout import blank_before, centred, is_empty, page_break_before
 from doc_control.model.parts import W, parse_part
 from doc_control.model.stories import HF_KINDS, list_stories
+from doc_control.ooxml.revisions import DEFAULT_AUTHOR, unsupported
+from doc_control.ooxml.sections import BREAK_TYPES, check_props
 from doc_control.ops.read import OUTLINE_FACTS, PARA_FACTS, ParagraphContext
 from doc_control.ops.sections import SETTINGS_PART, flag, section_rows
+from doc_control.ops.sectionwrite import apply_layout_edits
 from doc_control.registry import operation
 
 
@@ -196,6 +203,11 @@ def _paragraph_starts(doc: Document, count: int) -> list[int]:
 )
 def layout_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
+    return Reply(page_plan(doc), doc=doc.envelope_doc())
+
+
+def page_plan(doc: Document) -> dict[str, Any]:
+    """The document's page plan, as `layout.get` returns it."""
     pkg = doc.pkg
     rows = section_rows(doc)
     mirror = False
@@ -245,10 +257,260 @@ def layout_get(request: dict[str, Any]) -> Reply:
                 "first_page_different": row["title_page"],
             }
         )
-    result = {
+    return {
         "version": _PLAN_VERSION,
         "two_sided": bool(rows and rows[0]["even_and_odd"]),
         "mirror_margins": mirror,
         "sections": sections,
     }
-    return Reply(result, doc=doc.envelope_doc())
+
+
+# --- layout.apply: breaks and numbering (LAYOUT T4) ----------------------------------------
+
+_BREAKS = BREAK_TYPES[:-1]  # the plan has no column breaks
+_SECTION_KEYS = {"from", "break", "numbering", "header", "footer", "first_page_different"}
+_NEW_SECTION = {
+    "break": "nextPage",
+    "page_number_start": None,
+    "page_number_format": "decimal",
+    "title_page": False,
+}
+_OMITTED: Any = object()
+
+
+def _bad_plan(message: str, **details: object) -> DocControlError:
+    return DocControlError(ErrorCode.SCHEMA_INVALID, message, **details)
+
+
+def _check_plan(plan: dict[str, Any]) -> None:
+    """Refuse what is not a version-1 page plan. A key left out means "leave it as it is"."""
+    if plan.get("version") != _PLAN_VERSION:
+        raise _bad_plan(f"plan.version must be {_PLAN_VERSION}", got=plan.get("version"))
+    for key in ("two_sided", "mirror_margins"):
+        if key in plan and not isinstance(plan[key], bool):
+            raise _bad_plan(f"plan.{key} must be true or false")
+    sections = plan.get("sections")
+    if not isinstance(sections, list) or not sections:
+        raise _bad_plan("plan.sections must be a non-empty list")
+    for n, sect in enumerate(sections):
+        where = f"plan.sections[{n}]"
+        if not isinstance(sect, dict) or not isinstance(sect.get("from"), str):
+            raise _bad_plan(f"{where} needs a 'from' address")
+        unknown = sorted(set(sect) - _SECTION_KEYS)
+        if unknown:
+            raise _bad_plan(f"{where}: unknown keys {', '.join(unknown)}")
+        if "break" in sect and sect["break"] not in _BREAKS:
+            raise _bad_plan(f"{where}.break must be one of {', '.join(_BREAKS)}")
+        if "first_page_different" in sect and not isinstance(sect["first_page_different"], bool):
+            raise _bad_plan(f"{where}.first_page_different must be true or false")
+        num = sect.get("numbering", {})
+        if not isinstance(num, dict) or set(num) - {"shown", "start", "format"}:
+            raise _bad_plan(f"{where}.numbering takes shown, start and format")
+        if "shown" in num and not isinstance(num["shown"], bool):
+            raise _bad_plan(f"{where}.numbering.shown must be true or false")
+        numbering = {"page_number_" + k: num[k] for k in ("start", "format") if k in num}
+        if numbering:
+            check_props(numbering)
+        for group in ("header", "footer"):
+            texts = sect.get(group, {})
+            if not isinstance(texts, dict) or set(texts) - set(HF_KINDS):
+                raise _bad_plan(f"{where}.{group} takes {', '.join(HF_KINDS)}")
+            if any(v is not None and not isinstance(v, str) for v in texts.values()):
+                raise _bad_plan(f"{where}.{group} values are text or null")
+
+
+def _row_props(row: dict[str, Any]) -> dict[str, Any]:
+    """A `sections.list` row as the section properties the writer takes."""
+    return {
+        "break": row["break"],
+        "page_number_start": row["page_numbers"]["start"],
+        "page_number_format": row["page_numbers"]["format"],
+        "title_page": row["title_page"],
+    }
+
+
+def _wanted_props(sect: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    """The properties the plan section asks for; what it leaves out stays as in ``base``."""
+    num = sect.get("numbering", {})
+    asked = {
+        "break": sect.get("break", _OMITTED),
+        "page_number_start": num.get("start", _OMITTED),
+        "page_number_format": num.get("format", _OMITTED),
+        "title_page": sect.get("first_page_different", _OMITTED),
+    }
+    return {k: base[k] if v is _OMITTED else v for k, v in asked.items()}
+
+
+def _plan_edits(doc: Document, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """The section edits (as :func:`apply_layout_edits` takes them) that bring the
+    document's breaks and numbering to ``plan``."""
+    rows = section_rows(doc)
+    old_starts = _paragraph_starts(doc, len(rows))
+    wanted = [(doc.index.resolve_address(s["from"]).number, s) for s in plan["sections"]]
+    starts = [n for n, _ in wanted]
+    if starts[0] != 1 or starts != sorted(set(starts)):
+        raise _bad_plan(
+            "plan.sections must start at paragraph 1, then at increasing, distinct paragraphs"
+        )
+    gone = [n for n in old_starts if n not in starts]
+    if gone:
+        raise unsupported(
+            "layout.apply does not remove section breaks: keep the section that starts at each of "
+            + ", ".join(str(doc.index.paragraph(n).address) for n in gone)
+        )
+    edits: list[dict[str, Any]] = []
+    ends = [*old_starts[1:], len(doc.index) + 1]
+    for number, (row, start, end) in enumerate(zip(rows, old_starts, ends, strict=True), 1):
+        # The section's first part keeps its place; later parts are new breaks, and the
+        # last part keeps the section's own closing sectPr.
+        parts = [s for n, s in wanted if start <= n < end]
+        for k, sect in enumerate(parts):
+            props = _wanted_props(sect, _row_props(row) if k == 0 else _NEW_SECTION)
+            if len(parts) == 1:
+                props = {key: v for key, v in props.items() if v != _row_props(row)[key]}
+                if props:
+                    edits.append({"kind": "section.props", "section": number, "props": props})
+            elif k + 1 == len(parts):
+                edits.append({"kind": "section.props", "section": number, "props": props})
+            else:
+                following = parts[k + 1]
+                at = doc.index.resolve_address(following["from"]).number - 1
+                edits.append(
+                    {
+                        "kind": "section.break",
+                        "after": str(doc.index.paragraph(at).address),
+                        "type": _wanted_props(following, _NEW_SECTION)["break"],
+                        "props": props,
+                    }
+                )
+    return edits
+
+
+def _differences(want: Any, got: Any, path: str = "plan") -> list[str]:
+    """Where ``got`` differs from ``want``, looking only at the keys ``want`` has."""
+    if isinstance(want, dict) and isinstance(got, dict):
+        return [
+            d
+            for key, value in want.items()
+            for d in _differences(value, got.get(key, _OMITTED), f"{path}.{key}")
+        ]
+    if isinstance(want, list) and isinstance(got, list):
+        if len(want) != len(got):
+            return [f"{path}: {len(got)} entries, not {len(want)}"]
+        return [
+            d
+            for i, (w, g) in enumerate(zip(want, got, strict=True))
+            for d in _differences(w, g, f"{path}[{i}]")
+        ]
+    return [] if want == got else [f"{path}: {got!r}, not {want!r}"]
+
+
+def apply_plan(
+    path: Path,
+    plan: dict[str, Any],
+    *,
+    dry_run: bool = False,
+    untracked: bool = False,
+    expect_sha256: str | None = None,
+    author: str = DEFAULT_AUTHOR,
+    tag: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Bring the document to ``plan`` (breaks, numbering) in one write; the result and its
+    warnings. The write is checked before it is made: the plan read back from the resulting
+    file must equal ``plan``, else nothing is written."""
+    _check_plan(plan)
+    doc = Document(str(path))
+    edits = _plan_edits(doc, plan)
+    write = partial(
+        apply_layout_edits,
+        path,
+        edits,
+        untracked=untracked,
+        author=author,
+        tag=tag,
+        expect_sha256=expect_sha256,
+    )
+    after = page_plan(doc)
+    if edits:
+        probe = write(dry_run=True)
+        assert probe.package is not None
+        with tempfile.TemporaryDirectory() as scratch:
+            made = Path(scratch) / "after.docx"
+            made.write_bytes(probe.package)
+            after = page_plan(Document(str(made)))
+    want = {
+        **plan,
+        "sections": [{k: v for k, v in s.items() if k != "from"} for s in plan["sections"]],
+    }
+    differences = _differences(want, after)
+    if differences:
+        raise unsupported(
+            "the plan asks for more than breaks and numbering can reach: header and footer "
+            "text, shown, two-sided and mirror margins are not changed by this call",
+            differences=differences,
+        )
+    if not edits:
+        return {"dry_run": dry_run, "changes": [], "plan": after}, []
+    if dry_run:
+        return {"dry_run": True, "changes": probe.changes, "plan": after}, []
+    done = write()
+    result = {
+        "dry_run": False,
+        "changes": done.changes,
+        "plan": page_plan(Document(str(path))),
+        "revision_ids": done.revision_ids,
+        "sha256": done.after_sha256,
+        "backup": str(done.backup) if done.backup else None,
+        "op_id": done.op_id,
+    }
+    return result, done.warnings
+
+
+@operation(
+    "layout.apply",
+    "write",
+    "Bring the document's section breaks and page numbering to a page plan (as layout.get "
+    "returns it): where each section starts (from), its break (nextPage, oddPage for a "
+    "right-hand start, evenPage, continuous), the page-number start and format, and a "
+    "different first page. Keys left out stay as they are. Changes are tracked; sections "
+    "already in the document must all be kept. All or nothing: the plan read back from the "
+    "result must equal the request, else nothing is written (UNSUPPORTED_CONTENT; header "
+    "and footer text, shown, two_sided and mirror_margins are checked, not changed). "
+    "dry_run lists the changes and the plan that would result.",
+    {
+        "type": "object",
+        "properties": {
+            "doc": {"type": "string", "minLength": 1, "description": "Path to the .docx."},
+            "plan": {
+                "type": "object",
+                "description": "The page plan: version 1 and sections, each with a from address.",
+            },
+            "dry_run": {"type": "boolean", "description": "Preview only; write nothing."},
+            "untracked": {
+                "type": "boolean",
+                "description": "Allow a change Word cannot track (LAYOUT D-L2).",
+            },
+            "expect": {
+                "type": "object",
+                "properties": {"sha256": {"type": "string", "minLength": 1}},
+                "additionalProperties": False,
+            },
+            "author": {"type": "string", "minLength": 1, "description": "Revision author."},
+            "tag": {"type": "string", "minLength": 1, "description": "Appended to the author."},
+        },
+        "required": ["doc", "plan"],
+        "additionalProperties": False,
+    },
+)
+def layout_apply(request: dict[str, Any]) -> Reply:
+    path = Path(request["doc"])
+    result, warnings = apply_plan(
+        path,
+        request["plan"],
+        dry_run=request.get("dry_run", False),
+        untracked=request.get("untracked", False),
+        expect_sha256=request.get("expect", {}).get("sha256"),
+        author=request.get("author", DEFAULT_AUTHOR),
+        tag=request.get("tag"),
+    )
+    return Reply(result, doc=Document(str(path)).envelope_doc(), warnings=warnings)
