@@ -38,7 +38,11 @@ def test_close_dirty_without_flag_refused(live: LibreOffice, lo_home: Path) -> N
     doc = make_docx(lo_home / "dirty.docx", "One.", "Two.")
     request = {"doc": str(doc)}
     assert _run("live.status", request)["open_in"] is None
-    assert _run("live.open", request) == {"app": "libreoffice", "dirty": False}
+    assert _run("live.open", request) == {
+        "app": "libreoffice",
+        "path": str(doc.resolve()),
+        "dirty": False,
+    }
     assert _run("live.open", request)["app"] == "libreoffice"  # attaches, no second window
     _type(live, doc, " More.")
 
@@ -86,6 +90,20 @@ def test_a_document_opened_through_a_symlink_is_found_by_its_target(
     finally:
         _run("live.close", {"doc": str(doc), "discard": True})
     assert not live.is_open(link)
+
+
+def test_open_documents_are_listed_and_found_by_name(live: LibreOffice, lo_home: Path) -> None:
+    doc = make_docx(lo_home / "Named.docx", "One.")
+    _run("live.open", {"doc": str(doc)})
+    try:
+        listed = _run("live.status", {})["documents"]
+        assert {"app": "libreoffice", "path": str(doc.resolve()), "name": "Named.docx"} in listed
+        status = _run("live.status", {"doc": "Named.docx"})
+        assert status["path"] == str(doc.resolve())
+        assert status["open_in"] == {"app": "libreoffice", "controlled": True}
+    finally:
+        _run("live.close", {"doc": "Named.docx", "discard": True})
+    assert not live.is_open(doc)
 
 
 def _windows(adapter: LibreOffice) -> list[Any]:

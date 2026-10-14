@@ -308,6 +308,24 @@ class Word:
                 return doc
         return None
 
+    @_guard
+    def documents(self) -> list[Path]:
+        try:
+            word = self._application()
+        except LiveUnavailable:
+            return []
+        found = []
+        for doc in word.Documents:
+            if not str(doc.Path):
+                continue  # never saved
+            name = str(doc.FullName)
+            if "://" in name and self._mounts is None:
+                self._mounts = _onedrive_mounts()
+            places = local_paths(name, self._mounts or [])
+            if places:
+                found.append(next((p for p in places if p.exists()), places[0]))
+        return found
+
     def _doc(self, path: Path) -> Any:
         doc = self._find(path)
         if doc is None:

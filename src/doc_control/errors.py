@@ -25,6 +25,7 @@ class ErrorCode(StrEnum):
     RECIPE_INVALID = "RECIPE_INVALID"
     HISTORY_NOT_FOUND = "HISTORY_NOT_FOUND"
     ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE"
+    DOC_AMBIGUOUS = "DOC_AMBIGUOUS"
     UNSAVED_CHANGES = "UNSAVED_CHANGES"
     INTERNAL = "INTERNAL"
 
@@ -56,6 +57,8 @@ HINTS: dict[ErrorCode, str] = {
     ErrorCode.ENGINE_UNAVAILABLE: (
         "details.reason says why; live.status lists the apps. Without one, use the file engine."
     ),
+    ErrorCode.DOC_AMBIGUOUS: "Several open documents have that name: pass the full path, one "
+    "of details.candidates.",
     ErrorCode.UNSAVED_CHANGES: "Pass save: true to keep the changes or discard: true to drop them.",
     ErrorCode.INTERNAL: "Unexpected error; nothing was written. Report it with the request.",
 }
