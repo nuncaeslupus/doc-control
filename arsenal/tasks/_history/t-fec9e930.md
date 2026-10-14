@@ -5,6 +5,7 @@ label: "table.get"
 priority: 5
 deps: [t-0a709c5e]
 workspace: STORIES
+status: merged
 ---
 
 ## Acceptance gate
