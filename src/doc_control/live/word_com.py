@@ -20,6 +20,7 @@ tried again for up to ``BUSY_TIMEOUT`` seconds, as long as it has not changed an
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import functools
 import importlib
 import importlib.util
@@ -53,6 +54,11 @@ _MAIN_STORY = 1  # wdMainTextStory
 _PARAGRAPH = 4  # wdParagraph
 _END_OF_ROW = 31  # wdAtEndOfRowMarker
 _NO_SAVE = 0  # wdDoNotSaveChanges
+_COLLAPSE_START = 1  # wdCollapseStart
+_MINIMIZED = 2  # wdWindowStateMinimize
+_NORMAL = 0  # wdWindowStateNormal
+#: DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: Window.GetPoint gives physical pixels.
+_PER_MONITOR = -4
 
 _CELL = "\x07"
 _CELL_END = "\r\x07"  # the end of a cell or a row: one position in Word
@@ -659,10 +665,26 @@ class Word:
         return self._range(self._doc(path), span)[1]
 
     @_guard
-    def select(self, path: Path, span: Span) -> str:
-        rng, text = self._range(self._doc(path), span)
+    def select(self, path: Path, span: Span, cursor: bool = False) -> str:
+        doc = self._doc(path)
+        rng, text = self._range(doc, span)
         rng.Select()
+        with contextlib.suppress(Exception):  # a hidden or minimised window has no layout
+            _centre(doc.ActiveWindow, rng)
+        if cursor:
+            doc.ActiveWindow.Selection.Collapse(_COLLAPSE_START)
         return text
+
+    @_guard
+    def show(self, path: Path) -> bool:
+        doc = self._doc(path)
+        window = doc.ActiveWindow
+        if not (self._application().Visible and window.Visible):
+            return False
+        if int(window.WindowState) == _MINIMIZED:
+            window.WindowState = _NORMAL
+        window.Activate()
+        return _to_front(int(window.Hwnd))
 
     @_guard
     def selection(self, path: Path) -> tuple[str, int]:
@@ -833,6 +855,82 @@ class Word:
         self._wrote = True
         self._models.pop(str(doc.FullName), None)
         doc.Close(_NO_SAVE)
+
+
+def _point(window: Any, rng: Any) -> tuple[int, ...]:
+    """``Window.GetPoint``: the range's left, top, width and height in screen pixels (its
+    arguments are out-parameters, which late binding cannot read)."""
+    ole = window._oleobj_
+    dispid = ole.GetIDsOfNames("GetPoint")
+    out_long = (16387, 2)  # VT_BYREF | VT_I4, out
+    found = ole.InvokeTypes(
+        dispid, 0, 1, (24, 0), (out_long,) * 4 + ((9, 1),), 0, 0, 0, 0, rng._oleobj_
+    )
+    return tuple(int(v) for v in found)
+
+
+@contextmanager
+def _physical_pixels() -> Iterator[None]:
+    """Window rectangles in the physical pixels ``GetPoint`` gives, on this thread only."""
+    user32: Any = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
+    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    before = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(_PER_MONITOR))
+    try:
+        yield
+    finally:
+        user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(before))
+
+
+def _centre(window: Any, rng: Any) -> None:
+    """Scroll the window so the range sits in the middle of the page pane (its top a line
+    below the pane's top when it is taller than the pane)."""
+    win32gui: Any = importlib.import_module("win32gui")
+    with _physical_pixels():
+        panes: list[tuple[int, int, int, int]] = []
+
+        def found(hwnd: int, _: Any) -> None:
+            if win32gui.GetClassName(hwnd) == "_WwG":  # the page pane
+                panes.append(win32gui.GetWindowRect(hwnd))
+
+        win32gui.EnumChildWindows(int(window.Hwnd), found, None)
+        if not panes:
+            return
+        _, top, _, bottom = panes[0]
+        before = _point(window, rng)[1]
+        window.SmallScroll(0, 1)  # one line up: how far a line moves the text
+        _, now, _, height = _point(window, rng)
+        line = now - before
+        if line <= 0:
+            return  # at the start of the document already
+        target = top + max((bottom - top - height) / 2, line)
+        lines = round((target - now) / line)
+        if lines > 0:
+            window.SmallScroll(0, lines)
+        elif lines < 0:
+            window.SmallScroll(-lines, 0)
+
+
+def _to_front(hwnd: int) -> bool:
+    """Bring a window to the front. Windows lets a background process do that only while
+    it shares the foreground window's input, so it joins that input when refused. A window
+    Word has only just opened can lose the focus again while Word settles: a few tries."""
+    user32: Any = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
+    for attempt in range(4):
+        if attempt:
+            time.sleep(0.15)
+        if user32.SetForegroundWindow(hwnd) and user32.GetForegroundWindow() == hwnd:
+            return True
+        theirs = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+        ours = ctypes.windll.kernel32.GetCurrentThreadId()  # type: ignore[attr-defined,unused-ignore]
+        user32.AttachThreadInput(ours, theirs, True)
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            user32.AttachThreadInput(ours, theirs, False)
+        if user32.GetForegroundWindow() == hwnd:
+            return True
+    return False
 
 
 _ADAPTER = Word()

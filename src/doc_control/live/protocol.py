@@ -56,8 +56,14 @@ class LiveAdapter(Protocol):
     def text(self, path: Path, span: Span) -> str:
         """The text of ``span``, tracked deletions left out."""
 
-    def select(self, path: Path, span: Span) -> str:
-        """Select ``span`` in the app's window and return its text."""
+    def select(self, path: Path, span: Span, cursor: bool = False) -> str:
+        """Show ``span`` in the app's window (in the middle, where the app allows) and
+        return its text: selected, or with ``cursor`` only the cursor put at its start,
+        so typing cannot replace it."""
+
+    def show(self, path: Path) -> bool:
+        """Bring the window holding ``path`` to the front; False when the app cannot
+        (a hidden instance, Windows refusing the focus)."""
 
     def selection(self, path: Path) -> tuple[str, int]:
         """The selected text and the index of the paragraph holding the cursor."""
@@ -129,10 +135,14 @@ class FakeAdapter:
     def text(self, path: Path, span: Span) -> str:
         return self._text(self._doc(path), span)
 
-    def select(self, path: Path, span: Span) -> str:
+    def select(self, path: Path, span: Span, cursor: bool = False) -> str:
         doc = self._doc(path)
-        doc.selection = span
+        doc.selection = Span(span.start, span.start, span.a, span.a) if cursor else span
         return self._text(doc, span)
+
+    def show(self, path: Path) -> bool:
+        self.shown = str(path.resolve())
+        return True
 
     def selection(self, path: Path) -> tuple[str, int]:
         doc = self._doc(path)
