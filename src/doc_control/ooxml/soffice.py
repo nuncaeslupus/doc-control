@@ -107,6 +107,40 @@ def _tail(err: str | None, limit: int = 500) -> str:
     return f"; LibreOffice said: {text[-limit:]}" if text else ""
 
 
+def _kill_tree(proc: subprocess.Popen[str]) -> None:
+    """Kill ``proc`` and everything it started: on Windows ``soffice.exe`` is a launcher
+    for ``soffice.bin``, elsewhere a wrapper around oosplash and soffice.bin."""
+    if sys.platform == "win32":
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=30,
+                check=False,
+            )
+        with contextlib.suppress(OSError):
+            proc.kill()  # the tree is gone, or taskkill failed: at least the launcher
+    else:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+
+
+def _reap(proc: subprocess.Popen[str]) -> None:
+    """Wait for a killed ``proc``; one that outlives a second kill is waited for without a
+    bound, as a process left unreaped would stay a zombie."""
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe is not None:
+            with contextlib.suppress(OSError):
+                pipe.close()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            proc.kill()
+        proc.wait()
+
+
 def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> str:
     """Run LibreOffice to completion and return its stderr."""
     command = [
@@ -135,19 +169,20 @@ def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> str:
     try:
         _, err = proc.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired as exc:
-        if sys.platform == "win32":
-            proc.kill()
-        else:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, signal.SIGKILL)
+        _kill_tree(proc)
         try:  # a process outside the group may still hold stderr open
             _, err = proc.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             err = ""
+            _reap(proc)
         raise DocControlError(
             ErrorCode.ENGINE_UNAVAILABLE,
             f"LibreOffice did not finish within {TIMEOUT}s" + _tail(err),
         ) from exc
+    except BaseException:  # interrupted (Ctrl-C, a signal): leave nothing running
+        _kill_tree(proc)
+        _reap(proc)
+        raise
     return err or ""
 
 
