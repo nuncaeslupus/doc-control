@@ -270,8 +270,7 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
                 ErrorCode.ADDRESS_INVALID, f"ops[{i}]: {edit.at} runs past its paragraph"
             )
         span = Span(rng.start.number - 1, rng.end.number - 1, a, b)
-        if span.end != span.start:
-            guarded(adapter.text, path, span)  # refuses a span the app cannot hold as one range
+        guarded(adapter.editable, path, span, not isinstance(edit, AddComment))
         call = adapter.comment if isinstance(edit, AddComment) else adapter.tracked_replace
         plan.append(((span.start, a), (span.end, inf if b is None else b), i, call, span))
     plan.sort(key=lambda step: (step[0], step[2]), reverse=True)

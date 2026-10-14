@@ -3,6 +3,7 @@ id: t-6f47ddb6
 title: "LIVE T6: Select latency on the 100k-word novel in LibreOffice headless"
 label: "LibreOffice live select latency"
 priority: 10
+status: merged
 deps: [t-f131d82b]
 requires: [app:libreoffice]
 tags: [LIVE]

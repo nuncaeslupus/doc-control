@@ -468,6 +468,11 @@ class LibreOffice:
         return self._range(self._doc(path), span)[1]
 
     @_guard
+    def editable(self, path: Path, span: Span, replace: bool) -> None:
+        if span.end != span.start:
+            self._range(self._doc(path), span)  # refuses a span across containers
+
+    @_guard
     def select(self, path: Path, span: Span) -> str:
         doc = self._doc(path)
         cursor, text = self._range(doc, span)

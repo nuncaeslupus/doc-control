@@ -48,6 +48,17 @@ def make_docx(path: Path, *paragraphs: str, extra: dict[str, bytes] | None = Non
     return path
 
 
+def table(*cells: str | list[str]) -> str:
+    """A one-row table, written as a ``make_docx`` paragraph: it closes the paragraph
+    before and opens the one after. A cell given as a list holds one paragraph each."""
+    row = ""
+    for cell in cells:
+        paragraphs = [cell] if isinstance(cell, str) else cell
+        row += "<w:tc>" + "".join(f"<w:p><w:r><w:t>{p}</w:t></w:r></w:p>" for p in paragraphs)
+        row += "</w:tc>"
+    return f"</w:t></w:r></w:p><w:tbl><w:tr>{row}</w:tr></w:tbl><w:p><w:r><w:t>"
+
+
 def symlink_or_skip(link: Path, target: Path) -> None:
     """Point ``link`` at ``target``; on Windows, skip the test if the account may not."""
     try:
