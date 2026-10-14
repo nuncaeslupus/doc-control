@@ -109,7 +109,7 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 
 ## `fields.update` (write)
 
-Recompute the results of the body's TOC, INDEX, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. An INDEX is recomputed only when its code is a bare INDEX and no XE mark has a sub-entry (Term:Sub); any other index keeps its result and is listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
+Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. INDEX is never recomputed (LibreOffice ignores its switches and flattens sub-entries): every index is left as it is and listed under skipped; rebuild it in Word (F9). Fields it could not pair with LibreOffice's are listed under skipped.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -193,7 +193,7 @@ Find a quote in the undo log: in the requests, and in the text of every paragrap
 
 ## `index.insert` (write)
 
-Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The entries and page numbers are filled by fields.update from the index.mark marks. Returns the address of the field's paragraph.
+Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The field is marked dirty: Word builds the entries and page numbers from the index.mark marks (F9); fields.update leaves it alone. Returns the address of the field's paragraph.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -207,7 +207,7 @@ Insert an index (an INDEX field) after a body paragraph, as tracked insertions: 
 
 ## `index.mark` (write)
 
-Mark an index entry: an XE field, as a tracked insertion, right after a range. The entry is "Term" or "Term:Sub" (up to three levels). index.insert builds the index from the marks.
+Mark an index entry: an XE field, as a tracked insertion, right after a range. The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, which Word builds from the marks.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

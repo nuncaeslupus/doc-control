@@ -8,7 +8,6 @@ recomputed from a wrong cached value.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -53,6 +52,14 @@ def _accept(doc: Path, tmp: Path) -> Path:
     shutil.copyfile(doc, settled)
     api.run("batch", {"doc": str(settled), "ops": [{"op": "revision.accept", "all": True}]})
     return settled
+
+
+def _index_xml(doc: Path) -> str:
+    """The document XML from the paragraph holding the INDEX code to the end of the body."""
+    with zipfile.ZipFile(doc) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    start = xml.rindex("<w:p>", 0, xml.index(" INDEX"))
+    return xml[start : xml.index("</w:body>", start)]
 
 
 def report(pages: list[str], needle: str, exact: bool = False) -> list[int]:
@@ -120,19 +127,19 @@ def test_captions_xrefs_and_index_resolve_after_update(tmp_path: Path) -> None:
         ("To heading page:", heading, "page"),
     ):
         add("xref.add", at=_at(doc, prefix), to=to, show=show)
-    # flat entries: with a Term:Sub mark fields.update would leave the index as it is
-    for prefix, entry in (("Alpha text", "Alpha"), ("Sunrise", "Sunrise")):
+    for prefix, entry in (("Alpha text", "Alpha"), ("Sunrise", "Sunrise:Picture")):
         add("index.mark", at=_at(doc, prefix), entry=entry)
     add("index.mark", at=_at(doc, "Closing"), entry="Closing")
     add("index.insert", after=_at(doc, "Index goes here"))
     assert all(r["stale"] for r in _fields(doc, "INDEX"))
+    index_xml = _index_xml(doc)
 
     updated = add("fields.update")
-    assert updated["skipped"] == [] and updated["written"] is True
-    assert [u["type"] for u in updated["updated"]].count("INDEX") == 1
-    assert not [
-        r for k in ("REF", "PAGEREF", "SEQ", "INDEX") for r in _fields(doc, k) if r["stale"]
-    ]
+    assert updated["written"] is True
+    assert [(s["type"], "F9" in s["reason"]) for s in updated["skipped"]] == [("INDEX", True)]
+    assert "INDEX" not in [u["type"] for u in updated["updated"]]
+    assert _index_xml(doc) == index_xml  # Word builds the index; it keeps its placeholder
+    assert not [r for k in ("REF", "PAGEREF", "SEQ") for r in _fields(doc, k) if r["stale"]]
 
     settled = _accept(doc, tmp_path)
     pages = render_pages(settled, tmp_path)
@@ -154,15 +161,7 @@ def test_captions_xrefs_and_index_resolve_after_update(tmp_path: Path) -> None:
         f"PAGEREF {g} != {w}" for g, w in zip(paged, wanted_pages, strict=True) if g != w
     ]
     assert [r["result"] for r in _fields(settled, "SEQ")] == ["1", "1", "2"]
-
-    (index,) = _fields(settled, "INDEX")
-    listed = dict(re.findall(r"([A-Za-z:]+)\t?(\d+)", "\n".join(_texts(settled))))
-    for entry, needle in (("Alpha", "Alpha text."), ("Sunrise", "Sunrise picture")):
-        if listed.get(entry) != str(page_of(needle)):
-            mismatches.append(f"index {entry}: {listed.get(entry)} != {page_of(needle)}")
-    if listed.get("Closing") != str(page_of("Closing remarks")):
-        mismatches.append(f"index Closing: {listed.get('Closing')}")
-    assert index["result"] != "" and mismatches == []  # xref_page_mismatches == 0
+    assert mismatches == []  # xref_page_mismatches == 0
 
 
 def _field(code: str, result: str) -> str:
@@ -208,7 +207,7 @@ def test_update_recomputes_each_field_type_from_a_wrong_cached_value(tmp_path: P
         + f"<w:p>{caption}<w:r><w:t>: cap</w:t></w:r></w:p>"
         + "<w:p><w:r><w:t>Banana</w:t></w:r>"
         + _xe("Banana")
-        + _xe("Apple")
+        + _xe("Apple:Pie")
         + "</w:p>"
         + _page_break()
         + _para("Index")
@@ -218,37 +217,30 @@ def test_update_recomputes_each_field_type_from_a_wrong_cached_value(tmp_path: P
         '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
     )
     doc = _build(tmp_path / "wrong.docx", body)
+    index_xml = _index_xml(doc)
     out = api.run("fields.update", {"doc": str(doc)}).result
-    assert out["skipped"] == []
+    assert [s["type"] for s in out["skipped"]] == ["INDEX"]
+    assert _index_xml(doc) == index_xml
     changed = {u["type"]: u for u in out["updated"]}
     assert changed["REF"]["before"] == ["WRONG"] and changed["REF"]["after"] == ["Table 1"]
     assert changed["PAGEREF"]["before"] == ["77"] and changed["PAGEREF"]["after"] == ["3"]
     assert changed["SEQ"]["before"] == ["42"] and changed["SEQ"]["after"] == ["1"]
-    assert changed["INDEX"]["before"] == ["Zebra\t99"]
-    assert changed["INDEX"]["after"] == ["Apple\t3", "Banana\t3"]
-
-
-def _index_xml(doc: Path) -> str:
-    """The document XML from the paragraph holding the INDEX code to the end of the body."""
-    with zipfile.ZipFile(doc) as z:
-        xml = z.read("word/document.xml").decode("utf-8")
-    start = xml.rindex("<w:p>", 0, xml.index(" INDEX"))
-    return xml[start : xml.index("</w:body>", start)]
+    assert "INDEX" not in changed
 
 
 @pytest.mark.parametrize(
-    ("code", "marks", "why"),
+    ("code", "marks"),
     [
-        ("INDEX", ("Apple:Pie", "Apple:Tart", "Banana"), "sub-entries"),
-        ('INDEX \\e "\t" \\c "1"', ("Apple", "Banana"), "switches"),
+        pytest.param("INDEX", ("Apple", "Banana"), id="bare"),
+        pytest.param("INDEX", ("Apple:Pie", "Apple:Tart", "Banana"), id="sub-entries"),
+        pytest.param('INDEX \\e "\t" \\c "1"', ("Apple", "Banana"), id="switches"),
+        pytest.param("INDEX", ('Apple" \\t "See Fruit', "Banana"), id="xe-see"),
     ],
 )
-def test_update_leaves_an_index_it_cannot_rebuild_alone(
-    tmp_path: Path, code: str, marks: tuple[str, ...], why: str
-) -> None:
-    """LibreOffice lists Term:Sub entries flat and ignores the INDEX switches, so an index
-    Word built that way would be overwritten with a wrong one: it is skipped, untouched,
-    while the other fields are still updated."""
+def test_update_leaves_every_index_alone(tmp_path: Path, code: str, marks: tuple[str, ...]) -> None:
+    """LibreOffice lists Term:Sub entries flat, ignores the INDEX and XE switches and writes
+    its own separators, so it would overwrite an index Word built with a wrong one: every
+    index is skipped, untouched, while the other fields are still updated."""
     _need_soffice()
     word_built = "".join(
         f"<w:p><w:r><w:t>{line}</w:t></w:r></w:p>" for line in ("Apple", "Pie\t2", "Tart\t2")
@@ -271,7 +263,7 @@ def test_update_leaves_an_index_it_cannot_rebuild_alone(
     out = api.run("fields.update", {"doc": str(doc)}).result
     assert [u["type"] for u in out["updated"]] == ["SEQ"] and out["written"] is True
     (skipped,) = out["skipped"]
-    assert skipped["type"] == "INDEX" and why in skipped["reason"]
+    assert skipped["type"] == "INDEX" and "F9" in skipped["reason"]
     assert _index_xml(doc) == before_xml
     assert _fields(doc, "INDEX") == [before]
 

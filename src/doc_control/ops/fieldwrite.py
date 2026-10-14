@@ -6,16 +6,15 @@ placeholder result, and a paragraph closing the field (the shape Word writes). T
 ``TOC \\o "1-3" \\h \\z \\u`` and the field is marked dirty, so ``fields.list`` shows it as
 stale until ``fields.update`` fills it.
 
-``fields.update`` recomputes the results of the body's TOC, INDEX, page, page-count,
+``fields.update`` recomputes the results of the body's TOC, page, page-count,
 word/character-count, sequence and reference fields (REF, PAGEREF; SEQ, which numbers
 captions). LibreOffice recomputes all of these from a wrong cached result (the layout tests
-check REF, PAGEREF, SEQ and INDEX with deliberately wrong values), and it puts an index entry
-and its page number in two paragraphs, which are joined again. SECTIONPAGES, SECTION and
+check REF, PAGEREF and SEQ with deliberately wrong values). SECTIONPAGES, SECTION and
 NOTEREF are not recomputed (LibreOffice keeps their cached results, so a stale value cannot
-be told from a current one): they are listed under ``skipped``. An INDEX is recomputed only
-when its code is a bare ``INDEX`` (what ``index.insert`` writes) and no ``XE`` mark has a
-sub-entry (``Term:Sub``): LibreOffice ignores the INDEX switches and lists sub-entries flat,
-so any other index (one Word built, say) is left as it is and listed under ``skipped``.
+be told from a current one): they are listed under ``skipped``. INDEX is never recomputed:
+LibreOffice ignores the INDEX and XE switches, lists ``Term:Sub`` entries flat and writes
+its own separators, so it would overwrite a correct index with a wrong one. Every INDEX is
+left byte for byte as it is and listed under ``skipped``, with a pointer to Word (F9).
 A copy of the document goes through headless LibreOffice (see
 :mod:`doc_control.ooxml.soffice`), which rebuilds the indexes and refreshes the fields; the
 fields of that copy are paired with the original's by type and order, and only the result
@@ -87,7 +86,6 @@ PLACEHOLDER = "Update the field to build the table of contents."
 UPDATABLE = frozenset(
     {
         "TOC",
-        "INDEX",
         "PAGEREF",
         "REF",
         "SEQ",
@@ -100,6 +98,12 @@ UPDATABLE = frozenset(
 #: Types LibreOffice does not evaluate: it hands back the cached result, so the operation
 #: cannot tell a current value from a stale one. They are reported under ``skipped``.
 NOT_RECOMPUTED = frozenset({"SECTIONPAGES", "SECTION", "NOTEREF"})
+#: Types the operation leaves alone because LibreOffice's result would be wrong, with why.
+LEFT_ALONE = {
+    "INDEX": "INDEX is not recomputed: LibreOffice ignores the index switches, lists "
+    "sub-entries flat and changes the separators, so the index is left as it is; rebuild "
+    "it in Word (select it and press F9)",
+}
 _LEVELS = re.compile(r"^([1-9])(?:-([1-9]))?$")
 _FLD_TYPE = W + "fldCharType"
 _DIRTY = W + "dirty"
@@ -107,8 +111,6 @@ _TAB = W + "tab"
 _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 _DEFAULT_TEXT_WIDTH = 9350
 _MAX_NAMED = 8
-#: The entry text of an ``XE`` code: quoted (with ``\"`` and ``\\`` escapes) or one word.
-_XE_ENTRY = re.compile(r'^XE\s+(?:"((?:[^"\\]|\\.)*)"?|(\S+))', re.IGNORECASE)
 #: CT_Settings children that come after ``w:updateFields``, in schema order.
 _AFTER_UPDATE_FIELDS = (
     "hdrShapeDefaults|footnotePr|endnotePr|compat|docVars|rsids|mathPr|attachedSchema|"
@@ -623,20 +625,6 @@ def _fresh_fields(docx: bytes) -> list[_Fresh]:
     return out
 
 
-def _join_wrapped(fresh: _Fresh) -> _Fresh:
-    """An index entry whose page number LibreOffice put in a paragraph of its own (the entry
-    ends in a tab, the next line starts with one) is joined back into one line."""
-    lines: list[str] = []
-    styles: list[str | None] = []
-    for line, style in zip(fresh.lines, fresh.styles, strict=True):
-        if lines and lines[-1].endswith("\t") and line.startswith("\t"):
-            lines[-1] += line[1:]
-        else:
-            lines.append(line)
-            styles.append(style)
-    return _Fresh(fresh.type, lines, styles)
-
-
 # --- tracked replacement of a result ---------------------------------------------------------
 
 
@@ -898,38 +886,6 @@ def _set_update_on_open(
     return result
 
 
-def _has_subentry(xe_code: str) -> bool:
-    """Whether the ``XE`` code's entry has a level separator (a ``:`` not escaped as ``\\:``)."""
-    match = _XE_ENTRY.match(xe_code.strip())
-    if match is None:
-        return False
-    text = match.group(1) if match.group(1) is not None else match.group(2)
-    escaped = False
-    for char in text:
-        if escaped:
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == ":":
-            return True
-    return False
-
-
-def _index_refusal(loc: _Loc, subentries: bool) -> str | None:
-    """Why the INDEX at ``loc`` must keep its result, or None when LibreOffice's is right."""
-    if loc.code.upper() != "INDEX":
-        return (
-            f"the index has switches ({loc.code}) that LibreOffice ignores, so its result "
-            "is left as it is"
-        )
-    if subentries:
-        return (
-            "the index has sub-entries (XE marks with Term:Sub), which LibreOffice lists "
-            "flat, so its result is left as it is"
-        )
-    return None
-
-
 def _name_fields(rows: Sequence[Mapping[str, Any]]) -> str:
     named = [f"{r['at']} ({r['type'] or 'field'})" for r in rows[:_MAX_NAMED]]
     more = len(rows) - len(named)
@@ -970,18 +926,23 @@ def update_fields(
     index = DocumentIndex.from_package(pkg)
     spans = index.spans
     body = _Body(spans)
-    all_located = [loc for loc in body.locate() if loc.type in UPDATABLE | NOT_RECOMPUTED]
+    all_located = [
+        loc for loc in body.locate() if loc.type in UPDATABLE | NOT_RECOMPUTED | LEFT_ALONE.keys()
+    ]
     located = [loc for loc in all_located if loc.type in UPDATABLE]
     addresses = {p.span_index: str(p.address) for p in index.paragraphs}
     not_recomputed = [
         {
             "at": addresses.get(loc.begin[0], ""),
             "type": loc.type,
-            "reason": f"{loc.type} is not recomputed: LibreOffice keeps its cached result, "
-            "so the stored value is left as it is",
+            "reason": LEFT_ALONE.get(
+                loc.type,
+                f"{loc.type} is not recomputed: LibreOffice keeps its cached result, "
+                "so the stored value is left as it is",
+            ),
         }
         for loc in all_located
-        if loc.type in NOT_RECOMPUTED
+        if loc.type not in UPDATABLE
     ]
     full_author = format_author(author, tag)
     result: dict[str, Any] = {
@@ -1015,8 +976,6 @@ def update_fields(
         )
     fresh_by_type: dict[str, list[_Fresh]] = {}
     for item in _fresh_fields(refresh_fields(doc_path, soffice)):
-        if item.type == "INDEX":
-            item = _join_wrapped(item)
         fresh_by_type.setdefault(item.type, []).append(item)
     known = frozenset(s.id for s in load_styles(pkg).styles)
     width = _text_width(pkg.read(DOCUMENT_PART))
@@ -1047,18 +1006,9 @@ def update_fields(
     unchanged = 0
     updated: list[dict[str, Any]] = []
     cleared: list[str] = []
-    subentries = any(loc.type == "INDEX" for loc in located) and any(
-        _has_subentry(r["code"])
-        for r in collect_rows(Document(str(doc_path)), ("body", "notes", "headers"))
-        if r["type"] == "XE"
-    )
     for loc in reversed(located):  # later fields first: edits never move an earlier mark
         fresh = pairs.get(id(loc))
         if fresh is None:
-            continue
-        refusal = _index_refusal(loc, subentries) if loc.type == "INDEX" else None
-        if refusal is not None:
-            skip(loc, refusal)
             continue
         plan = _plan(loc, body)
         if isinstance(plan, str):
@@ -1135,15 +1085,15 @@ def update_fields(
 @operation(
     "fields.update",
     "write",
-    "Recompute the results of the body's TOC, INDEX, page, page-count, sequence and reference "
+    "Recompute the results of the body's TOC, page, page-count, sequence and reference "
     "fields through headless LibreOffice and write only those result runs, as tracked "
     "changes (the old result is struck, the new one inserted). Without LibreOffice it "
     "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
     "w:updateFields instead, so Word updates the fields when it opens the file. Citation "
     "fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed "
-    "(LibreOffice keeps their cached results) and are listed under skipped. An INDEX is "
-    "recomputed only when its code is a bare INDEX and no XE mark has a sub-entry "
-    "(Term:Sub); any other index keeps its result and is listed under skipped. Fields it "
+    "(LibreOffice keeps their cached results) and are listed under skipped. INDEX is "
+    "never recomputed (LibreOffice ignores its switches and flattens sub-entries): every "
+    "index is left as it is and listed under skipped; rebuild it in Word (F9). Fields it "
     "could not pair with LibreOffice's are listed under skipped.",
     {
         "type": "object",

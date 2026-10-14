@@ -3,7 +3,8 @@
 All four write fields as tracked insertions and share :mod:`doc_control.ops.fieldwrite`'s
 field helpers; the results of the fields they write are filled by ``fields.update`` (the
 field is marked dirty until then, and its cached result is a best guess: the target's own
-text, or ``?``).
+text, or ``?``). The index is the exception: ``fields.update`` never recomputes an INDEX,
+so it keeps its placeholder until Word rebuilds it (F9, or on open, as the field is dirty).
 
 * ``caption.add`` puts a new paragraph above or below a body paragraph: the label, a
   ``SEQ`` field and the text (``Table 1: Results``), in the ``Caption`` style when the
@@ -722,8 +723,8 @@ def xref_add(request: dict[str, Any]) -> Reply:
     "index.mark",
     "write",
     "Mark an index entry: an XE field, as a tracked insertion, right after a range. "
-    'The entry is "Term" or "Term:Sub" (up to three levels). index.insert builds the index '
-    "from the marks.",
+    'The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, '
+    "which Word builds from the marks.",
     _schema(
         ["at", "entry"],
         at={**_STR, "description": "A range inside one paragraph; the mark goes after it."},
@@ -741,7 +742,8 @@ def index_mark(request: dict[str, Any]) -> Reply:
     "write",
     "Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an "
     "optional title, the field with a placeholder result and the paragraph that closes it. "
-    "The entries and page numbers are filled by fields.update from the index.mark marks. "
+    "The field is marked dirty: Word builds the entries and page numbers "
+    "from the index.mark marks (F9); fields.update leaves it alone. "
     "Returns the address of the field's paragraph.",
     _schema(
         ["after"],
