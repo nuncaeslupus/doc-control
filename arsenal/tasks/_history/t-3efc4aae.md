@@ -4,6 +4,7 @@ title: "LAYOUT T1: page-label checker (LibreOffice PDF)"
 label: "page-label checker"
 priority: 5
 workspace: LAYOUT
+status: merged
 ---
 
 ## Acceptance gate
