@@ -70,6 +70,7 @@ OPERATION_MODULES: dict[str, str] = {
     "comments.list": "read",
     "compare": "compare",
     "diff": "diff",
+    "fields.list": "fields",
     "find": "find",
     "help": "meta",
     "history.list": "history",

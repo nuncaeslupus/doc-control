@@ -81,6 +81,16 @@ Paragraph alignment between two versions of a document, with a cross-version add
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+## `fields.list` (read)
+
+Every field of the document, by story: its address, instruction code, type (PAGE, TOC, REF, ADDIN ZOTERO_ITEM, CITATION, ...), result text and whether the result is stale. Covers complex fields (also nested, or split across runs), simple fields and fields in text boxes.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `stories` | array |  | Stories to read (default all): "body", "notes", "headers" and "comments". |
+| `type` | string |  | Only fields of this type, e.g. "TOC" or "ADDIN ZOTERO_ITEM". |
+
 ## `find` (read)
 
 Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex), with `query_word_options` (match_case, whole_words) to tick there.
