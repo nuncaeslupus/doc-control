@@ -85,7 +85,11 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
                 "batch",
                 {
                     "ops": [
-                        {"op": "text.replace", "at": f"{note['at']}:{lead}-{word}", "text": "EDITED"}
+                        {
+                            "op": "text.replace",
+                            "at": f"{note['at']}:{lead}-{word}",
+                            "text": "EDITED",
+                        }
                     ],
                     "author": AUTHOR,
                 },
