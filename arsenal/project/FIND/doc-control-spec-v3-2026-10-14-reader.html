@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="ac51192ce751c0bb7c5e6779e7aee2aa68417c8a0cd740c344bec33c7a0c7007">
+<meta name="arsenal-source-sha256" content="f0880bffd704caa2f29967b9093d90dc74c08b9058f359e06cbb449c5842c627">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -208,11 +208,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <strong>Ticket / PR</strong>: — (workspace <code>FIND</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
 <strong>Revision</strong>: 3
-<strong>Status</strong>: approved (2026-10-14, revision 2); r3 review clarifications pending owner ack
+<strong>Status</strong>: approved (2026-10-14, revision 2) — r3 clarifications (D-F7) proposed, pending owner ack
 <strong>Revision log</strong>:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code>
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
-- r3 — cold-review clarifications (D-F7): parameter renamed <code>match_level</code> so <code>anchor.resolve</code>'s <code>match</code> is untouched; <code>rename</code>/<code>history.search</code> stay exact by default and never retry; multi-hit ops return every hit; <code>^p</code> is a paragraph boundary, not <code>\r</code>; benchmark is the 100k-word novel</p>
+- r3 — cold-review clarifications (D-F7): parameter renamed <code>match_level</code> so <code>anchor.resolve</code>'s <code>match</code> is untouched; <code>rename</code>/<code>history.search</code> stay exact by default and never retry; multi-hit ops return every hit; Word-code set aligned with <code>model/wordfind.py</code>; punctuation folds to a word boundary; benchmark is the 100k-word novel</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -281,11 +281,11 @@ that revision, add <code>— without annotations</code>.</p>
 <li>[ ] <code>loose_match_failures == 0</code> on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading <code>-</code>, <code>--</code>, <code>—</code>, <code>¿</code> or <code>«</code>, at the start or in the middle of the paragraph. The table includes <code>Estas ahi</code> against <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code>, <code>-Estas ahí?</code> and <code>--Estas ahi</code>, and a phrase without <code>¿</code> against a paragraph that has it mid-text (D-F2).</li>
 <li>[ ] <code>symbol_fold_violations == 0</code>: at the default level with no retry (<code>find</code> with <code>match_level: "default"</code>) a symbol (<code>$</code>, <code>+</code>, <code>*</code>) is never folded, so <code>5$</code> does not match <code>5</code>; at <code>loose</code> it does; and a phrase op that only matches after retrying to <code>loose</code> reports <code>match_level: "loose"</code>, never <code>"default"</code>. Rows cover both levels (D-F1).</li>
 <li>[ ] <code>fallback_level_misreports == 0</code>: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).</li>
-<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> anchors the match to the paragraph end (or start), a mid-phrase <code>^p</code> is refused, <code>^t</code> a tab, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
+<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> equals <code>\r</code> (also mid-phrase, across paragraphs where the op allows it), <code>^t</code> a tab, <code>^s</code>, <code>^-</code>, <code>^~</code> and <code>^uNNN</code> their characters, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
 <li>[ ] <code>exact_tiebreak_violations == 0</code>: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.</li>
 <li>[ ] <code>tier_ambiguity_misses == 0</code>: two matches in the same level still raise <code>ANCHOR_AMBIGUOUS</code>; none is silently chosen.</li>
 <li>[ ] <code>span_mismatches == 0</code>: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).</li>
-<li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched, including no <code>^</code> codes in generated phrases).</li>
+<li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched); and every <code>find_phrase_word</code> it emits, translated back, equals its source text (<code>word_code_roundtrip_failures == 0</code>).</li>
 <li>[ ] <code>loose_report_missing == 0</code>: every response where the level was not exact says so (<code>match_level</code> field).</li>
 <li>[ ] <code>find_loose_overhead_ratio &lt;= 1.5</code> against the current literal <code>find</code> on the 100k-word novel benchmark in <code>tests/bench</code>; <code>live.select</code> stays under the current time plus 50 ms on the same document.</li>
 <li>[ ] No existing test changes behaviour: <code>match_level: "exact"</code> reproduces today's results, and plain <code>find</code>, <code>rename</code> and <code>history.search</code> with no <code>match_level</code> argument is unchanged (<code>regression_failures == 0</code>, D-F5).</li>
@@ -443,7 +443,7 @@ that revision, add <code>— without annotations</code>.</p>
 <ul>
 <li><strong>Accents</strong>: NFD, then drop combining marks (category M). <code>Estás</code> becomes <code>estas</code>.</li>
 <li><strong>Case</strong>: <code>casefold</code>.</li>
-<li><strong>Punctuation and dashes</strong> (levels <code>default</code> and <code>loose</code>): every character in Unicode category P* is dropped. The sequence <code>--</code> is dropped as well. <code>¿</code>, <code>?</code>, <code>-</code>, <code>—</code>, <code>–</code>, <code>«</code> and curly quotes all fold away.</li>
+<li><strong>Punctuation and dashes</strong> (levels <code>default</code> and <code>loose</code>): every character in Unicode category P* becomes a word boundary: it is replaced by a space, then runs of whitespace collapse to one and the ends are trimmed, so <code>ahí—dijo</code> matches <code>ahí dijo</code> and <code>-¿Estás ahí?</code> matches <code>Estas ahi</code>. <code>--</code> is two P* characters and folds the same way. <code>¿</code>, <code>?</code>, <code>-</code>, <code>—</code>, <code>–</code>, <code>«</code> and curly quotes all fold away.</li>
 <li><strong>Symbols</strong> (level <code>loose</code> only): every character in category S* (<code>$</code>, <code>*</code>, <code>+</code>, <code>=</code>, <code>&lt;</code>, <code>^</code> and so on) is dropped. At <code>default</code> they stay.</li>
 <li><strong>Whitespace</strong>: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped characters is merged.</li>
 <li><strong>Offsets</strong>: each folded character records the original start and end. A match from folded positions <code>i..j</code> maps to the original span from the start of character <code>i</code> to the end of character <code>j-1</code>. The span then widens to take punctuation that touches the match on its own side only when the phrase itself began or ended with punctuation. Combining marks stay with their base. The result is a normal <code>p142#…:s-e</code> range, as <code>find</code> returns today.</li>
@@ -467,7 +467,7 @@ that revision, add <code>— without annotations</code>.</p>
 <tr>
 <td><code>^p</code></td>
 <td>paragraph mark</td>
-<td>a paragraph boundary: at the end of a phrase the match must end the paragraph, at the start it must begin one; anywhere else <code>SCHEMA_INVALID</code> (matching is per paragraph). Never folded to a space</td>
+<td><code>\r</code>, as an alias (D-F6). A phrase may cross paragraphs where the op already allows it (<code>live.select</code>'s <code>_found</code>, <code>find_phrase_across</code>); the fold keeps <code>\r</code> as a hard separator and never turns it into a space</td>
 </tr>
 <tr>
 <td><code>^t</code></td>
@@ -480,6 +480,26 @@ that revision, add <code>— without annotations</code>.</p>
 <td>the line-break character, where the op supports it</td>
 </tr>
 <tr>
+<td><code>^s</code></td>
+<td>no-break space</td>
+<td>U+00A0</td>
+</tr>
+<tr>
+<td><code>^-</code></td>
+<td>optional hyphen</td>
+<td>U+00AD</td>
+</tr>
+<tr>
+<td><code>^~</code></td>
+<td>non-breaking hyphen</td>
+<td>U+2011</td>
+</tr>
+<tr>
+<td><code>^uNNN</code></td>
+<td>character by decimal code</td>
+<td>that character (<code>^u173</code>, <code>^u8209</code>)</td>
+</tr>
+<tr>
 <td><code>^^</code></td>
 <td>a literal caret</td>
 <td><code>^</code></td>
@@ -487,7 +507,7 @@ that revision, add <code>— without annotations</code>.</p>
 </tbody>
 </table>
 <p>Any other <code>^x</code> stays literal (further codes are not promised). Because translation runs left to right, <code>^^p</code> is a caret followed by <code>p</code>, not a paragraph mark. Word's simple Find box in the Navigation pane also takes <code>^p</code> and <code>^t</code>, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding, and only in agent phrases and in <code>find</code> calls that pass <code>match_level</code>; plain and regex <code>find</code> queries are not translated (D-F5); a literal <code>^</code> that the writer typed is matched with <code>^^</code> (at <code>loose</code> it is a symbol and is dropped like any other).</p>
-<p><code>locate</code>'s generated phrases (<code>find_phrase</code>, <code>find_phrase_word</code>) do not change and do not emit <code>^</code> codes (direction b).</p></div>
+<p><code>locate</code>'s generated phrases (<code>find_phrase</code>, <code>find_phrase_word</code>) do not change (direction b). <code>find_phrase_word</code> already writes these codes (<code>model/wordfind.py</code> <code>_WORD_CODES</code>, <code>_HYPHEN_CODES</code>); the translator accepts exactly that set, so every <code>locate</code> phrase reads back to its own text.</p></div>
 <div class="note" data-for="s-spec-word-find-codes-in-agent-phrases"><label class="note-head" for="n-s-spec-word-find-codes-in-agent-phrases"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Word find codes in agent phrases (D-F6)</span></label><textarea class="note-ta" data-key="s-spec-word-find-codes-in-agent-phrases" id="n-s-spec-word-find-codes-in-agent-phrases" data-label="Word find codes in agent phrases (D-F6)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-tiebreak-levels">
@@ -626,7 +646,7 @@ that revision, add <code>— without annotations</code>.</p>
 </tr>
 <tr>
 <td>D-F7</td>
-<td>Review clarifications (r3): request/response key <code>match_level</code> (new; <code>anchor.resolve</code>'s <code>match</code> keeps <code>exact\|normalized\|fuzzy</code>); auto-retry and <code>"default"</code> default only for single-target ops (<code>live.select</code>, <code>anchor.resolve</code>); <code>find</code>, <code>rename</code>, <code>history.search</code> default exact, never retry, return all hits; <code>^p</code> = paragraph boundary at phrase start/end only; Word codes not translated in plain/regex <code>find</code></td>
+<td>Review clarifications (r3): request/response key <code>match_level</code> (new; <code>anchor.resolve</code>'s <code>match</code> keeps <code>exact\|normalized\|fuzzy</code>); auto-retry and <code>"default"</code> default only for single-target ops (<code>live.select</code>, <code>anchor.resolve</code>); <code>find</code>, <code>rename</code>, <code>history.search</code> default exact, never retry, return all hits; Word codes = the <code>model/wordfind.py</code> set (<code>^p ^l ^t ^s ^- ^~ ^uNNN ^^</code>); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex <code>find</code></td>
 <td>proposed</td>
 <td>2026-10-14</td>
 </tr>

@@ -12,11 +12,11 @@
 **Ticket / PR**: — (workspace `FIND`)
 **Author**: Claude (doc-control session), for the owner
 **Revision**: 3
-**Status**: approved (2026-10-14, revision 2); r3 review clarifications pending owner ack
+**Status**: approved (2026-10-14, revision 2) — r3 clarifications (D-F7) proposed, pending owner ack
 **Revision log**:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with `--`
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
-- r3 — cold-review clarifications (D-F7): parameter renamed `match_level` so `anchor.resolve`'s `match` is untouched; `rename`/`history.search` stay exact by default and never retry; multi-hit ops return every hit; `^p` is a paragraph boundary, not `\r`; benchmark is the 100k-word novel
+- r3 — cold-review clarifications (D-F7): parameter renamed `match_level` so `anchor.resolve`'s `match` is untouched; `rename`/`history.search` stay exact by default and never retry; multi-hit ops return every hit; Word-code set aligned with `model/wordfind.py`; punctuation folds to a word boundary; benchmark is the 100k-word novel
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -64,11 +64,11 @@ Edit ops (`replace`, `insert`, `move`, comments) take addresses, not phrases. An
 - [ ] `loose_match_failures == 0` on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading `-`, `--`, `—`, `¿` or `«`, at the start or in the middle of the paragraph. The table includes `Estas ahi` against `¿Estás ahí?`, `-¿Estás ahí?`, `-Estas ahí?` and `--Estas ahi`, and a phrase without `¿` against a paragraph that has it mid-text (D-F2).
 - [ ] `symbol_fold_violations == 0`: at the default level with no retry (`find` with `match_level: "default"`) a symbol (`$`, `+`, `*`) is never folded, so `5$` does not match `5`; at `loose` it does; and a phrase op that only matches after retrying to `loose` reports `match_level: "loose"`, never `"default"`. Rows cover both levels (D-F1).
 - [ ] `fallback_level_misreports == 0`: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).
-- [ ] `word_code_failures == 0` on a fixture table: `^p` anchors the match to the paragraph end (or start), a mid-phrase `^p` is refused, `^t` a tab, `^l` a manual line break where the op supports it, `^^` a literal caret, and an unknown `^x` stays literal (D-F6).
+- [ ] `word_code_failures == 0` on a fixture table: `^p` equals `\r` (also mid-phrase, across paragraphs where the op allows it), `^t` a tab, `^s`, `^-`, `^~` and `^uNNN` their characters, `^l` a manual line break where the op supports it, `^^` a literal caret, and an unknown `^x` stays literal (D-F6).
 - [ ] `exact_tiebreak_violations == 0`: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.
 - [ ] `tier_ambiguity_misses == 0`: two matches in the same level still raise `ANCHOR_AMBIGUOUS`; none is silently chosen.
 - [ ] `span_mismatches == 0`: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).
-- [ ] `locate_phrase_changes == 0`: `locate` output on the corpus is byte-identical before and after (direction b is untouched, including no `^` codes in generated phrases).
+- [ ] `locate_phrase_changes == 0`: `locate` output on the corpus is byte-identical before and after (direction b is untouched); and every `find_phrase_word` it emits, translated back, equals its source text (`word_code_roundtrip_failures == 0`).
 - [ ] `loose_report_missing == 0`: every response where the level was not exact says so (`match_level` field).
 - [ ] `find_loose_overhead_ratio <= 1.5` against the current literal `find` on the 100k-word novel benchmark in `tests/bench`; `live.select` stays under the current time plus 50 ms on the same document.
 - [ ] No existing test changes behaviour: `match_level: "exact"` reproduces today's results, and plain `find`, `rename` and `history.search` with no `match_level` argument is unchanged (`regression_failures == 0`, D-F5).
@@ -169,7 +169,7 @@ Both the phrase and each paragraph are folded to a comparison string, and an off
 
 - **Accents**: NFD, then drop combining marks (category M). `Estás` becomes `estas`.
 - **Case**: `casefold`.
-- **Punctuation and dashes** (levels `default` and `loose`): every character in Unicode category P* is dropped. The sequence `--` is dropped as well. `¿`, `?`, `-`, `—`, `–`, `«` and curly quotes all fold away.
+- **Punctuation and dashes** (levels `default` and `loose`): every character in Unicode category P* becomes a word boundary: it is replaced by a space, then runs of whitespace collapse to one and the ends are trimmed, so `ahí—dijo` matches `ahí dijo` and `-¿Estás ahí?` matches `Estas ahi`. `--` is two P* characters and folds the same way. `¿`, `?`, `-`, `—`, `–`, `«` and curly quotes all fold away.
 - **Symbols** (level `loose` only): every character in category S* (`$`, `*`, `+`, `=`, `<`, `^` and so on) is dropped. At `default` they stay.
 - **Whitespace**: runs of whitespace (including no-break space and tabs) become one space. Leading and trailing space is trimmed, and a space left next to dropped characters is merged.
 - **Offsets**: each folded character records the original start and end. A match from folded positions `i..j` maps to the original span from the start of character `i` to the end of character `j-1`. The span then widens to take punctuation that touches the match on its own side only when the phrase itself began or ended with punctuation. Combining marks stay with their base. The result is a normal `p142#…:s-e` range, as `find` returns today.
@@ -187,14 +187,18 @@ Word's Find box accepts special codes, and they are useful to an agent. Before m
 
 | Code | Meaning | Becomes |
 |------|---------|---------|
-| `^p` | paragraph mark | a paragraph boundary: at the end of a phrase the match must end the paragraph, at the start it must begin one; anywhere else `SCHEMA_INVALID` (matching is per paragraph). Never folded to a space |
+| `^p` | paragraph mark | `\r`, as an alias (D-F6). A phrase may cross paragraphs where the op already allows it (`live.select`'s `_found`, `find_phrase_across`); the fold keeps `\r` as a hard separator and never turns it into a space |
 | `^t` | tab | `\t`, where the op supports it |
 | `^l` | manual line break | the line-break character, where the op supports it |
+| `^s` | no-break space | U+00A0 |
+| `^-` | optional hyphen | U+00AD |
+| `^~` | non-breaking hyphen | U+2011 |
+| `^uNNN` | character by decimal code | that character (`^u173`, `^u8209`) |
 | `^^` | a literal caret | `^` |
 
 Any other `^x` stays literal (further codes are not promised). Because translation runs left to right, `^^p` is a caret followed by `p`, not a paragraph mark. Word's simple Find box in the Navigation pane also takes `^p` and `^t`, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding, and only in agent phrases and in `find` calls that pass `match_level`; plain and regex `find` queries are not translated (D-F5); a literal `^` that the writer typed is matched with `^^` (at `loose` it is a symbol and is dropped like any other).
 
-`locate`'s generated phrases (`find_phrase`, `find_phrase_word`) do not change and do not emit `^` codes (direction b).
+`locate`'s generated phrases (`find_phrase`, `find_phrase_word`) do not change (direction b). `find_phrase_word` already writes these codes (`model/wordfind.py` `_WORD_CODES`, `_HYPHEN_CODES`); the translator accepts exactly that set, so every `locate` phrase reads back to its own text.
 
 <!-- -->
 
@@ -283,7 +287,7 @@ Responses carry `"match_level": "exact" | "case" | "default" | "loose"`, the lev
 | D-F4 | No refusal of loose matches that look doubtful; the level report is enough (Q4, as recommended) | agreed | 2026-10-14 |
 | D-F5 | Plain `find` stays exact by default; folding only when `match` is passed | agreed | 2026-10-14 |
 | D-F6 | Agent phrases accept Word's find codes: `^p` (alias for `\r`), `^t`, `^l` where the op supports them, `^^` for a literal caret. `locate`'s generated phrases do not change | agreed | 2026-10-14 |
-| D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; `^p` = paragraph boundary at phrase start/end only; Word codes not translated in plain/regex `find` | proposed | 2026-10-14 |
+| D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; Word codes = the `model/wordfind.py` set (`^p ^l ^t ^s ^- ^~ ^uNNN ^^`); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex `find` | proposed | 2026-10-14 |
 
 
 > Sections 5–6 (contracts, risks) are appended by `design`.
