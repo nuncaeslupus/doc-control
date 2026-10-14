@@ -64,6 +64,12 @@ def _body(rows: list[dict[str, Any]], skip: int = 0) -> dict[str, Any]:
     return found[skip]
 
 
+def _first_word(text: str) -> tuple[int, int]:
+    """Start and end offsets of the first word, past any leading spaces."""
+    lead = len(text) - len(text.lstrip())
+    return lead, lead + len(text.split()[0])
+
+
 def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
     """Make the tracked edits; return the paragraph texts they remove and add once accepted."""
     rows = _rows(path)
@@ -72,14 +78,14 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
     with api.open(path, store=store) as doc:
         if name == "notes":
             note = _first(rows, "footnote")
-            word = len(note["text"].split()[0])
+            lead, word = _first_word(note["text"])
             removed.append(note["text"])
-            added.append("EDITED" + note["text"][word:])
+            added.append(note["text"][:lead] + "EDITED" + note["text"][word:])
             doc.run(
                 "batch",
                 {
                     "ops": [
-                        {"op": "text.replace", "at": f"{note['at']}:0-{word}", "text": "EDITED"}
+                        {"op": "text.replace", "at": f"{note['at']}:{lead}-{word}", "text": "EDITED"}
                     ],
                     "author": AUTHOR,
                 },
@@ -87,7 +93,8 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
             for skip, kind in ((0, "footnote"), (1, "endnote")):
                 body = _body(_rows(path), skip)
                 end = len(body["text"])
-                added.append(f"A tracked {kind} added by doc-control.")
+                # note.add puts a space before the text, inside the tracked insertion.
+                added.append(f" A tracked {kind} added by doc-control.")
                 doc.run(
                     "note.add",
                     {
@@ -99,16 +106,16 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
                 )
         elif name == "headers":
             header = _first(rows, "header", 2)
-            word = len(header["text"].split()[0])
+            lead, word = _first_word(header["text"])
             removed.append(header["text"])
-            added.append("EDITED" + header["text"][word:])
+            added.append(header["text"][:lead] + "EDITED" + header["text"][word:])
             doc.run(
                 "batch",
                 {
                     "ops": [
                         {
                             "op": "text.replace",
-                            "at": f"{header['at']}:0-{word}",
+                            "at": f"{header['at']}:{lead}-{word}",
                             "text": "EDITED",
                         }
                     ],
