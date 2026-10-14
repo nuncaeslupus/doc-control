@@ -67,7 +67,7 @@ jobs:
           fetch-depth: 2
       - id: diff
         run: |
-          pattern='^(packaging/|src/doc_control/|scripts/frozen_smoke\.py$|tests/corpus/generator\.py$|pyproject\.toml$|uv\.lock$|\.github/workflows/(package|ci)\.yml$)'
+          pattern='^(packaging/|src/doc_control/|scripts/frozen_smoke\.py$|scripts/build_mcpb\.py$|tests/corpus/generator\.py$|pyproject\.toml$|uv\.lock$|\.github/workflows/(package|ci)\.yml$)'
           if ! files=$(git diff --name-only HEAD^1 HEAD); then
             echo "no parent to compare with: building"; echo "changed=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
