@@ -67,6 +67,7 @@ OPERATION_MODULES: dict[str, str] = {
     "anchor.resolve": "anchor",
     "batch": "batch",
     "capabilities": "meta",
+    "caption.add": "crossref",
     "comments.list": "read",
     "compare": "compare",
     "diff": "diff",
@@ -78,6 +79,8 @@ OPERATION_MODULES: dict[str, str] = {
     "history.orphans": "history",
     "history.purge": "history",
     "history.search": "history",
+    "index.insert": "crossref",
+    "index.mark": "crossref",
     "info": "read",
     "layout.apply": "layout",
     "layout.get": "layout",
@@ -119,6 +122,7 @@ OPERATION_MODULES: dict[str, str] = {
     "text.normalized": "text",
     "toc.insert": "fieldwrite",
     "undo": "history",
+    "xref.add": "crossref",
 }
 
 

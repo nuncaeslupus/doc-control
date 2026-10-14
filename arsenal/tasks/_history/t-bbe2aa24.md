@@ -5,6 +5,7 @@ label: "captions and xrefs"
 priority: 5
 deps: [t-420bff3f]
 workspace: LAYOUT
+status: merged
 ---
 
 ## Acceptance gate
