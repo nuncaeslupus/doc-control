@@ -1,0 +1,68 @@
+"""`sections.list`: each section's page setup, read-only (groundwork for changing it).
+
+A header or footer a section does not define is the previous section's, so the addresses
+reported here are those of the section that defines the part (see
+:mod:`doc_control.model.stories`).
+"""
+
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from typing import Any
+
+from doc_control.envelope import Reply
+from doc_control.model.document import Document
+from doc_control.model.parts import W, parse_part
+from doc_control.model.stories import HF_KINDS, list_stories, section_properties
+from doc_control.registry import operation
+
+SETTINGS_PART = "word/settings.xml"
+
+
+def _attr(parent: ET.Element, tag: str, name: str) -> str | None:
+    elem = parent.find(W + tag)
+    return None if elem is None else elem.get(W + name)
+
+
+@operation(
+    "sections.list",
+    "read",
+    "Each section's page setup: break type, title page, even/odd headers, page-number "
+    "start and format, and the header and footer address per kind (default, first, even).",
+    {
+        "type": "object",
+        "properties": {
+            "doc": {"type": "string", "minLength": 1, "description": "Path to the .docx."},
+        },
+        "required": ["doc"],
+        "additionalProperties": False,
+    },
+)
+def sections_list(request: dict[str, Any]) -> Reply:
+    doc = Document(request["doc"])
+    pkg = doc.pkg
+    even_and_odd = False
+    if SETTINGS_PART in pkg:
+        even_and_odd = parse_part(pkg, SETTINGS_PART).find(W + "evenAndOddHeaders") is not None
+    used: dict[tuple[str, str, int], str] = {}
+    for story in list_stories(pkg, ("headers",)):
+        for number in story.used_by_sections:
+            used[(story.kind, story.hf_kind or "", number)] = story.key
+    rows: list[dict[str, Any]] = []
+    for number, sect in enumerate(section_properties(pkg), start=1):
+        start = _attr(sect, "pgNumType", "start")
+        rows.append(
+            {
+                "section": number,
+                "break": _attr(sect, "type", "val") or "nextPage",
+                "title_page": sect.find(W + "titlePg") is not None,
+                "even_and_odd": even_and_odd,
+                "page_numbers": {
+                    "start": int(start) if start is not None and start.isdigit() else None,
+                    "format": _attr(sect, "pgNumType", "fmt") or "decimal",
+                },
+                "headers": {k: used.get(("header", k, number)) for k in HF_KINDS},
+                "footers": {k: used.get(("footer", k, number)) for k in HF_KINDS},
+            }
+        )
+    return Reply({"sections": rows}, doc=doc.envelope_doc())

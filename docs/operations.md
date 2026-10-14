@@ -337,6 +337,14 @@ Tracked changes in document order with author, date, type, text and paragraph ad
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+## `sections.list` (read)
+
+Each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer address per kind (default, first, even).
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+
 ## `segment` (read)
 
 Chapters and scenes with stable ids and detection signals, or sentences and dialogue lines.
