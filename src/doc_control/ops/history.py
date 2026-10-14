@@ -23,9 +23,13 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
 from doc_control.model.document import Document
 from doc_control.model.index import DocumentIndex
+from doc_control.model.loosefold import LEVELS, Level
+from doc_control.model.search import LevelMatcher, SearchOptions
+from doc_control.model.wordcodes import translate_codes
 from doc_control.ooxml.revisions import DEFAULT_AUTHOR
 from doc_control.ooxml.splice import scan
 from doc_control.ooxml.zipio import Package
+from doc_control.ops.find import check_level
 from doc_control.ops.tracked import InsertParagraph, apply_edits
 from doc_control.registry import operation
 from doc_control.safety import history
@@ -379,7 +383,8 @@ def history_list(request: dict[str, Any]) -> Reply:
     "history.search",
     "read",
     "Find a quote in the undo log: in the requests, and in the text of every paragraph "
-    "before and after each write.",
+    "before and after each write. Exact unless `match_level` folds it; then every hit, "
+    "with its offsets and the level it matched at.",
     {
         "type": "object",
         "properties": {
@@ -387,6 +392,21 @@ def history_list(request: dict[str, Any]) -> Reply:
             "query": {"type": "string", "minLength": 1, "description": "Text to find."},
             "ignore_case": {"type": "boolean"},
             "ignore_accents": {"type": "boolean"},
+            "match_level": {
+                "type": "string",
+                "enum": ["exact", "default", "loose"],
+                "description": "Fold the search as `find` does: `default` ignores case,"
+                " accents and punctuation (symbols such as `$` still count), `loose` drops"
+                " symbols too; `exact` keeps the flags. When passed, Word's Find codes in"
+                " `query` are read as their characters, every hit in a text is returned"
+                " (not only the first, `exact` included), each with `start` and `end` (its"
+                " offsets in that text: the request's JSON or the paragraph before or after"
+                " the write, as `in` names it; not offsets into the cut `text`),"
+                " `match_level` (the strictest level it meets) and `text` cut around"
+                " it, and the reply gains `matches_by_level`, adding up to `total`. Without"
+                " it, the first hit per text, with no `start`, `end` or level. Not"
+                " with `ignore_case` or `ignore_accents` false at a folded level.",
+            },
             "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},
         },
         "required": ["query"],
@@ -394,22 +414,36 @@ def history_list(request: dict[str, Any]) -> Reply:
     },
 )
 def history_search(request: dict[str, Any]) -> Reply:
+    level: Level | None = request.get("match_level")
+    folds = level in ("default", "loose")
+    query: str = request["query"]
+    if level is not None:
+        check_level(request, level)
+        query = translate_codes(query)
+        LevelMatcher(SearchOptions(query), level)  # a bad phrase fails here, not per entry
     log = _log(request)
     limit = list_limit(request, DEFAULT_LIMIT)
     hits: list[dict[str, Any]] = []
     total = 0
+    by_level: dict[str, int] = {}
     for entry in reversed(log.entries):
         if entry.get("kind") == "purge":
             continue
         found = history.search_entry(
             entry,
-            request["query"],
-            ignore_case=request.get("ignore_case", False),
-            ignore_accents=request.get("ignore_accents", False),
+            query,
+            ignore_case=folds or request.get("ignore_case", False),
+            ignore_accents=folds or request.get("ignore_accents", False),
+            match_level=level,
         )
         total += len(found)
+        for hit in found if level is not None else ():
+            by_level[hit["match_level"]] = by_level.get(hit["match_level"], 0) + 1
         hits.extend(found[: max(0, limit - len(hits))])
-    return Reply({"matches": hits, "total": total})
+    result: dict[str, Any] = {"matches": hits, "total": total}
+    if level is not None:
+        result["matches_by_level"] = {k: by_level[k] for k in LEVELS if k in by_level}
+    return Reply(result)
 
 
 @operation(

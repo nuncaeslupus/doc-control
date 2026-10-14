@@ -57,6 +57,7 @@ __all__ = [
     "fold",
     "fold_phrase",
     "fold_text",
+    "fold_texts",
     "hits",
     "joined_hits",
     "ladder",
@@ -185,6 +186,13 @@ def fold_text(text: str, level: Level) -> str:
     if len(text) <= CACHED_TEXT_MAX:
         return _fold_text_cached(text, level)
     return _fold_text(text, level)
+
+
+def fold_texts(texts: Sequence[str], level: Level) -> list[str]:
+    """``[fold_text(text, level) for text in texts]``, the loop in C when each is cached."""
+    if all(len(text) <= CACHED_TEXT_MAX for text in texts):
+        return list(map(_fold_text_cached, texts, itertools.repeat(level)))
+    return [fold_text(text, level) for text in texts]
 
 
 def _fold_text(text: str, level: Level) -> str:

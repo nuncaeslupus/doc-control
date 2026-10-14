@@ -112,7 +112,8 @@ def anchor_create(request: dict[str, Any]) -> Reply:
                 " same ladder. The reply's match_level is the strictest level at which the"
                 " quote equals the matched text (exact: character for character; case:"
                 " normalised text with case ignored), with matched_text when it is not exact;"
-                " a fuzzy match has neither.",
+                " a fuzzy match has neither. Not the reply's match kind `match` (exact,"
+                " normalized, fuzzy), which keeps its meaning.",
             },
         },
         "required": ["doc", "anchor"],

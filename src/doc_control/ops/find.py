@@ -86,7 +86,11 @@ SCHEMA: dict[str, Any] = {
             " ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each"
             " match gains `match_level`, the strictest level it meets. Not with `regex`"
             " (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a"
-            " folded level.",
+            " folded level. Two meanings of exact: plain `find` (no `match_level`) matches"
+            " the query as typed, flags as given, ^ codes literal, and its matches carry no"
+            ' level; `match_level: "exact"` keeps that text rule but reads the ^ codes and'
+            " tags every match. A match's own `match_level` is `exact` only when it equals"
+            " the query character for character (`case` when only case differs).",
         },
         "cursor": {"type": "string", "description": "The `next` value of the previous page."},
         "stories": STORIES_PROPERTY,
@@ -111,7 +115,7 @@ def find(request: dict[str, Any]) -> Reply:
     level: Level | None = request.get("match_level")
     folds = level in ("default", "loose")
     if level is not None:
-        _check_level(request, level)
+        check_level(request, level)
     query: str = request["query"]
     if level is not None and not request.get("regex"):
         query = translate_codes(query)
@@ -252,7 +256,7 @@ def _token(
     return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
 
 
-def _check_level(request: dict[str, Any], level: Level) -> None:
+def check_level(request: dict[str, Any], level: Level) -> None:
     """``match_level`` is for literal queries, and a folded level implies both folds."""
     if request.get("regex") and level != "exact":
         raise DocControlError(

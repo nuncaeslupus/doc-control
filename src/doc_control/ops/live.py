@@ -395,9 +395,11 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
             "ignores case, accents and punctuation; `loose` symbols too. Either tries "
             "the levels from verbatim on and takes the first that matches, so one "
             "verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case "
-            "ignored, nothing else. The reply's `match_level` (`exact`, `case`, "
-            "`default`, `loose`) names the level that matched, with `matched_text` "
-            "when it is not `exact`.",
+            "ignored, nothing else, no retry. Two meanings of exact: the request's "
+            "`exact` allows a case difference, the reply's does not. The reply's "
+            "`match_level` (`exact` character for character, `case`, `default`, "
+            "`loose`) names the level that matched, with `matched_text` when it is "
+            "not `exact`.",
         },
         mode={
             "enum": ["select", "cursor"],

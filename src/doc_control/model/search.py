@@ -272,6 +272,36 @@ class LevelMatcher:
         except DocControlError as exc:
             raise _invalid(exc.message) from exc
 
+    def candidates(self, items: Sequence[Item]) -> Sequence[Item]:
+        """The items that may hold a hit, in order: every one that does, and a few more.
+
+        A text can have a hit at a level only if the query, folded at that level, is in
+        the text folded at that level (``fold_text`` is ``fold(...).text`` without the
+        offset map). Each level up to the requested one is checked on all the texts at
+        once, joined, so only the texts that pass go through the offset-mapping search.
+        """
+        if self._exact is not None or not items:
+            return items
+        texts = [text for _, text in items]
+        query = self._options.query
+        stages = [(query, texts)]
+        for current in LEVELS[1 : LEVELS.index(self._level) + 1]:
+            needle = loosefold.fold_text(query, current)
+            if not needle:
+                return items
+            stages.append((needle, loosefold.fold_texts(texts, current)))
+        keep: set[int] = set()
+        for needle, haystacks in stages:
+            # Joined with nothing between: a needle across two texts only adds a candidate.
+            joined = "".join(haystacks)
+            ends = list(itertools.accumulate(map(len, haystacks)))
+            pos = joined.find(needle)
+            while pos >= 0:
+                k = bisect.bisect_right(ends, pos)
+                keep.add(k)
+                pos = joined.find(needle, ends[k])
+        return [items[k] for k in sorted(keep)]
+
     def spans(self, text: str) -> Iterator[Span]:
         """The spans of ``text``, in order; :attr:`levels` tags them."""
         query = self._options.query
@@ -387,7 +417,8 @@ class LocalScan:
         self, matcher: Matcher | LevelMatcher, items: Sequence[Item], deadline: float
     ) -> None:
         self._matcher = matcher
-        self._items = items
+        # A folded search looks only at the texts that can hold a hit.
+        self._items = matcher.candidates(items) if isinstance(matcher, LevelMatcher) else items
         self._deadline = deadline
         self.stopped_at: int | None = None
 
