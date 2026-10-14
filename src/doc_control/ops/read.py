@@ -21,6 +21,7 @@ from typing import Any
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import budget
+from doc_control.model.address import parse_range
 from doc_control.model.annotations import (
     REVISION_TYPES,
     read_comments,
@@ -30,6 +31,7 @@ from doc_control.model.document import Document
 from doc_control.model.format import para_format, run_format
 from doc_control.model.index import Paragraph
 from doc_control.model.parts import OFFICE_REL, W, parse_part, related_part
+from doc_control.model.storyorder import fields_for
 from doc_control.model.styles import Style
 from doc_control.ops.paging import (
     PAGING_PROPERTIES,
@@ -342,16 +344,17 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
 )
 def para_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
-    para = doc.index.resolve_address(request["at"])
+    view = doc.story_view(parse_range(request["at"]).start.story)
+    para = view.index.resolve_address(request["at"])
     start = read_cursor("para.get", doc, request)
     total = len(para.text)
     if start > total:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, "cursor is beyond the end of the paragraph", path="$.cursor"
         )
-    style = doc.style_id(para)
+    style = view.style_id(para)
     style_def = doc.styles.get(style) if style is not None else None
-    elem = doc.index.spans.parse_paragraph(para.span_index)
+    elem = view.index.spans.parse_paragraph(para.span_index)
     head: dict[str, Any] = {
         "at": str(para.address),
         "number": para.number,
@@ -361,8 +364,9 @@ def para_get(request: dict[str, Any]) -> Reply:
         "format": para_format(elem.find(W + "pPr")),
     }
     for fact in PARA_FACTS:
-        head.update(fact(ParagraphContext(doc, para)))
-    spans = _run_spans(doc, para)
+        head.update(fact(ParagraphContext(view, para)))
+    head.update(fields_for(doc, para.story))
+    spans = _run_spans(view, para)
     ceiling = min(total - start, request.get("limit", total))
     count = ceiling
     while True:

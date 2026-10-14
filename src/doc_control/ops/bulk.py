@@ -15,6 +15,7 @@ from doc_control.model.document import Document
 from doc_control.model.layout import blank_before, centred, is_empty, page_break_before
 from doc_control.model.normalized import normalized_text
 from doc_control.model.pages import estimate_pages
+from doc_control.model.storyorder import STORIES_PROPERTY, kinds_of, rows
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
 
@@ -40,6 +41,7 @@ from doc_control.registry import operation
                     "`page_basis`, `rendered_marks` and `page_count` (see page.estimate)."
                 ),
             },
+            "stories": STORIES_PROPERTY,
             **PAGING_PROPERTIES,
         },
         "required": ["doc"],
@@ -59,8 +61,9 @@ def paragraphs_list(request: dict[str, Any]) -> Reply:
         }
     names: dict[str, str] = {}
     items: list[dict[str, Any]] = []
-    for para in doc.index.paragraphs:
-        style = doc.style_id(para)
+    for row in rows(doc, kinds_of(request)):
+        view, para = row.view, row.para
+        style = view.style_id(para)
         if style is not None and style not in names:
             found = doc.styles.get(style)
             names[style] = found.name if found is not None else style
@@ -74,15 +77,16 @@ def paragraphs_list(request: dict[str, Any]) -> Reply:
         item.update(
             style=style,
             style_name=names.get(style) if style is not None else None,
-            heading_level=doc.heading_level(para),
-            centred=centred(doc, para),
-            page_break_before=page_break_before(doc, para),
-            blank_before=blank_before(doc, para),
-            empty=is_empty(doc, para),
+            heading_level=view.heading_level(para),
+            centred=centred(view, para),
+            page_break_before=page_break_before(view, para),
+            blank_before=blank_before(view, para),
+            empty=is_empty(view, para),
         )
-        if pages is not None:
-            row = pages[para.number - 1]
-            item["page"] = row.page
-            item["page_label"] = row.label
+        item.update(row.fields)
+        if pages is not None and not para.story:
+            page = pages[para.number - 1]
+            item["page"] = page.page
+            item["page_label"] = page.label
         items.append(item)
     return paged("paragraphs.list", doc, request, "paragraphs", items, head)

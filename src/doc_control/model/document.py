@@ -105,6 +105,24 @@ class Document:
         value: _T = cache[key]
         return value
 
+    def story_view(self, key: str) -> Document:
+        """This document seen through one story (``""`` the body, ``fn3``, ``hdr1.default``):
+        the same package and styles, with that story's paragraph index, so every
+        paragraph-level helper reads it as it reads the body."""
+        if not key:
+            return self
+
+        def build() -> Document:
+            from doc_control.model.stories import find_story, story_index
+
+            view = object.__new__(Document)
+            view.path, view.pkg = self.path, self.pkg
+            view.index = story_index(self.pkg, find_story(self.pkg, key))
+            view.__dict__["styles"] = self.styles
+            return view
+
+        return self.memo(("story", key), build)
+
     def paragraph_element(self, para: Paragraph) -> ET.Element:
         """The parsed ``w:p`` of ``para``, parsed once per document; read it, never change it."""
         return self.index.spans.parsed(para.span_index)
