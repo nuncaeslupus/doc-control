@@ -5,6 +5,7 @@ label: "sections.list"
 priority: 10
 deps: [t-766f260d, t-0a709c5e]
 workspace: STORIES
+status: merged
 ---
 
 ## Acceptance gate
