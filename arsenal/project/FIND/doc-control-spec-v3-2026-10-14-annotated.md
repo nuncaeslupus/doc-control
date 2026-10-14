@@ -281,13 +281,13 @@ Responses carry `"match_level": "exact" | "case" | "default" | "loose"`, the lev
 
 | ID | Decision | Status | Date |
 |----|----------|--------|------|
-| D-F1 | Option B. Symbols (S*) are not folded by default. `match: "exact" \| "default" \| "loose"`; `"loose"` also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched | agreed | 2026-10-14 |
+| D-F1 | Option B. Symbols (S*) are not folded by default. `match_level: "exact" \| "default" \| "loose"` (key renamed in D-F7); `"loose"` also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched | agreed | 2026-10-14 |
 | D-F2 | Matching works in the middle of a paragraph too, not only at its start; a phrase without `¿` must still match | agreed | 2026-10-14 |
 | D-F3 | The fuzzy tier of `anchor.resolve` stays as is, after the loose level (Q5, as recommended) | agreed | 2026-10-14 |
 | D-F4 | No refusal of loose matches that look doubtful; the level report is enough (Q4, as recommended) | agreed | 2026-10-14 |
 | D-F5 | Plain `find` stays exact by default; folding only when `match` is passed | agreed | 2026-10-14 |
 | D-F6 | Agent phrases accept Word's find codes: `^p` (alias for `\r`), `^t`, `^l` where the op supports them, `^^` for a literal caret. `locate`'s generated phrases do not change | agreed | 2026-10-14 |
-| D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; Word codes = the `model/wordfind.py` set (`^p ^l ^t ^s ^- ^~ ^uNNN ^^`); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex `find` | proposed | 2026-10-14 |
+| D-F7 | Review clarifications (r3): request/response key `match_level` (new; `anchor.resolve`'s `match` keeps `exact\|normalized\|fuzzy`); auto-retry and `"default"` default only for single-target ops (`live.select`, `anchor.resolve`); `find`, `rename`, `history.search` default exact, never retry, return all hits; Word codes = the `model/wordfind.py` set (`^p ^l ^t ^s ^- ^~ ^uNNN ^^`); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex `find` | agreed | 2026-10-14 |
 
 <!-- -->
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="451a020d161f7ddea0d98268d756b2eef966fd321e3e1a4d071f98605bf6bc42">
+<meta name="arsenal-source-sha256" content="897950c29d4b9ef97c7b635bd4d5a8888a6408fec0da00fb60ea9c2c29d26ea6">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -622,7 +622,7 @@ that revision, add <code>— without annotations</code>.</p>
 <tbody>
 <tr>
 <td>D-F1</td>
-<td>Option B. Symbols (S*) are not folded by default. <code>match: "exact" \| "default" \| "loose"</code>; <code>"loose"</code> also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched</td>
+<td>Option B. Symbols (S*) are not folded by default. <code>match_level: "exact" \| "default" \| "loose"</code> (key renamed in D-F7); <code>"loose"</code> also drops symbols. A phrase not found at the default level is retried at looser levels before failing, exact-first tiebreak kept, and the reply says which level matched</td>
 <td>agreed</td>
 <td>2026-10-14</td>
 </tr>
@@ -659,7 +659,7 @@ that revision, add <code>— without annotations</code>.</p>
 <tr>
 <td>D-F7</td>
 <td>Review clarifications (r3): request/response key <code>match_level</code> (new; <code>anchor.resolve</code>'s <code>match</code> keeps <code>exact\|normalized\|fuzzy</code>); auto-retry and <code>"default"</code> default only for single-target ops (<code>live.select</code>, <code>anchor.resolve</code>); <code>find</code>, <code>rename</code>, <code>history.search</code> default exact, never retry, return all hits; Word codes = the <code>model/wordfind.py</code> set (<code>^p ^l ^t ^s ^- ^~ ^uNNN ^^</code>); punctuation folds to a word boundary, not to nothing; Word codes not translated in plain/regex <code>find</code></td>
-<td>proposed</td>
+<td>agreed</td>
 <td>2026-10-14</td>
 </tr>
 </tbody>
