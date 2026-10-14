@@ -61,14 +61,74 @@ def test_story_part_footprint_rejects_outside_change(tmp_path: Path) -> None:
         write_verified(path, {PART: twice}, Footprint())
     assert err.value.code is ErrorCode.VERIFY_FAILED_RESTORED
 
-    # A story footprint may not name the body, nor overlap a whole-part allowance.
-    body = Footprint(stories=(StoryFootprint("word/document.xml", BODY),))
-    with pytest.raises(DocControlError):
-        write_verified(path, {PART: twice}, body)
+    # A story footprint may not name the body, nor overlap a whole-part allowance: each
+    # write below would pass without its story footprint.
+    write_verified(path, {PART: twice}, Footprint(parts=frozenset({PART})))
+    before = sha256_file(path)
     both = Footprint(parts=frozenset({PART}), stories=declared.stories)
-    with pytest.raises(DocControlError):
-        write_verified(path, {PART: twice}, both)
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, {PART: Package(path).read(PART)}, both)
+    assert "overlaps" in str(err.value)
+    document = Package(path).read("word/document.xml")
+    write_verified(path, {"word/document.xml": document}, Footprint())
+    body = Footprint(stories=(StoryFootprint("word/document.xml", BODY),))
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, {"word/document.xml": document}, body)
+    assert "overlaps" in str(err.value)
     assert sha256_file(path) == before
+
+
+def test_two_notes_in_one_part_are_checked_and_undone_together(tmp_path: Path) -> None:
+    path = _doc(tmp_path)
+    original = path.read_bytes()
+    pkg = Package(path)
+    data = pkg.read(PART)
+    fn1, fn2 = find_story(pkg, "fn1"), find_story(pkg, "fn2")
+    s1 = scan(data, fn1.container, PART).paragraphs[0]
+    s2 = scan(data, fn2.container, PART).paragraphs[2]  # fn2's last paragraph
+    both = _edit(_edit(data, (s2.start, s2.end), b"</w:t>", b"y</w:t>"), (s1.start, s1.end),
+                 b"</w:t>", b"x</w:t>")  # fmt: skip
+    only_fn2 = Footprint(stories=(StoryFootprint(PART, fn2.container, frozenset({2})),))
+    with pytest.raises(DocControlError) as err:
+        write_verified(path, {PART: both}, only_fn2)  # fn1 changed, undeclared
+    assert err.value.code is ErrorCode.VERIFY_FAILED_RESTORED
+    declared = Footprint(
+        stories=(
+            StoryFootprint(PART, fn1.container, frozenset({0})),
+            StoryFootprint(PART, fn2.container, frozenset({2})),
+        )
+    )
+    written = write_verified(path, {PART: both}, declared)
+    new1 = both[s1.start : s1.end + 1]
+    new2 = both[s2.start + 1 : s2.end + 2]
+    changes = [
+        {"kind": "replace", "before": to_text(data[s1.start : s1.end]), "after": to_text(new1),
+         "part": PART, "story": "fn1"},
+        {"kind": "replace", "before": to_text(data[s2.start : s2.end]), "after": to_text(new2),
+         "part": PART, "story": "fn2"},
+    ]  # fmt: skip
+    record(path, "batch", before_sha256=written.before_sha256,
+           after_sha256=written.after_sha256, backup=written.backup, changes=changes)  # fmt: skip
+    log = path.parent / ".doc-control" / path.name / "log.jsonl"
+    (entry,) = read_log(log).entries
+
+    # A later edit of one of those paragraphs makes the undo a conflict.
+    later = Package(path).read(PART).replace(b"x</w:t>", b"z</w:t>", 1)
+    write_verified(path, {PART: later}, declared)
+    with pytest.raises(DocControlError) as err:
+        undo_entry(path, entry)
+    assert err.value.code is ErrorCode.BATCH_CONFLICT
+    write_verified(path, {PART: both}, declared)  # put the logged state back
+
+    undo_entry(path, entry)
+    with zipfile.ZipFile(path) as now, zipfile.ZipFile(_write(tmp_path, original)) as was:
+        assert now.read(PART) == was.read(PART)
+
+    # A note gone since the logged write is a conflict too, not a crash.
+    gone = dict(entry, changes=[dict(changes[0], story="fn99")])
+    with pytest.raises(DocControlError) as err:
+        undo_entry(path, gone)
+    assert err.value.code is ErrorCode.BATCH_CONFLICT
 
 
 def test_undo_restores_changes_in_two_parts_together(tmp_path: Path) -> None:

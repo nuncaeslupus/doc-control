@@ -227,7 +227,14 @@ def record(
 def _container(pkg: Package, story: str, part: str) -> Container:
     from doc_control.model.stories import find_story
 
-    found = find_story(pkg, story)
+    try:
+        found = find_story(pkg, story)
+    except DocControlError as exc:
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"{story} is gone since; undo later operations first (history.list)",
+            story=story,
+        ) from exc
     if found.part != part:
         raise DocControlError(
             ErrorCode.BATCH_CONFLICT,
