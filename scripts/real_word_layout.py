@@ -181,7 +181,7 @@ def build(out: Path) -> None:
         expected["documents"][name] = entry
     base.unlink()
     shutil.rmtree(store)
-    (out / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1))
+    (out / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1), "utf-8")
     print(f"Wrote {len(expected['documents'])} documents to {out}.")
     if not with_toc:
         print("LibreOffice was not found, so toc.docx was not built (install it to check a TOC).")
