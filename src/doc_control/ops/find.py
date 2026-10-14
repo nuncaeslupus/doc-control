@@ -111,7 +111,7 @@ def find(request: dict[str, Any]) -> Reply:
     level: Level | None = request.get("match_level")
     folds = level in ("default", "loose")
     if level is not None:
-        _check_level(request, level)
+        check_level(request, level)
     query: str = request["query"]
     if level is not None and not request.get("regex"):
         query = translate_codes(query)
@@ -252,7 +252,7 @@ def _token(
     return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
 
 
-def _check_level(request: dict[str, Any], level: Level) -> None:
+def check_level(request: dict[str, Any], level: Level) -> None:
     """``match_level`` is for literal queries, and a folded level implies both folds."""
     if request.get("regex") and level != "exact":
         raise DocControlError(

@@ -1,0 +1,619 @@
+{
+ "0:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 3,
+   "paragraphs": 1,
+   "replaced": 3,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "10:dialogue:{\"from\": \"5$\", \"to\": \"6$\", \"dry_run\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 1,
+   "paragraphs": 1,
+   "replaced": 1,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p4"
+   ]
+  },
+  "from": "5$",
+  "preview": [
+   {
+    "after": "6$",
+    "at": "p4#00995265:7-9",
+    "before": "5$",
+    "context": "Cuesta 5$ el kilo y 5 la docena."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2
+  ],
+  "skipped": [],
+  "to": "6$",
+  "warnings": []
+ },
+ "1:plain:{\"from\": \"Lucía\", \"to\": \"Elena\"}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 3,
+   "paragraphs": 1,
+   "replaced": 3,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": false,
+  "footprint": {
+   "word/document.xml": [
+    "p1"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "2:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true, \"case_sensitive\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 1,
+   "paragraphs": 1,
+   "replaced": 1,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   }
+  ],
+  "revision_ids": [
+   1,
+   2
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "3:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true, \"preserve_case\": false}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 3,
+   "paragraphs": 1,
+   "replaced": 3,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "4:plain:{\"from\": \"Lucia\", \"to\": \"Elena\", \"dry_run\": true, \"ignore_accents\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 5,
+   "paragraphs": 2,
+   "replaced": 5,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1",
+    "p3"
+   ]
+  },
+  "from": "Lucia",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "Elena",
+    "at": "p3#f8016eb1:0-5",
+    "before": "Lucia",
+    "context": "Lucia sin tilde, LUCIA en voz alta."
+   },
+   {
+    "after": "ELENA",
+    "at": "p3#f8016eb1:17-22",
+    "before": "LUCIA",
+    "context": "Lucia sin tilde, LUCIA en voz alta."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "5:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true, \"whole_word\": false}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 6,
+   "paragraphs": 2,
+   "replaced": 6,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1",
+    "p2"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "Elena",
+    "at": "p2#cf0ae6da:3-8",
+    "before": "Lucía",
+    "context": "La Lucíana no cambia, ni Lucías, ni Lu…"
+   },
+   {
+    "after": "Elena",
+    "at": "p2#cf0ae6da:25-30",
+    "before": "Lucía",
+    "context": "La Lucíana no cambia, ni Lucías, ni Lucíao."
+   },
+   {
+    "after": "Elena",
+    "at": "p2#cf0ae6da:36-41",
+    "before": "Lucía",
+    "context": "…íana no cambia, ni Lucías, ni Lucíao."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "6:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true, \"inflections\": [\"s\", {\"from\": \"o\"}]}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 5,
+   "paragraphs": 2,
+   "replaced": 5,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1",
+    "p2"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p1#916bf110:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p1#916bf110:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "Elenas",
+    "at": "p2#cf0ae6da:25-31",
+    "before": "Lucías",
+    "context": "La Lucíana no cambia, ni Lucías, ni Lucíao."
+   },
+   {
+    "after": "Elenao",
+    "at": "p2#cf0ae6da:36-42",
+    "before": "Lucíao",
+    "context": "…íana no cambia, ni Lucías, ni Lucíao."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "7:plain:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true, \"preview_limit\": 1}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 3,
+   "paragraphs": 1,
+   "replaced": 3,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#916bf110:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó. LUCÍA gritó, y lucía s…"
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "8:dialogue:{\"from\": \"Lucía\", \"to\": \"Elena\", \"dry_run\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 5,
+   "paragraphs": 3,
+   "replaced": 5,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1",
+    "p2",
+    "p3"
+   ]
+  },
+  "from": "Lucía",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#d3ea75e7:2-7",
+    "before": "Lucía",
+    "context": "-¿Lucía? -dijo Marta-. Lucia no está."
+   },
+   {
+    "after": "elena",
+    "at": "p2#b48d0a05:27-32",
+    "before": "lucía",
+    "context": "--LUCIA, ¿vienes? Lucías y lucía-hija."
+   },
+   {
+    "after": "Elena",
+    "at": "p3#1bdd5705:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p3#1bdd5705:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p3#1bdd5705:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía sonrió."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
+  ],
+  "skipped": [],
+  "to": "Elena",
+  "warnings": []
+ },
+ "9:dialogue:{\"from\": \"lucia\", \"to\": \"elena\", \"dry_run\": true, \"ignore_accents\": true}": {
+  "address_map": {},
+  "author": "Claude",
+  "counts": {
+   "matches": 7,
+   "paragraphs": 3,
+   "replaced": 7,
+   "skipped_boundary": 0,
+   "skipped_unsupported": 0,
+   "unchanged": 0
+  },
+  "dry_run": true,
+  "footprint": {
+   "word/document.xml": [
+    "p1",
+    "p2",
+    "p3"
+   ]
+  },
+  "from": "lucia",
+  "preview": [
+   {
+    "after": "Elena",
+    "at": "p1#d3ea75e7:2-7",
+    "before": "Lucía",
+    "context": "-¿Lucía? -dijo Marta-. Lucia no está."
+   },
+   {
+    "after": "Elena",
+    "at": "p1#d3ea75e7:23-28",
+    "before": "Lucia",
+    "context": "-¿Lucía? -dijo Marta-. Lucia no está."
+   },
+   {
+    "after": "ELENA",
+    "at": "p2#b48d0a05:2-7",
+    "before": "LUCIA",
+    "context": "--LUCIA, ¿vienes? Lucías y lucía-hija…"
+   },
+   {
+    "after": "elena",
+    "at": "p2#b48d0a05:27-32",
+    "before": "lucía",
+    "context": "--LUCIA, ¿vienes? Lucías y lucía-hija."
+   },
+   {
+    "after": "Elena",
+    "at": "p3#1bdd5705:0-5",
+    "before": "Lucía",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía s…"
+   },
+   {
+    "after": "ELENA",
+    "at": "p3#1bdd5705:13-18",
+    "before": "LUCÍA",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía sonrió."
+   },
+   {
+    "after": "elena",
+    "at": "p3#1bdd5705:28-33",
+    "before": "lucía",
+    "context": "Lucía llegó; LUCÍA gritó, y lucía sonrió."
+   }
+  ],
+  "revision_ids": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14
+  ],
+  "skipped": [],
+  "to": "elena",
+  "warnings": []
+ }
+}
