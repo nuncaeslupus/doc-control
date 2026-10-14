@@ -24,6 +24,12 @@ def _attr(parent: ET.Element, tag: str, name: str) -> str | None:
     return None if elem is None else elem.get(W + name)
 
 
+def flag(parent: ET.Element, tag: str) -> bool:
+    """An on/off element (``w:titlePg``): present and not ``w:val`` 0, false or off."""
+    child = parent.find(W + tag)
+    return child is not None and (child.get(W + "val") or "1").lower() not in ("0", "false", "off")
+
+
 @operation(
     "sections.list",
     "read",
@@ -40,10 +46,15 @@ def _attr(parent: ET.Element, tag: str, name: str) -> str | None:
 )
 def sections_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
+    return Reply({"sections": section_rows(doc)}, doc=doc.envelope_doc())
+
+
+def section_rows(doc: Document) -> list[dict[str, Any]]:
+    """The rows `sections.list` returns, for other operations built on them."""
     pkg = doc.pkg
     even_and_odd = False
     if SETTINGS_PART in pkg:
-        even_and_odd = parse_part(pkg, SETTINGS_PART).find(W + "evenAndOddHeaders") is not None
+        even_and_odd = flag(parse_part(pkg, SETTINGS_PART), "evenAndOddHeaders")
     used: dict[tuple[str, str, int], str] = {}
     for story in list_stories(pkg, ("headers",)):
         for number in story.used_by_sections:
@@ -55,7 +66,7 @@ def sections_list(request: dict[str, Any]) -> Reply:
             {
                 "section": number,
                 "break": _attr(sect, "type", "val") or "nextPage",
-                "title_page": sect.find(W + "titlePg") is not None,
+                "title_page": flag(sect, "titlePg"),
                 "even_and_odd": even_and_odd,
                 "page_numbers": {
                     "start": int(start) if start is not None and start.isdigit() else None,
@@ -65,4 +76,4 @@ def sections_list(request: dict[str, Any]) -> Reply:
                 "footers": {k: used.get(("footer", k, number)) for k in HF_KINDS},
             }
         )
-    return Reply({"sections": rows}, doc=doc.envelope_doc())
+    return rows

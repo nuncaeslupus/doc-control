@@ -89,7 +89,7 @@ jobs:
       - name: Install LibreOffice Writer (headless)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui poppler-utils
+          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui python3-uno poppler-utils
           soffice --version
       - name: Page-label checker (LibreOffice PDF, pdftotext)
         run: uv run pytest -q tests/layout

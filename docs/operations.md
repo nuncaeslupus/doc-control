@@ -160,6 +160,14 @@ File facts: size, hash, paragraph count, properties and which parts exist.
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+## `layout.get` (read)
+
+The document's page plan: per section where it starts, its break, page numbering, title page, and the header and footer text per kind (default, first, even), with PAGE, NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the section does not define is null (inherited). The plan carries "version": 1.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+
 ## `live.close` (write)
 
 Close the open document; with unsaved changes it needs `save` or `discard`.
@@ -237,6 +245,21 @@ Chapter, scene, estimated page and the shortest unique first-and-last-words phra
 | `structure` | boolean |  | false: skip chapter, part and scene detection (they come back null), for callers that keep their own structure; faster on a single paragraph. Default true. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `note.add` (write)
+
+Add a footnote or endnote at a body offset: the reference mark and the note text are both tracked insertions, so rejecting them removes the note. Creates the notes part when the document has none. Returns the note's id, displayed number and address.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `at` | string | yes | Body point p3#fp:10-10 (the mark goes after the offset), a range inside one paragraph (after it) or a paragraph (at its end). |
+| `kind` | `footnote` \| `endnote` | yes |  |
+| `text` | string | yes | The note text, one line. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
 
 ## `open` (write)
 
@@ -503,6 +526,16 @@ Install a JSON style set into the document: new styles are added, existing ones 
 | `on_conflict` | `replace` \| `skip` \| `error` |  | A style id already in the document (default replace). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+## `table.get` (read)
+
+One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `table` | integer |  | Table number, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. |
+| `at` | string |  | Instead of `table`: any paragraph address in the table. |
 
 ## `term.rename` (write)
 
