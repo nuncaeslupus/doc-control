@@ -86,7 +86,11 @@ SCHEMA: dict[str, Any] = {
             " ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each"
             " match gains `match_level`, the strictest level it meets. Not with `regex`"
             " (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a"
-            " folded level.",
+            " folded level. Two meanings of exact: plain `find` (no `match_level`) matches"
+            " the query as typed, flags as given, ^ codes literal, and its matches carry no"
+            ' level; `match_level: "exact"` keeps that text rule but reads the ^ codes and'
+            " tags every match. A match's own `match_level` is `exact` only when it equals"
+            " the query character for character (`case` when only case differs).",
         },
         "cursor": {"type": "string", "description": "The `next` value of the previous page."},
         "stories": STORIES_PROPERTY,

@@ -137,3 +137,33 @@ It reads back the six files, checks that no tracked change is left and that ever
 paragraph of every story (body, notes, headers and footers) is what accepting or rejecting
 should leave, prints each `MISMATCH`, then `real_word_stories_mismatches == <n>`. Report
 it, and the names of any file that asked to repair, per Word version as in step 7.
+
+## Find: the `--` dialogue case (FIND)
+
+The owner's case that started the FIND workspace: a dialogue line typed with `--` (two
+hyphens) where an em dash (`—`) or a hyphen (`-`) was meant. For matching, a `--` at the
+start of, or inside, a dialogue line equals `—` or `-`: all three are punctuation and fold
+to a word boundary at `match_level: "default"` (the default for `live.select` and
+`anchor.resolve`), so a phrase sent with any of them, or with no dash at all, finds the
+line. Judged, not measured; about 2 minutes.
+
+1. In Word, make a document holding the paragraph `--¿Estás ahí? --dijo ella.`, save it
+   as `C:\t30\dialogue.docx` and keep it open. Attach to it:
+
+   ```powershell
+   uv run doc-control live.open --json '{"doc": "C:\\t30\\dialogue.docx"}'
+   ```
+
+2. Each of these must select that paragraph and answer a `match_level` other than
+   `exact`, with `matched_text`:
+
+   ```powershell
+   uv run doc-control live.select --json '{"doc": "dialogue.docx", "find_phrase": "Estas ahi"}'
+   uv run doc-control live.select --json '{"doc": "dialogue.docx", "find_phrase": "—¿Estás ahí? —dijo ella"}'
+   uv run doc-control live.select --json '{"doc": "dialogue.docx", "find_phrase": "-Estas ahi -dijo"}'
+   ```
+
+3. With `"match_level": "exact"` added, only a phrase typed with `--`, as in the
+   document (`--¿Estás ahí? --dijo`), is found; the `—` and `-` forms answer `ANCHOR_NOT_FOUND`.
+
+Report any call that picked another paragraph or found nothing, per Word version.
