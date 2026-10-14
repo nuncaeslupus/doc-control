@@ -47,6 +47,8 @@ def _schema(required: bool = True, **extra: dict[str, Any]) -> dict[str, Any]:
 
 def _fresh(adapter: LiveAdapter, path: Path, count: int, address: Address) -> str:
     """The text of the paragraph at ``address``; ``STALE_ADDRESS`` when it reads otherwise."""
+    if address.story:
+        raise unavailable(f"{address}: notes, headers and footers are file engine only")
     n = address.number - 1
     text: str = guarded(adapter.text, path, Span(n, n)) if n < count else ""
     if n >= count or fingerprint(text) != address.fp:

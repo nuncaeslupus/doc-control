@@ -154,3 +154,70 @@ def test_parse_address_rejects_offsets_and_non_strings(bad: object) -> None:
     with pytest.raises(DocControlError) as err:
         parse_address(bad)  # type: ignore[arg-type]
     assert err.value.code is ErrorCode.ADDRESS_INVALID
+
+
+STORY_FORMS = [
+    "fn3/p1#0c9e0c9e",
+    "fn3/p1#0c9e0c9e:4-10",
+    "en12/p2#0c9e0c9e.s2",
+    "hdr1.default/p1#5e5e5e5e",
+    "ftr2.first/p1#5e5e5e5e:2..ftr2.first/p3#0c9e0c9e:5",
+    "hdr10.even/p1#5e5e5e5e",
+]
+
+
+def _body_digests() -> dict[str, dict[str, object]]:
+    import hashlib
+    import tempfile
+    from pathlib import Path
+
+    from doc_control import api
+    from tests.corpus.generator import generate as generate_doc
+
+    out: dict[str, dict[str, object]] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        for kind in KINDS:
+            path = Path(tmp) / f"{kind}.docx"
+            path.write_bytes(generate_doc(kind, 0))
+            with api.open(path) as handle:
+                addresses = [p["at"] for p in handle.paragraphs()]
+            assert all(str(parse_range(at)) == at for at in addresses)
+            digest = hashlib.sha256("\n".join(addresses).encode()).hexdigest()
+            out[kind] = {"count": len(addresses), "sha256": digest}
+    return out
+
+
+def test_story_prefix_round_trips_and_body_unchanged() -> None:
+    import json
+    from pathlib import Path
+
+    for text in STORY_FORMS:
+        rng = parse_range(text)
+        assert str(rng) == text
+        assert rng.start.story == text.split("/")[0]
+    assert parse_address("fn3/p1#0C9E0C9E") == Address(1, "0c9e0c9e", "fn3")
+    assert parse_address("p1#0c9e0c9e") == Address(1, "0c9e0c9e")
+    for bad in (
+        "fn3/p1#0c9e0c9e:2..p2#0c9e0c9e:1",  # crosses from a note into the body
+        "p1#0c9e0c9e:2..fn3/p2#0c9e0c9e:1",
+        "fn3/p1#0c9e0c9e:2..fn4/p2#0c9e0c9e:1",
+        "fn0/p1#0c9e0c9e",  # separator notes are not addressable
+        "hdr1.odd/p1#0c9e0c9e",
+        "hdr1/p1#0c9e0c9e",
+        "/p1#0c9e0c9e",
+    ):
+        with pytest.raises(DocControlError) as err:
+            parse_range(bad)
+        assert err.value.code is ErrorCode.ADDRESS_INVALID
+    # body_address_drift == 0: every 0.6.0 body address of every corpus kind is unchanged.
+    baseline = json.loads(
+        (Path(__file__).parent / "data" / "body_addresses_0_6_0.json").read_text()
+    )
+    assert _body_digests() == baseline
+
+
+def test_story_address_on_the_body_index_is_refused() -> None:
+    index = build_index(generate_parts("plain", 0)["word/document.xml"])
+    with pytest.raises(DocControlError) as err:
+        index.resolve_address(f"fn3/p1#{index.paragraphs[0].fp}")
+    assert err.value.code is ErrorCode.ADDRESS_INVALID

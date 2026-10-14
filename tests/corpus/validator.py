@@ -101,7 +101,7 @@ def require_soffice() -> None:
 class Segment:
     """A run of contiguous visible text inside one paragraph."""
 
-    story: str  # "body", "footnote" or "endnote"
+    story: str  # "body", "footnote", "endnote", "header" or "footer"
     paragraph: int  # 1-based paragraph number within the story
     text: str
 
@@ -200,8 +200,33 @@ class _StoryWalker:
                 self.flush()
 
 
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
+
+
+def _page_parts(
+    zf: zipfile.ZipFile, document: ET.Element, names: set[str]
+) -> list[tuple[str, str]]:
+    """The header and footer parts some section refers to, in reference order: a part
+    no section uses is never shown, so LibreOffice rightly drops it."""
+    rels_name = "word/_rels/document.xml.rels"
+    if rels_name not in names:
+        return []
+    targets = {
+        rel.get("Id"): "word/" + (rel.get("Target") or "").removeprefix("/word/")
+        for rel in ET.fromstring(zf.read(rels_name)).iter(_PKG_REL)
+    }
+    out: list[tuple[str, str]] = []
+    for story in ("header", "footer"):
+        for ref in document.iter(W + f"{story}Reference"):
+            name = targets.get(ref.get(_R + "id"))
+            if name in names and (story, name) not in out:
+                out.append((story, name))
+    return out
+
+
 def expected_segments(data: bytes) -> list[Segment]:
-    """Visible text segments of the main story, footnotes and endnotes.
+    """Visible text segments of the main story, footnotes, endnotes, headers and footers.
 
     Raises one of :data:`UNREADABLE` when ``data`` is not a readable package.
     """
@@ -212,6 +237,8 @@ def expected_segments(data: bytes) -> list[Segment]:
             name = f"word/{story}s.xml"
             if name in names:
                 stories.append((story, ET.fromstring(zf.read(name))))
+        for story, name in _page_parts(zf, stories[0][1], names):
+            stories.append((story, ET.fromstring(zf.read(name))))
     segments: list[Segment] = []
     for story, root in stories:
         walker = _StoryWalker(story)
@@ -219,6 +246,8 @@ def expected_segments(data: bytes) -> list[Segment]:
             body = root.find(W + "body")
             if body is not None:
                 walker.blocks(body)
+        elif story in ("header", "footer"):
+            walker.blocks(root)
         else:
             for note in root.iter(W + story):
                 if note.get(W + "type") in (None, "normal"):
@@ -294,7 +323,14 @@ def _soffice_excerpt(doc_id: str, output: str) -> str:
     return text or "(no output)"
 
 
-def _run_soffice(soffice: str, paths: list[str], workdir: Path) -> tuple[int | None, str]:
+#: Stories LibreOffice's HTML export drops past the first page style: they are checked
+#: against an OpenDocument conversion, which keeps every page style's header and footer.
+PAGE_STORIES = frozenset({"header", "footer"})
+
+
+def _run_soffice(
+    soffice: str, paths: list[str], workdir: Path, target: str = SOFFICE_FILTER
+) -> tuple[int | None, str]:
     out = workdir / "lo-out"
     profile = workdir / "lo-profile"
     try:
@@ -305,7 +341,7 @@ def _run_soffice(soffice: str, paths: list[str], workdir: Path) -> tuple[int | N
                 "--headless",
                 "--norestore",
                 "--convert-to",
-                SOFFICE_FILTER,
+                target,
                 "--outdir",
                 str(out),
                 *paths,
@@ -374,7 +410,11 @@ def _round_trip(soffice: str, docs: Mapping[str, bytes], workdir: Path) -> dict[
                 f"(soffice exit {code}; output: {_soffice_excerpt(doc_id, output)})"
             ]
             continue
-        lost = missing_segments(segments, html_text(html.read_text("utf-8", errors="replace")))
+        text_segments = [seg for seg in segments if seg.story not in PAGE_STORIES]
+        lost = missing_segments(text_segments, html_text(html.read_text("utf-8", errors="replace")))
+        page_segments = [seg for seg in segments if seg.story in PAGE_STORIES]
+        if page_segments:
+            lost += _missing_page_segments(soffice, src / f"{doc_id}.docx", page_segments, workdir)
         if lost:
             first = lost[0]
             results[doc_id] = [
@@ -384,6 +424,20 @@ def _round_trip(soffice: str, docs: Mapping[str, bytes], workdir: Path) -> dict[
         else:
             results[doc_id] = []
     return results
+
+
+def _missing_page_segments(
+    soffice: str, path: Path, segments: list[Segment], workdir: Path
+) -> list[Segment]:
+    """Header and footer segments absent from the page styles of an .odt conversion."""
+    _run_soffice(soffice, [str(path)], workdir, "odt")
+    odt = workdir / "lo-out" / f"{path.stem}.odt"
+    if not odt.is_file():
+        return segments
+    with zipfile.ZipFile(odt) as zf:
+        styles = zf.read("styles.xml").decode("utf-8", errors="replace")
+    text = re.sub(r"<[^>]+>", " ", styles)
+    return [seg for seg in segments if _squash(seg.text) not in _squash(text)]
 
 
 def validate_documents(docs: Mapping[str, bytes], workdir: Path) -> dict[str, list[str]]:
