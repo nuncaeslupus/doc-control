@@ -97,17 +97,17 @@ A **story** is one text flow with its own paragraph numbering: the body, one foo
 ```drawspec
 {"version": 1, "kind": "flow", "title": "Task dependencies",
  "nodes": [
-  {"id": "T1", "text": "T1\nCorpus kinds notes (footnotes, endn…"},
-  {"id": "T2", "text": "T2\nStory prefix in the address grammar…"},
-  {"id": "T3", "text": "T3\nmodel/stories.py: resolve stories t…"},
-  {"id": "T4", "text": "T4\nReads take stories: paragraphs.list…"},
-  {"id": "T5", "text": "T5\nFootprint and verification per part…"},
-  {"id": "T6", "text": "T6\nTracked text.replace, para.insert,…"},
-  {"id": "T7", "text": "T7\nnote.add (footnote or endnote at a…"},
-  {"id": "T8", "text": "T8\nsections.list: break type, title pa…"},
-  {"id": "T9", "text": "T9\ntable.get: the grid with gridSpan/v…"},
-  {"id": "T10", "text": "T10\nTracked table.row.insert and table.…"},
-  {"id": "T11", "text": "T11\nPerformance check, README and docs…"}
+  {"id": "T1", "text": "T1\nCorpus kinds"},
+  {"id": "T2", "text": "T2\nAddress prefix"},
+  {"id": "T3", "text": "T3\nStory index"},
+  {"id": "T4", "text": "T4\nStory reads"},
+  {"id": "T5", "text": "T5\nPer-part safety"},
+  {"id": "T6", "text": "T6\nStory edits"},
+  {"id": "T7", "text": "T7\nnote.add"},
+  {"id": "T8", "text": "T8\nsections.list"},
+  {"id": "T9", "text": "T9\ntable.get"},
+  {"id": "T10", "text": "T10\nRow ops"},
+  {"id": "T11", "text": "T11\nPerf + docs"}
  ],
  "edges": [
   {"from": "T2", "to": "T3"},
