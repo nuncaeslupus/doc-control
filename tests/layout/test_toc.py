@@ -419,3 +419,77 @@ def test_update_skips_what_it_cannot_split(tmp_path: Path) -> None:
     (skip,) = out["skipped"]
     assert skip["type"] == "TOC" and "several lines" in skip["reason"]
     assert doc.read_bytes() == before
+
+
+def _section_field(code: str, cached: str) -> str:
+    return (
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        f'<w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        f"<w:r><w:t>{cached}</w:t></w:r>"
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    )
+
+
+def test_update_skips_section_fields_it_cannot_recompute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = (
+        f"<w:p>{_section_field('SECTIONPAGES', '7')}</w:p>"
+        f"<w:p>{_section_field('SECTION', '7')}</w:p>"
+    )
+    doc = _build(tmp_path / "sec.docx", body)
+    before = doc.read_bytes()
+    # needs no LibreOffice: nothing else is left to recompute
+    monkeypatch.setenv("DOC_CONTROL_NO_SOFFICE", "1")
+    out = api.run("fields.update", {"doc": str(doc)}).result
+    assert [s["type"] for s in out["skipped"]] == ["SECTIONPAGES", "SECTION"]
+    assert all("not recomputed" in s["reason"] for s in out["skipped"])
+    assert out["updated"] == [] and out["unchanged"] == 0
+    assert doc.read_bytes() == before
+
+
+def test_update_clears_dirty_on_a_field_that_is_already_right(tmp_path: Path) -> None:
+    _need_soffice()
+    doc = _numpages_doc(tmp_path / "d.docx")
+    with zipfile.ZipFile(doc) as zf:
+        parts = {n: zf.read(n) for n in zf.namelist()}
+    parts["word/document.xml"] = (
+        parts["word/document.xml"]
+        .decode()
+        .replace(
+            '<w:fldChar w:fldCharType="begin"/>',
+            '<w:fldChar w:fldCharType="begin" w:dirty="true"/>',
+        )
+        .replace("<w:t>1</w:t>", "<w:t>3</w:t>")
+        .encode()
+    )
+    with zipfile.ZipFile(doc, "w") as zf:
+        for n, b in parts.items():
+            zf.writestr(n, b)
+    (row,) = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    assert row["stale"]
+    out = api.run("fields.update", {"doc": str(doc)}).result
+    assert out["updated"] == [] and out["unchanged"] == 1
+    (row,) = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    assert not row["stale"]
+
+
+def test_set_update_on_open_replaces_a_non_self_closing_element(tmp_path: Path) -> None:
+    doc = book(tmp_path / "book.docx")
+    with zipfile.ZipFile(doc) as zf:
+        parts = {n: zf.read(n) for n in zf.namelist()}
+    parts["word/settings.xml"] = (
+        parts["word/settings.xml"]
+        .decode()
+        .replace("<w:compat/>", '<w:updateFields w:val="false"></w:updateFields><w:compat/>')
+        .encode()
+    )
+    with zipfile.ZipFile(doc, "w") as zf:
+        for n, b in parts.items():
+            zf.writestr(n, b)
+    api.run("fields.update", {"doc": str(doc), "set_update_on_open": True})
+    with zipfile.ZipFile(doc) as zf:
+        settings = zf.read("word/settings.xml").decode()
+    assert settings.count("updateFields") == 1
+    assert '<w:updateFields w:val="true"/><w:compat/>' in settings

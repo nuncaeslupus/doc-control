@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -100,7 +101,13 @@ def _work_dir(soffice: str) -> Iterator[Path]:
             time.sleep(0.2)
 
 
-def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> None:
+def _tail(err: str | None, limit: int = 500) -> str:
+    text = (err or "").strip()
+    return f"; LibreOffice said: {text[-limit:]}" if text else ""
+
+
+def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> str:
+    """Run LibreOffice to completion and return its stderr."""
     command = [
         soffice,
         f"-env:UserInstallation={profile.resolve().as_uri()}",
@@ -109,23 +116,32 @@ def _run(soffice: str, profile: Path, *args: str, env: dict[str, str]) -> None:
         *args,
     ]
     try:
-        subprocess.run(
+        # Its own session: `soffice` is a wrapper around oosplash and soffice.bin, and a
+        # timeout must end the whole group, not just the wrapper.
+        proc = subprocess.Popen(
             command,
-            check=False,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             errors="replace",
-            timeout=TIMEOUT,
             env=env,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise DocControlError(
-            ErrorCode.ENGINE_UNAVAILABLE, f"LibreOffice did not finish within {TIMEOUT}s"
-        ) from exc
     except OSError as exc:
         raise DocControlError(
             ErrorCode.ENGINE_UNAVAILABLE, f"LibreOffice could not be started: {exc}"
         ) from exc
+    try:
+        _, err = proc.communicate(timeout=TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        _, err = proc.communicate()
+        raise DocControlError(
+            ErrorCode.ENGINE_UNAVAILABLE,
+            f"LibreOffice did not finish within {TIMEOUT}s" + _tail(err),
+        ) from exc
+    return err or ""
 
 
 def refresh_fields(source: Path, soffice: str | None = None) -> bytes:
@@ -151,11 +167,12 @@ def refresh_fields(source: Path, soffice: str | None = None) -> bytes:
         (basic / "Standard" / "dialog.xlb").write_text(_DIALOGS, encoding="utf-8")
         for kind in ("script", "dialog"):
             (basic / f"{kind}.xlc").write_text(_LIBRARIES.format(kind=kind), encoding="utf-8")
-        _run(soffice, profile, "macro:///Standard.Module1.Refresh", env=env)
+        err = _run(soffice, profile, "macro:///Standard.Module1.Refresh", env=env)
         out = work / "out.docx"
         if not out.is_file():
             raise DocControlError(
                 ErrorCode.ENGINE_UNAVAILABLE,
-                "LibreOffice opened no result: it could not load the document or run its macro",
+                "LibreOffice opened no result: it could not load the document or run its macro"
+                + _tail(err),
             )
         return out.read_bytes()

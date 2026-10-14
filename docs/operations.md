@@ -93,7 +93,7 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 
 ## `fields.update` (write)
 
-Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. Fields it could not pair with LibreOffice's are listed under skipped.
+Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES and SECTION are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

@@ -6,14 +6,17 @@ placeholder result, and a paragraph closing the field (the shape Word writes). T
 ``TOC \\o "1-3" \\h \\z \\u`` and the field is marked dirty, so ``fields.list`` shows it as
 stale until ``fields.update`` fills it.
 
-``fields.update`` recomputes the results of the body's TOC, page, page-count, sequence and
-reference fields. A copy of the document goes through headless LibreOffice (see
+``fields.update`` recomputes the results of the body's TOC, page, page-count, word/character-count,
+sequence and reference fields. SECTIONPAGES and SECTION are not recomputed (LibreOffice
+keeps their cached results, so a stale value cannot be told from a current one): they are
+listed under ``skipped``. A copy of the document goes through headless LibreOffice (see
 :mod:`doc_control.ooxml.soffice`), which rebuilds the indexes and refreshes the fields; the
 fields of that copy are paired with the original's by type and order, and only the result
 runs are written back, as tracked changes: the old result runs become ``w:del`` (inside
 the existing ``w:ins`` when the run was a tracked insertion), the new text is a ``w:ins``,
 and the lines of a multi-line result beyond the first are new inserted paragraphs. Nothing
-else changes, except that the ``w:dirty`` flag of an updated field is cleared. Fields
+else changes, except that the ``w:dirty`` flag of an updated field, or of a field whose
+result was already right, is cleared. Fields
 whose copy cannot be paired (LibreOffice turned them into plain text, or the counts differ)
 are listed under ``skipped``. Without LibreOffice the operation refuses with
 ``ENGINE_UNAVAILABLE`` naming the stale fields; ``set_update_on_open`` sets ``w:updateFields``
@@ -83,12 +86,13 @@ UPDATABLE = frozenset(
         "SEQ",
         "PAGE",
         "NUMPAGES",
-        "SECTIONPAGES",
-        "SECTION",
         "NUMWORDS",
         "NUMCHARS",
     }
 )
+#: Types LibreOffice does not evaluate: it hands back the cached result, so the operation
+#: cannot tell a current value from a stale one. They are reported under ``skipped``.
+NOT_RECOMPUTED = frozenset({"SECTIONPAGES", "SECTION"})
 _LEVELS = re.compile(r"^([1-9])(?:-([1-9]))?$")
 _FLD_TYPE = W + "fldCharType"
 _DIRTY = W + "dirty"
@@ -780,7 +784,7 @@ def _set_update_on_open(
             ErrorCode.UNSUPPORTED_CONTENT, "word/settings.xml has an unexpected shape"
         )
     w = root.group(1)
-    existing = re.search(rf"<{w}:updateFields\b[^>]*/>", text)
+    existing = re.search(rf"<{w}:updateFields\b[^>]*?(?:/>|>\s*</{w}:updateFields>)", text)
     result: dict[str, Any] = {
         "dry_run": dry_run,
         "set_update_on_open": True,
@@ -793,11 +797,13 @@ def _set_update_on_open(
         if on:
             result["changed"] = False
             return result
-        new = text[: existing.start()] + f"<{w}:updateFields/>" + text[existing.end() :]
+        element = f'<{w}:updateFields {w}:val="true"/>'
+        new = text[: existing.start()] + element + text[existing.end() :]
     else:
         after = re.search(rf"<{w}:(?:{_AFTER_UPDATE_FIELDS})\b", text)
         at = after.start() if after else text.rindex(f"</{w}:settings>")
-        new = text[:at] + f'<{w}:updateFields {w}:val="true"/>' + text[at:]
+        element = f'<{w}:updateFields {w}:val="true"/>'
+        new = text[:at] + element + text[at:]
     result["changed"] = True
     if dry_run:
         return result
@@ -814,7 +820,7 @@ def _set_update_on_open(
                 "part": SETTINGS_PART,
                 "index": 0,
                 "before": existing.group(0) if existing is not None else "",
-                "after": f"<{w}:updateFields/>",
+                "after": element,
             }
         ],
         request={"op": "fields.update", "set_update_on_open": True},
@@ -871,13 +877,25 @@ def update_fields(
     index = DocumentIndex.from_package(pkg)
     spans = index.spans
     body = _Body(spans)
-    located = [loc for loc in body.locate() if loc.type in UPDATABLE]
+    all_located = [loc for loc in body.locate() if loc.type in UPDATABLE | NOT_RECOMPUTED]
+    located = [loc for loc in all_located if loc.type in UPDATABLE]
+    addresses = {p.span_index: str(p.address) for p in index.paragraphs}
+    not_recomputed = [
+        {
+            "at": addresses.get(loc.begin[0], ""),
+            "type": loc.type,
+            "reason": f"{loc.type} is not recomputed: LibreOffice keeps its cached result, "
+            "so the stored value is left as it is",
+        }
+        for loc in all_located
+        if loc.type in NOT_RECOMPUTED
+    ]
     full_author = format_author(author, tag)
     result: dict[str, Any] = {
         "dry_run": dry_run,
         "updated": [],
         "unchanged": 0,
-        "skipped": [],
+        "skipped": not_recomputed,
         "revision_ids": [],
         "author": full_author,
         "date": format_date(now),
@@ -908,7 +926,6 @@ def update_fields(
     known = frozenset(s.id for s in load_styles(pkg).styles)
     width = _text_width(pkg.read(DOCUMENT_PART))
     ctx = RevisionContext(used_ids(pkg), full_author, format_date(now))
-    addresses = {p.span_index: str(p.address) for p in index.paragraphs}
 
     by_type: dict[str, list[_Loc]] = {}
     for loc in located:
@@ -934,6 +951,7 @@ def update_fields(
     inserted: dict[int, list[ET.Element]] = {}
     unchanged = 0
     updated: list[dict[str, Any]] = []
+    cleared: list[str] = []
     for loc in reversed(located):  # later fields first: edits never move an earlier mark
         fresh = pairs.get(id(loc))
         if fresh is None:
@@ -955,6 +973,10 @@ def update_fields(
         after = _trim(fresh.lines)
         if before == after:
             unchanged += 1
+            if loc.begin_char is not None and _DIRTY in loc.begin_char.attrib:
+                del loc.begin_char.attrib[_DIRTY]
+                touched.add(loc.begin[0])
+                cleared.append(at)
             continue
         paras, added = _rewrite(plan, fresh, body, ctx, known, width)
         touched |= paras
@@ -964,6 +986,7 @@ def update_fields(
         )
     updated.reverse()
     skipped.reverse()
+    skipped = not_recomputed + skipped
     for i in touched:
         replacements[i] = spans.serialize(body.elem(i), i)
     for i, paragraphs in inserted.items():
@@ -973,10 +996,10 @@ def update_fields(
         unchanged=unchanged,
         skipped=skipped,
         revision_ids=ctx.revision_ids,
-        footprint={DOCUMENT_PART: [e["at"] for e in updated]},
+        footprint={DOCUMENT_PART: [e["at"] for e in updated] + cleared},
         written=False,
     )
-    if not updated:
+    if not touched:
         return result
     data = spans.splice(replacements, insert_after=insert_after)
     if dry_run:
@@ -1013,8 +1036,9 @@ def update_fields(
     "changes (the old result is struck, the new one inserted). Without LibreOffice it "
     "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
     "w:updateFields instead, so Word updates the fields when it opens the file. Citation "
-    "fields are never changed. Fields it could not pair with LibreOffice's are listed "
-    "under skipped.",
+    "fields are never changed. SECTIONPAGES and SECTION are not recomputed (LibreOffice keeps "
+    "their cached results) and are listed under skipped. Fields it could not pair with "
+    "LibreOffice's are listed under skipped.",
     {
         "type": "object",
         "properties": {
