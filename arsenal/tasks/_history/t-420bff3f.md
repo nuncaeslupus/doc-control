@@ -5,6 +5,7 @@ label: "toc and fields.update"
 priority: 1
 deps: [t-a2f30637]
 workspace: LAYOUT
+status: merged
 ---
 
 ## Acceptance gate
