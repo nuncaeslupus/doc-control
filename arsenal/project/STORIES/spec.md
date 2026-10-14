@@ -3,10 +3,11 @@
 **Date**: 2026-10-14
 **Ticket / PR**: — (workspace `STORIES`)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: draft
+**Revision**: 2
+**Status**: approved (2026-10-14, revision 2)
 **Revision log**:
 - r1 — first draft, from sub-project S-1 of `status/ideas.md`
+- r2 — applied `doc-control-spec-v1-2026-10-14-notes.md`: Option B; Q1–Q5 answered (D-S1..D-S5); section page setup read in scope (D-S6); the owner's layout ideas (numbering, two-sided printing, front matter, TOC/index, captions, citations) filed as S-9, I-34..I-42
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -30,7 +31,7 @@ The gap survey (`status/ideas.md`) ranks footnotes, and headers and footers, amo
 
 This spec covers reading, finding and tracked editing in those stories, plus a table structure, in the file engine. The safety guarantees stay as they are: verified writes, undo, and `unintended_changes == 0`.
 
-**Ideas covered**: I-1, I-2, I-3 (sub-project S-1).
+**Ideas covered**: I-1, I-2, I-3 (sub-project S-1). Groundwork for S-9 (I-34, I-35): each section's page setup is read, not changed.
 
 **Success criteria (measurable)**:
 
@@ -46,6 +47,11 @@ This spec covers reading, finding and tracked editing in those stories, plus a t
   Each revision shows up in LibreOffice in the right story, and undo restores the file byte for byte.
 - [ ] `unintended_changes == 0` for every new write: the verification footprint names the story part that was touched, and every other zip member, and every byte of that part outside the touched paragraphs, stays identical.
 - [ ] `table_grid_mismatches == 0`: for each table in the corpus, `table.get` returns a grid (rows × cells, with each cell's paragraph addresses and merges) equal to LibreOffice's table structure.
+- [ ] `note_add_failures == 0`: `note.add` at a body address inserts a tracked reference mark and a new footnote or endnote. LibreOffice shows both as tracked insertions; rejecting the insertion removes both, and undo restores the file byte for byte.
+- [ ] `section_read_mismatches == 0`: for each section of the corpus documents, `sections.list` reports the same page setup as LibreOffice:
+  - which header and footer kinds are set (default, first, even), and whether "different first page" and "different odd and even" are on;
+  - the page-number start and format;
+  - the section break type.
 - [ ] `table_row_failures == 0`: a tracked `table.row.insert` and `table.row.delete` on corpus tables appear in LibreOffice as a tracked row insertion or deletion, and accept, reject and undo all work.
 - [ ] `paragraphs_list_ms` on the corpus novel (body only, the default) is at most 1.10 × its 0.6.0 value. Reading every story is opt-in and is reported, not gated.
 - [ ] Judged, not measured: the owner opens one output of each kind in Word on Windows (`scripts/live_word_check.py`, or a new `scripts/real_word_stories.py`). There is no repair prompt, and each revision and comment can be accepted, rejected and resolved there.
@@ -60,6 +66,7 @@ This spec covers reading, finding and tracked editing in those stories, plus a t
 | `ops/tracked.py`, `ops/comments.py` | Primary | Tracked edits and comments | Yes | The target part comes from the address, no longer the constant `DOCUMENT_PART`. Comments get anchors in note and header parts. | High |
 | `ooxml/revisions.py` | Primary | Revision markup and ids | Yes | Ids are already unique across `STORY_PART`. A note mark inside a range is still refused for a body edit; editing inside the note itself becomes possible. | Med |
 | `safety/verify.py` | Primary | Footprint verification | Yes | `_document_problems` takes the touched part as an argument and drops the hard-coded `DOCUMENT_PART`. | High |
+| New ops `note.add`, `sections.list` | Primary | Add a note; read each section's page setup | Yes (new) | `sections.list` is read-only; its writes come in S-9. | Med |
 | `safety/history.py` | Primary | Undo log | Yes | Logs and undoes changes in any story part (today it refuses with "change … is in <part>"). | Med |
 | `ops/read.py`, `ops/locate.py` (`paragraphs.list`, `find`, `locate`, `stats`, `outline`) | Dependent | Reads | Yes | An optional `stories` field (default `["body"]`). Rows from other stories carry `story` and, for notes, `note_of` (the body address of the reference). | Med |
 | New ops `table.get`, `table.row.insert`, `table.row.delete` | Primary | Table structure | Yes (new) | New registry entries; docs regenerated. | Med |
@@ -120,24 +127,30 @@ This spec covers reading, finding and tracked editing in those stories, plus a t
 **Recommended option**: Option B. One address grammar with a story prefix keeps every existing op, recipe and `batch` working in notes and headers, without breaking any stored body address. Option A would need a twin of every future feature, and Option C breaks the stable-address promise.
 
 **Immediate next action**: after approval, `design` writes the contracts and a plan. Suggested order:
-1. Corpus `notes` and `headers` kinds, and the validator comparing their text (the gates need them first).
+1. Corpus `notes` and `headers` kinds (headers with first/even variants and a numbering restart), and the validator comparing their text and section setup (the gates need them first).
 2. Part-aware index and reads with `stories`.
 3. Story-prefixed writes with the generalised footprint.
 4. Undo in any part.
-5. `table.get`, then the tracked row ops.
+5. `note.add`.
+6. `sections.list`.
+7. `table.get`, then the tracked row ops.
 
-**Open questions**:
-- [ ] Q1. Address prefix shape. Proposed: `fn3/p1#fp`, `en2/p1#fp`, `hdr1.default/p1#fp`. Note numbers could be Word's stored id (stable) or the displayed number (what the writer sees, but it shifts when a note is added). Recommendation: the stored id in the address, with the displayed number returned as a field.
-- [ ] Q2. Should adding a new footnote or endnote at a body address (`note.add`, a tracked insertion of the mark plus the note) be in this spec, or stay as I-12? Recommendation: in scope, because it is the commonest academic ask and reuses the same part machinery.
-- [ ] Q3. Live engine. Keep it body-only here (story addresses answer `ENGINE_UNAVAILABLE`), and make a follow-up task for reading and editing notes in LibreOffice and Word? Recommendation: yes, keep it out of this spec.
-- [ ] Q4. Table scope beyond rows: column insert/delete, cell merge and widths. Recommendation: out of scope. Rows cover the common contract and report edits, and column changes are not tracked reliably across Word versions.
-- [ ] Q5. Text boxes (`depth > 0` paragraphs, skipped today). Recommendation: out of scope; add an idea to the backlog instead.
+**Open questions**: none. The owner answered Q1–Q5 in r2; see D-S1..D-S5.
 
-**Decisions log** (from `status/ideas.md`; none agreed for S-1 yet):
+**Kept for later** (in `status/ideas.md`): notes and headers in the live engine (I-42); table columns, merges and widths (I-41); text boxes (I-40); controlling sections, page numbering, two-sided layout, front matter, TOC, indexes, captions and citations (S-9, I-34..I-39).
+
+**Decisions log** (D-1 and D-2 from `status/ideas.md`; D-S rows from the owner's r2 notes):
 
 | ID | Decision | Status | Date |
 |----|----------|--------|------|
-| D-1 | Which sub-project to explore first | open (the owner asked for this spec, which implies S-1, but has not confirmed it) | 2026-10-14 |
+| D-1 | Which sub-project to explore first: S-1 | agreed | 2026-10-14 |
+| D-2 | S-1 reads section page setup; changing it is S-9 | agreed | 2026-10-14 |
+| D-S1 | Option B: story-prefixed addresses through the existing operations | agreed | 2026-10-14 |
+| D-S2 | Note addresses use Word's stored note id; the displayed number is a returned field | agreed | 2026-10-14 |
+| D-S3 | Adding a new footnote or endnote (`note.add`) is in scope | agreed | 2026-10-14 |
+| D-S4 | Live engine stays body-only here; notes and headers live are I-42 | agreed | 2026-10-14 |
+| D-S5 | Tables: rows only; columns, merges and widths are I-41. Text boxes are I-40 | agreed | 2026-10-14 |
+| D-S6 | `sections.list` (read-only page setup per section) is in scope as groundwork for S-9 | agreed | 2026-10-14 |
 
 ---
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="fb1c66d713ef2e869313f16f82c6ea2367e4b05808ed1ed539516cefab0343fe">
+<meta name="arsenal-source-sha256" content="a240c5cab9c0c28bc9c3fb2dbe31884b43774de607edd6e02c074e07e278b197">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -200,10 +200,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-14
 <strong>Ticket / PR</strong>: — (workspace <code>STORIES</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
-<strong>Revision</strong>: 1
-<strong>Status</strong>: draft
+<strong>Revision</strong>: 2
+<strong>Status</strong>: approved (2026-10-14, revision 2)
 <strong>Revision log</strong>:
-- r1 — first draft, from sub-project S-1 of <code>status/ideas.md</code></p>
+- r1 — first draft, from sub-project S-1 of <code>status/ideas.md</code>
+- r2 — applied <code>doc-control-spec-v1-2026-10-14-notes.md</code>: Option B; Q1–Q5 answered (D-S1..D-S5); section page setup read in scope (D-S6); the owner's layout ideas (numbering, two-sided printing, front matter, TOC/index, captions, citations) filed as S-9, I-34..I-42</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -224,7 +225,7 @@ that revision, add <code>— without annotations</code>.</p>
 <p>An agent reviewing a thesis, a contract or a novel with notes cannot read, find, comment on or propose a tracked edit to a footnote, a running header or a table row. The writer then has to do it by hand, or the agent falls back to computer use.</p>
 <p>The gap survey (<code>status/ideas.md</code>) ranks footnotes, and headers and footers, among the most-requested docx features (python-docx #1; the headers issue). literary-critic needs notes to judge a manuscript.</p>
 <p>This spec covers reading, finding and tracked editing in those stories, plus a table structure, in the file engine. The safety guarantees stay as they are: verified writes, undo, and <code>unintended_changes == 0</code>.</p>
-<p><strong>Ideas covered</strong>: I-1, I-2, I-3 (sub-project S-1).</p>
+<p><strong>Ideas covered</strong>: I-1, I-2, I-3 (sub-project S-1). Groundwork for S-9 (I-34, I-35): each section's page setup is read, not changed.</p>
 <p><strong>Success criteria (measurable)</strong>:</p>
 <ul>
 <li>[ ] <code>body_address_drift == 0</code>: every body address (<code>p&lt;n&gt;#&lt;fp&gt;</code>) that doc-control 0.6.0 returns for each corpus kind is the same after this change. Existing callers, literary-critic among them, keep working unchanged.</li>
@@ -243,6 +244,11 @@ that revision, add <code>— without annotations</code>.</p>
 <p>Each revision shows up in LibreOffice in the right story, and undo restores the file byte for byte.
 - [ ] <code>unintended_changes == 0</code> for every new write: the verification footprint names the story part that was touched, and every other zip member, and every byte of that part outside the touched paragraphs, stays identical.
 - [ ] <code>table_grid_mismatches == 0</code>: for each table in the corpus, <code>table.get</code> returns a grid (rows × cells, with each cell's paragraph addresses and merges) equal to LibreOffice's table structure.
+- [ ] <code>note_add_failures == 0</code>: <code>note.add</code> at a body address inserts a tracked reference mark and a new footnote or endnote. LibreOffice shows both as tracked insertions; rejecting the insertion removes both, and undo restores the file byte for byte.
+- [ ] <code>section_read_mismatches == 0</code>: for each section of the corpus documents, <code>sections.list</code> reports the same page setup as LibreOffice:
+    - which header and footer kinds are set (default, first, even), and whether "different first page" and "different odd and even" are on;
+    - the page-number start and format;
+    - the section break type.
 - [ ] <code>table_row_failures == 0</code>: a tracked <code>table.row.insert</code> and <code>table.row.delete</code> on corpus tables appear in LibreOffice as a tracked row insertion or deletion, and accept, reject and undo all work.
 - [ ] <code>paragraphs_list_ms</code> on the corpus novel (body only, the default) is at most 1.10 × its 0.6.0 value. Reading every story is opt-in and is reported, not gated.
 - [ ] Judged, not measured: the owner opens one output of each kind in Word on Windows (<code>scripts/live_word_check.py</code>, or a new <code>scripts/real_word_stories.py</code>). There is no repair prompt, and each revision and comment can be accepted, rejected and resolved there.</p></div>
@@ -309,6 +315,14 @@ that revision, add <code>— without annotations</code>.</p>
 <td>Yes</td>
 <td><code>_document_problems</code> takes the touched part as an argument and drops the hard-coded <code>DOCUMENT_PART</code>.</td>
 <td>High</td>
+</tr>
+<tr>
+<td>New ops <code>note.add</code>, <code>sections.list</code></td>
+<td>Primary</td>
+<td>Add a note; read each section's page setup</td>
+<td>Yes (new)</td>
+<td><code>sections.list</code> is read-only; its writes come in S-9.</td>
+<td>Med</td>
 </tr>
 <tr>
 <td><code>safety/history.py</code></td>
@@ -468,18 +482,16 @@ that revision, add <code>— without annotations</code>.</p>
 <h3 class="sec-h"><span class="chip">§4</span><span class="sec-title">Recommendation</span></h3>
 <div class="sec-body"><p><strong>Recommended option</strong>: Option B. One address grammar with a story prefix keeps every existing op, recipe and <code>batch</code> working in notes and headers, without breaking any stored body address. Option A would need a twin of every future feature, and Option C breaks the stable-address promise.</p>
 <p><strong>Immediate next action</strong>: after approval, <code>design</code> writes the contracts and a plan. Suggested order:
-1. Corpus <code>notes</code> and <code>headers</code> kinds, and the validator comparing their text (the gates need them first).
+1. Corpus <code>notes</code> and <code>headers</code> kinds (headers with first/even variants and a numbering restart), and the validator comparing their text and section setup (the gates need them first).
 2. Part-aware index and reads with <code>stories</code>.
 3. Story-prefixed writes with the generalised footprint.
 4. Undo in any part.
-5. <code>table.get</code>, then the tracked row ops.</p>
-<p><strong>Open questions</strong>:
-- [ ] Q1. Address prefix shape. Proposed: <code>fn3/p1#fp</code>, <code>en2/p1#fp</code>, <code>hdr1.default/p1#fp</code>. Note numbers could be Word's stored id (stable) or the displayed number (what the writer sees, but it shifts when a note is added). Recommendation: the stored id in the address, with the displayed number returned as a field.
-- [ ] Q2. Should adding a new footnote or endnote at a body address (<code>note.add</code>, a tracked insertion of the mark plus the note) be in this spec, or stay as I-12? Recommendation: in scope, because it is the commonest academic ask and reuses the same part machinery.
-- [ ] Q3. Live engine. Keep it body-only here (story addresses answer <code>ENGINE_UNAVAILABLE</code>), and make a follow-up task for reading and editing notes in LibreOffice and Word? Recommendation: yes, keep it out of this spec.
-- [ ] Q4. Table scope beyond rows: column insert/delete, cell merge and widths. Recommendation: out of scope. Rows cover the common contract and report edits, and column changes are not tracked reliably across Word versions.
-- [ ] Q5. Text boxes (<code>depth &gt; 0</code> paragraphs, skipped today). Recommendation: out of scope; add an idea to the backlog instead.</p>
-<p><strong>Decisions log</strong> (from <code>status/ideas.md</code>; none agreed for S-1 yet):</p>
+5. <code>note.add</code>.
+6. <code>sections.list</code>.
+7. <code>table.get</code>, then the tracked row ops.</p>
+<p><strong>Open questions</strong>: none. The owner answered Q1–Q5 in r2; see D-S1..D-S5.</p>
+<p><strong>Kept for later</strong> (in <code>status/ideas.md</code>): notes and headers in the live engine (I-42); table columns, merges and widths (I-41); text boxes (I-40); controlling sections, page numbering, two-sided layout, front matter, TOC, indexes, captions and citations (S-9, I-34..I-39).</p>
+<p><strong>Decisions log</strong> (D-1 and D-2 from <code>status/ideas.md</code>; D-S rows from the owner's r2 notes):</p>
 <table>
 <thead>
 <tr>
@@ -492,8 +504,50 @@ that revision, add <code>— without annotations</code>.</p>
 <tbody>
 <tr>
 <td>D-1</td>
-<td>Which sub-project to explore first</td>
-<td>open (the owner asked for this spec, which implies S-1, but has not confirmed it)</td>
+<td>Which sub-project to explore first: S-1</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-2</td>
+<td>S-1 reads section page setup; changing it is S-9</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S1</td>
+<td>Option B: story-prefixed addresses through the existing operations</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S2</td>
+<td>Note addresses use Word's stored note id; the displayed number is a returned field</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S3</td>
+<td>Adding a new footnote or endnote (<code>note.add</code>) is in scope</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S4</td>
+<td>Live engine stays body-only here; notes and headers live are I-42</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S5</td>
+<td>Tables: rows only; columns, merges and widths are I-41. Text boxes are I-40</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-S6</td>
+<td><code>sections.list</code> (read-only page setup per section) is in scope as groundwork for S-9</td>
+<td>agreed</td>
 <td>2026-10-14</td>
 </tr>
 </tbody>
@@ -582,7 +636,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+  function exportName(){return 'doc-control-spec-v2-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
