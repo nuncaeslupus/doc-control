@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import socket
-import tempfile
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -18,22 +15,14 @@ import pytest
 
 from doc_control.live.dispatch import using
 from doc_control.live.lo_uno import LibreOffice
+from tests.helpers import soffice_dir
 
 
 @pytest.fixture(scope="session")
 def lo_home(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     """A directory LibreOffice can read: a snap-confined one cannot see /tmp."""
-    soffice = shutil.which("soffice") or shutil.which("libreoffice") or ""
-    if soffice.startswith("/snap/"):
-        home = Path(tempfile.mkdtemp(dir=Path.home(), prefix="doc-control-live-"))
+    with soffice_dir(tmp_path_factory.mktemp("live")) as home:
         yield home
-        deadline = time.monotonic() + 30
-        while home.exists() and time.monotonic() < deadline:
-            # LibreOffice writes its profile for a moment after it is told to stop.
-            shutil.rmtree(home, ignore_errors=True)
-            time.sleep(0.2)
-    else:
-        yield tmp_path_factory.mktemp("live")
 
 
 @pytest.fixture(scope="session")
