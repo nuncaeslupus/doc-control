@@ -18,8 +18,9 @@ Concurrent writers to one store are not serialised: the lock check and the docum
 replace already make a second writer fail, so two entries racing for one id are not
 expected in practice.
 
-Changes outside ``word/document.xml`` are not logged yet; the batch engine only
-writes that part.
+A change in a note, header or footer carries ``part`` and ``story`` (its address prefix,
+see :mod:`doc_control.model.stories`); undo finds its paragraph in that story and
+restores every part an entry touched in one verified write.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.ooxml.splice import scan
+from doc_control.ooxml.splice import BODY, Container, scan
 from doc_control.ooxml.zipio import Package
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.store import (
@@ -50,7 +51,7 @@ from doc_control.safety.store import (
     store_dir,
     user_home,
 )
-from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
+from doc_control.safety.verify import DOCUMENT_PART, Footprint, StoryFootprint, write_verified
 
 LOG_VERSION = 1
 UNDOABLE_KINDS = ("batch", "restore")
@@ -223,6 +224,28 @@ def record(
 # -- undo -----------------------------------------------------------------------------------
 
 
+def _container(pkg: Package, story: str, part: str) -> Container:
+    from doc_control.model.stories import find_story
+
+    try:
+        found = find_story(pkg, story)
+    except DocControlError as exc:
+        if exc.code is not ErrorCode.ANCHOR_NOT_FOUND:
+            raise  # a malformed part stays what it is
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"{story} is gone since; undo later operations first (history.list)",
+            story=story,
+        ) from exc
+    if found.part != part:
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"{story} is now in {found.part}, not {part}; undo later operations first",
+            story=story,
+        )
+    return found.container
+
+
 @dataclass(frozen=True)
 class UndoOutcome:
     before_sha256: str
@@ -270,29 +293,43 @@ def undo_entry(
         check_unlocked(doc_path)
     check_changed(doc_path, expect_sha256)
     pkg = Package(doc_path)
-    data = pkg.read(DOCUMENT_PART)
-    spans = scan(data).paragraphs
-    where: dict[bytes, list[int]] = {}
-    for i, span in enumerate(spans):
-        where.setdefault(data[span.start : span.end], []).append(i)
+    # (part, story) -> the story's paragraph bytes, located once
+    located: dict[tuple[str, str], tuple[bytes, Any, dict[bytes, list[int]]]] = {}
 
-    swaps: dict[int, bytes] = {}  # paragraph index in the current document -> bytes it becomes
+    def locate(part: str, story: str) -> tuple[bytes, Any, dict[bytes, list[int]]]:
+        key = (part, story)
+        if key not in located:
+            container = BODY if not story else _container(pkg, story, part)
+            data = pkg.read(part)
+            spans = scan(data, container, part).paragraphs
+            where: dict[bytes, list[int]] = {}
+            for i, span in enumerate(spans):
+                where.setdefault(data[span.start : span.end], []).append(i)
+            located[key] = (data, (container, spans), where)
+        return located[key]
+
+    # (part, story) -> paragraph index in the current part -> bytes it becomes
+    swaps: dict[tuple[str, str], dict[int, bytes]] = {}
     reverted: list[dict[str, Any]] = []
     missing: list[int] = []
     for number, change in enumerate(entry.get("changes", [])):
-        if change.get("part", DOCUMENT_PART) != DOCUMENT_PART:
+        part, story = change.get("part", DOCUMENT_PART), change.get("story", "")
+        if part != DOCUMENT_PART and not story:
             raise DocControlError(
                 ErrorCode.UNSUPPORTED_CONTENT, f"change {number} is in {change['part']}"
             )
+        _, _, where = locate(part, story)
+        own = swaps.setdefault((part, story), {})
         found = where.get(to_bytes(change["after"]), [])
-        if len(found) != 1 or found[0] in swaps:
+        if len(found) != 1 or found[0] in own:
             missing.append(number)
             continue
         restored = to_bytes(change["before"]) if change["kind"] == "replace" else b""
-        swaps[found[0]] = restored
+        own[found[0]] = restored
         reverted.append(
             {
                 "kind": "revert",
+                **({"part": part, "story": story} if story else {}),
                 "index": found[0],
                 "before": change["after"],
                 "after": to_text(restored),
@@ -300,28 +337,48 @@ def undo_entry(
         )
     if missing:
         raise _conflict(entry, missing, "a paragraph it changed was edited since or is gone")
-    if not swaps:
+    if not any(swaps.values()):
         raise DocControlError(
             ErrorCode.HISTORY_NOT_FOUND,
             f"{entry['op_id']} changed no paragraph",
             op_id=entry["op_id"],
         )
-    cuts = sorted((spans[i].start, spans[i].end, new) for i, new in swaps.items())
-    for (_, end, _), (start, _, _) in itertools.pairwise(cuts):
-        if start < end:
-            raise _conflict(entry, [], "its paragraphs are nested")
-    out = bytearray()
-    pos = 0
-    for start, end, new in cuts:
-        out += data[pos:start] + new
-        pos = end
-    out += data[pos:]
+    # Each part rewritten once, with the swaps of every story it holds.
+    by_part: dict[str, list[tuple[int, int, bytes]]] = {}
+    for (part, story), own in swaps.items():
+        _, (_, spans), _ = located[(part, story)]
+        by_part.setdefault(part, []).extend(
+            (spans[i].start, spans[i].end, b) for i, b in own.items()
+        )
+    replacements: dict[str, bytes] = {}
+    for part, cuts in by_part.items():
+        cuts.sort()
+        for (_, end, _), (start, _, _) in itertools.pairwise(cuts):
+            if start < end:
+                raise _conflict(entry, [], "its paragraphs are nested")
+        data = located[next(k for k in located if k[0] == part)][0]
+        out = bytearray()
+        pos = 0
+        for start, end, new in cuts:
+            out += data[pos:start] + new
+            pos = end
+        out += data[pos:]
+        replacements[part] = bytes(out)
+    body = swaps.get((DOCUMENT_PART, ""), {})
+    footprint = Footprint(
+        replaced=frozenset(body),
+        stories=tuple(
+            StoryFootprint(part, located[(part, story)][1][0], replaced=frozenset(own))
+            for (part, story), own in swaps.items()
+            if story
+        ),
+    )
     if dry_run:
         return UndoOutcome(pkg.sha256, None, None, reverted)
     written = write_verified(
         doc_path,
-        {DOCUMENT_PART: bytes(out)},
-        Footprint(replaced=frozenset(swaps)),
+        replacements,
+        footprint,
         pkg.sha256,
         now=now,
         env=env,
