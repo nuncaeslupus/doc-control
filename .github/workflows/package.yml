@@ -3,7 +3,8 @@ name: Package
 # The frozen Windows build (PACKAGE T2), as a reusable workflow: ci.yml calls it on changes
 # to packaging inputs, release.yml will call it when it releases (T8). It builds the
 # one-folder doc-control.exe with PyInstaller from packaging/doc-control.spec and fails
-# when the uncompressed folder is over 40 MiB (gate `frozen_exe_size_mb <= 40`).
+# when the uncompressed folder is over 40 MiB (gate `frozen_exe_size_mb <= 40`), then runs
+# scripts/frozen_smoke.py against the exe with no Python on PATH (T3, `frozen_smoke_failures == 0`).
 
 on:
   workflow_call:
@@ -52,8 +53,9 @@ jobs:
           if mb > limit:
               raise SystemExit(f"the frozen build is {mb} MiB, over the {limit:g} MiB limit")
           PY
-      - name: The exe starts, knows it is frozen, and runs a regex find
-        run: .venv/Scripts/python.exe packaging/smoke.py --frozen build-out/doc-control/doc-control.exe
+      - name: Smoke test with no Python on PATH (CLI, regex find, MCP, every op family)
+        # --frozen: capabilities.build must be {"frozen": true, "freezer": "pyinstaller"}.
+        run: .venv/Scripts/python.exe scripts/frozen_smoke.py --exe build-out/doc-control/doc-control.exe --strip-python-path --frozen
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-frozen

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -64,17 +62,3 @@ def test_package_workflow_is_called_from_ci_and_checks_size() -> None:
 def test_entry_calls_freeze_support_before_main() -> None:
     entry = (ROOT / "packaging" / "entry.py").read_text("utf-8")
     assert entry.index("multiprocessing.freeze_support()") < entry.index("sys.exit(main())")
-
-
-def test_smoke_runs_capabilities_and_a_regex_find() -> None:
-    package = (WORKFLOWS / "package.yml").read_text("utf-8")
-    assert "packaging/smoke.py --frozen build-out/doc-control/doc-control.exe" in package
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "packaging" / "smoke.py"), sys.executable, "-m", "doc_control"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "regex find ok" in proc.stdout
