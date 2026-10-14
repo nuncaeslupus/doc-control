@@ -356,7 +356,7 @@ Tracked changes in document order with author, date, type, text and paragraph ad
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `author` | string |  | Only this author. |
-| `type` | `cell_delete` \| `cell_insert` \| `cell_merge` \| `delete` \| `format` \| `insert` \| `mark_delete` \| `mark_format` \| `mark_insert` \| `mark_move_from` \| `mark_move_to` \| `move_from` \| `move_to` \| `paragraph_format` \| `row_delete` \| `row_insert` |  | Only this type. |
+| `type` | `cell_delete` \| `cell_insert` \| `cell_merge` \| `delete` \| `format` \| `insert` \| `mark_delete` \| `mark_format` \| `mark_insert` \| `mark_move_from` \| `mark_move_to` \| `move_from` \| `move_to` \| `paragraph_format` \| `row_delete` \| `row_insert` \| `section_format` |  | Only this type. |
 | `stories` | array |  | Stories to list (default ["body"]): "notes" adds footnotes and endnotes, "headers" headers and footers, after the body's revisions; their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). Row and cell revisions are listed for the body's tables only. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |

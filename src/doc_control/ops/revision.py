@@ -18,8 +18,12 @@ round; a formatting change keeps the new (accept) or restores the recorded (reje
 properties; a paragraph mark that goes away joins the paragraph with the next one in
 its container (the next paragraph's properties win, as in Word). A move is two
 revisions, ``move_from`` and ``move_to``: select both. The last paragraph of a cell or
-of the body, and a paragraph that ends a section, cannot lose its mark: it stays,
-and the response says so in ``warnings``.
+of the body cannot lose its mark: it stays, and the response says so in ``warnings``. A
+paragraph that ends a section can: accepting the deletion of its mark (or rejecting the
+insertion of the break) removes the section break, and the text before it joins the section
+after it. A section property change (``section_format``, a ``w:sectPrChange`` in a
+paragraph's ``w:sectPr`` or in the body's own, which is reported at the last paragraph) puts
+the recorded page setup back when rejected; header and footer references are not part of it.
 
 Several operations in one batch are all resolved against the document as read; the
 same revision accepted by one and rejected by another is a ``BATCH_CONFLICT``. They
@@ -70,7 +74,10 @@ __all__ = [
 ]
 
 LISTED = 100  # revisions named one by one in a response
-_REVISION_TAG = re.compile(rb"<(?:[\w.-]+:)?(?:ins|del|moveFrom|moveTo|rPrChange|pPrChange)[\s/>]")
+_REVISION_TAG = re.compile(
+    rb"<(?:[\w.-]+:)?(?:ins|del|moveFrom|moveTo|rPrChange|pPrChange|sectPrChange)[\s/>]"
+)
+_SECT_CHANGE_TAG = re.compile(rb"<(?:[\w.-]+:)?sectPrChange[\s/>]")
 _TABLE_REVISION = re.compile(
     rb"<(?:[\w.-]+:)?(?:cellIns|cellDel|cellMerge)[\s/>]"
     rb"|<(?:[\w.-]+:)?trPr[\s>](?:(?!</(?:[\w.-]+:)?trPr>).)*?<(?:[\w.-]+:)?(?:ins|del)[\s/>]",
@@ -82,7 +89,16 @@ _MOVE_RANGE = re.compile(rb"<(?:[\w.-]+:)?move(?:From|To)Range(?:Start|End)[\s/>
 _FIELD_CHAR = re.compile(rb"fldCharType\s*=\s*[\"'](begin|end)[\"']")
 _MARK_KINDS = frozenset({"mark_insert", "mark_delete", "mark_move_from", "mark_move_to"})
 _TEXT_NEUTRAL = frozenset(
-    {"insert", "delete", "format", "mark_insert", "mark_delete", "mark_format", "paragraph_format"}
+    {
+        "insert",
+        "delete",
+        "format",
+        "mark_insert",
+        "mark_delete",
+        "mark_format",
+        "paragraph_format",
+        "section_format",
+    }
 )
 
 
@@ -331,6 +347,69 @@ class _StoryResolution:
     address_map: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass
+class _BodySect:
+    """The ``w:sectPrChange`` of the body's own ``w:sectPr`` (the last section's), which no
+    paragraph holds: reported at the last paragraph, resolved on its own bytes."""
+
+    rev: xml.Revision
+    at: str  # address of the last paragraph
+    action: str | None = None
+    op: int = -1
+
+
+def _body_section(index: DocumentIndex) -> _BodySect | None:
+    spans = index.spans
+    if spans.body_sect is None or not len(index):
+        return None
+    start, end = spans.body_sect
+    if not _SECT_CHANGE_TAG.search(spans.data, start, end):
+        return None
+    found = [r for r in xml.scan_section(spans.parse_body_sect())]
+    if not found:
+        return None
+    return _BodySect(found[0], str(index.paragraph(len(index)).address))
+
+
+def _choose_body_section(
+    ops: Sequence[ResolveRevisions], index: DocumentIndex, sect: _BodySect, picked: list[int]
+) -> None:
+    for i, op in enumerate(ops):
+        if op.at is not None:
+            if story_of(op.at) != index.story:
+                continue
+            low, high = _range(index, op.at)
+            if not low <= len(index) <= high:
+                continue
+        if op.ids is not None and sect.rev.id not in op.ids:
+            continue
+        if op.author is not None and sect.rev.author != op.author:
+            continue
+        if sect.action is not None and sect.action != op.action:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                f"edits {sect.op} and {i} accept and reject the same revision "
+                f"({sect.rev.kind} {sect.rev.id}) in {sect.at}",
+                paragraph=sect.at,
+                revision=sect.rev.id,
+                edits=sorted((sect.op, i)),
+            )
+        if sect.action is None:
+            sect.action, sect.op = op.action, i
+        picked[i] += 1
+
+
+def _resolve_body_section(data: bytes, action: str) -> bytes:
+    """``data`` (a ``word/document.xml``) with the body's section property change resolved."""
+    spans = scan(data)
+    elem = spans.parse_body_sect()
+    change = elem.find(xml.SECT_CHANGE)
+    if change is None:
+        return data
+    xml.resolve_section(elem, change, action)
+    return spans.replace_body_sect(spans.serialize_body_sect(elem))
+
+
 # -- preparing ------------------------------------------------------------------------------
 
 
@@ -365,7 +444,12 @@ def prepare_resolutions(
     for story, idx in found:
         parsed = _parse_revisions(idx)
         resolved.append(_choose(story, idx, parsed, ops))
-    _check_ids(ops, {r.id for res in resolved for p in res.parsed for r in p.revs}, table)
+    body = next((res for res in resolved if not res.story.key), None)
+    body_sect = _body_section(body.index) if body is not None else None
+    if body is not None and body_sect is not None:
+        _choose_body_section(ops, body.index, body_sect, body.picked)
+    known = {r.id for res in resolved for p in res.parsed for r in p.revs}
+    _check_ids(ops, known | ({body_sect.rev.id} if body_sect else set()), table)
 
     warnings: list[str] = []
     if table:
@@ -382,6 +466,17 @@ def prepare_resolutions(
     ]
     shown: list[dict[str, str]] = []
     counts: Counter[str] = Counter()
+    if body_sect is not None and body_sect.action is not None:
+        counts[body_sect.action] += 1
+        shown.append(
+            {
+                "id": body_sect.rev.id,
+                "type": body_sect.rev.kind,
+                "author": body_sect.rev.author,
+                "at": body_sect.at,
+                "action": body_sect.action,
+            }
+        )
     for res in resolved:
         counts.update(action for action, _ in res.chosen.values())
         for p in res.parsed:
@@ -396,7 +491,6 @@ def prepare_resolutions(
                             "action": res.chosen[(p.para.number, k)][0],
                         }
                     )
-    body = next((res for res in resolved if not res.story.key), None)
     written: dict[str, bytes] = {}
     parts: dict[str, list[str]] = {}
     stories: list[StoryFootprint] = []
@@ -436,9 +530,17 @@ def prepare_resolutions(
             }
             for span, data in sorted(res.replacements.items())
         ]
+    resolves_body_sect = body_sect is not None and body_sect.action is not None
+    if body_sect is not None and body_sect.action is not None:
+        base = written.get(DOCUMENT_PART)
+        if base is None and body is not None:
+            base = body.index.spans.data
+        assert base is not None
+        written[DOCUMENT_PART] = _resolve_body_section(base, body_sect.action)
     footprint = Footprint(
         replaced=frozenset(body.replacements) | frozenset(body.deletes) if body else frozenset(),
         stories=tuple(stories),
+        body_section=resolves_body_sect,
     )
     result = ResolutionResult(
         applied=len(ops),
@@ -535,7 +637,7 @@ def _build(pkg: Package, res: _StoryResolution) -> None:
         nxt = next_in_container(index, para)
         inherited = carry.pop(number, [])
         content = inherited + [c for c in elem if c.tag != PPR]
-        if nxt is None or elem.find(f"{PPR}/{xml.SECT_PR}") is not None:
+        if nxt is None:
             _with_content(elem, inherited)  # nothing to join with: keep the mark
             res.warnings.append(
                 f"{para.address} keeps its paragraph mark: it ends a container or a section"
@@ -705,7 +807,13 @@ def apply_resolutions(
             request=[_as_request(op) for op in ops],
             footprint={DOCUMENT_PART: result.footprint, **result.parts},
             # Joined paragraphs are not logged, so `undo` refuses this entry (safety.history).
-            extra={"parts": ["joined paragraphs"]} if prepared.joined else None,
+            extra=(
+                {"undo_by_backup": True}
+                if prepared.footprint.body_section
+                else {"parts": ["joined paragraphs"]}
+                if prepared.joined
+                else None
+            ),
             now=now,
             env=env,
         )

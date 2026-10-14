@@ -989,13 +989,18 @@ def reject_revisions(p: ET.Element, ids: set[str]) -> None:
     """Reject, in place, the revisions of ``p`` whose id is in ``ids`` (marks excluded).
 
     Inserted content is removed; a deletion is unwrapped and its ``w:delText``
-    becomes ``w:t`` again; a ``w:pPrChange`` / ``w:rPrChange`` puts back the properties it holds.
+    becomes ``w:t`` again; a ``w:pPrChange`` / ``w:rPrChange`` / ``w:sectPrChange`` puts back the
+    properties it holds.
     """
+
+    from doc_control.ooxml.sections import SECT_CHANGE, restore_section
 
     for parent in list(p.iter()):
         for child in list(parent):
             if child.tag in (W + "pPrChange", W + "rPrChange") and child.get(ID) in ids:
                 _restore_properties(parent, child)
+            elif child.tag == SECT_CHANGE and child.get(ID) in ids:
+                restore_section(parent, child)
 
     def walk(node: ET.Element) -> None:
         for child in list(node):

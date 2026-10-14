@@ -150,6 +150,8 @@ class DocumentSpans:
     body_content: int | None
     known_prefixes: Mapping[str, str]  # uri -> first prefix declared for it anywhere
     body_scope: Scope | None = None
+    #: ``data[start:end]`` of the body's own ``w:sectPr`` (the last section's), if any.
+    body_sect: tuple[int, int] | None = None
 
     # -- reading ---------------------------------------------------------
 
@@ -218,6 +220,32 @@ class DocumentSpans:
         return elem
 
     # -- writing ---------------------------------------------------------
+
+    def parse_body_sect(self) -> ET.Element:
+        """The body's own ``w:sectPr`` parsed for editing (see :meth:`parse_paragraph`);
+        ``body_sect`` must be set."""
+        assert self.body_sect is not None
+        scope = self.body_scope if self.body_scope is not None else self.root_scope
+        start, end = self.body_sect
+        try:
+            root = _FragmentReader(scope, build=True).read(self.data[start:end])
+        except (expat.ExpatError, _BadFragment) as exc:
+            raise _malformed(f"body section properties: {exc}", start) from exc
+        assert root is not None
+        elem = root[0]
+        elem.tail = None
+        return elem
+
+    def serialize_body_sect(self, elem: ET.Element) -> bytes:
+        """``elem`` (from :meth:`parse_body_sect`) written for the body level."""
+        scope = self.body_scope if self.body_scope is not None else self.root_scope
+        return serialize_element(elem, scope, (), self.known_prefixes)
+
+    def replace_body_sect(self, new: bytes) -> bytes:
+        """The document with the body's ``w:sectPr`` bytes replaced."""
+        assert self.body_sect is not None
+        start, end = self.body_sect
+        return self.data[:start] + new + self.data[end:]
 
     def serialize(self, elem: ET.Element, at: int | None = None) -> bytes:
         """Serialise ``elem`` for splicing at paragraph ``at``.
@@ -464,6 +492,7 @@ class _Open:
     scope: Scope
     para: int | None
     body: bool
+    sect_start: int | None = None  # start of a body-level w:sectPr, closed at its end tag
 
 
 def _w_id(attrs: list[tuple[bytes, bytes]], scope: Scope, pos: int) -> str | None:
@@ -504,6 +533,7 @@ def scan(
     body_content: int | None = None
     body_scope: Scope | None = None
     root_closed = False
+    body_sect: tuple[int, int] | None = None
     pos = 0
     n = len(data)
     while True:
@@ -540,6 +570,8 @@ def scan(
                 raise _malformed(f"unexpected end tag {m.group(1)!r}", lt)
             top = stack.pop()
             pos = m.end()
+            if top.sect_start is not None:
+                body_sect = (top.sect_start, pos)
             if top.para is not None:
                 ends[top.para] = pos
                 para_stack.pop()
@@ -590,6 +622,7 @@ def scan(
 
         para: int | None = None
         is_body = False
+        sect_start: int | None = None
         if root is None:
             root = (lt, end, scope, uri, local)
             if container.element is None and uri == W_NS and local == container.root:
@@ -610,6 +643,11 @@ def scan(
                 is_body = True
                 body_content = end
                 body_scope = scope
+            elif local == "sectPr" and stack and stack[-1].body and container.element == "body":
+                if self_closing:
+                    body_sect = (lt, end)
+                else:
+                    sect_start = lt
             elif local == "p" and body_depth > 0:
                 para = len(starts)
                 starts.append(lt)
@@ -624,7 +662,7 @@ def scan(
             if not stack:
                 root_closed = True
         else:
-            stack.append(_Open(qname, scope, para, is_body))
+            stack.append(_Open(qname, scope, para, is_body, sect_start))
             if para is not None:
                 para_stack.append(para)
             if is_body:
@@ -653,6 +691,7 @@ def scan(
         body_content=body_content,
         known_prefixes=known,
         body_scope=body_scope,
+        body_sect=body_sect,
     )
 
 
