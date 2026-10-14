@@ -200,6 +200,31 @@ class _StoryWalker:
                 self.flush()
 
 
+_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"
+
+
+def _page_parts(
+    zf: zipfile.ZipFile, document: ET.Element, names: set[str]
+) -> list[tuple[str, str]]:
+    """The header and footer parts some section refers to, in reference order: a part
+    no section uses is never shown, so LibreOffice rightly drops it."""
+    rels_name = "word/_rels/document.xml.rels"
+    if rels_name not in names:
+        return []
+    targets = {
+        rel.get("Id"): "word/" + (rel.get("Target") or "").removeprefix("/word/")
+        for rel in ET.fromstring(zf.read(rels_name)).iter(_PKG_REL)
+    }
+    out: list[tuple[str, str]] = []
+    for story in ("header", "footer"):
+        for ref in document.iter(W + f"{story}Reference"):
+            name = targets.get(ref.get(_R + "id"))
+            if name in names and (story, name) not in out:
+                out.append((story, name))
+    return out
+
+
 def expected_segments(data: bytes) -> list[Segment]:
     """Visible text segments of the main story, footnotes, endnotes, headers and footers.
 
@@ -212,10 +237,8 @@ def expected_segments(data: bytes) -> list[Segment]:
             name = f"word/{story}s.xml"
             if name in names:
                 stories.append((story, ET.fromstring(zf.read(name))))
-        for name in sorted(names):
-            for story in ("header", "footer"):
-                if name.startswith(f"word/{story}") and name.endswith(".xml"):
-                    stories.append((story, ET.fromstring(zf.read(name))))
+        for story, name in _page_parts(zf, stories[0][1], names):
+            stories.append((story, ET.fromstring(zf.read(name))))
     segments: list[Segment] = []
     for story, root in stories:
         walker = _StoryWalker(story)
