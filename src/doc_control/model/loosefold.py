@@ -27,19 +27,36 @@ it comes from (a base character with its combining marks, cut as
 All the characters a cluster folds to share its range (``ß`` folds to ``ss``), and a
 collapsed run of spaces takes the range from its first to its last character.
 :func:`to_original` maps folded positions back to a span of whole clusters.
+
+Levelled search: :func:`hits` finds a phrase at one level over a list of texts and tags
+every hit with the strictest level it meets; :func:`ladder` is the order in which a
+single-target op tries the levels.
 """
 
 from __future__ import annotations
 
+import bisect
 import functools
 import unicodedata
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.normalized import _chunks
 
-__all__ = ["LEVELS", "Folded", "Level", "fold", "fold_phrase", "to_original"]
+__all__ = [
+    "LEVELS",
+    "Folded",
+    "Hit",
+    "Level",
+    "first_hits",
+    "fold",
+    "fold_phrase",
+    "hits",
+    "ladder",
+    "to_original",
+]
 
 Level = Literal["exact", "case", "default", "loose"]
 LEVELS: tuple[Level, ...] = ("exact", "case", "default", "loose")
@@ -57,7 +74,9 @@ class Folded:
     source: str
 
 
-@functools.lru_cache(maxsize=4096)
+# Sized so every paragraph of a large document stays cached at all three folded levels
+# (``exact`` is searched on the raw text): a search folds each text once per level.
+@functools.lru_cache(maxsize=16384)
 def fold(text: str, level: Level) -> Folded:
     """``text`` folded at ``level``, with the original start and end of each character."""
     if level not in LEVELS:
@@ -165,3 +184,134 @@ def to_original(
                 break
             pos += 1
     return start, end
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One hit: ``texts[index][start:end]``, matched at ``level`` (its strictest)."""
+
+    index: int
+    start: int
+    end: int
+    level: Level
+
+
+def ladder(requested: Level, *, retry: bool) -> tuple[Level, ...]:
+    """The levels to try, strictest first; each runs only when those before found nothing.
+
+    ``exact`` never retries. With ``retry`` (the single-target ops) any other request walks
+    every level from ``exact`` to ``loose``, so a stricter match always wins. Without it
+    (the multi-hit ops) only the requested level runs.
+    """
+    if requested not in LEVELS:
+        raise ValueError(f"unknown fold level: {requested!r}")
+    if requested == "exact":
+        return ("exact",)
+    return LEVELS if retry else (requested,)
+
+
+def hits(texts: Sequence[str], phrase: str, level: Level) -> list[Hit]:
+    """Every hit of ``phrase`` in ``texts`` at ``level`` or stricter, in text order.
+
+    Each level from ``exact`` up to ``level`` is searched in turn. A hit is kept with the
+    strictest level that finds it: a looser hit overlapping a stricter one in the same
+    text is dropped. Hits at one level do not overlap each other, after widening (left to
+    right, the first wins). At ``default`` and ``loose`` a hit's span takes the
+    punctuation touching it on a side where the phrase itself has punctuation. A hit
+    starts and ends on cluster boundaries: it never splits a multi-character fold
+    (``sa`` does not match ``ßa``) or a base from its combining marks, even at ``exact``.
+    The phrase is matched as given (Word codes are the caller's). A phrase that folds to
+    nothing at ``level`` is refused (:func:`fold_phrase`).
+    """
+    if level not in LEVELS:
+        raise ValueError(f"unknown fold level: {level!r}")
+    fold_phrase(phrase, level)
+    out: list[Hit] = []
+    for _, found in _levelled(texts, phrase, LEVELS.index(level) + 1):
+        out.extend(found)
+    out.sort(key=lambda h: (h.index, h.start))
+    return out
+
+
+def first_hits(texts: Sequence[str], phrase: str, requested: Level, *, retry: bool) -> list[Hit]:
+    """The hits of the first rung of ``ladder(requested, retry=retry)`` that has any.
+
+    The same as calling :func:`hits` at each rung in turn and stopping at the first that
+    finds something, but every level is searched only once.
+    """
+    rungs = ladder(requested, retry=retry)
+    if len(rungs) == 1:
+        return hits(texts, phrase, rungs[0])
+    for current, found in _levelled(texts, phrase, len(LEVELS)):
+        fold_phrase(phrase, current)
+        if found:
+            return sorted(found, key=lambda h: (h.index, h.start))
+    return []
+
+
+def _levelled(texts: Sequence[str], phrase: str, count: int) -> Iterator[tuple[Level, list[Hit]]]:
+    """The new hits of each of the first ``count`` levels, strictest first."""
+    bare = "".join(ch for ch in phrase if unicodedata.category(ch) != "Cf")
+    widen_left = bool(bare) and unicodedata.category(bare[0])[0] == "P"
+    widen_right = bool(bare) and unicodedata.category(bare[-1])[0] == "P"
+    # Per text, the spans kept at stricter levels: sorted by start and disjoint.
+    kept: dict[int, list[tuple[int, int]]] = {}
+    for current in LEVELS[:count]:
+        needle = phrase if current == "exact" else fold(phrase, current).text
+        if not needle:
+            yield current, []
+            continue
+        widen = current in ("default", "loose")
+        found: list[Hit] = []
+        for index, text in enumerate(texts):
+            if current == "exact":
+                spans = _exact_spans(text, needle)
+            else:
+                spans = _folded_spans(
+                    fold(text, current), needle, widen and widen_left, widen and widen_right
+                )
+            prior = kept.get(index, [])
+            new: list[tuple[int, int]] = []
+            for start, end in spans:
+                if new and start < new[-1][1]:
+                    continue
+                if prior:
+                    k = bisect.bisect_left(prior, (end,))
+                    if k and prior[k - 1][1] > start:
+                        continue
+                new.append((start, end))
+                found.append(Hit(index, start, end, current))
+            if new:
+                kept[index] = sorted(prior + new)
+        yield current, found
+
+
+def _exact_spans(text: str, needle: str) -> Iterator[tuple[int, int]]:
+    """Verbatim matches of ``needle`` that do not split a base from its marks."""
+    pos = text.find(needle)
+    while pos >= 0:
+        end = pos + len(needle)
+        if unicodedata.category(text[pos])[0] != "M" and (
+            end == len(text) or unicodedata.category(text[end])[0] != "M"
+        ):
+            yield pos, end
+            pos = text.find(needle, end)
+        else:
+            pos = text.find(needle, pos + 1)
+
+
+def _folded_spans(
+    folded: Folded, needle: str, widen_left: bool, widen_right: bool
+) -> Iterator[tuple[int, int]]:
+    """Original spans of the matches of ``needle`` that start and end between clusters."""
+    text, starts = folded.text, folded.starts
+    pos = text.find(needle)
+    while pos >= 0:
+        end = pos + len(needle)
+        if (pos == 0 or starts[pos] != starts[pos - 1]) and (
+            end == len(text) or starts[end] != starts[end - 1]
+        ):
+            yield to_original(folded, pos, end, widen_left=widen_left, widen_right=widen_right)
+            pos = text.find(needle, end)
+        else:
+            pos = text.find(needle, pos + 1)
