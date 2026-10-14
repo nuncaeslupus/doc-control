@@ -25,8 +25,10 @@ from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
 from doc_control.model.address import Address
 from doc_control.model.document import Document
-from doc_control.model.search import IsolatedScan, LocalScan, Matcher, SearchOptions
+from doc_control.model.loosefold import Level
+from doc_control.model.search import IsolatedScan, LevelMatcher, LocalScan, Matcher, SearchOptions
 from doc_control.model.storyorder import STORIES_PROPERTY, kinds_of, rows
+from doc_control.model.wordcodes import translate_codes
 from doc_control.model.wordfind import word_find
 from doc_control.registry import operation
 
@@ -75,6 +77,17 @@ SCHEMA: dict[str, Any] = {
             "default": DEFAULT_CONTEXT,
             "description": "Characters of surrounding text on each side of a match.",
         },
+        "match_level": {
+            "type": "string",
+            "enum": ["exact", "default", "loose"],
+            "description": "Fold a literal query: `default` ignores case, accents and"
+            " punctuation (symbols such as `$` still count), `loose` drops symbols too;"
+            " `exact` is the search as without it. When passed, Word's Find codes (^p, ^t,"
+            " ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each"
+            " match gains `match_level`, the strictest level it meets. Not with `regex`"
+            " (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a"
+            " folded level.",
+        },
         "cursor": {"type": "string", "description": "The `next` value of the previous page."},
         "stories": STORIES_PROPERTY,
     },
@@ -90,25 +103,32 @@ SCHEMA: dict[str, Any] = {
     "The first page also gives `total` (or `total_at_least` and `more: true` when the time "
     "budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, "
     "^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break "
-    "hyphen in the query; not for a regex), "
+    "hyphen in the query; not for a regex; null at a folded `match_level`), "
     "with `query_word_options` (match_case, whole_words) to tick there.",
     SCHEMA,
 )
 def find(request: dict[str, Any]) -> Reply:
+    level: Level | None = request.get("match_level")
+    folds = level in ("default", "loose")
+    if level is not None:
+        _check_level(request, level)
+    query: str = request["query"]
+    if level is not None and not request.get("regex"):
+        query = translate_codes(query)
     options = SearchOptions(
-        query=request["query"],
+        query=query,
         regex=request.get("regex", False),
-        ignore_case=request.get("ignore_case", False),
-        ignore_accents=request.get("ignore_accents", False),
+        ignore_case=folds or request.get("ignore_case", False),
+        ignore_accents=folds or request.get("ignore_accents", False),
         whole_word=request.get("whole_word", False),
     )
-    matcher = Matcher(options)
+    matcher = Matcher(options) if level is None else LevelMatcher(options, level)
     limit: int = list_limit(request, DEFAULT_LIMIT)
     context: int = request.get("context", DEFAULT_CONTEXT)
     shared = Document(request["doc"])  # one parse per open document (doc_control.api)
     pkg, index = shared.pkg, shared.index
     kinds = kinds_of(request)
-    token = _token(pkg.sha256, options, kinds)
+    token = _token(pkg.sha256, options, kinds, level)
     first, skip = _parse_cursor(request.get("cursor"), token)
 
     # Paragraphs numbered in reading order: the body's own numbers when only the body is
@@ -144,6 +164,9 @@ def find(request: dict[str, Any]) -> Reply:
                     remaining += 1
                     continue
                 matches.append(_match(para.address, para.text, start, end, context))
+                if level is not None:
+                    tags = matcher.levels if isinstance(matcher, LevelMatcher) else {}
+                    matches[-1]["match_level"] = tags.get((start, end), "exact")
             if next_cursor is not None and "cursor" in request:
                 break
     stopped = scan.stopped_at
@@ -180,10 +203,10 @@ def find(request: dict[str, Any]) -> Reply:
     # Word's Find has no such option).
     word: dict[str, Any] = {}
     if not request.get("regex"):
-        same = not request.get("ignore_accents")
-        word["query_word"] = word_find(request["query"]) if same else None
+        same = not options.ignore_accents  # Word's Find folds neither accents nor punctuation
+        word["query_word"] = word_find(query) if same else None
         word["query_word_options"] = {
-            "match_case": not request.get("ignore_case", False),
+            "match_case": not options.ignore_case,
             "whole_words": bool(request.get("whole_word", False)),
         }
     return Reply(
@@ -213,13 +236,38 @@ def _match(address: Address, text: str, start: int, end: int, context: int) -> d
     return out
 
 
-def _token(sha256: str, options: SearchOptions, kinds: tuple[str, ...] = ("body",)) -> str:
+def _token(
+    sha256: str,
+    options: SearchOptions,
+    kinds: tuple[str, ...] = ("body",),
+    level: Level | None = None,
+) -> str:
     """Ties a cursor to one document and one query, so it cannot resume a different search."""
     values: list[Any] = [sha256, *vars(options).values()]
     if kinds != ("body",):
         values.append(sorted(kinds))  # body-only tokens stay as before
+    if level is not None:
+        values.append({"match_level": level})  # tokens without it stay as before
     key = json.dumps(values, ensure_ascii=True)
     return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
+
+
+def _check_level(request: dict[str, Any], level: Level) -> None:
+    """``match_level`` is for literal queries, and a folded level implies both folds."""
+    if request.get("regex") and level != "exact":
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            f"match_level {level!r} folds a literal query; a regex takes only 'exact'",
+            path="$.match_level",
+        )
+    if level != "exact":
+        for flag in ("ignore_case", "ignore_accents"):
+            if request.get(flag) is False:
+                raise DocControlError(
+                    ErrorCode.SCHEMA_INVALID,
+                    f"match_level {level!r} ignores case and accents; drop {flag}: false",
+                    path=f"$.{flag}",
+                )
 
 
 def _parse_cursor(cursor: str | None, token: str) -> tuple[int, int]:

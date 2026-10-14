@@ -123,7 +123,7 @@ Recompute the results of the body's TOC, page, page-count, sequence and referenc
 
 ## `find` (read)
 
-Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex), with `query_word_options` (match_case, whole_words) to tick there.
+Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex; null at a folded `match_level`), with `query_word_options` (match_case, whole_words) to tick there.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -135,6 +135,7 @@ Find text or a regex; matches come back as paragraph ranges, capped, with a curs
 | `whole_word` | boolean |  | Match only whole words (no letter, digit or mark on either side). |
 | `limit` | integer |  | Most matches to return; more are reached with `cursor`. |
 | `context` | integer |  | Characters of surrounding text on each side of a match. |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold a literal query: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the search as without it. When passed, Word's Find codes (^p, ^t, ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each match gains `match_level`, the strictest level it meets. Not with `regex` (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a folded level. |
 | `cursor` | string |  | The `next` value of the previous page. |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 
