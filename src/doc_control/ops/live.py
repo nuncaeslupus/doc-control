@@ -10,7 +10,8 @@ sees (an assistant in a sandbox). ``live.status`` without ``doc`` lists them.
 
 ``live.select`` puts the app's selection on a paragraph, named by address or by a find
 phrase from ``locate``; ``paragraphs_after`` moves that many paragraphs on from it (as in
-``locate``'s ``context``).
+``locate``'s ``context``). ``live.places`` hands a list of such places to the MCP App in
+``doc_control/app`` (see ``doc_control.mcp``), whose buttons call ``live.select``.
 """
 
 from __future__ import annotations
@@ -292,6 +293,66 @@ def select(request: dict[str, Any]) -> dict[str, Any]:
     if request.get("front", True):
         out["front"] = _front(adapter, path)
     return out
+
+
+_PLACE = {
+    "type": "object",
+    "properties": {
+        "label": {"type": "string", "minLength": 1, "description": "The button's text."},
+        "at": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Paragraph address, e.g. `p142#a7b2a7b2`.",
+        },
+        "find_phrase": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A `locate` find phrase; used when `at` is missing or stale.",
+        },
+        "find_phrase_across": {"enum": ["previous", "next", "both"]},
+    },
+    "required": ["label"],
+    "additionalProperties": False,
+}
+
+
+@operation(
+    "live.places",
+    "read",
+    "Show a list of places in the document as buttons; in a client that renders MCP Apps, "
+    "a click calls `live.select` on that place directly, with no assistant turn.",
+    _schema(
+        places={
+            "type": "array",
+            "items": _PLACE,
+            "description": "The buttons, in order: a `label` and `at` or `find_phrase` each "
+            "(with both, `find_phrase` is tried when `at` fails).",
+        },
+        mode={
+            "enum": ["cursor", "select"],
+            "description": "What a click does: `cursor` (default) puts the cursor at the "
+            "place's start; `select` selects its paragraph.",
+        },
+    )
+    | {"required": ["doc", "places"]},
+)
+def places(request: dict[str, Any]) -> dict[str, Any]:
+    if not request["places"]:
+        raise DocControlError(ErrorCode.SCHEMA_INVALID, "$.places: pass at least one place")
+    for n, place in enumerate(request["places"]):
+        if "at" not in place and "find_phrase" not in place:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, f"$.places[{n}]: pass at or find_phrase"
+            )
+        if "find_phrase_across" in place and "find_phrase" not in place:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, f"$.places[{n}]: find_phrase_across needs find_phrase"
+            )
+    return {
+        "doc": request["doc"],
+        "mode": request.get("mode", "cursor"),
+        "places": request["places"],
+    }
 
 
 @operation(
