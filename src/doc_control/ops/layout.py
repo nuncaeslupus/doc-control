@@ -268,12 +268,16 @@ def page_plan(doc: Document) -> dict[str, Any]:
 
 # --- layout.apply: breaks and numbering (LAYOUT T4) ----------------------------------------
 
-_BREAKS = BREAK_TYPES[:-1]  # the plan has no column breaks
+_BREAKS = tuple(b for b in BREAK_TYPES if b != "nextColumn")  # the plan has no column breaks
+_PLAN_KEYS = {"version", "two_sided", "mirror_margins", "sections"}
 _SECTION_KEYS = {"from", "break", "numbering", "header", "footer", "first_page_different"}
-_NEW_SECTION = {
+#: What a part split off a section does not take from it: the break that now starts it is a
+#: page break, and a page-number start or a different first page would repeat at the break
+#: (the writer drops them there). The rest of the source section's setup (the number format)
+#: carries over, so a key the plan leaves out stays as the pages had it.
+_SPLIT_RESETS = {
     "break": "nextPage",
     "page_number_start": None,
-    "page_number_format": "decimal",
     "title_page": False,
 }
 _OMITTED: Any = object()
@@ -287,6 +291,9 @@ def _check_plan(plan: dict[str, Any]) -> None:
     """Refuse what is not a version-1 page plan. A key left out means "leave it as it is"."""
     if plan.get("version") != _PLAN_VERSION:
         raise _bad_plan(f"plan.version must be {_PLAN_VERSION}", got=plan.get("version"))
+    unknown = sorted(set(plan) - _PLAN_KEYS)
+    if unknown:
+        raise _bad_plan(f"plan: unknown keys {', '.join(unknown)}")
     for key in ("two_sided", "mirror_margins"):
         if key in plan and not isinstance(plan[key], bool):
             raise _bad_plan(f"plan.{key} must be true or false")
@@ -370,8 +377,9 @@ def _plan_edits(
         # The section's first part keeps its place; later parts are new breaks, and the
         # last part keeps the section's own closing sectPr.
         parts = [s for n, s in wanted if start <= n < end]
+        split = {**_row_props(row), **_SPLIT_RESETS}
         for k, sect in enumerate(parts):
-            props = _wanted_props(sect, _row_props(row) if k == 0 else _NEW_SECTION)
+            props = _wanted_props(sect, _row_props(row) if k == 0 else split)
             if len(parts) == 1:
                 targets.append(("section", number))
                 props = {key: v for key, v in props.items() if v != _row_props(row)[key]}
@@ -388,7 +396,7 @@ def _plan_edits(
                     {
                         "kind": "section.break",
                         "after": str(doc.index.paragraph(at).address),
-                        "type": _wanted_props(following, _NEW_SECTION)["break"],
+                        "type": _wanted_props(following, split)["break"],
                         "props": props,
                     }
                 )
@@ -680,6 +688,18 @@ def apply_plan(
     null: it keeps inheriting), else nothing is written."""
     _check_plan(plan)
     doc = Document(str(path))
+    # Every write, the dry runs that check it and the real one, is pinned to the bytes read
+    # here: a file that changes in between is refused (DOC_CHANGED_ON_DISK), not rewritten
+    # from what the check never saw. expect.sha256 is checked even when nothing is written.
+    pinned = doc.sha256
+    if expect_sha256 is not None and pinned != expect_sha256.strip().lower():
+        raise DocControlError(
+            ErrorCode.DOC_CHANGED_ON_DISK,
+            f"{path.name} changed on disk since it was read",
+            path=str(path),
+            expected_sha256=expect_sha256,
+            actual_sha256=pinned,
+        )
     edits, targets = _plan_edits(doc, plan)
     write = partial(
         apply_layout_edits,
@@ -687,7 +707,7 @@ def apply_plan(
         untracked=untracked,
         author=author,
         tag=tag,
-        expect_sha256=expect_sha256,
+        expect_sha256=pinned,
     )
     now = page_plan(doc)
     after = now
@@ -770,7 +790,11 @@ def apply_plan(
     "rewritten only when every section using it asks the same text, else the section gets "
     "a new part. A new part, a dropped reference and two_sided or mirror_margins cannot be "
     "tracked and need untracked: true (LAYOUT D-L2). Sections already in the document must "
-    "all be kept. All or nothing: the plan read back from the result must equal the "
+    "all be kept. A section that still holds an unaccepted tracked change of its setup (say "
+    "from an earlier layout.apply) cannot take another, so a second apply that changes it "
+    "is refused (UNSUPPORTED_CONTENT) until that change is accepted or rejected. A "
+    "split-off section keeps the number format of the section it came from unless the plan "
+    "states one. All or nothing: the plan read back from the result must equal the "
     "request, else nothing is written (UNSUPPORTED_CONTENT). dry_run lists the changes and "
     "the plan that would result.",
     {
