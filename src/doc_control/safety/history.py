@@ -230,6 +230,8 @@ def _container(pkg: Package, story: str, part: str) -> Container:
     try:
         found = find_story(pkg, story)
     except DocControlError as exc:
+        if exc.code is not ErrorCode.ANCHOR_NOT_FOUND:
+            raise  # a malformed part stays what it is
         raise DocControlError(
             ErrorCode.BATCH_CONFLICT,
             f"{story} is gone since; undo later operations first (history.list)",
