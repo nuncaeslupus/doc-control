@@ -39,6 +39,7 @@ def test_cli_stdin_is_utf8_under_cp1252_locale() -> None:
         timeout=60,
         check=False,
     )
+    assert proc.returncode != 0 and proc.stdout, proc.stderr
     error = json.loads(proc.stdout.decode("utf-8"))["error"]
     assert error["code"] == "DOC_NOT_FOUND", error
-    assert error["details"]["path"] == "/nope/¿estás.docx"
+    assert error["details"]["path"].endswith("¿estás.docx")  # Windows turns / into \
