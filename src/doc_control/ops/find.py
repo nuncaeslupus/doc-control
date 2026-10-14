@@ -147,18 +147,25 @@ def find(request: dict[str, Any]) -> Reply:
             if next_cursor is not None and "cursor" in request:
                 break
     stopped = scan.stopped_at
+
+    def where(n: int) -> str:
+        """Body-only: ``p<n>`` as before; across stories, the paragraph's address."""
+        return f"p{n}" if kinds == ("body",) else str(order[n - 1].address)
+
     counted = len(matches) + remaining
     if stopped is not None and next_cursor is None:
         if stopped == first and not matches:
             raise DocControlError(
                 ErrorCode.SCHEMA_INVALID,
-                f"search of p{stopped} did not finish within {TIME_BUDGET_SECONDS:g}s;"
-                " simplify the pattern (avoid nested or overlapping repeats)",
+                f"search of {where(stopped)} did not finish within "
+                f"{TIME_BUDGET_SECONDS:g}s; simplify the pattern (avoid nested or "
+                "overlapping repeats)",
                 path="$.query",
                 paragraph=stopped,
             )
         warnings.append(
-            f"TIME_BUDGET: stopped at p{stopped} after {TIME_BUDGET_SECONDS:g}s;"
+            f"TIME_BUDGET: stopped at {where(stopped)} after "
+            f"{TIME_BUDGET_SECONDS:g}s;"
             " continue with `next`"
         )
         next_cursor = f"c:find:{token}:{stopped}:0"
@@ -210,7 +217,7 @@ def _token(sha256: str, options: SearchOptions, kinds: tuple[str, ...] = ("body"
     """Ties a cursor to one document and one query, so it cannot resume a different search."""
     values: list[Any] = [sha256, *vars(options).values()]
     if kinds != ("body",):
-        values.append(list(kinds))  # body-only tokens stay as before
+        values.append(sorted(kinds))  # body-only tokens stay as before
     key = json.dumps(values, ensure_ascii=True)
     return hashlib.blake2s(key.encode("ascii")).hexdigest()[:8]
 

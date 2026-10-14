@@ -31,7 +31,7 @@ from doc_control.model.document import Document
 from doc_control.model.format import para_format, run_format
 from doc_control.model.index import Paragraph
 from doc_control.model.parts import OFFICE_REL, W, parse_part, related_part
-from doc_control.model.storyorder import fields_for
+from doc_control.model.storyorder import STORIES_PROPERTY, fields_for, kinds_of, rows
 from doc_control.model.styles import Style
 from doc_control.ops.paging import (
     PAGING_PROPERTIES,
@@ -152,28 +152,31 @@ def info(request: dict[str, Any]) -> Reply:
             "minimum": 1,
             "maximum": 9,
             "description": "Only headings up to this level.",
-        }
+        },
+        stories=STORIES_PROPERTY,
     ),
 )
 def outline(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
     max_level = request.get("max_level", 9)
     entries: list[dict[str, Any]] = []
-    for para in doc.index.paragraphs:
-        level = doc.heading_level(para)
+    for story_row in rows(doc, kinds_of(request)):
+        view, para = story_row.view, story_row.para
+        level = view.heading_level(para)
         if level is None or level > max_level or not para.text.strip():
             continue
         text, clipped = _clip(" ".join(para.text.split()), _OUTLINE_TEXT)
         entry: dict[str, Any] = {
             "at": str(para.address),
             "level": level,
-            "style": doc.style_id(para),
+            "style": view.style_id(para),
             "text": text,
         }
         if clipped:
             entry["truncated"] = True
         for fact in OUTLINE_FACTS:
-            entry.update(fact(ParagraphContext(doc, para)))
+            entry.update(fact(ParagraphContext(view, para)))
+        entry.update(story_row.fields)
         entries.append(entry)
     return paged("outline", doc, request, "headings", entries)
 
@@ -256,7 +259,7 @@ def _footnote_count(doc: Document) -> int:
     "Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.",
     {
         "type": "object",
-        "properties": {"doc": _DOC},
+        "properties": {"doc": _DOC, "stories": STORIES_PROPERTY},
         "required": ["doc"],
         "additionalProperties": False,
     },
@@ -279,6 +282,18 @@ def stats(request: dict[str, Any]) -> Reply:
         "styles_in_use": len(usage),
         "fonts": _fonts(doc),
     }
+    others = [k for k in kinds_of(request) if k != "body"]
+    if others:
+        # The body's counts above stay the body's; each other story kind is counted apart.
+        result["stories"] = {}
+        for kind in others:
+            texts = [r.para.text for r in rows(doc, (kind,))]
+            result["stories"][kind] = {
+                "stories": len({key for r in rows(doc, (kind,)) if (key := r.para.story)}),
+                "paragraphs": len(texts),
+                "words": sum(len(t.split()) for t in texts),
+                "characters": sum(len(t) for t in texts),
+            }
     return Reply(result, doc=doc.envelope_doc())
 
 

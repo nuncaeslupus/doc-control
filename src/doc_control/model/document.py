@@ -23,6 +23,7 @@ from doc_control.ooxml.zipio import Package
 
 DOCUMENT_PART = "word/document.xml"
 _TC_OPEN = re.compile(rb"<(?:[\w.-]+:)?tc[\s>]")
+_TABLE_TAG = re.compile(rb"<(/?)(?:[\w.-]+:)?(tbl|tr|tc)([\s/>])")
 _TC_CLOSE = re.compile(rb"</(?:[\w.-]+:)?tc\s*>")
 
 
@@ -170,6 +171,43 @@ class Document:
                     stack.pop()
                 e += 1
             out.append(stack[-1] if stack else -1)
+        return tuple(out)
+
+    @cached_property
+    def cell_positions(self) -> tuple[tuple[int, int, int] | None, ...]:
+        """Per paragraph, ``(table, row, col)`` of its innermost table cell, 1-based, tables
+        numbered in document order (nested ones too); None outside tables. ``col`` counts
+        the row's cells, not grid columns (``table.get`` gives the grid)."""
+        data = self.index.spans.data
+        tags = [
+            (m.start(), m[1] == b"/", m[2], m[3] == b"/")
+            for m in _TABLE_TAG.finditer(data)
+            if not (m[3] == b"/" and m[1] != b"/")  # an empty <w:tc/> holds no paragraph
+        ]
+        spans = self.index.spans.paragraphs
+        out: list[tuple[int, int, int] | None] = []
+        stack: list[list[int]] = []  # per open table: [number, row, col]
+        tables = 0
+        t = 0
+        for para in self.index.paragraphs:
+            start = spans[para.span_index].start
+            while t < len(tags) and tags[t][0] < start:
+                _, closing, name, _ = tags[t]
+                if name == b"tbl":
+                    if closing:
+                        if stack:
+                            stack.pop()
+                    else:
+                        tables += 1
+                        stack.append([tables, 0, 0])
+                elif stack and not closing:
+                    if name == b"tr":
+                        stack[-1][1] += 1
+                        stack[-1][2] = 0
+                    else:
+                        stack[-1][2] += 1
+                t += 1
+            out.append(tuple(stack[-1]) if stack else None)  # type: ignore[arg-type]
         return tuple(out)
 
     def style_id(self, para: Paragraph) -> str | None:

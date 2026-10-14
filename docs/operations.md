@@ -251,6 +251,7 @@ The headings of the document with level, style and address, in order.
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `max_level` | integer |  | Only headings up to this level. |
+| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
@@ -356,6 +357,7 @@ Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styl
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
+| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 
 ## `style.create` (write)
 

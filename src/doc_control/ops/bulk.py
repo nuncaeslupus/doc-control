@@ -84,6 +84,9 @@ def paragraphs_list(request: dict[str, Any]) -> Reply:
             empty=is_empty(view, para),
         )
         item.update(row.fields)
+        cell = view.cell_positions[para.number - 1]
+        if cell is not None:
+            item["cell"] = dict(zip(("table", "row", "col"), cell, strict=True))
         if pages is not None and not para.story:
             page = pages[para.number - 1]
             item["page"] = page.page

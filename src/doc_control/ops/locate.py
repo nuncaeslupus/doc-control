@@ -71,8 +71,10 @@ from itertools import pairwise
 from typing import Any, TypeVar, overload
 
 from doc_control.envelope import Reply
+from doc_control.model.address import parse_range
 from doc_control.model.document import Document
 from doc_control.model.pages import estimate_pages
+from doc_control.model.storyorder import fields_for
 from doc_control.model.structure import detect_in
 from doc_control.model.wordfind import as_searched, word_find
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
@@ -794,6 +796,8 @@ class _Rows(Sequence[dict[str, Any]]):
 )
 def locate(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
+    if "at" in request and (story := parse_range(request["at"]).start.story):
+        return _locate_story(doc, request, story)
     index = doc.index
     count = len(index)
     texts = [index.paragraph(n).text for n in range(1, count + 1)]
@@ -902,3 +906,22 @@ def locate(request: dict[str, Any]) -> Reply:
 
     head: dict[str, Any] = {"estimated": True, "page_count": pages.pages, "basis": pages.basis}
     return paged("locate", doc, request, "paragraphs", _Rows(wanted, row), head)
+
+
+def _locate_story(doc: Document, request: dict[str, Any], story: str) -> Reply:
+    """A note, header or footer paragraph: its story, and for a note where its mark sits
+    (the body paragraph's chapter, scene and page)."""
+    view = doc.story_view(story)
+    resolved = view.index.resolve_range(request["at"])
+    fields = fields_for(doc, story)
+    note = fields.get("note")
+    mark = None
+    if note is not None:
+        body = locate({k: v for k, v in request.items() if k != "cursor"} | {"at": note["of"]})
+        result = body.result if isinstance(body, Reply) else body
+        mark = result["paragraphs"][0]
+    rows = [
+        {"at": str(view.index.paragraph(n).address), **fields, "mark": mark}
+        for n in range(resolved.first.number, resolved.last.number + 1)
+    ]
+    return Reply({"paragraphs": rows, "estimated": True}, doc=doc.envelope_doc())
