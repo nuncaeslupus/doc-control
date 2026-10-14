@@ -250,3 +250,34 @@ def test_unreadable_private_document_error_names_no_path(
         list(private_documents())
     assert "Secret" not in str(exc.value) and "Chapter" not in str(exc.value)
     assert exc.value.__context__ is None or "Secret" not in repr(exc.value.args)
+
+
+def test_story_kinds_follow_schema_element_order() -> None:
+    import xml.etree.ElementTree as ET
+
+    from tests.corpus.generator import STORY_KINDS, generate_parts
+
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    # CT_SectPr and CT_Settings sequences, as far as the generator uses them.
+    sect_order = [
+        "headerReference", "footerReference", "footnotePr", "endnotePr", "type",
+        "pgSz", "pgMar", "pgNumType", "titlePg",
+    ]  # fmt: skip
+    settings_order = ["defaultTabStop", "evenAndOddHeaders", "characterSpacingControl", "compat"]
+
+    def in_order(children: list[str], order: list[str]) -> bool:
+        ranks = [order.index(name) for name in children]
+        return ranks == sorted(ranks)
+
+    for kind in STORY_KINDS:
+        parts = generate_parts(kind, 0)
+        doc = ET.fromstring(parts["word/document.xml"])
+        sects = list(doc.iter(w + "sectPr"))
+        assert len(sects) >= 2
+        for sect in sects:
+            assert in_order([c.tag.removeprefix(w) for c in sect], sect_order), kind
+        settings = ET.fromstring(parts["word/settings.xml"])
+        assert in_order([c.tag.removeprefix(w) for c in settings], settings_order), kind
+        styles = parts["word/styles.xml"].decode()
+        for used in ("EndnoteReference", "EndnoteText", "Header", "Footer"):
+            assert f'w:styleId="{used}"' in styles

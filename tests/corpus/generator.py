@@ -570,7 +570,7 @@ def _document(b: _Builder, blocks: list[str], last_sect: str = "") -> bytes:
     return xml.encode("utf-8")
 
 
-def _styles() -> bytes:
+def _styles(stories: bool = False) -> bytes:
     def para(sid: str, name: str, ppr: str = "", rpr: str = "", based: str = "Normal") -> str:
         base = f'<w:basedOn w:val="{based}"/>' if based else ""
         return (
@@ -613,6 +613,13 @@ def _styles() -> bytes:
         )
         + "</w:tblBorders></w:tblPr></w:style>",
     ]
+    if stories:  # only the STORY_KINDS use these, so KINDS keep their bytes
+        styles += [
+            para("EndnoteText", "endnote text", "", '<w:sz w:val="20"/><w:szCs w:val="20"/>'),
+            para("Header", "header", '<w:tabs><w:tab w:val="center" w:pos="4513"/></w:tabs>'),
+            para("Footer", "footer", '<w:tabs><w:tab w:val="center" w:pos="4513"/></w:tabs>'),
+            char("EndnoteReference", "endnote reference", '<w:vertAlign w:val="superscript"/>'),
+        ]
     xml = XML_DECL + _root("w:styles", _MAIN) + "".join(styles) + "</w:styles>"
     return xml.encode("utf-8")
 
@@ -621,8 +628,10 @@ def _settings(even_and_odd: bool = False) -> bytes:
     xml = (
         XML_DECL
         + _root("w:settings", _MAIN)
+        + '<w:defaultTabStop w:val="708"/>'
+        # CT_Settings: evenAndOddHeaders after defaultTabStop, before characterSpacingControl.
         + ("<w:evenAndOddHeaders/>" if even_and_odd else "")
-        + '<w:defaultTabStop w:val="708"/><w:characterSpacingControl w:val="doNotCompress"/>'
+        + '<w:characterSpacingControl w:val="doNotCompress"/>'
         + '<w:compat><w:compatSetting w:name="compatibilityMode" '
         + 'w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>'
         + "</w:settings>"
@@ -832,7 +841,8 @@ def generate_parts(kind: str, seed: int) -> dict[str, bytes]:
         blocks = b.novel()
     elif kind == "notes":
         blocks = [b.heading(1, f"Synthetic {kind} document {seed}"), *b.notes_kind()]
-        last_sect = _SECT_PAGE + '<w:footnotePr><w:numRestart w:val="eachSect"/></w:footnotePr>'
+        # CT_SectPr: footnotePr comes before pgSz.
+        last_sect = '<w:footnotePr><w:numRestart w:val="eachSect"/></w:footnotePr>' + _SECT_PAGE
     elif kind == "headers":
         blocks = _headers_kind(b)
         last_sect = '<w:type w:val="oddPage"/>' + _SECT_PAGE
@@ -851,7 +861,7 @@ def generate_parts(kind: str, seed: int) -> dict[str, bytes]:
                 blocks.append(b.styled_paragraph())
 
     extra: dict[str, bytes] = {
-        "word/styles.xml": _styles(),
+        "word/styles.xml": _styles(stories=kind in STORY_KINDS),
         "word/settings.xml": _settings(even_and_odd=kind == "headers"),
     }
     if b.footnotes:
