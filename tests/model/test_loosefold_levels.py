@@ -6,11 +6,18 @@ single-target ladder, at its expected level and with the expected original span.
 
 from __future__ import annotations
 
+import itertools
+import time
+import zipfile
+from io import BytesIO
+
 import pytest
 
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.model.loosefold import LEVELS, Hit, Level, hits, ladder
+from doc_control.model.index import build_index
+from doc_control.model.loosefold import LEVELS, Hit, Level, first_hits, hits, ladder
 from doc_control.model.wordcodes import translate_codes
+from tests.corpus.generator import generate
 
 # (phrase, paragraph, expected level, expected matched text)
 VARIANTS: list[tuple[str, str, Level, str]] = [
@@ -147,3 +154,69 @@ def test_ladder() -> None:
         ladder("fuzzy", retry=True)  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         hits(["x"], "x", "fuzzy")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("phrase", "paragraph", "level", "matched"), VARIANTS)
+def test_first_hits_equals_walking_the_ladder(
+    phrase: str, paragraph: str, level: Level, matched: str
+) -> None:
+    phrase = translate_codes(phrase)
+    assert first_hits([paragraph], phrase, "default", retry=True) == single_target(
+        [paragraph], phrase
+    )
+    assert first_hits([paragraph], phrase, "default", retry=False) == hits(
+        [paragraph], phrase, "default"
+    )
+
+
+def test_first_hits_refuses_like_the_ladder() -> None:
+    assert first_hits(["--Estas"], "--", "default", retry=True) == [Hit(0, 0, 2, "exact")]
+    with pytest.raises(DocControlError):
+        first_hits(["Estas"], "--", "default", retry=True)
+
+
+def test_no_duplicate_hit_inside_one_multi_char_fold() -> None:
+    assert hits(["\u00df"], "s", "case") == []
+    assert hits(["\u00df"], "ss", "case") == [Hit(0, 0, 1, "case")]
+
+
+def test_widened_hits_do_not_overlap() -> None:
+    found = hits(["a-a"], "-a-", "default")
+    assert found == [Hit(0, 0, 2, "default")]
+    found = hits(["x-a-a-a-y"], "-a-", "default")
+    assert all(a.end <= b.start for a, b in itertools.pairwise(found))
+
+
+def test_match_does_not_cut_into_a_multi_char_fold() -> None:
+    assert hits(["\u00dfa"], "sa", "case") == []
+    assert hits(["\u00dfa"], "ssa", "case") == [Hit(0, 0, 2, "case")]
+    assert hits(["a\u00df"], "as", "case") == []
+    assert hits(["\u00dfsa"], "sa", "case") == [Hit(0, 1, 3, "exact")]
+
+
+def test_exact_keeps_combining_marks_with_their_base() -> None:
+    assert hits(["e\u0301"], "e", "exact") == []
+    assert hits(["e\u0301"], "e", "default") == [Hit(0, 0, 2, "default")]
+    assert hits(["e\u0301"], "e\u0301", "exact") == [Hit(0, 0, 2, "exact")]
+
+
+@pytest.mark.bench
+def test_hits_on_a_2000_paragraph_novel_stay_fast() -> None:
+    data = zipfile.ZipFile(BytesIO(generate("novel", 11))).read("word/document.xml")
+    texts = [p.text for p in build_index(data).paragraphs]
+    assert len(texts) >= 2000
+    hits(texts, "zzz nada", "loose")  # warm the fold cache
+    t = time.perf_counter()
+    hits(texts, "zzz nada", "default")
+    miss_ms = (time.perf_counter() - t) * 1000
+    t = time.perf_counter()
+    first_hits(texts, "zzz nada", "default", retry=True)
+    ladder_ms = (time.perf_counter() - t) * 1000
+    t = time.perf_counter()
+    many = hits(texts, "que", "default")
+    many_ms = (time.perf_counter() - t) * 1000
+    print(f"paragraphs={len(texts)} hits_default_miss_ms={miss_ms:.1f}")
+    print(f"ladder_miss_ms={ladder_ms:.1f} hits_que_ms={many_ms:.1f} que_hits={len(many)}")
+    assert miss_ms < 100
+    assert ladder_ms < 300
+    assert many_ms < 300
