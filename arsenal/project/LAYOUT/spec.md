@@ -3,10 +3,11 @@
 **Date**: 2026-10-14
 **Ticket / PR**: — (workspace `LAYOUT`)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: draft
+**Revision**: 2
+**Status**: approved (2026-10-14, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft, from sub-project S-9 of `status/ideas.md` and the owner's notes on the STORIES spec
+- r2 — the owner approved Option B and answered Q1–Q5 in chat (no notes export): Q1–Q4 as recommended, Q5 front matter stays in consumers (D-L1..D-L5)
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -135,15 +136,15 @@ Example plan:
 1. Finish STORIES T3 and T8 (story index, `sections.list`); this spec builds on them.
 2. After approval, `design` writes the plan, starting with the page-label checker: a LibreOffice PDF export plus page text, so every later task has its gate.
 
-**Open questions**:
-- [ ] Q1. Tracking: Word cannot reject every section-property change cleanly. Should a layout change that Word cannot track (for example, creating a new header part) go in untracked but logged, with undo, or be refused unless `untracked: true` is passed? Recommendation: refuse unless `untracked: true`, and always log it for undo.
-- [ ] Q2. Field refresh: when LibreOffice is not installed, set `updateFields` so Word refreshes the TOC on open (Word then shows a prompt), or leave the results stale and report it? Recommendation: report stale fields, and set `updateFields` only on request.
-- [ ] Q3. Citations: only keep them intact and list them (proposed), or also insert citation fields from a reference list (Word's own sources part)?
-- [ ] Q4. Should the plan's header text support placeholders such as `{chapter}` (the current Heading 1, through `STYLEREF`), `{PAGE}` and `{NUMPAGES}`? Recommendation: yes, those three only.
-- [ ] Q5. Front matter (title page, epigraph, dedication): stay in consumers such as literary-critic, with doc-control providing only sections and numbering (proposed, per D-19)? Or ship a small `frontmatter` recipe in doc-control?
+**Open questions**: none. The owner answered Q1–Q5 in r2; see D-L1..D-L5.
 
 **Decisions log** (from `status/ideas.md`):
 
 | ID | Decision | Status | Date |
 |----|----------|--------|------|
 | D-2 | STORIES reads section page setup; changing it is this sub-project (S-9) | agreed | 2026-10-14 |
+| D-L1 | Option B: a declarative page plan (`layout.get`/`layout.apply`) plus field primitives | agreed | 2026-10-14 |
+| D-L2 | A layout change Word cannot track is refused unless `untracked: true`, and is always logged for undo | agreed | 2026-10-14 |
+| D-L3 | Without LibreOffice, stale fields are reported; `updateFields` is set only on request | agreed | 2026-10-14 |
+| D-L4 | Citations are listed and kept intact on edit, not generated | agreed | 2026-10-14 |
+| D-L5 | Header text placeholders: `{chapter}` (STYLEREF), `{PAGE}`, `{NUMPAGES}` only. Front matter (title page, epigraph, dedication) is built by consumers such as literary-critic; doc-control provides the sections, numbering and headers it needs | agreed | 2026-10-14 |

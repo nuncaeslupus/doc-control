@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="4ad41ef03ad5f11a62a9ddb4b91a469198e0baabe686a44a137168c50910055a">
+<meta name="arsenal-source-sha256" content="fc61aa0033a8955c5b901b023c0c542a819b485e88c08cc04cf1e349e902f763">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -200,10 +200,11 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-14
 <strong>Ticket / PR</strong>: — (workspace <code>LAYOUT</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
-<strong>Revision</strong>: 1
-<strong>Status</strong>: draft
+<strong>Revision</strong>: 2
+<strong>Status</strong>: approved (2026-10-14, revision 2) — without annotations
 <strong>Revision log</strong>:
-- r1 — first draft, from sub-project S-9 of <code>status/ideas.md</code> and the owner's notes on the STORIES spec</p>
+- r1 — first draft, from sub-project S-9 of <code>status/ideas.md</code> and the owner's notes on the STORIES spec
+- r2 — the owner approved Option B and answered Q1–Q5 in chat (no notes export): Q1–Q4 as recommended, Q5 front matter stays in consumers (D-L1..D-L5)</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -439,12 +440,7 @@ that revision, add <code>— without annotations</code>.</p>
 <p><strong>Immediate next action</strong>:
 1. Finish STORIES T3 and T8 (story index, <code>sections.list</code>); this spec builds on them.
 2. After approval, <code>design</code> writes the plan, starting with the page-label checker: a LibreOffice PDF export plus page text, so every later task has its gate.</p>
-<p><strong>Open questions</strong>:
-- [ ] Q1. Tracking: Word cannot reject every section-property change cleanly. Should a layout change that Word cannot track (for example, creating a new header part) go in untracked but logged, with undo, or be refused unless <code>untracked: true</code> is passed? Recommendation: refuse unless <code>untracked: true</code>, and always log it for undo.
-- [ ] Q2. Field refresh: when LibreOffice is not installed, set <code>updateFields</code> so Word refreshes the TOC on open (Word then shows a prompt), or leave the results stale and report it? Recommendation: report stale fields, and set <code>updateFields</code> only on request.
-- [ ] Q3. Citations: only keep them intact and list them (proposed), or also insert citation fields from a reference list (Word's own sources part)?
-- [ ] Q4. Should the plan's header text support placeholders such as <code>{chapter}</code> (the current Heading 1, through <code>STYLEREF</code>), <code>{PAGE}</code> and <code>{NUMPAGES}</code>? Recommendation: yes, those three only.
-- [ ] Q5. Front matter (title page, epigraph, dedication): stay in consumers such as literary-critic, with doc-control providing only sections and numbering (proposed, per D-19)? Or ship a small <code>frontmatter</code> recipe in doc-control?</p>
+<p><strong>Open questions</strong>: none. The owner answered Q1–Q5 in r2; see D-L1..D-L5.</p>
 <p><strong>Decisions log</strong> (from <code>status/ideas.md</code>):</p>
 <table>
 <thead>
@@ -459,6 +455,36 @@ that revision, add <code>— without annotations</code>.</p>
 <tr>
 <td>D-2</td>
 <td>STORIES reads section page setup; changing it is this sub-project (S-9)</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-L1</td>
+<td>Option B: a declarative page plan (<code>layout.get</code>/<code>layout.apply</code>) plus field primitives</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-L2</td>
+<td>A layout change Word cannot track is refused unless <code>untracked: true</code>, and is always logged for undo</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-L3</td>
+<td>Without LibreOffice, stale fields are reported; <code>updateFields</code> is set only on request</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-L4</td>
+<td>Citations are listed and kept intact on edit, not generated</td>
+<td>agreed</td>
+<td>2026-10-14</td>
+</tr>
+<tr>
+<td>D-L5</td>
+<td>Header text placeholders: <code>{chapter}</code> (STYLEREF), <code>{PAGE}</code>, <code>{NUMPAGES}</code> only. Front matter (title page, epigraph, dedication) is built by consumers such as literary-critic; doc-control provides the sections, numbering and headers it needs</td>
 <td>agreed</td>
 <td>2026-10-14</td>
 </tr>
@@ -545,7 +571,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v1-'+today()+'-notes.md';}
+  function exportName(){return 'doc-control-spec-v2-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
