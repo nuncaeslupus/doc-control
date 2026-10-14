@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.ooxml.splice import scan
+from doc_control.ooxml.splice import BODY, Container, DocumentSpans, scan
 from doc_control.ooxml.zipio import (
     Package,
     build_package,
@@ -59,6 +59,19 @@ _T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
+class StoryFootprint:
+    """The paragraphs a write may touch in one story outside the body: a note or a
+    header/footer, found in ``part`` by ``container`` (see :func:`scan`). Indices count
+    the story's own paragraphs; several stories may share one part."""
+
+    part: str
+    container: Container
+    replaced: frozenset[int] = frozenset()
+    inserted_after: frozenset[int] = frozenset()
+    inserted_before: frozenset[int] = frozenset()
+
+
+@dataclass(frozen=True)
 class Footprint:
     """What a write is allowed to change.
 
@@ -74,6 +87,13 @@ class Footprint:
     inserted_after: frozenset[int] = frozenset()
     parts: frozenset[str] = frozenset()
     inserted_before: frozenset[int] = frozenset()
+    #: Paragraph-level allowances in other parts; every byte of those parts outside them
+    #: must stay, as for the body.
+    stories: tuple[StoryFootprint, ...] = ()
+
+    @property
+    def story_parts(self) -> frozenset[str]:
+        return frozenset(s.part for s in self.stories)
 
 
 @dataclass(frozen=True)
@@ -100,13 +120,27 @@ def verify_footprint(original: Package, result: Package, footprint: Footprint) -
         problems.append(f"members added outside the footprint: {', '.join(added)}")
     if result.comment != original.comment:
         problems.append("zip comment changed")
+    story_parts = footprint.story_parts
+    if DOCUMENT_PART in story_parts or story_parts & footprint.parts:
+        problems.append("a story footprint overlaps the body or a whole-part allowance")
+        return problems
     for name in before:
-        if name == DOCUMENT_PART or name not in result:
+        if name == DOCUMENT_PART or name in story_parts or name not in result:
             continue
         if name not in footprint.parts and result.fingerprint(name) != original.fingerprint(name):
             problems.append(f"member changed outside the footprint: {name}")
     if DOCUMENT_PART in result:
         problems.extend(_document_problems(original, result, footprint))
+    for part in sorted(story_parts):
+        regions = [
+            (s.container, s.replaced, s.inserted_after, s.inserted_before)
+            for s in footprint.stories
+            if s.part == part
+        ]
+        if part not in original or part not in result:
+            problems.append(f"{part}: a story footprint names a part that is not there")
+            continue
+        problems.extend(_part_problems(original.read(part), result.read(part), part, regions))
     for name in after:
         if (
             name != DOCUMENT_PART
@@ -125,29 +159,33 @@ def _changed(original: Package, result: Package, name: str) -> bool:
 
 
 def _document_problems(original: Package, result: Package, footprint: Footprint) -> list[str]:
-    old, new = original.read(DOCUMENT_PART), result.read(DOCUMENT_PART)
+    region = (BODY, footprint.replaced, footprint.inserted_after, footprint.inserted_before)
+    return _part_problems(
+        original.read(DOCUMENT_PART), result.read(DOCUMENT_PART), DOCUMENT_PART, [region]
+    )
+
+
+_Region = tuple[Container, frozenset[int], frozenset[int], frozenset[int]]
+
+
+def _part_problems(old: bytes, new: bytes, part: str, regions: list[_Region]) -> list[str]:
+    """Every byte of ``part`` outside the declared paragraphs of its ``regions`` (one per
+    story it holds) must reappear, in order."""
     try:
-        spans = scan(old)
-        scan(new)
+        for container, *_ in regions:
+            scan(new, container, part)
         ET.fromstring(new)
     except (DocControlError, ET.ParseError) as exc:
-        return [f"{DOCUMENT_PART} does not parse: {exc}"]
+        return [f"{part} does not parse: {exc}"]
     cuts: list[tuple[int, int]] = []
-    for i in footprint.replaced:
-        if not 0 <= i < len(spans.paragraphs):
-            return [f"footprint names paragraph {i}, but the document has {len(spans.paragraphs)}"]
-        cuts.append((spans.paragraphs[i].start, spans.paragraphs[i].end))
-    for i in footprint.inserted_after:
-        if i == -1 and spans.body_content is not None:
-            cuts.append((spans.body_content, spans.body_content))
-        elif 0 <= i < len(spans.paragraphs):
-            cuts.append((spans.paragraphs[i].end, spans.paragraphs[i].end))
-        else:
-            return [f"footprint inserts after paragraph {i}, which does not exist"]
-    for i in footprint.inserted_before:
-        if not 0 <= i < len(spans.paragraphs):
-            return [f"footprint inserts before paragraph {i}, which does not exist"]
-        cuts.append((spans.paragraphs[i].start, spans.paragraphs[i].start))
+    for container, replaced, inserted_after, inserted_before in regions:
+        try:
+            spans = scan(old, container, part)
+        except DocControlError as exc:
+            return [f"{part} does not parse: {exc}"]
+        problem = _region_cuts(spans, replaced, inserted_after, inserted_before, cuts)
+        if problem is not None:
+            return [problem]
     # Everything between the touched spans must reappear, in order, in the result.
     gaps: list[bytes] = []
     pos = 0
@@ -160,7 +198,32 @@ def _document_problems(original: Package, result: Package, footprint: Footprint)
     gaps.append(old[pos:])
     if _gaps_match(gaps, new):
         return []
-    return [f"{DOCUMENT_PART} changed outside the declared paragraphs"]
+    return [f"{part} changed outside the declared paragraphs"]
+
+
+def _region_cuts(
+    spans: DocumentSpans,
+    replaced: frozenset[int],
+    inserted_after: frozenset[int],
+    inserted_before: frozenset[int],
+    cuts: list[tuple[int, int]],
+) -> str | None:
+    for i in replaced:
+        if not 0 <= i < len(spans.paragraphs):
+            return f"footprint names paragraph {i}, but the document has {len(spans.paragraphs)}"
+        cuts.append((spans.paragraphs[i].start, spans.paragraphs[i].end))
+    for i in inserted_after:
+        if i == -1 and spans.body_content is not None:
+            cuts.append((spans.body_content, spans.body_content))
+        elif 0 <= i < len(spans.paragraphs):
+            cuts.append((spans.paragraphs[i].end, spans.paragraphs[i].end))
+        else:
+            return f"footprint inserts after paragraph {i}, which does not exist"
+    for i in inserted_before:
+        if not 0 <= i < len(spans.paragraphs):
+            return f"footprint inserts before paragraph {i}, which does not exist"
+        cuts.append((spans.paragraphs[i].start, spans.paragraphs[i].start))
+    return None
 
 
 def _gaps_match(gaps: list[bytes], new: bytes) -> bool:

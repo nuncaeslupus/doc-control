@@ -137,6 +137,7 @@ A **story** is one text flow with its own paragraph numbering: the body, one foo
 | T2 | `body_address_drift == 0` | 0 | `uv run pytest -q tests/model/test_address.py -k test_story_prefix_round_trips_and_body_unchanged` | (this PR) | cloud container, Python 3.13 | 2026-10-14 |
 | T3 | `story_index_failures == 0` | 0 | `uv run pytest -q tests/model/test_stories.py -k test_story_index_numbers_each_note_and_header` | (this PR) | cloud container, Python 3.13 | 2026-10-14 |
 | T4 | `story_read_mismatches == 0` | 0 | `uv run pytest -q tests/ops/test_story_reads.py -k test_story_reads_match_libreoffice` (`paragraphs.list`, `find`, `para.get`, `outline`, `stats` take `stories`; `locate` takes a story address and gives a note's mark location; body table rows carry `cell`) | (this PR) | cloud container, LibreOffice headless | 2026-10-14 |
+| T5 | `unintended_changes == 0` | 0 | `uv run pytest -q tests/safety/test_verify_parts.py -k test_story_part_footprint_rejects_outside_change` | (this PR) | cloud container, Python 3.13 | 2026-10-14 |
 
 ---
 
