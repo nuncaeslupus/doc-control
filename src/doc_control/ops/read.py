@@ -31,6 +31,7 @@ from doc_control.model.document import Document
 from doc_control.model.format import para_format, run_format
 from doc_control.model.index import Paragraph
 from doc_control.model.parts import OFFICE_REL, W, parse_part, related_part
+from doc_control.model.stories import list_stories
 from doc_control.model.storyorder import STORIES_PROPERTY, fields_for, kinds_of, rows
 from doc_control.model.styles import Style
 from doc_control.ops.paging import (
@@ -501,6 +502,8 @@ def comments_list(request: dict[str, Any]) -> Reply:
             row["reply_to"] = c.reply_to
         if c.at is not None:
             row["at"] = c.at
+        if c.story is not None:
+            row["story"] = c.story
         rows.append(row)
     return paged("comments.list", doc, request, "comments", rows)
 
@@ -512,12 +515,23 @@ def comments_list(request: dict[str, Any]) -> Reply:
     _list_schema(
         author={"type": "string", "minLength": 1, "description": "Only this author."},
         type={"type": "string", "enum": list(REVISION_TYPES), "description": "Only this type."},
+        stories={
+            **STORIES_PROPERTY,
+            "description": 'Stories to list (default ["body"]): "notes" adds footnotes and '
+            'endnotes, "headers" headers and footers, after the body\'s revisions; their '
+            "addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…).",
+        },
     ),
 )
 def revisions_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
+    kinds = kinds_of(request)
+    found = [(r, "") for r in read_revisions(doc)] if "body" in kinds else []
+    others = tuple(k for k in kinds if k != "body")
+    for story in list_stories(doc.pkg, others) if others else []:
+        found += [(r, story.kind) for r in read_revisions(doc.story_view(story.key))]
     rows: list[dict[str, Any]] = []
-    for r in read_revisions(doc):
+    for r, story_kind in found:
         if "author" in request and r.author != request["author"]:
             continue
         if "type" in request and r.type != request["type"]:
@@ -534,6 +548,8 @@ def revisions_list(request: dict[str, Any]) -> Reply:
             row["text"] = text
         if clipped:
             row["truncated"] = True
+        if story_kind:
+            row["story"] = story_kind
         rows.append(row)
     return paged("revisions.list", doc, request, "revisions", rows)
 

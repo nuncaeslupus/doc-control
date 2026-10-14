@@ -12,6 +12,11 @@ resolved (``resolved: false`` reopens it). All of them keep ``comments.xml``,
 ``people.xml`` consistent, creating the parts (with their content types and
 relationships) when the document has none; see :mod:`doc_control.ooxml.commentparts`.
 
+``at`` may be in a footnote (``fn3/p1#…``): the anchor goes into the notes part, which also
+gets a relationship to the comments part (LibreOffice looks for one there). Headers and
+footers take no comments, as in Word, and endnotes none either, as LibreOffice then loses
+the next endnote's text (``UNSUPPORTED_CONTENT``).
+
 A comment is placed on a paragraph that no other operation of the same batch edits,
 deletes or moves (``BATCH_CONFLICT``); apply such pairs as two batches. Comment ids
 are above every ``w:id`` of the document, and above the ids the batch's revisions get.
@@ -20,6 +25,7 @@ are above every ``w:id`` of the document, and above the ids the batch's revision
 from __future__ import annotations
 
 import bisect
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -31,8 +37,10 @@ from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.index import DocumentIndex, Paragraph
+from doc_control.model.parts import OFFICE_REL
+from doc_control.model.stories import find_story, list_stories, story_index
 from doc_control.model.styles import load_styles
-from doc_control.ooxml.commentparts import CommentParts
+from doc_control.ooxml.commentparts import COMMENTS, CommentParts
 from doc_control.ooxml.revisions import (
     DEFAULT_AUTHOR,
     ParagraphEditor,
@@ -51,6 +59,7 @@ from doc_control.ops.tracked import (
     check_text,
     edits_as_request,
     prepare_edits,
+    story_of,
 )
 from doc_control.safety.history import record
 from doc_control.safety.lock import check_changed, check_unlocked
@@ -166,7 +175,10 @@ _ID_ATTR = re.compile(rb"""[\s:]id\s*=\s*["']([^"']*)["']""")
 
 
 def _locate_markers(index: DocumentIndex, cid: str) -> dict[str, Paragraph]:
-    """Paragraph holding each of ``commentRangeStart`` / ``commentReference`` of ``cid``."""
+    """Paragraph holding each of ``commentRangeStart`` / ``commentReference`` of ``cid``.
+
+    In a note the part holds other notes too: a marker outside the note's paragraphs is
+    another note's, not an error."""
     data = index.spans.data
     spans = index.spans.paragraphs
     starts = [spans[p.span_index].start for p in index.paragraphs]
@@ -177,6 +189,8 @@ def _locate_markers(index: DocumentIndex, cid: str) -> dict[str, Paragraph]:
             continue
         i = bisect.bisect_right(starts, m.start()) - 1
         if i < 0 or m.start() >= spans[index.paragraphs[i].span_index].end:
+            if index.story:
+                continue
             raise DocControlError(
                 ErrorCode.UNSUPPORTED_CONTENT,
                 f"comment {cid} is anchored outside a paragraph of the main story",
@@ -206,17 +220,20 @@ def _insert_after_marker(
     )
 
 
+_Where = tuple[str, int]  # (story key, paragraph number)
+
+
 @dataclass
 class _Plan:
-    """Marker placements per paragraph number."""
+    """Marker placements per paragraph of a story."""
 
-    at_offset: defaultdict[int, list[tuple[int, list[ET.Element]]]]
-    after_marker: defaultdict[int, list[tuple[str, str, list[ET.Element]]]]
+    at_offset: defaultdict[_Where, list[tuple[int, list[ET.Element]]]]
+    after_marker: defaultdict[_Where, list[tuple[str, str, list[ET.Element]]]]
 
-    def annotators(self) -> dict[int, Annotator]:
+    def annotators(self) -> dict[_Where, Annotator]:
         return {n: self._make(n) for n in sorted(set(self.at_offset) | set(self.after_marker))}
 
-    def _make(self, number: int) -> Annotator:
+    def _make(self, number: _Where) -> Annotator:
         offsets = self.at_offset.get(number, [])
         relative = self.after_marker.get(number, [])
 
@@ -228,6 +245,34 @@ class _Plan:
                 _insert_after_marker(elem, tag, cid, nodes, para)
 
         return annotate
+
+
+def _note_rels(pkg: Package, part: str, comments: str) -> tuple[str, bytes] | None:
+    """A relationship from note part ``part`` to the comments part, unless it has one.
+
+    LibreOffice looks comments up from the part that holds the anchor and refuses to open a
+    document whose note anchors a comment it cannot find there; Word reads the main
+    document's relationship. ponytail: the extra relationship is not checked in Word yet.
+    """
+    folder, base = posixpath.split(part)
+    name = f"{folder}/_rels/{base}.rels"
+    target = posixpath.relpath(comments, folder)
+    kind = OFFICE_REL + "comments"
+    if name in pkg:
+        text = pkg.read(name).decode("utf-8")
+        if re.search(rf"""Type\s*=\s*["']{re.escape(kind)}["']""", text):
+            return None
+        used = {int(n) for n in re.findall(r"""\bId\s*=\s*["']rId(\d+)["']""", text)}
+        rel = f'<Relationship Id="rId{max(used, default=0) + 1}" Type="{kind}" Target="{target}"/>'
+        close = text.rfind("</Relationships>")
+        if close < 0:
+            raise DocControlError(ErrorCode.NOT_A_DOCX, f"{name} has no closing tag", part=name)
+        return name, (text[:close] + rel + text[close:]).encode("utf-8")
+    return name, (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        f'<Relationship Id="rId1" Type="{kind}" Target="{target}"/></Relationships>'
+    ).encode()
 
 
 def _require_comment(parts: CommentParts, cid: str) -> None:
@@ -275,11 +320,47 @@ def apply_batch(
     previews: list[dict[str, Any]] = []
     touched: list[str] = []
     ref_styled = "CommentReference" in styles
+    indexes: dict[str, DocumentIndex] = {"": index}
+
+    def index_of(key: str) -> DocumentIndex:
+        """The index of story ``key``; headers and footers take no comments (Word's rule)."""
+        if key not in indexes:
+            story = find_story(pkg, key)
+            if story.kind in ("header", "footer"):
+                raise DocControlError(
+                    ErrorCode.UNSUPPORTED_CONTENT,
+                    f"Word does not allow comments in a {story.kind}: comment the body instead",
+                    story=key,
+                )
+            if story.kind == "endnote":
+                # ponytail: LibreOffice 24.2 empties the next endnote when one holds a comment.
+                raise DocControlError(
+                    ErrorCode.UNSUPPORTED_CONTENT,
+                    "comments in endnotes are not supported (LibreOffice drops the next "
+                    "endnote's text): comment the body or a footnote instead",
+                    story=key,
+                )
+            indexes[key] = story_index(pkg, story)
+        return indexes[key]
+
+    def _find_anchor(cid: str) -> tuple[str, dict[str, Paragraph]]:
+        """The story holding comment ``cid``'s anchor, and its marker paragraphs."""
+        places = _locate_markers(index, cid)
+        if "commentReference" in places:
+            return "", places
+        for story in list_stories(pkg, ("notes",)):
+            story_idx = indexes.get(story.key) or story_index(pkg, story)
+            found = _locate_markers(story_idx, cid)
+            if "commentReference" in found:
+                return story.key, found
+        return "", places
 
     for i, edit in enumerate(edits):
         if isinstance(edit, AddComment):
             _check_comment_text(edit.text)
-            rng = index.resolve_range(edit.at)
+            key = story_of(edit.at)
+            story_idx = index_of(key)
+            rng = story_idx.resolve_range(edit.at)
             assert rng.start_offset is not None and rng.end_offset is not None
             first, last, s, e = rng.first, rng.last, rng.start_offset, rng.end_offset
             if not boundary_ok(first.text, s) or not boundary_ok(last.text, e):
@@ -301,10 +382,10 @@ def apply_batch(
             start, end = _marker("commentRangeStart", cid), _marker("commentRangeEnd", cid)
             ref = _reference(cid, ref_styled)
             if first is last and s == e:  # an empty paragraph: a collapsed anchor
-                plan.at_offset[first.number].append((0, [start, end, ref]))
+                plan.at_offset[key, first.number].append((0, [start, end, ref]))
             else:
-                plan.at_offset[last.number].append((e, [end, ref]))
-                plan.at_offset[first.number].append((s, [start]))
+                plan.at_offset[key, last.number].append((e, [end, ref]))
+                plan.at_offset[key, first.number].append((s, [start]))
             quoted = first.text[s:e] if first is last else first.text[s:] + "…"
             previews.append(
                 {
@@ -319,19 +400,19 @@ def apply_batch(
             _check_comment_text(edit.text)
             _require_comment(parts, edit.comment)
             root = parts.root_of(edit.comment)
-            places = _locate_markers(index, root)
+            key, places = _find_anchor(root)
             ref_para = places.get("commentReference")
             if ref_para is None:
                 raise DocControlError(
                     ErrorCode.UNSUPPORTED_CONTENT,
-                    f"comment {root} has no anchor in the main story to reply on",
+                    f"comment {root} has no anchor in the document to reply on",
                     comment=root,
                 )
             cid = str(next_id)
             reserved.append(next_id)
             next_id += 1
             parts.add(cid, edit.text, full_author, date, parent=root)
-            plan.after_marker[ref_para.number].append(
+            plan.after_marker[key, ref_para.number].append(
                 (
                     "commentReference",
                     root,
@@ -341,11 +422,11 @@ def apply_batch(
             start_para = places.get("commentRangeStart")
             if start_para is None:
                 start_para = ref_para
-                plan.after_marker[ref_para.number].append(
+                plan.after_marker[key, ref_para.number].append(
                     ("commentReference", root, [_marker("commentRangeStart", cid)])
                 )
             else:
-                plan.after_marker[start_para.number].append(
+                plan.after_marker[key, start_para.number].append(
                     ("commentRangeStart", root, [_marker("commentRangeStart", cid)])
                 )
             previews.append(
@@ -385,16 +466,22 @@ def apply_batch(
         reserved_ids=reserved,
     )
     part_bytes = parts.build()
+    comments_name = parts.names[COMMENTS] or COMMENTS
+    for key in sorted({key for key, _ in plan.annotators() if key}):
+        extra = _note_rels(pkg, find_story(pkg, key).part, comments_name)
+        if extra is not None:
+            part_bytes[extra[0]] = extra[1]
     replacements = dict(part_bytes)
-    if prepared.new_data != pkg.read(DOCUMENT_PART):
-        replacements[DOCUMENT_PART] = prepared.new_data
+    for name, data in prepared.written.items():
+        if name != DOCUMENT_PART or data != pkg.read(DOCUMENT_PART):
+            replacements[name] = data
     footprint = replace(prepared.footprint, parts=frozenset(part_bytes))
     ids = sorted(set(touched), key=int)
     result = replace(
         prepared.result,
         applied=len(edits),
         preview=sorted(prepared.result.preview + previews, key=lambda p: p["op"]),
-        parts={name: [f"c{c}" for c in ids] for name in part_bytes},
+        parts={**prepared.result.parts, **{name: [f"c{c}" for c in ids] for name in part_bytes}},
         comment_ids=ids,
     )
     if dry_run:

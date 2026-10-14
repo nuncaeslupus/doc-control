@@ -84,8 +84,9 @@ from pathlib import Path
 from typing import Any
 
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.model.address import parse_address
+from doc_control.model.address import parse_address, parse_range
 from doc_control.model.index import DocumentIndex, Paragraph, build_index
+from doc_control.model.stories import BODY_STORY, Story, find_story, story_index
 from doc_control.model.styles import StyleTable, load_styles
 from doc_control.ooxml.formatting import ALIGNMENTS, PARAGRAPH_KEYS, RUN_KEYS
 from doc_control.ooxml.revisions import (
@@ -102,11 +103,11 @@ from doc_control.ooxml.revisions import (
     reject_revisions,
     used_ids,
 )
-from doc_control.ooxml.splice import W_NS, DocumentSpans
+from doc_control.ooxml.splice import W_NS, Container, DocumentSpans, scan
 from doc_control.ooxml.zipio import Package
 from doc_control.safety.history import has_live_text, record, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
-from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
+from doc_control.safety.verify import DOCUMENT_PART, Footprint, StoryFootprint, write_verified
 from doc_control.schema import validate
 
 __all__ = [
@@ -951,12 +952,62 @@ class PreparedEdits:
     result: TrackedResult
     changes: list[dict[str, Any]] = field(default_factory=list)
     """The undo-log record of the edit: each touched paragraph's bytes before and after."""
+    written: dict[str, bytes] = field(default_factory=dict)
+    """Every part the edits change (the body, notes, headers, footers), with its new bytes."""
 
 
 def next_in_container(index: DocumentIndex, para: Paragraph) -> Paragraph | None:
     """The paragraph right after ``para`` in the same container, or None if ``para`` is the
     last of its cell, section or the body (Word cannot delete such a mark)."""
     return _Layout(index).next_adjacent(para)
+
+
+def story_of(at: str | None) -> str:
+    """The story prefix of an address or range (``""``: the body, or an address that does
+    not parse, whose error the planner raises as before)."""
+    if at is None:
+        return ""
+    try:
+        return parse_range(at).start.story
+    except DocControlError:
+        pass
+    try:
+        return parse_address(at.partition("..")[0]).story
+    except DocControlError:
+        return ""
+
+
+def _edit_story(edit: Any) -> str | None:
+    """The story an edit works in; None for an edit the planner does not handle."""
+    if isinstance(edit, MoveParagraphs):
+        if any(story_of(a) for a in (edit.at, edit.after, edit.before)):
+            raise DocControlError(
+                ErrorCode.UNSUPPORTED_CONTENT,
+                "para.move works in the body only, not in notes, headers or footers",
+                address=edit.at,
+            )
+        return ""
+    if isinstance(edit, InsertParagraph):
+        return story_of(edit.after if edit.after is not None else edit.before)
+    if isinstance(edit, ReplaceText | DeleteParagraphs | ApplyStyle | ApplyFormat):
+        return story_of(edit.at)
+    return None
+
+
+@dataclass
+class _StoryOutcome:
+    """One story's share of :func:`prepare_edits`, spliced into its part as read."""
+
+    story: Story
+    new_data: bytes
+    replacements: dict[int, bytes]
+    after: dict[int, list[bytes]]
+    before: dict[int, list[bytes]]
+    previews: list[dict[str, Any]]
+    address_map: dict[str, str]
+    footprint: list[str]
+    changes: list[dict[str, Any]]
+    scopes: dict[int, BookmarkScope]
 
 
 def prepare_edits(
@@ -969,34 +1020,144 @@ def prepare_edits(
     dry_run: bool = False,
     layered: bool = False,
     index: DocumentIndex | None = None,
-    annotations: Mapping[int, Annotator] | None = None,
+    annotations: Mapping[int, Annotator] | Mapping[tuple[str, int], Annotator] | None = None,
     reserved_ids: Collection[int] = (),
 ) -> PreparedEdits:
     """Plan and build ``edits`` on ``pkg`` without writing: the part of :func:`apply_edits`
     that works on bytes, self-checked (see there).
+
+    Edits may sit in any story (``fn3/p1#…``, ``hdr1.default/p1#…``): each story is planned
+    and checked on its own, with one revision id counter for all, and every part they touch
+    is in :attr:`PreparedEdits.written`. ``para.move`` is body only (``UNSUPPORTED_CONTENT``).
 
     With ``layered`` several paragraphs may be inserted at the same place (they
     keep the order of the edits), a paragraph may be edited and also be the anchor of an
     insertion after the end of its container, and the first paragraph of a range across
     paragraphs may carry other (non-overlapping) edits; used by ``compare``.
 
-    ``annotations`` maps paragraph numbers to functions that rewrite that paragraph's
-    element without changing its text (comment anchors); such a paragraph must not
-    also be edited (``BATCH_CONFLICT``). ``reserved_ids`` are ``w:id`` values already
-    taken for other markup, which no revision gets. ``edits`` may be empty when
-    annotations are given.
+    ``annotations`` maps paragraphs (a body paragraph number, or ``(story, number)``) to
+    functions that rewrite that paragraph's element without changing its text (comment
+    anchors); such a paragraph must not also be edited (``BATCH_CONFLICT``).
+    ``reserved_ids`` are ``w:id`` values already taken for other markup, which no revision
+    gets. ``edits`` may be empty when annotations are given. ``index`` is the body's.
     """
-    annotations = annotations or {}
-    if not edits and not annotations:
+    by_story: dict[str, dict[int, Annotator]] = {}
+    for where, annotate in (annotations or {}).items():
+        story_key, number = where if isinstance(where, tuple) else ("", where)
+        by_story.setdefault(story_key, {})[number] = annotate
+    if not edits and not by_story:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, "no edits given")
     check_name(author, "author")
     if tag is not None:
         check_name(tag, "tag")
-    if index is None:
-        index = DocumentIndex.from_package(pkg)
 
-    planner = _Planner(index, layered=layered, pkg=pkg)
+    groups: dict[str, list[tuple[int, Any]]] = {}
     for i, edit in enumerate(edits):
+        key = _edit_story(edit)
+        if key is not None:
+            groups.setdefault(key, []).append((i, edit))
+    for key in by_story:
+        groups.setdefault(key, [])
+    if not groups:
+        groups[""] = []  # nothing to plan (comment replies, resolutions): the body as read
+    order = sorted(groups, key=lambda k: (k != "", groups[k][0][0] if groups[k] else len(edits)))
+
+    ctx = RevisionContext(
+        used_ids(pkg) | set(reserved_ids), format_author(author, tag), format_date(now)
+    )
+    outcomes: list[_StoryOutcome] = []
+    places: dict[tuple[str, Container], str] = {}
+    for key in order:
+        if key:
+            story = find_story(pkg, key)
+            other = places.setdefault((story.part, story.container), key)
+            if other != key:
+                raise DocControlError(
+                    ErrorCode.UNSUPPORTED_CONTENT,
+                    f"{other} and {key} are the same {story.kind}: address it one way",
+                    story=key,
+                )
+            story_idx = story_index(pkg, story)
+        else:
+            story = BODY_STORY
+            story_idx = index if index is not None else DocumentIndex.from_package(pkg)
+        outcomes.append(
+            _prepare_story(
+                pkg, story, story_idx, groups[key], ctx, by_story.get(key, {}), layered=layered
+            )
+        )
+    if not ctx.revision_ids and all(isinstance(e, ApplyStyle | ApplyFormat) for e in edits):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            "the operations change nothing: the properties are already set",
+        )
+
+    new_data = pkg.read(DOCUMENT_PART) if outcomes[0].story.key else outcomes[0].new_data
+    written: dict[str, bytes] = {}
+    body = next((o for o in outcomes if not o.story.key), None)
+    story_footprints: list[StoryFootprint] = []
+    parts: dict[str, list[str]] = {}
+    for out in outcomes:
+        story = out.story
+        if not story.key:
+            written[DOCUMENT_PART] = out.new_data
+            continue
+        part = story.part
+        # Stories sharing a part (two footnotes) are spliced one after the other.
+        written[part] = (
+            scan(written[part], story.container, part).splice(
+                out.replacements, insert_after=out.after, insert_before=out.before
+            )
+            if part in written
+            else out.new_data
+        )
+        story_footprints.append(
+            StoryFootprint(
+                part,
+                story.container,
+                replaced=frozenset(out.replacements),
+                inserted_after=frozenset(out.after),
+                inserted_before=frozenset(out.before),
+            )
+        )
+        parts.setdefault(part, []).extend(out.footprint)
+    footprint = Footprint(
+        replaced=frozenset(body.replacements) if body else frozenset(),
+        inserted_after=frozenset(body.after) if body else frozenset(),
+        inserted_before=frozenset(body.before) if body else frozenset(),
+        stories=tuple(story_footprints),
+    )
+    scopes = {e: s for out in outcomes for e, s in out.scopes.items()}
+    result = TrackedResult(
+        applied=len(edits),
+        dry_run=dry_run,
+        preview=sorted((p for out in outcomes for p in out.previews), key=lambda p: p["op"]),
+        address_map={k: v for out in outcomes for k, v in out.address_map.items()},
+        footprint=body.footprint if body else [],
+        revision_ids=[int(r) for r in ctx.revision_ids],
+        author=ctx.author,
+        date=ctx.date,
+        before_sha256=pkg.sha256,
+        warnings=_reference_warnings(pkg, scopes),
+        parts=parts,
+    )
+    changes = [c for out in outcomes for c in out.changes]
+    return PreparedEdits(pkg, new_data, footprint, result, changes, written)
+
+
+def _prepare_story(
+    pkg: Package,
+    story: Story,
+    index: DocumentIndex,
+    items: Sequence[tuple[int, Any]],
+    ctx: RevisionContext,
+    annotations: Mapping[int, Annotator],
+    *,
+    layered: bool,
+) -> _StoryOutcome:
+    """Plan, build and self-check the edits of one story (``items``: (edit number, edit))."""
+    planner = _Planner(index, layered=layered, pkg=pkg)
+    for i, edit in items:
         if isinstance(edit, ReplaceText):
             planner.replace(i, edit)
         elif isinstance(edit, InsertParagraph):
@@ -1009,7 +1170,6 @@ def prepare_edits(
             planner.style(i, edit)
         elif isinstance(edit, ApplyFormat):
             planner.format(i, edit)
-        # anything else (a comment operation) is handled by the caller through ``annotations``
     for number in sorted(annotations):
         if number in planner.plans:
             raise DocControlError(
@@ -1019,9 +1179,6 @@ def prepare_edits(
                 paragraph=str(index.paragraph(number).address),
             )
 
-    ctx = RevisionContext(
-        used_ids(pkg) | set(reserved_ids), format_author(author, tag), format_date(now)
-    )
     spans = index.spans
     scopes = _bookmark_scopes(pkg, index, planner, ctx)
     replacements: dict[int, bytes] = {}
@@ -1073,11 +1230,6 @@ def prepare_edits(
         target.setdefault(item.slot[1], []).append(_serialize(spans, p, item.slot[1]))
 
     new_data = spans.splice(replacements, insert_after=after, insert_before=before)
-    footprint = Footprint(
-        replaced=frozenset(replacements),
-        inserted_after=frozenset(after),
-        inserted_before=frozenset(before),
-    )
 
     # The new numbering: each old paragraph, with the inserted ones around it.
     by_slot: dict[tuple[str, int], list[_NewParagraph]] = {}
@@ -1094,12 +1246,7 @@ def prepare_edits(
         for item in by_slot.get(("after", para.span_index), []):
             sequence.append((None, item))
             expected.append(item.expected)
-    if not ctx.revision_ids and all(isinstance(e, ApplyStyle | ApplyFormat) for e in edits):
-        raise DocControlError(
-            ErrorCode.SCHEMA_INVALID,
-            "the operations change nothing: the properties are already set",
-        )
-    new_index = _self_check(index, new_data, ctx, expected, sequence, planner)
+    new_index = _self_check(index, new_data, ctx, expected, sequence, planner, story)
 
     address_map: dict[str, str] = {}
     moved_to: dict[int, int] = {}  # old number of a moved paragraph -> number of its copy
@@ -1112,25 +1259,28 @@ def prepare_edits(
         number = moved_to.get(old.number, number)
         if old.number != number:
             address_map[str(old.address)] = str(new_index.paragraph(number).address)
-    result = TrackedResult(
-        applied=len(edits),
-        dry_run=dry_run,
-        preview=planner.previews,
-        address_map=address_map,
-        footprint=[
-            f"p{number}"
-            for number, (old, item) in enumerate(sequence, start=1)
-            if item is not None
-            or (old is not None and (old.number in planner.plans or old.number in annotations))
-        ],
-        revision_ids=[int(r) for r in ctx.revision_ids],
-        author=ctx.author,
-        date=ctx.date,
-        before_sha256=pkg.sha256,
-        warnings=_reference_warnings(pkg, scopes),
+    prefix = f"{story.key}/" if story.key else ""
+    footprint = [
+        f"{prefix}p{number}"
+        for number, (old, item) in enumerate(sequence, start=1)
+        if item is not None
+        or (old is not None and (old.number in planner.plans or old.number in annotations))
+    ]
+    changes = log_changes(
+        spans, index, replacements, after, before, part=story.part, story=story.key
     )
-    changes = log_changes(spans, index, replacements, after, before)
-    return PreparedEdits(pkg, new_data, footprint, result, changes)
+    return _StoryOutcome(
+        story,
+        new_data,
+        replacements,
+        after,
+        before,
+        planner.previews,
+        address_map,
+        footprint,
+        changes,
+        scopes,
+    )
 
 
 def log_changes(
@@ -1139,14 +1289,19 @@ def log_changes(
     replacements: Mapping[int, bytes],
     after: Mapping[int, Sequence[bytes]],
     before: Mapping[int, Sequence[bytes]],
+    *,
+    part: str = DOCUMENT_PART,
+    story: str = "",
 ) -> list[dict[str, Any]]:
-    """The undo-log records of an edit, in document order (see ``safety.history``)."""
+    """The undo-log records of an edit, in document order (see ``safety.history``); a
+    change outside the body names its ``part`` and ``story``."""
+    where = {"part": part, **({"story": story} if story else {})}
     texts = {para.span_index: para.text for para in index.paragraphs}
     changes: list[dict[str, Any]] = []
     for at in sorted(replacements):
         changes.append(
             {
-                "part": DOCUMENT_PART,
+                **where,
                 "kind": "replace",
                 "index": at,
                 "before": to_text(spans.paragraph_bytes(at)),
@@ -1159,7 +1314,7 @@ def log_changes(
         for at in sorted(groups):
             changes.extend(
                 {
-                    "part": DOCUMENT_PART,
+                    **where,
                     "kind": "insert",
                     "slot": slot,
                     "index": at,
@@ -1242,7 +1397,7 @@ def apply_edits(
         return result
     written = write_verified(
         doc_path,
-        {DOCUMENT_PART: prepared.new_data},
+        prepared.written,
         prepared.footprint,
         pkg.sha256,
         now=now,
@@ -1262,7 +1417,7 @@ def apply_edits(
             request=request if request is not None else edits_as_request(edits),
             author=result.author,
             tag=tag,
-            footprint={DOCUMENT_PART: result.footprint},
+            footprint={DOCUMENT_PART: result.footprint, **result.parts},
             extra=log_extra,
             now=now,
             env=env,
@@ -1395,12 +1550,13 @@ def _self_check(
     expected: list[str],
     sequence: list[tuple[Paragraph | None, _NewParagraph | None]],
     planner: _Planner,
+    story: Story = BODY_STORY,
 ) -> DocumentIndex:
     """Fail with ``INTERNAL`` unless accepting and rejecting this call's revisions behave.
 
-    Returns the index of the edited document.
+    Returns the index of the edited story.
     """
-    new = build_index(new_data)
+    new = build_index(new_data, story.container, story.part, story.key)
     got = [p.text for p in new.paragraphs]
     if got != expected:
         bad = next((n for n, (a, b) in enumerate(zip(got, expected, strict=False), 1) if a != b), 0)
@@ -1432,7 +1588,7 @@ def _self_check(
                     f"of {original.address}",
                 )
         rejected[para.span_index] = new.spans.serialize(elem, para.span_index)
-    restored = build_index(new.spans.splice(rejected))
+    restored = build_index(new.spans.splice(rejected), story.container, story.part, story.key)
     merged = _merge_marks([p.text for p in restored.paragraphs], joins)
     if merged != [p.text for p in old.paragraphs]:
         raise DocControlError(

@@ -242,10 +242,16 @@ def _check_comments(trees: dict[str, ET.Element]) -> list[str]:
         ]
     defined = _ids(comments, W + "comment", W + "id")
     problems += [f"comment id {i} defined twice" for i, n in Counter(defined).items() if n > 1]
-    doc = trees["word/document.xml"]
-    refs = _ids(doc, W + "commentReference", W + "id")
-    starts = _ids(doc, W + "commentRangeStart", W + "id")
-    ends = _ids(doc, W + "commentRangeEnd", W + "id")
+    # Anchors sit in the body or in a note, header or footer.
+    holders = [
+        tree
+        for name, tree in sorted(trees.items())
+        if name == "word/document.xml"
+        or re.fullmatch(r"word/(?:footnotes|endnotes|header\d*|footer\d*)\.xml", name)
+    ]
+    refs = [i for t in holders for i in _ids(t, W + "commentReference", W + "id")]
+    starts = [i for t in holders for i in _ids(t, W + "commentRangeStart", W + "id")]
+    ends = [i for t in holders for i in _ids(t, W + "commentRangeEnd", W + "id")]
     problems += [f"commentReference {i} has no comment" for i in sorted(set(refs) - set(defined))]
     problems += [f"comment {i} is never referenced" for i in sorted(set(defined) - set(refs))]
     if Counter(starts) != Counter(ends):
