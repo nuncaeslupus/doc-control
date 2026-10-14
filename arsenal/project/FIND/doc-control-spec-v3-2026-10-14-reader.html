@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="arsenal-source-sha256" content="345bda439f0386eb11cf9f72eae787fa5030409f7bd93f347a1e51e0c137dc42">
+<meta name="arsenal-source-sha256" content="ac51192ce751c0bb7c5e6779e7aee2aa68417c8a0cd740c344bec33c7a0c7007">
 <title>Doc Control — Specification (annotatable)</title>
 <style>
 :root{
@@ -207,11 +207,12 @@ h4 .chip{font-size:11px;color:var(--muted)}
 <div class="sec-body"><p><strong>Date</strong>: 2026-10-14
 <strong>Ticket / PR</strong>: — (workspace <code>FIND</code>)
 <strong>Author</strong>: Claude (doc-control session), for the owner
-<strong>Revision</strong>: 2
-<strong>Status</strong>: approved (2026-10-14, revision 2)
+<strong>Revision</strong>: 3
+<strong>Status</strong>: approved (2026-10-14, revision 2); r3 review clarifications pending owner ack
 <strong>Revision log</strong>:
 - r1 — first draft, from the owner's report that literary-critic's find phrase missed a dialogue paragraph opening with <code>--</code>
-- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)</p>
+- r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Q1–Q5 answered (D-F1..D-F6)
+- r3 — cold-review clarifications (D-F7): parameter renamed <code>match_level</code> so <code>anchor.resolve</code>'s <code>match</code> is untouched; <code>rename</code>/<code>history.search</code> stay exact by default and never retry; multi-hit ops return every hit; <code>^p</code> is a paragraph boundary, not <code>\r</code>; benchmark is the 100k-word novel</p>
 <blockquote>
 <p>Review record. Each round of reviewer notes makes a new revision: bump
 <strong>Revision</strong>, add a log line naming the export it applied, and commit that
@@ -278,16 +279,16 @@ that revision, add <code>— without annotations</code>.</p>
 <p><strong>Success criteria (measurable)</strong>:</p>
 <ul>
 <li>[ ] <code>loose_match_failures == 0</code> on a fixture table of variants. Each row is a document paragraph and a phrase that differs by accent, case, punctuation or dash form, whitespace, or a leading <code>-</code>, <code>--</code>, <code>—</code>, <code>¿</code> or <code>«</code>, at the start or in the middle of the paragraph. The table includes <code>Estas ahi</code> against <code>¿Estás ahí?</code>, <code>-¿Estás ahí?</code>, <code>-Estas ahí?</code> and <code>--Estas ahi</code>, and a phrase without <code>¿</code> against a paragraph that has it mid-text (D-F2).</li>
-<li>[ ] <code>symbol_fold_violations == 0</code>: at the default level a symbol (<code>$</code>, <code>+</code>, <code>*</code>) is never folded, so <code>5$</code> does not match <code>5</code>; at the <code>loose</code> level it does. Rows cover both levels (D-F1).</li>
+<li>[ ] <code>symbol_fold_violations == 0</code>: at the default level with no retry (<code>find</code> with <code>match_level: "default"</code>) a symbol (<code>$</code>, <code>+</code>, <code>*</code>) is never folded, so <code>5$</code> does not match <code>5</code>; at <code>loose</code> it does; and a phrase op that only matches after retrying to <code>loose</code> reports <code>match_level: "loose"</code>, never <code>"default"</code>. Rows cover both levels (D-F1).</li>
 <li>[ ] <code>fallback_level_misreports == 0</code>: when a phrase is not found at the default level, the op retries at looser levels on its own, and every reply names the level that matched (D-F1).</li>
-<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> equals <code>\r</code>, <code>^t</code> a tab, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
+<li>[ ] <code>word_code_failures == 0</code> on a fixture table: <code>^p</code> anchors the match to the paragraph end (or start), a mid-phrase <code>^p</code> is refused, <code>^t</code> a tab, <code>^l</code> a manual line break where the op supports it, <code>^^</code> a literal caret, and an unknown <code>^x</code> stays literal (D-F6).</li>
 <li>[ ] <code>exact_tiebreak_violations == 0</code>: when one paragraph matches the phrase exactly and others match loosely, the exact one is returned, in every fixture that mixes tiers.</li>
 <li>[ ] <code>tier_ambiguity_misses == 0</code>: two matches in the same level still raise <code>ANCHOR_AMBIGUOUS</code>; none is silently chosen.</li>
 <li>[ ] <code>span_mismatches == 0</code>: for every loose match, the returned range, cut from the original text, is the matched passage (property test on random text with accents and punctuation).</li>
 <li>[ ] <code>locate_phrase_changes == 0</code>: <code>locate</code> output on the corpus is byte-identical before and after (direction b is untouched, including no <code>^</code> codes in generated phrases).</li>
-<li>[ ] <code>loose_report_missing == 0</code>: every response where the level was not exact says so (<code>match</code> level field).</li>
-<li>[ ] <code>find_loose_overhead_ratio &lt;= 1.5</code> against the current literal <code>find</code> on the 100k-paragraph benchmark document in <code>tests/bench</code>; <code>live.select</code> stays under the current time plus 50 ms on the same document.</li>
-<li>[ ] No existing test changes behaviour: <code>match: "exact"</code> reproduces today's results, and plain <code>find</code> with no <code>match</code> argument is unchanged (<code>regression_failures == 0</code>, D-F5).</li>
+<li>[ ] <code>loose_report_missing == 0</code>: every response where the level was not exact says so (<code>match_level</code> field).</li>
+<li>[ ] <code>find_loose_overhead_ratio &lt;= 1.5</code> against the current literal <code>find</code> on the 100k-word novel benchmark in <code>tests/bench</code>; <code>live.select</code> stays under the current time plus 50 ms on the same document.</li>
+<li>[ ] No existing test changes behaviour: <code>match_level: "exact"</code> reproduces today's results, and plain <code>find</code>, <code>rename</code> and <code>history.search</code> with no <code>match_level</code> argument is unchanged (<code>regression_failures == 0</code>, D-F5).</li>
 <li>[ ] Judged, not measured: the owner re-runs the original <code>--</code> dialogue case from literary-critic and it is found.</li>
 </ul></div>
 <div class="note" data-for="s-spec-1"><label class="note-head" for="n-s-spec-1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC §1</span></label><textarea class="note-ta" data-key="s-spec-1" id="n-s-spec-1" data-label="§1 Problem statement" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
@@ -319,7 +320,7 @@ that revision, add <code>— without annotations</code>.</p>
 <td>Primary</td>
 <td>Literal and regex search</td>
 <td>Option B: Yes</td>
-<td>New <code>match</code> levels for literal queries; default stays exact</td>
+<td>New <code>match_level</code> levels for literal queries; default stays exact</td>
 <td>Med</td>
 </tr>
 <tr>
@@ -381,7 +382,7 @@ that revision, add <code>— without annotations</code>.</p>
 </tbody>
 </table>
 <p><strong>Impact</strong>:
-- <strong>API</strong>: additive. A response field names the level; a request field <code>match</code> (<code>"exact"</code>, <code>"default"</code>, <code>"loose"</code>) sets it. <code>"default"</code> is the default for the phrase ops, which retry looser levels before failing, so some calls that failed now succeed. Plain <code>find</code> stays exact. Agent phrases also accept Word's find codes (<code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code>).
+- <strong>API</strong>: additive. A response field names the level; a request field <code>match_level</code> (<code>"exact"</code>, <code>"default"</code>, <code>"loose"</code>) sets it. <code>"default"</code> is the default for the single-target phrase ops (<code>live.select</code>, <code>anchor.resolve</code>), which retry looser levels before failing, so some calls that failed now succeed. Plain <code>find</code>, <code>rename</code> and <code>history.search</code> stay exact. Agent phrases also accept Word's find codes (<code>^p</code>, <code>^t</code>, <code>^l</code>, <code>^^</code>).
 - <strong>Data</strong>: none. These are read ops or selections.
 - <strong>Performance</strong>: folding each paragraph costs linear time. Cache the folded text per document revision.
 - <strong>User</strong>: a wrong loose pick is visible and recoverable (the owner's rule). The level report lets the agent notice it.
@@ -394,11 +395,11 @@ that revision, add <code>— without annotations</code>.</p>
 <article class="sec l3" id="s-spec-option-a-loose-matching-in-live">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option A: Loose matching in <code>live.select</code> and <code>find</code> only (Conservative)</span></h4>
 <div class="sec-body"><ul>
-<li><strong>Description</strong>: add a small <code>loose_fold</code> helper. <code>_found</code> searches in three tiers over the joined text. <code>find</code> gets the same tiers for literal queries when <code>match</code> is <code>"loose"</code>.</li>
+<li><strong>Description</strong>: add a small <code>loose_fold</code> helper. <code>_found</code> searches in three tiers over the joined text. <code>find</code> gets the same tiers for literal queries when <code>match_level</code> is <code>"loose"</code>.</li>
 <li><strong>Scope</strong>: <code>ops/live.py</code>, <code>ops/find.py</code>, <code>model/search.py</code>, tests.</li>
 <li><strong>Effort</strong>: Small.</li>
 <li><strong>Tradeoffs</strong>: fast to ship and covers the reported case. <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> keep their own rules, so the same phrase can match in one op and not in another.</li>
-<li><strong>Compatibility</strong>: additive. <code>match: "exact"</code> restores today's behaviour.</li>
+<li><strong>Compatibility</strong>: additive. <code>match_level: "exact"</code> restores today's behaviour.</li>
 </ul></div>
 <div class="note" data-for="s-spec-option-a-loose-matching-in-live"><label class="note-head" for="n-s-spec-option-a-loose-matching-in-live"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option A: Loose matching in live.select and find only (Conservative)</span></label><textarea class="note-ta" data-key="s-spec-option-a-loose-matching-in-live" id="n-s-spec-option-a-loose-matching-in-live" data-label="Option A: Loose matching in live.select and find only (Conservative)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -406,10 +407,10 @@ that revision, add <code>— without annotations</code>.</p>
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Option B: One shared matcher module for every phrase-taking op (Recommended)</span></h4>
 <div class="sec-body"><ul>
 <li><strong>Description</strong>: a new module <code>model/loosefold.py</code> owns the folding, the offset map, the level search and the Word-code translation. <code>live.select</code>, <code>find</code>, <code>anchor.resolve</code>, <code>rename</code> and <code>history.search</code> call it. <code>locate</code> does not.</li>
-<li><strong>Scope</strong>: the module, the five ops above, the <code>match</code> parameter and response fields, docs/operations.md, tests and benchmarks.</li>
+<li><strong>Scope</strong>: the module, the five ops above, the <code>match_level</code> parameter and response field, docs/operations.md, tests and benchmarks.</li>
 <li><strong>Effort</strong>: Medium.</li>
 <li><strong>Tradeoffs</strong>: one rule everywhere, one place to test and tune. More files touched, and <code>anchor.resolve</code>'s existing normalised tier must be merged without changing its scores.</li>
-<li><strong>Compatibility</strong>: additive with the same <code>match</code> opt-out.</li>
+<li><strong>Compatibility</strong>: additive with the same <code>match_level</code> opt-out.</li>
 </ul></div>
 <div class="note" data-for="s-spec-option-b-one-shared-matcher-modu"><label class="note-head" for="n-s-spec-option-b-one-shared-matcher-modu"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Option B: One shared matcher module for every phrase-taking op (Recommended)</span></label><textarea class="note-ta" data-key="s-spec-option-b-one-shared-matcher-modu" id="n-s-spec-option-b-one-shared-matcher-modu" data-label="Option B: One shared matcher module for every phrase-taking op (Recommended)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -426,14 +427,14 @@ that revision, add <code>— without annotations</code>.</p>
 </article>
 <article class="sec l3" id="s-spec-match-levels-d-f1">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Match levels (D-F1)</span></h4>
-<div class="sec-body"><p><code>match</code> takes three values, from strictest to loosest:</p>
+<div class="sec-body"><p><code>match_level</code> takes three values, from strictest to loosest:</p>
 <ul>
 <li><code>"exact"</code>: today's behaviour for that op. No folding, no retry.</li>
 <li><code>"default"</code>: case and accents are ignored, and punctuation and dashes are folded away. Symbols (S*) still count.</li>
 <li><code>"loose"</code>: everything in <code>"default"</code>, and symbols are dropped as well. An opt-in level; it never applies unless asked for or reached by the retry below.</li>
 </ul>
-<p><strong>Defaults</strong>: the phrase ops (<code>live.select</code>, <code>anchor.resolve</code>, <code>rename</code>'s search, <code>history.search</code>) default to <code>"default"</code>. Plain <code>find</code> defaults to <code>"exact"</code> (D-F5) and only folds when the caller passes <code>match</code>.</p>
-<p><strong>Retry before failing</strong>: when a phrase is not found at the level in force, a phrase op tries the less restrictive levels itself, one at a time, before it raises <code>ANCHOR_NOT_FOUND</code>. Each level keeps the exact-first tiebreak below. <code>"exact"</code> never retries. For <code>find</code>, retry applies only when <code>match</code> is <code>"default"</code> or <code>"loose"</code>. The reply names the level that matched.</p></div>
+<p><strong>Defaults</strong>: the single-target phrase ops (<code>live.select</code>, <code>anchor.resolve</code>) default to <code>"default"</code>. The multi-hit ops — plain <code>find</code> (D-F5), <code>rename</code> and <code>history.search</code> — default to <code>"exact"</code> and only fold when the caller passes <code>match_level</code>; <code>rename</code> writes tracked changes, so widening its default would silently edit more occurrences.</p>
+<p><strong>Retry before failing</strong>: when a phrase is not found at the level in force, a phrase op tries the less restrictive levels itself, one at a time, before it raises <code>ANCHOR_NOT_FOUND</code>. Each level keeps the exact-first tiebreak below. <code>"exact"</code> never retries. Multi-hit ops (<code>find</code>, <code>rename</code>, <code>history.search</code>) never retry: they search at the level passed and return every hit at that level. The reply names the level that matched.</p></div>
 <div class="note" data-for="s-spec-match-levels-d-f1"><label class="note-head" for="n-s-spec-match-levels-d-f1"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Match levels (D-F1)</span></label><textarea class="note-ta" data-key="s-spec-match-levels-d-f1" id="n-s-spec-match-levels-d-f1" data-label="Match levels (D-F1)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-the-folding-rule">
@@ -466,7 +467,7 @@ that revision, add <code>— without annotations</code>.</p>
 <tr>
 <td><code>^p</code></td>
 <td>paragraph mark</td>
-<td><code>\r</code>, as an alias</td>
+<td>a paragraph boundary: at the end of a phrase the match must end the paragraph, at the start it must begin one; anywhere else <code>SCHEMA_INVALID</code> (matching is per paragraph). Never folded to a space</td>
 </tr>
 <tr>
 <td><code>^t</code></td>
@@ -485,7 +486,7 @@ that revision, add <code>— without annotations</code>.</p>
 </tr>
 </tbody>
 </table>
-<p>Any other <code>^x</code> stays literal (further codes are not promised). Because translation runs left to right, <code>^^p</code> is a caret followed by <code>p</code>, not a paragraph mark. Word's simple Find box in the Navigation pane also takes <code>^p</code> and <code>^t</code>, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding; a literal <code>^</code> that the writer typed is matched with <code>^^</code> (at <code>loose</code> it is a symbol and is dropped like any other).</p>
+<p>Any other <code>^x</code> stays literal (further codes are not promised). Because translation runs left to right, <code>^^p</code> is a caret followed by <code>p</code>, not a paragraph mark. Word's simple Find box in the Navigation pane also takes <code>^p</code> and <code>^t</code>, so a phrase an agent copies from Word keeps its meaning. Translation happens before folding, and only in agent phrases and in <code>find</code> calls that pass <code>match_level</code>; plain and regex <code>find</code> queries are not translated (D-F5); a literal <code>^</code> that the writer typed is matched with <code>^^</code> (at <code>loose</code> it is a symbol and is dropped like any other).</p>
 <p><code>locate</code>'s generated phrases (<code>find_phrase</code>, <code>find_phrase_word</code>) do not change and do not emit <code>^</code> codes (direction b).</p></div>
 <div class="note" data-for="s-spec-word-find-codes-in-agent-phrases"><label class="note-head" for="n-s-spec-word-find-codes-in-agent-phrases"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Word find codes in agent phrases (D-F6)</span></label><textarea class="note-ta" data-key="s-spec-word-find-codes-in-agent-phrases" id="n-s-spec-word-find-codes-in-agent-phrases" data-label="Word find codes in agent phrases (D-F6)" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -497,17 +498,17 @@ that revision, add <code>— without annotations</code>.</p>
 <li><strong>default</strong>: equal after the accent, case and punctuation fold.</li>
 <li><strong>loose</strong>: equal after the symbol fold as well.</li>
 </ol>
-<p>The search takes the first level that has any match, starting from the strictest and escalating only as far as the retry rule allows. Within that level, one match is the answer. Two or more raise <code>ANCHOR_AMBIGUOUS</code> (as now), and the error lists the level and the candidate addresses. A looser level is never consulted once a stricter one matches, so one exact paragraph beats any number of looser ones.</p></div>
+<p>For a single-target phrase op, the search takes the first level that has any match, starting from the strictest and escalating only as far as the retry rule allows. Within that level, one match is the answer. Two or more raise <code>ANCHOR_AMBIGUOUS</code> (as now), and the error lists the level and the candidate addresses. A looser level is never consulted once a stricter one matches, so one exact paragraph beats any number of looser ones. Multi-hit ops do not select a level: every hit that matches at the level passed (or stricter) is returned or renamed, each marked with its own <code>match_level</code>, and no <code>ANCHOR_AMBIGUOUS</code> is raised.</p></div>
 <div class="note" data-for="s-spec-tiebreak-levels"><label class="note-head" for="n-s-spec-tiebreak-levels"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Tiebreak levels</span></label><textarea class="note-ta" data-key="s-spec-tiebreak-levels" id="n-s-spec-tiebreak-levels" data-label="Tiebreak levels" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-reporting-a-loose-match">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Reporting a loose match</span></h4>
-<div class="sec-body"><p>Responses carry <code>"match": "exact" | "case" | "default" | "loose"</code>, the level that matched, in the same key <code>anchor.resolve</code> already uses. Whenever the level is not <code>exact</code> the response also carries <code>matched_text</code>, the original text of the span, so the agent can compare it with what it asked for. <code>live.select</code> already returns the paragraph text. <code>find</code> marks each hit.</p></div>
+<div class="sec-body"><p>Responses carry <code>"match_level": "exact" | "case" | "default" | "loose"</code>, the level that matched. It is a new key: <code>anchor.resolve</code>'s existing <code>match</code> field (<code>exact|normalized|fuzzy</code>, <code>model/anchor.py</code>) keeps its meaning and values, so no existing contract changes. Whenever the level is not <code>exact</code> the response also carries <code>matched_text</code>, the original text of the span, so the agent can compare it with what it asked for. <code>live.select</code> already returns the paragraph text. <code>find</code> marks each hit.</p></div>
 <div class="note" data-for="s-spec-reporting-a-loose-match"><label class="note-head" for="n-s-spec-reporting-a-loose-match"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Reporting a loose match</span></label><textarea class="note-ta" data-key="s-spec-reporting-a-loose-match" id="n-s-spec-reporting-a-loose-match" data-label="Reporting a loose match" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-opt-out">
 <h4 class="sec-h"><span class="chip">▸</span><span class="sec-title">Opt-out</span></h4>
-<div class="sec-body"><p><code>match: "exact"</code> on each phrase-taking op restores today's behaviour. For <code>find</code>, the existing <code>ignore_case</code>, <code>ignore_accents</code> and <code>whole_word</code> flags stay as they are; <code>match: "default"</code> implies the first two plus the punctuation fold, and <code>match: "loose"</code> adds the symbol fold. Omitting <code>match</code> leaves <code>find</code> exactly as it is today (D-F5).</p></div>
+<div class="sec-body"><p><code>match_level: "exact"</code> on each phrase-taking op restores today's behaviour. For <code>find</code>, the existing <code>ignore_case</code>, <code>ignore_accents</code> and <code>whole_word</code> flags stay as they are; <code>match_level: "default"</code> implies the first two plus the punctuation fold, and <code>match_level: "loose"</code> adds the symbol fold. Omitting <code>match_level</code> leaves <code>find</code> exactly as it is today (D-F5).</p></div>
 <div class="note" data-for="s-spec-opt-out"><label class="note-head" for="n-s-spec-opt-out"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Opt-out</span></label><textarea class="note-ta" data-key="s-spec-opt-out" id="n-s-spec-opt-out" data-label="Opt-out" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
 <article class="sec l3" id="s-spec-performance">
@@ -516,7 +517,7 @@ that revision, add <code>— without annotations</code>.</p>
 <li>Folded text and offset maps are built once per paragraph and cached with the <code>Document</code> index; a search over N paragraphs is O(total characters).</li>
 <li>The levels share one pass: the exact and case levels run first on the raw and casefolded text. The folded levels are built only when both are empty, and the symbol-folded text only when the punctuation-folded search is empty too.</li>
 <li><code>locate</code> indexes are unchanged.</li>
-<li>The repo's <code>tests/bench</code> documents are the base. A new benchmark runs the four levels on a 100k-paragraph document.</li>
+<li>The repo's <code>tests/bench</code> documents are the base. A new benchmark runs the four levels on the 100k-word novel.</li>
 </ul></div>
 <div class="note" data-for="s-spec-performance"><label class="note-head" for="n-s-spec-performance"><span class="note-ico" aria-hidden="true">✎</span><span class="note-label">Your note</span><span class="note-ref">SPEC › Performance</span></label><textarea class="note-ta" data-key="s-spec-performance" id="n-s-spec-performance" data-label="Performance" data-part="Spec" rows="1" placeholder="Add a note on this section…"></textarea></div>
 </article>
@@ -623,6 +624,12 @@ that revision, add <code>— without annotations</code>.</p>
 <td>agreed</td>
 <td>2026-10-14</td>
 </tr>
+<tr>
+<td>D-F7</td>
+<td>Review clarifications (r3): request/response key <code>match_level</code> (new; <code>anchor.resolve</code>'s <code>match</code> keeps <code>exact\|normalized\|fuzzy</code>); auto-retry and <code>"default"</code> default only for single-target ops (<code>live.select</code>, <code>anchor.resolve</code>); <code>find</code>, <code>rename</code>, <code>history.search</code> default exact, never retry, return all hits; <code>^p</code> = paragraph boundary at phrase start/end only; Word codes not translated in plain/regex <code>find</code></td>
+<td>proposed</td>
+<td>2026-10-14</td>
+</tr>
 </tbody>
 </table>
 <blockquote>
@@ -709,7 +716,7 @@ that revision, add <code>— without annotations</code>.</p>
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
   // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return 'doc-control-spec-v2-'+today()+'-notes.md';}
+  function exportName(){return 'doc-control-spec-v3-'+today()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
