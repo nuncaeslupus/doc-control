@@ -60,11 +60,22 @@ on LibreOffice and on Word (Windows).
 - A Claude Skill for the chat code sandbox, using the file engine only (later spec)  (I-32)
 - Position doc-control as the maintained alternative: GongRzhe's server (2.1k★) was archived in March 2026; the README could say how to move from it (ties to #89)  (I-33)
 
+### H. Page layout and long-document structure (owner, 2026-10-14)
+- Sections and page numbering as one controllable model: where numbering starts (none on the front matter, epigraph and dedication; page 1 at the first chapter), restarts, a part page counted with or without a visible number, number format (i, ii, … then 1, 2, …)  (I-34)
+- Two-sided printing: mirror margins, different odd/even headers and footers, first page different, recto starts for chapters (blank versos inserted)  (I-35)
+- Building front matter for consumers such as literary-critic: title page, epigraph or quotes page, dedication, each in its own section with the right header/footer and numbering  (I-36)
+- Table of contents, index and lists of figures/tables with page references: insert, update, and read them back (with I-24's field update through LibreOffice)  (I-37)
+- Captions and cross-references for tables, figures and equations ("see Table 3", "page 12"), kept in step when items move (theses, reports)  (I-38)
+- Bibliography and citations as fields (Word's own sources, Zotero/Mendeley fields): read, keep intact on edit, refresh (theses)  (I-39)
+- Text boxes and shapes: read and edit their paragraphs (skipped today)  (I-40)
+- Table columns: insert/delete columns, merge cells, widths (rows came first in S-1)  (I-41)
+- Live engine in notes and headers: read and edit footnotes and headers in the open window (S-1 is file engine only)  (I-42)
+
 ## Sub-projects
 
 | ID  | Name                                   | Groups      | Status | Spec section |
 |-----|----------------------------------------|-------------|--------|--------------|
-| S-1 | Notes, headers, tables (I-1 to I-3)    | A           | parked |              |
+| S-1 | Notes, headers, tables (I-1 to I-3)    | A           | specified | arsenal/project/STORIES/spec.md |
 | S-2 | Lists, links, images (I-4 to I-8)      | A           | parked |              |
 | S-3 | Authoring and assembly                 | B           | parked |              |
 | S-4 | Review and send (reports, scrub, lock) | C           | parked |              |
@@ -72,6 +83,7 @@ on LibreOffice and on Word (Windows).
 | S-6 | Checks                                 | E           | parked |              |
 | S-7 | Live engine, next                      | F           | parked |              |
 | S-8 | Packaging and reach                    | G           | parked |              |
+| S-9 | Page layout and long documents         | H           | parked |              |
 
 Suggested order, for the owner to confirm: S-1 first, because the file engine is blind to
 footnotes and headers today, which literary-critic and every other consumer hit. Then I-15
@@ -82,4 +94,5 @@ literary-critic and RAG use.
 
 | ID  | Decision | Status | Date | Sub-project |
 |-----|----------|--------|------|-------------|
-| D-1 | Which sub-project to explore first | open | 2026-10-14 | |
+| D-1 | Which sub-project to explore first: S-1 (notes, headers, tables) | agreed | 2026-10-14 | S-1 |
+| D-2 | S-1 reads each section's page setup and header/footer kinds (first, even, default; numbering start and format) so S-9 can build on it; changing them is S-9 | agreed | 2026-10-14 | S-1 |
