@@ -5,6 +5,7 @@ label: "numbering apply"
 priority: 1
 deps: [t-3efc4aae, t-9c29142e, t-c3ed6610]
 workspace: LAYOUT
+status: merged
 ---
 
 ## Acceptance gate

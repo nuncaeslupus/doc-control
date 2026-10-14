@@ -341,6 +341,13 @@ def change_section(
     return True
 
 
+def set_props(sect: ET.Element, props: Mapping[str, Any]) -> bool:
+    """Set ``props`` on ``sect`` in place, without recording a change: for a ``w:sectPr``
+    that is itself part of a tracked insertion. References are not touched."""
+    check_props(props)
+    return _apply(sect, props, refs=False)
+
+
 def restore_section(sect: ET.Element, change: ET.Element) -> None:
     """Reject ``change`` (a ``w:sectPrChange`` of ``sect``): the recorded setup comes back.
     The header and footer references stay as they are, since the change cannot hold them."""
@@ -408,4 +415,5 @@ __all__ = [
     "previous_setup",
     "restore_section",
     "section_closers",
+    "set_props",
 ]
