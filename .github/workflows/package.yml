@@ -59,6 +59,8 @@ jobs:
       - name: Smoke test with no Python on PATH (CLI, regex find, MCP, every op family)
         # --frozen: capabilities.build must be {"frozen": true, "freezer": "pyinstaller"}.
         run: .venv/Scripts/python.exe scripts/frozen_smoke.py --exe build-out/doc-control/doc-control.exe --strip-python-path --frozen
+      - name: Parity with in-process doc_control (capabilities, find over the corpus)
+        run: .venv/Scripts/python.exe scripts/frozen_parity.py --exe build-out/doc-control/doc-control.exe
       # The .mcpb bundle (T6): manifest from packaging/mcpb with version and tools filled,
       # validated by the pinned mcpb CLI (gate `mcpb_manifest_errors == 0`), then the smoke
       # test again against the exe the manifest names, unpacked from the bundle.
