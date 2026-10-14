@@ -56,6 +56,8 @@ jobs:
       - name: Smoke test with no Python on PATH (CLI, regex find, MCP, every op family)
         # --frozen: capabilities.build must be {"frozen": true, "freezer": "pyinstaller"}.
         run: .venv/Scripts/python.exe scripts/frozen_smoke.py --exe build-out/doc-control/doc-control.exe --strip-python-path --frozen
+      - name: Parity with in-process doc_control (capabilities, find over the corpus)
+        run: .venv/Scripts/python.exe scripts/frozen_parity.py --exe build-out/doc-control/doc-control.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-frozen
