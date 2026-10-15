@@ -81,6 +81,15 @@ def _short(text: str) -> str:
 # -- open -----------------------------------------------------------------------------------
 
 
+def _adoptable(path: Path, sha: str) -> list[dict[str, Any]]:
+    """The orphan stores ``doc.open`` offers; a scan that cannot read a folder offers none
+    rather than failing the open."""
+    try:
+        return history.adoptable_stores(path, sha=sha)
+    except (OSError, DocControlError):
+        return []
+
+
 @operation(
     "doc.open",
     "write",
@@ -98,6 +107,7 @@ def open_(request: dict[str, Any]) -> Reply:
     if not path.is_file():
         raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
     sha = Package(path).sha256  # NOT_A_DOCX for anything else, before a store is made
+    adoptable = [] if log_path_for(path).is_file() else _adoptable(path, sha)
     copy = backup(path)
     seen = [e for e in read_log(log_path_for(path)).entries if e.get("kind") != "purge"]
     op_id: str | None = None
@@ -105,9 +115,11 @@ def open_(request: dict[str, Any]) -> Reply:
         op_id = history.record(
             path, "open", before_sha256=sha, after_sha256=sha, backup=copy, changes=[]
         )
-    return _doc_reply(
-        str(path), {"backup": str(copy), "op_id": op_id, "store": str(store_dir(path))}
-    )
+    result: dict[str, Any] = {"backup": str(copy), "op_id": op_id, "store": str(store_dir(path))}
+    if adoptable:
+        result["adoptable"] = adoptable
+        result["hint"] = "history.adopt re-attaches the history of a moved or renamed document"
+    return _doc_reply(str(path), result)
 
 
 # -- undo -----------------------------------------------------------------------------------
@@ -332,7 +344,7 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
             for n, c in enumerate(changes)
             if _restorable(c) and c.get("deleted")
         ][:5]
-    for key in ("undoes", "restores", "sha256_after", "backup", "engine"):
+    for key in ("undoes", "restores", "sha256_after", "backup", "engine", "adopted_from"):
         if entry.get(key) is not None:
             out[key] = entry[key]
     return out
@@ -353,7 +365,7 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
             **_READ_PROPS,
             "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},
             "cursor": {**_OP_ID, "description": "The `next` of the previous response."},
-            "kind": {"enum": ["batch", "restore", "undo", "open", "purge"]},
+            "kind": {"enum": ["batch", "restore", "undo", "open", "purge", "adopt"]},
         },
         "additionalProperties": False,
     },
@@ -521,3 +533,58 @@ def history_orphans(request: dict[str, Any]) -> Reply:
     folder = Path(request["dir"]) if "dir" in request else None
     found = history.find_orphans(folder, os.environ)
     return Reply({**found, "total": len(found["orphans"])})
+
+
+@operation(
+    "history.adopt",
+    "write",
+    (
+        "Re-attach a moved or renamed document to its old history: finds the orphaned store "
+        "whose last recorded state is this file's sha256 (next to it, in neighbouring folders, "
+        "app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to "
+        "where the document's store lives now, keeping backups and log, so history.undo and "
+        "history.restore work again. A file that differs from the store's last state needs "
+        "`force`, as does a store whose document still exists; a document that already has "
+        "history is never overwritten. `dry_run` moves nothing."
+    ),
+    {
+        "type": "object",
+        "properties": {
+            "doc": _DOC,
+            "store": {
+                **_STORE,
+                "description": "The orphan store to adopt (see doc.open's `adoptable` or "
+                "history.orphans); needed when several match or the old folder is far away.",
+            },
+            "force": {
+                "type": "boolean",
+                "description": "Adopt although the document's sha256 is not the store's last.",
+            },
+            "dry_run": {"type": "boolean", "description": "Say what would move; move nothing."},
+        },
+        "required": ["doc"],
+        "additionalProperties": False,
+    },
+)
+def history_adopt(request: dict[str, Any]) -> Reply:
+    path = Path(request["doc"])
+    if not path.is_file():
+        raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
+    Package(path)  # NOT_A_DOCX for anything else
+    force = request.get("force", False)
+    dry_run = request.get("dry_run", False)
+    if "store" in request:
+        chosen = Path(request["store"])
+    else:
+        found = history.adoptable_stores(path, anything=force)
+        if not found:
+            raise DocControlError(
+                ErrorCode.HISTORY_NOT_FOUND,
+                f"no orphan store matches {path.name}; pass `store` (see history.orphans), "
+                "with `force` if the file was edited since",
+            )
+        if len(found) > 1:
+            return _doc_reply(str(path), {"adopted": False, "candidates": found})
+        chosen = Path(found[0]["store"])
+    result = history.adopt_store(path, chosen, force=force, dry_run=dry_run)
+    return _doc_reply(str(path), result)
