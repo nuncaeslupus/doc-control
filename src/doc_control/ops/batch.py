@@ -94,7 +94,18 @@ BATCH_SCHEMA: dict[str, Any] = {
             "additionalProperties": False,
         },
         "dry_run": {"type": "boolean", "description": "Preview only; write nothing."},
-        "tracked": {"type": "boolean", "description": "Tracked changes (the only mode, true)."},
+        "tracked": {
+            "type": "boolean",
+            "default": True,
+            "description": (
+                "true (default): edits are tracked changes. false: a plain write, for a change "
+                "the writer already approved: built as the tracked edit, then this call's own "
+                "revisions are accepted in the same verified write (no revision marks; undo and "
+                "the log work as usual). Refused (UNSUPPORTED_CONTENT) when a paragraph it "
+                "rewrites holds another unresolved tracked change. Text, paragraph and style/"
+                "format edits only; file engine only for now."
+            ),
+        },
         "author": {"type": "string", "minLength": 1, "description": "Revision author."},
         "tag": {"type": "string", "minLength": 1, "description": "Appended to the author."},
         "engine": {
@@ -130,7 +141,8 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     "write",
     (
         "The main editing tool: apply several edits as tracked changes, all or nothing "
-        "on the file engine. "
+        "on the file engine; tracked: false writes a change the writer already approved "
+        "plainly, without revision marks (file engine). "
         "One family per batch: text.replace, para.insert, para.delete, para.move, "
         "style.apply, format.apply, comment.add, comment.reply and comment.resolve; or "
         "table.row.insert and table.row.delete (tracked table rows); or "
@@ -143,8 +155,13 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     BATCH_SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
-    if request.get("tracked", True) is not True:
-        raise DocControlError(ErrorCode.SCHEMA_INVALID, "untracked edits are not supported in v1")
+    plain = request.get("tracked", True) is False
+    if plain and request.get("engine") == "live":
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID,
+            "tracked: false is not available with engine live yet (live plain writes come "
+            "later); write tracked, or use the file engine",
+        )
     if request.get("engine") == "live":
         from doc_control.ops.live import live_batch
 
@@ -178,6 +195,10 @@ def batch(request: dict[str, Any]) -> Reply:
         return Reply(res.to_dict(), doc=Document(path).envelope_doc())
     row_ops = [isinstance(o, dict) and o.get("op") in ROW_SCHEMAS for o in request["ops"]]
     if any(row_ops):
+        if plain:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID, "tracked: false does not apply to table rows"
+            )
         if not all(row_ops):
             raise DocControlError(
                 ErrorCode.BATCH_CONFLICT,
@@ -218,7 +239,12 @@ def batch(request: dict[str, Any]) -> Reply:
         )
         return Reply(styled, doc=Document(path).envelope_doc())
     edits = edits_from_request(request["ops"])
+    if plain and any(is_comment_edit(e) for e in edits):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, "tracked: false does not apply to comment operations"
+        )
     apply = apply_batch if any(is_comment_edit(e) for e in edits) else apply_edits
+    options: dict[str, Any] = {"tracked": False} if plain else {}
     result = apply(
         Path(path),
         edits,
@@ -226,5 +252,6 @@ def batch(request: dict[str, Any]) -> Reply:
         author=request.get("author", DEFAULT_AUTHOR),
         tag=request.get("tag"),
         dry_run=request.get("dry_run", False),
+        **options,
     )
     return Reply(result.to_dict(), doc=Document(path).envelope_doc())

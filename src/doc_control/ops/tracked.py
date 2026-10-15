@@ -349,6 +349,8 @@ class TrackedResult:
     op_id: str | None = None
     parts: dict[str, list[str]] = field(default_factory=dict)  # other parts touched, with ids
     comment_ids: list[str] = field(default_factory=list)
+    tracked: bool = True
+    """False for a plain write (D-21): this call's revisions were accepted in the same write."""
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -363,6 +365,8 @@ class TrackedResult:
         }
         if self.comment_ids:
             out["comment_ids"] = self.comment_ids
+        if not self.tracked:
+            out["tracked"] = False
         if self.warnings:
             out["warnings"] = self.warnings
         if not self.dry_run:
@@ -1363,8 +1367,12 @@ def apply_edits(
     kind: str = "batch",
     request: Any = None,
     log_extra: Mapping[str, Any] | None = None,
+    tracked: bool = True,
 ) -> TrackedResult:
     """Apply ``edits`` to ``doc_path`` as tracked changes in one verified write.
+
+    With ``tracked`` false (a plain write, D-21) the edit is built the same way and this
+    call's own revisions are accepted before the write (:mod:`doc_control.ops.plain`).
 
     Raises ``DOC_NOT_FOUND``, ``NOT_A_DOCX``, ``DOC_LOCKED`` or
     ``DOC_CHANGED_ON_DISK`` (also when ``expect_sha256`` differs),
@@ -1392,6 +1400,11 @@ def apply_edits(
     check_changed(doc_path, expect_sha256)
     pkg = Package(doc_path)
     prepared = prepare_edits(pkg, edits, author=author, tag=tag, now=now, dry_run=dry_run)
+    if not tracked:
+        from doc_control.ops.plain import make_plain
+
+        prepared, plain_extra = make_plain(pkg, prepared)
+        log_extra = {**(log_extra or {}), **plain_extra}
     result = prepared.result
     if dry_run:
         return result

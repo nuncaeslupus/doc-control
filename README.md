@@ -46,6 +46,12 @@ One edit can also go straight to its own operation (`text.replace`, `para.insert
 `para.delete`, `comment.add`, `revision.accept`, `revision.reject`), which runs it as a
 one-edit `doc.batch`.
 
+For a change the writer has already approved in the chat, `batch`, `term.rename` and
+`restore` take `"tracked": false`: the same edit with this call's own revisions accepted in
+the same verified write, so no revision mark is left (other tracked changes stay; a paragraph
+that holds one is refused). Tracked stays the default; undo works as usual. File engine only
+for now.
+
 From Python, a document can be held open for many reads, with whole results:
 
 ```python
