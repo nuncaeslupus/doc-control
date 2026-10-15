@@ -45,7 +45,7 @@ file does not install it: Windows only asks which program should open it.
 1. Download `doc-control-X.Y.Z-windows-x64-setup.exe` from the [latest release](https://github.com/nuncaeslupus/doc-control/releases/latest).
 2. Double-click it.
 3. If Windows SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway** (the installer is not code-signed).
-4. Click **Install**, then **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
+4. Click **Install**, **Next** and **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
 
 To update, install the newer release the same way. To uninstall, remove the extension
 from **Settings > Extensions**, or the installer's copy from Windows **Settings > Apps**

@@ -41,21 +41,29 @@ Windows, so Windows only asks which program should open the file. If dragging is
 the same file.
 
 To check it worked, start a new chat and ask Claude to list the doc-control tools, or to
-run `server.capabilities`.
+show its capabilities (the `capabilities` tool).
 
 ## Installer (`-setup.exe`)
 
 1. Download `doc-control-X.Y.Z-windows-x64-setup.exe` from the [latest release](https://github.com/nuncaeslupus/doc-control/releases/latest).
 2. Double-click it.
 3. If Windows SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**. The installer is not code-signed, so Windows does not yet know its publisher.
-4. Click **Install**, then **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
+4. Click **Install**, **Next** and **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
 
 The installer puts the program in `%LOCALAPPDATA%\Programs\doc-control` and adds that
 folder to your user `PATH`. A terminal that was already open keeps the old `PATH`, which is
 why step 4 says *new* terminal.
 
-Its last page shows a `claude_desktop_config.json` snippet that points Claude Desktop at
-the installed `doc-control.exe`. Use it only if you want Claude Desktop to run the
+The finish page offers, unticked:
+
+- **Add to Claude Desktop**: opens Claude Desktop's extension dialog with the `.mcpb` the
+  installer ships, so you only click **Install** there. If Claude Desktop is not found, the
+  option instead shows the `.mcpb` in File Explorer, to drag onto **Settings > Extensions**.
+- **Remove the old uvx entry**: shown only when your Claude Desktop config still runs
+  doc-control through `uvx` (see [Moving from `uvx doc-control`](#moving-from-uvx-doc-control)).
+
+The page before it shows a `claude_desktop_config.json` snippet that points Claude Desktop
+at the installed `doc-control.exe`. Use it only if you want Claude Desktop to run the
 installed copy instead of the extension; do not do both, or every tool appears twice.
 
 ## Checking the download (optional)
@@ -74,8 +82,10 @@ If it differs, delete the file and download it again.
 
 If your `claude_desktop_config.json` already runs doc-control through `uvx` (the Python
 route), installing the extension leaves that entry in place, and Claude Desktop then lists
-every tool twice. Open **Settings > Developer > Edit Config**, delete the `doc-control`
-entry under `mcpServers`, save, and restart Claude Desktop.
+every tool twice. The installer's **Remove the old uvx entry** option does this for you: it
+lists the entries, asks first, and keeps a `.bak` of the config. By hand: quit Claude
+Desktop, open **Settings > Developer > Edit Config**, delete the `doc-control` entry under
+`mcpServers`, save, and start Claude Desktop again.
 
 ## Updating
 
