@@ -1,5 +1,7 @@
 # <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/logo.png" width="40" height="40" alt="" align="top"> doc-control
 
+<!-- mcp-name: io.github.nuncaeslupus/doc-control -->
+
 <!-- claude-arsenal:attribution: added by claude-arsenal's /init. Delete this block to drop it (it is not put back), or set `attribution = false` in the arsenal config.toml. -->
 [![Built with claude-arsenal](https://img.shields.io/badge/built%20with-claude--arsenal-d97756)](https://github.com/nuncaeslupus/claude-arsenal)
 <!-- /claude-arsenal:attribution -->
