@@ -188,11 +188,11 @@ To drive the Word a writer has open on Windows, the server needs the `live` extr
 
 ### Privacy and the update notice
 
-doc-control works on your machine and sends nothing off it, with one opt-in exception.
+Everything runs on your machine and nothing leaves it, with one opt-in exception.
 If you set `DOC_CONTROL_UPDATE_CHECK=1` (the `.mcpb` setting "Check for updates"), it asks
 the GitHub Releases API for the latest version at most once a day, caches the answer in
 your local app data (`%LOCALAPPDATA%\doc-control` on Windows), and reports
-`update: {current, latest, mcpb_url, checked_at}` in `capabilities` and `live.status`.
+`update: {current, latest, mcpb_url, checked_at}` in `server.capabilities` and `live.status`.
 It never downloads or installs anything. Left off (the default), it makes no request.
 
 ## Documents
