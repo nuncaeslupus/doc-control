@@ -553,6 +553,7 @@ Returns (`result`):
 | `undid` | string | yes | Op id taken back. |
 | `dry_run` | boolean | yes | True when nothing was written (a preview). |
 | `paragraphs` | integer | yes | Paragraphs returned to their prior state. |
+| `parts` | array |  | Whole parts put back (comments, styles); absent if none. |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
 | `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
