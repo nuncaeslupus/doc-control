@@ -44,6 +44,23 @@
     - A first probe with non-spec metadata rendered nothing in Code and Cowork.
   - literary-critic adopted it (`lc docx places`, literary-critic#171) and is moving to a local `lc` MCP server for the plain Chat tab. It was told `doc_control.mcp` is not a public API. An app's `tools/call` reaches only its own server, so `doc_control.api.run` is the entry point for a proxy.
   - A probe server remains in `~/.dc-mcp-app-probe/`. Its Claude Desktop config entry was removed. The folder is safe to delete.
+- Windows session, 2026-10-15: **PACKAGE T5 and the 0.6.4 hand tests**.
+  - T5, the live Word suite over MCP stdio against the frozen exe (#250), merged in #308. `live_word_failures == 0` frozen, over `python -m doc_control mcp`, and in-process.
+  - The exe and the installer carry the logo as their icon (`packaging/doc-control.ico`, #309).
+  - Installer hand test on the owner's PC passed:
+    - per user into `%LOCALAPPDATA%\Programs\doc-control`;
+    - one user `PATH` entry, working from a new terminal;
+    - `capabilities` reports 0.6.4 with Word;
+    - uninstall is clean.
+  - `.mcpb` hand test in Claude Desktop passed:
+    - it installs by dragging it onto Settings > Extensions; double-clicking it does not work on Windows;
+    - it does not write `claude_desktop_config.json`;
+    - all four `live_places` buttons behaved (address, phrase, stale address falling back to phrase, missing place showing an error).
+  - These findings are in the T9 task file (#310).
+  - The owner's Claude Desktop config has no `mcpServers` left: the `uvx doc-control` and probe entries were removed. doc-control now comes from the extension.
+  - The literary-critic session asked for the in-app result. Its pipe was gone when sent, so tell it next time it runs: all four buttons worked.
+  - The "arsenal queue" workflow on main fails on delete-ref 404s. This is a claude-arsenal quirk, already reported upstream.
+  - Next PACKAGE tasks: T8 release assets wiring (t-b45708fd), then T9 install docs (t-3ccbc888), then directory listing readiness (t-3a9a949d).
 - **Item 4 of #196 (#213)**: closed as not planned (see above).
 - **LibreOffice, divergence**: `editable` there only refuses a range across containers; a replace inside a hyperlink still goes through live where the file engine refuses it.
 - **Word, not measured**: Microsoft 365 (D-L4 asks for it; none on the owner's machine). CI has no Word: the scenario test is skipped there, so a change to `word_com.py` must be run on Windows with `uv run --no-sync python scripts/live_word_check.py`.
