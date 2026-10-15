@@ -166,7 +166,10 @@ class Package:
         """A view of this package whose existing parts ``parts`` read as the given bytes
         (in memory only: nothing is written, the fingerprints stay the original's)."""
         view = copy.copy(self)
-        view._data = {**self._data, **{n: b for n, b in parts.items() if n in self._data}}
+        unknown = sorted(n for n in parts if n not in self._data)
+        if unknown:
+            raise KeyError(f"with_parts: no such part: {', '.join(unknown)}")
+        view._data = {**self._data, **parts}
         return view
 
     def read(self, name: str) -> bytes:

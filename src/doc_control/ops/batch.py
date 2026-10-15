@@ -100,10 +100,14 @@ BATCH_SCHEMA: dict[str, Any] = {
             "description": (
                 "true (default): edits are tracked changes. false: a plain write, for a change "
                 "the writer already approved: built as the tracked edit, then this call's own "
-                "revisions are accepted in the same verified write (no revision marks; undo and "
-                "the log work as usual). Refused (UNSUPPORTED_CONTENT) when a paragraph it "
-                "rewrites holds another unresolved tracked change. Text, paragraph and style/"
-                "format edits only; file engine only for now."
+                "revisions are accepted in the same verified write (no revision marks; the log "
+                "has it, and undo takes it back from the backup, only while the document is "
+                "exactly as the write left it: no out-of-order undo). Refused "
+                "(UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved "
+                "tracked change. Text, paragraph and style/"
+                "format edits only (refused with revision, row and comment operations); file "
+                "engine only for now. A plain edit inside a tracked-inserted table row is "
+                "allowed: rejecting that row later removes the plain text too."
             ),
         },
         "author": {"type": "string", "minLength": 1, "description": "Revision author."},
@@ -170,6 +174,11 @@ def batch(request: dict[str, Any]) -> Reply:
     path = request["doc"]
     kinds = {op.get("op") in REVISION_SCHEMAS for op in request["ops"]}
     if True in kinds:
+        if plain:
+            raise DocControlError(
+                ErrorCode.SCHEMA_INVALID,
+                "tracked: false does not apply to revision.accept/revision.reject",
+            )
         if False in kinds:
             raise DocControlError(
                 ErrorCode.BATCH_CONFLICT,

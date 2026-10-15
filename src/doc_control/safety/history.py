@@ -439,7 +439,13 @@ def _undo_by_backup(
     check_changed(doc_path, expect_sha256)
     current = sha256_file(doc_path)
     if current != entry["sha256_after"]:
-        raise _conflict(entry, [], "the document was edited since; it adds a part as a whole")
+        why = (
+            "a plain write is undone from its backup only while the document is exactly as it "
+            "left it"
+            if entry.get("tracked") is False
+            else "the document was edited since; it adds a part as a whole"
+        )
+        raise _conflict(entry, [], why)
     saved = DocStore.open(doc_path, env).backups_dir / str(entry.get("backup"))
     # Read now: the backup guard_write takes below may prune this one.
     payload = saved.read_bytes() if saved.is_file() else b""

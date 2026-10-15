@@ -412,3 +412,42 @@ def test_direct_write_tools_take_tracked_false(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as caught:  # not offered where it makes no sense
         registry["comment.add"].run({"doc": str(path), "at": a[0], "text": "x", "tracked": False})
     assert caught.value.code is ErrorCode.SCHEMA_INVALID
+
+
+def test_plain_undo_never_picks_a_later_identical_paragraph(tmp_path: Path) -> None:
+    path = make_docx(tmp_path / "c.docx", "Uno largo uno", "Dos largo dos", "Tres largo tres")
+    a = run(path, [{"op": "text.replace", "at": address(path, 0), "text": "Hola."}], tracked=False)
+    run(path, [{"op": "para.insert", "after": address(path, 2), "text": "Hola."}], tracked=False)
+    run(path, [{"op": "text.replace", "at": address(path, 0), "text": "Adios."}], tracked=False)
+    held = path.read_bytes()
+    with pytest.raises(DocControlError) as caught:
+        undo({"doc": str(path), "op_id": a["op_id"]})
+    assert caught.value.code is ErrorCode.BATCH_CONFLICT
+    assert "exactly as it left it" in caught.value.message
+    assert path.read_bytes() == held
+    # identical plain inserts (repeated scene breaks) undo in order, from the backup
+    two = make_docx(tmp_path / "d.docx", "Uno largo uno", "Dos largo dos")
+    ops = [
+        {"op": "para.insert", "after": address(two, 0), "text": "* * *"},
+        {"op": "para.insert", "after": address(two, 1), "text": "* * *"},
+    ]
+    start = document_xml(two)
+    run(two, ops, tracked=False)
+    undo({"doc": str(two)})
+    assert document_xml(two) == start
+
+
+def test_plain_is_refused_with_revision_operations(tmp_path: Path) -> None:
+    path = make_docx(tmp_path / "d.docx", "Uno largo uno", "Dos largo dos")
+    for kind in ("revision.accept", "revision.reject"):
+        with pytest.raises(DocControlError) as caught:
+            run(path, [{"op": kind, "all": True}], tracked=False)
+        assert caught.value.code is ErrorCode.SCHEMA_INVALID
+
+
+def test_with_parts_refuses_an_unknown_part(tmp_path: Path) -> None:
+    from doc_control.ooxml.zipio import Package
+
+    pkg = Package(make_docx(tmp_path / "d.docx", "Uno"))
+    with pytest.raises(KeyError):
+        pkg.with_parts({"word/nope.xml": b"<x/>"})

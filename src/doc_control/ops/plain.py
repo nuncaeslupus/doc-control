@@ -7,10 +7,11 @@ those of "Accept" on that call's changes. Revisions already in the document stay
 byte; a paragraph the edit rewrites that holds any other unresolved revision is refused
 (``UNSUPPORTED_CONTENT``) before anything is written.
 
-The undo log keeps the paragraph bytes before and after, as for a tracked write. An edit that
-removes or joins paragraphs (a paragraph delete, a move, a replacement across paragraphs)
-leaves no after-paragraph to find again, so its entry is undone from its backup instead
-(``undo_by_backup``, only while the file is exactly what that entry wrote).
+The undo log keeps the paragraph bytes before and after, as for a tracked write, for
+``history.list``. A plain paragraph carries no fresh id or date, so ``undo`` could mistake a
+later identical paragraph for it: every plain entry is undone from its backup instead
+(``undo_by_backup``), only while the file is exactly what that entry wrote, so there is no
+out-of-order undo (``BATCH_CONFLICT``: undo later operations first).
 """
 
 from __future__ import annotations
@@ -32,7 +33,9 @@ def make_plain(pkg: Package, prepared: PreparedEdits) -> tuple[PreparedEdits, di
     """``prepared`` with this call's own revisions accepted, and the extra fields of its log
     entry (``tracked: false``, and ``undo_by_backup`` when paragraphs were removed)."""
     own = tuple(str(i) for i in prepared.result.revision_ids)
-    extra: dict[str, Any] = {"tracked": False}
+    # Always from the backup: a plain paragraph carries no fresh w:id or date, so a later
+    # paragraph with the same bytes could be mistaken for it if undo searched by bytes.
+    extra: dict[str, Any] = {"tracked": False, "undo_by_backup": True}
     if not own:  # nothing was marked: the tracked and the plain edit are the same bytes
         return replace(prepared, result=replace(prepared.result, tracked=False)), extra
     touched = [
@@ -55,19 +58,15 @@ def make_plain(pkg: Package, prepared: PreparedEdits) -> tuple[PreparedEdits, di
     for c in accepted.changes:
         after[(c["part"], c.get("story", ""), to_bytes(c["before"]))].append(c)
     changes: list[dict[str, Any]] = []
-    by_backup = accepted.joined or bool(accepted.rows)
     for c in prepared.changes:
         key = (c["part"], c.get("story", ""), to_bytes(c["after"]))
         found = after[key].pop(0) if after.get(key) else None
         if found is None:
-            by_backup = True
             changes.append(c)
         elif c["kind"] == "replace":
             changes.append({**c, "after": found["after"], "deleted": found["deleted"]})
         else:
             changes.append({**c, "after": found["after"]})
-    if by_backup or any(after.values()):
-        extra["undo_by_backup"] = True
     result = replace(prepared.result, revision_ids=[], tracked=False)
     new_data = written.get("word/document.xml", prepared.new_data)
     return replace(
