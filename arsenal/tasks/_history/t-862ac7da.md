@@ -4,6 +4,7 @@ title: "Plain writes in the live engines"
 label: "plain writes, live engines"
 priority: 10
 deps: [t-f3d581d0]
+status: merged
 ---
 
 ## Acceptance gate

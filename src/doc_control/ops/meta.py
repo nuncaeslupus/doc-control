@@ -31,8 +31,9 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
         "version": __version__,
         "engines": ["file", "live"],
         "live": {"apps": apps()},
-        # Per engine; `tracked: false` on batch, term.rename and restore (D-21). Live: later.
-        "features": {"plain_writes": {"file": True, "live": False}},
+        # Per engine; `tracked: false` on batch, term.rename and restore (D-21); live: batch
+        # (text.replace, para.insert) in Word and LibreOffice.
+        "features": {"plain_writes": {"file": True, "live": True}},
         "operations": [
             {"name": op.name, "kind": op.kind, "summary": op.summary}
             for op in sorted(REGISTRY.values(), key=lambda o: o.name)

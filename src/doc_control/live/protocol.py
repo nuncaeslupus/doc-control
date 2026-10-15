@@ -75,10 +75,21 @@ class LiveAdapter(Protocol):
 
     def comment(self, path: Path, span: Span, text: str, author: str) -> None: ...
 
-    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None: ...
+    def unresolved(self, path: Path, span: Span) -> bool:
+        """Whether an unresolved tracked change (any kind) is in the paragraphs ``span``
+        touches: a plain write there is refused (``UNSUPPORTED_CONTENT``, D-21)."""
 
-    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
-        """A new paragraph after paragraph ``after`` (-1: at the start), as a tracked insertion."""
+    def tracked_replace(
+        self, path: Path, span: Span, text: str, author: str, tracked: bool = True
+    ) -> None:
+        """Replace ``span`` with ``text``; ``tracked`` False writes it plainly (D-21): the
+        app's change tracking off for the edit and put back as it was after."""
+
+    def tracked_insert(
+        self, path: Path, after: int, text: str, author: str, tracked: bool = True
+    ) -> None:
+        """A new paragraph after paragraph ``after`` (-1: at the start), as a tracked
+        insertion; ``tracked`` False inserts it plainly."""
 
     def save(self, path: Path) -> None: ...
 
@@ -92,6 +103,10 @@ class _FakeDoc:
     dirty: bool = False
     selection: Span = field(default_factory=lambda: Span(0, 0, 0, 0))
     comments: list[tuple[Span, str, str]] = field(default_factory=list)
+    # Paragraphs holding an unresolved tracked change: set by a test, not kept in step.
+    revised: set[int] = field(default_factory=set)
+    # (adapter call, tracked) of each edit, in order
+    writes: list[tuple[str, bool]] = field(default_factory=list)
 
 
 class FakeAdapter:
@@ -156,15 +171,24 @@ class FakeAdapter:
         doc.comments.append((span, text, author))
         doc.dirty = True
 
-    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
+    def unresolved(self, path: Path, span: Span) -> bool:
+        return any(span.start <= n <= span.end for n in self._doc(path).revised)
+
+    def tracked_replace(
+        self, path: Path, span: Span, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
+        doc.writes.append(("tracked_replace", tracked))
         head = doc.paragraphs[span.start][: span.a]
         tail = "" if span.b is None else doc.paragraphs[span.end][span.b :]
         doc.paragraphs[span.start : span.end + 1] = [head + text + tail]
         doc.dirty = True
 
-    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
+    def tracked_insert(
+        self, path: Path, after: int, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
+        doc.writes.append(("tracked_insert", tracked))
         doc.paragraphs.insert(after + 1, text)
         doc.dirty = True
 

@@ -556,6 +556,13 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     Addresses refer to the document as read, so the edits are applied from the end of
     the document backwards. Each one is logged to history (``engine: live``) without a
     backup: until the next save, taking one back is the app's own undo.
+
+    ``tracked: false`` (D-21) writes the text edits plainly: the app's change tracking is
+    off for each edit and put back as it was after. As on the file engine, comments are
+    refused (``SCHEMA_INVALID``), and so is (``UNSUPPORTED_CONTENT``), before anything is
+    written, an edit of a paragraph holding another unresolved tracked change, or an
+    insertion next to one. Its log entries carry ``tracked: false`` and, as every live
+    entry, no paragraph bytes: ``history.undo`` never matches them (the app's undo does).
     """
     from doc_control.ops.batch import edits_from_request  # batch imports this module too
     from doc_control.ops.tracked import story_of
@@ -576,6 +583,11 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     for i, raw in enumerate(ops):
         if raw.get("op") not in LIVE_KINDS:
             raise unavailable("operation not supported live", op_index=i, op=raw.get("op"))
+    plain = request.get("tracked", True) is False
+    if plain and any(raw.get("op") == "comment.add" for raw in ops):
+        raise DocControlError(
+            ErrorCode.SCHEMA_INVALID, "tracked: false does not apply to comment operations"
+        )
     author = format_author(
         request.get("author")
         or os.environ.get("DOC_CONTROL_LIVE_AUTHOR", "").strip()
@@ -585,6 +597,7 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     count = len(guarded(adapter.paragraphs, path))
     # (start, end, index in the request, adapter call, where)
     plan: list[tuple[tuple[float, float], tuple[float, float], int, Any, Any]] = []
+    revised: set[int] = set()  # paragraphs (from 0) a plain write may not touch
     for i, edit in enumerate(edits_from_request(ops)):
         if isinstance(edit, InsertParagraph):
             if (edit.after is None) == (edit.before is None):
@@ -598,6 +611,8 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
                 raise DocControlError(
                     ErrorCode.BATCH_CONFLICT, f"ops[{i}] inserts where an earlier one does"
                 )
+            if plain and guarded(adapter.unresolved, path, Span(max(after, 0), max(after, 0))):
+                revised.add(max(after, 0))
             plan.append(((after, inf), (after, inf), i, adapter.tracked_insert, after))
             continue
         rng = parse_range(edit.at)
@@ -612,6 +627,8 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
             )
         span = Span(rng.start.number - 1, rng.end.number - 1, a, b)
         guarded(adapter.editable, path, span, not isinstance(edit, AddComment))
+        if plain and guarded(adapter.unresolved, path, span):
+            revised.update(range(span.start, span.end + 1))
         call = adapter.comment if isinstance(edit, AddComment) else adapter.tracked_replace
         plan.append(((span.start, a), (span.end, inf if b is None else b), i, call, span))
     plan.sort(key=lambda step: (step[0], step[2]), reverse=True)
@@ -621,16 +638,26 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
                 ErrorCode.BATCH_CONFLICT,
                 f"ops[{earlier[2]}] and ops[{later[2]}] overlap: send them as separate batches",
             )
+    if revised:
+        # The file engine's refusal (ops.plain), word for word: other consumers match it.
+        raise DocControlError(
+            ErrorCode.UNSUPPORTED_CONTENT,
+            "a plain write cannot touch a paragraph that holds another unresolved tracked "
+            f"change ({len(revised)} paragraph(s)); resolve it first or write tracked",
+            paragraphs=[f"body #{n}" for n in sorted(revised)][:10],
+        )
     store = DocStore.open(path)
     op_ids: dict[int, str] = {}
+    extra: dict[str, Any] = {"tracked": False} if plain else {}
     # ponytail: not all-or-nothing. Every address and span is checked before the first
     # edit, so a batch should stop half-way only when the app goes away; wrap it in the
     # app's undo context if a writer is ever left with half a batch.
     for _, _, i, call, where in plan:
-        guarded(call, path, where, ops[i]["text"], author)
+        # Only a plain write passes the flag: an adapter written before D-21 still works.
+        guarded(call, path, where, ops[i]["text"], author, *((False,) if plain else ()))
         entry = append_entry(
             store,
-            {"kind": "batch", "engine": "live", "author": author, "request": [ops[i]]},
+            {"kind": "batch", "engine": "live", "author": author, "request": [ops[i]], **extra},
             None,
         )
         op_ids[i] = entry["op_id"]
@@ -638,5 +665,6 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
         "engine": "live",
         "applied": len(plan),
         "author": author,
+        **extra,
         "op_ids": [op_ids[i] for i in range(len(plan))],
     }
