@@ -576,7 +576,9 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
         if raw.get("op") not in LIVE_KINDS:
             raise unavailable("operation not supported live", op_index=i, op=raw.get("op"))
     author = format_author(
-        request.get("author") or os.environ.get("DOC_CONTROL_LIVE_AUTHOR") or default_author(),
+        request.get("author")
+        or os.environ.get("DOC_CONTROL_LIVE_AUTHOR", "").strip()
+        or default_author(),
         request.get("tag"),
     )
     count = len(guarded(adapter.paragraphs, path))

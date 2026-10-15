@@ -62,12 +62,14 @@ def tool_name(op: str) -> str:
 # Writes that drop something a later call cannot take back from the document itself:
 # purged history, discarded unsaved edits, merged-away styles.
 DESTRUCTIVE = frozenset({"history.purge", "live.close", "style.merge"})
+# Reads of the document that still create a file: compare's redline, styleset.export's `out`.
+CREATES_FILES = frozenset({"compare", "styleset.export"})
 
 
 def _annotations(op: Operation) -> dict[str, bool]:
     """MCP tool hints: reads are safe to repeat; most writes are tracked changes, backed up
     and undoable, so only the few in DESTRUCTIVE are marked destructive."""
-    if op.kind == "read":
+    if op.kind == "read" and op.name not in CREATES_FILES:
         return {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
     return {
         "readOnlyHint": False,

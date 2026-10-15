@@ -28,7 +28,7 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 
 ## `batch` (write)
 
-The main editing tool: apply several edits as tracked changes, all or nothing. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; expect.sha256 refuses a file changed since; dry_run previews. The file is backed up first and undo takes the batch back.
+The main editing tool: apply several edits as tracked changes, all or nothing on the file engine. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -330,7 +330,7 @@ Check which live apps (Word, LibreOffice) are running and reachable and which do
 
 ## `locate` (read)
 
-Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Use it to tell a user where a passage is, or to get a find phrase for live.select; outline lists only headings, find searches text, page.estimate gives only pages. Read-only.
+Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Either phrase can be null (empty, duplicate or no unique phrase), with a reason saying why. Use it to tell a user where a passage is, or to get a find phrase for live.select; outline lists only headings, find searches text, page.estimate gives only pages. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

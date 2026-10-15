@@ -12,6 +12,7 @@ from typing import Any
 from doc_control import __version__
 from doc_control.mcp import (
     APPS,
+    CREATES_FILES,
     DESTRUCTIVE,
     PROTOCOL_VERSIONS,
     UI_EXTENSION,
@@ -66,9 +67,10 @@ def test_every_operation_is_listed_as_a_tool_with_its_schema() -> None:
         assert tool["inputSchema"] == op.schema
         assert tool["description"] == op.summary
         hints = tool["annotations"]
-        assert hints["readOnlyHint"] is (op.kind == "read")
+        read_only = op.kind == "read" and op.name not in CREATES_FILES
+        assert hints["readOnlyHint"] is read_only
         assert hints["openWorldHint"] is False
-        if op.kind == "read":
+        if read_only:
             assert hints["idempotentHint"] is True
         else:
             assert hints["destructiveHint"] is (op.name in DESTRUCTIVE)
