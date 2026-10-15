@@ -1,12 +1,13 @@
 # Plan: double-click install without Python
 
 **Date**: 2026-10-14
-**Specification**: `arsenal/project/PACKAGE/spec.md` (approved r2; contracts §5, risks §6)
+**Specification**: `arsenal/project/PACKAGE/spec.md` (approved r3; contracts §5, risks §6)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 1
-**Status**: approved (2026-10-14, revision 1) — without annotations
+**Revision**: 2
+**Status**: approved (2026-10-15, revision 2) — without annotations
 **Revision log**:
 - r1 — first draft
+- r2 — spec r3 applied (owner's chat answers of 2026-10-15, no notes export): T10 dropped, T11-T14 added
 
 > Review record, kept the way the spec keeps its own: each round of notes bumps
 > **Revision** with a log line naming the `<repo>-plan-v<N>-<date>-notes.md`
@@ -20,7 +21,7 @@
 
 ### Architecture overview
 
-This plan covers phase 1 only: Windows, unsigned, published as GitHub Release assets and listed in the Claude Desktop extensions directory (D-P1, D-P2, D-P3, D-P5). It adds a build around the unchanged package, in four layers:
+This plan covers phase 1 only: Windows, unsigned, published as GitHub Release assets (D-P1, D-P2, D-P3, D-P5), with an opt-in update notice, a winget manifest and an installer that hands the `.mcpb` to Claude Desktop (spec r3: D-P7, D-P8, D-P9). It adds a build around the unchanged package, in four layers:
 
 1. **Frozen build** (`packaging/`): one entry script that calls `doc_control.cli:main`, plus the freezer's build file with hidden imports for `pywin32` and the `ops` modules the registry loads by name. The output is a one-folder build, `doc-control/doc-control.exe`. T1 measures PyInstaller against Nuitka and picks one (Q1).
 2. **Distributions** made from that folder:
@@ -42,7 +43,7 @@ This plan covers phase 1 only: Windows, unsigned, published as GitHub Release as
   3. `tag` creates `vX.Y.Z` and the GitHub release (branch path only).
   4. `attach` downloads `windows-packages`, creates the release if it is missing (hand-pushed tag path), uploads the four assets with `--clobber`, and writes `## Checksums` into the notes.
   5. `check_release_assets.py --tag vX.Y.Z` confirms them.
-- **Directory listing**: the `.mcpb` from the release is submitted by hand with the listing checklist; the release never waits on it (D-P5).
+- **Directory listing**: dropped in spec r3 (D-P5): the directory no longer accepts `.mcpb` local servers, so T10 (listing readiness) is gone from the table; its task file is archived as `arsenal/tasks/_history/t-3a9a949d.md`. Updates reach users through the opt-in notice (T11) and winget (T12).
 
 ### State changes
 
@@ -88,7 +89,10 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
 | T7 | Inno Setup installer: `packaging/installer/doc-control.iss` (per-user, `PrivilegesRequired=lowest`, user `PATH` entry, config snippet page, uninstaller); `package.yml` installs pinned Inno Setup, builds it, then silently installs, runs `doc-control capabilities` from a new shell, uninstalls and checks the folder and `PATH` entry are gone (surface: windows-ci) | packaging, ci | M | T3 | `installer_smoke_failures == 0` | `test_iss_version_define_matches_pyproject` in `tests/packaging/test_installer.py` — the build passes `pyproject.toml`'s version as `AppVersion`; `test_iss_installs_per_user_without_admin` in the same file — the script sets `PrivilegesRequired=lowest` and a `{localappdata}` install dir |
 | T8 | Release wiring: `release.yml` gains `package` (calls `package.yml` with `attach: true`, `needs: build`, `if: release == 'true'`) and `attach` (`needs: [package, tag]`, runs when `tag` succeeded or was skipped; creates the release if absent; uploads zip, installer, `.mcpb`, `SHA256SUMS.txt` with `--clobber`; writes `## Checksums`); `scripts/check_release_assets.py --tag` (surface: windows-ci) | ci, scripts | M | T4, T6, T7 | `release_artifacts_missing == 0` | `test_only_release_yml_triggers_on_tags` in `tests/ci/test_release_workflow.py` — a text scan of `.github/workflows/*.yml` finds `tags:` under `on.push` in `release.yml` only, and `package.yml` has `workflow_call` and no `push`; `test_check_release_assets_flags_missing_and_unchecksummed` in `tests/ci/test_check_release_assets.py` — given a fake `gh release view` JSON missing the `.mcpb` and one checksum line, it prints `release_artifacts_missing == 2` |
 | T9 | Docs: README "Install without Python (Windows)" with numbered steps for the `.mcpb` and the installer, the SmartScreen "More info → Run anyway" step, the checksum check and uninstall; `docs/install-windows.md`; clean-machine step count recorded in the evidence log (surface: windows-ci + manual on a clean Windows machine) | docs | S | T8 | `install_steps_windows_mcpb <= 2` | `test_readme_windows_install_steps_are_numbered_and_bounded` in `tests/test_docs.py` — the `.mcpb` list has at most 2 numbered steps and the installer list at most 3, each besides the SmartScreen step, and every asset name it links matches the T8 asset pattern |
-| T10 | Directory listing readiness: `packaging/mcpb/LISTING.md` checklist (manifest fields, icon, privacy statement, plain-language description of each tool and whether it changes files, submission route), `docs/privacy.md`, tool descriptions filled from the registry summaries; each item marked done with its evidence or "confirmed at submission" (surface: windows-ci) | packaging, docs | S | T6, T9 | `directory_checklist_open_items == 0` | `test_listing_checklist_has_no_open_items` in `tests/packaging/test_listing.py` — every checklist row in `LISTING.md` is ticked and names a file or a submission note; `test_every_tool_has_a_listing_description` in the same file — each `tools/list` name has a non-empty description in the manifest |
+| T11 | Opt-in update notice: `doc_control/update_check.py` (stdlib `urllib`, 3 s timeout), on with `DOC_CONTROL_UPDATE_CHECK=1` from the manifest's boolean `user_config.update_check` (default false); at most one GitHub Releases request a day, cached under the user's local app data; `capabilities` and `live.status` add `update: {current, latest, mcpb_url, checked_at}`; privacy text in the manifest and README names the exception (D-P7) | src, packaging, docs | M | — | `update_check_requests_when_off == 0` | `test_no_request_when_off`, `test_second_check_within_a_day_uses_cache`, `test_failed_check_is_quiet` in `tests/test_update_check.py` |
+| T12 | winget manifest: `scripts/build_winget.py --tag` writes version, installer and defaultLocale files (`InstallerType: inno`, `Scope: user`, URL and SHA-256 from the release); submission to `microsoft/winget-pkgs` by hand with the owner's agreement (D-P8) | packaging, scripts | S | T8 | `winget_manifest_errors == 0` | `test_winget_manifest_fields_match_release`, `test_winget_manifest_validates` in `tests/packaging/test_winget.py` |
+| T13 | Clean uninstall check: `scripts/clean_uninstall_check.py`, report-only, prints `uninstall_leftovers == N` over the install folder, `PATH`, the Claude Desktop extension folder, settings and installations entry, config entries and the app-data store; linked from `docs/install-windows.md` | scripts, docs | S | T9 | `uninstall_leftovers` reported, nothing deleted | `test_reports_each_leftover_and_deletes_nothing`, `test_clean_tree_reports_zero` in `tests/packaging/test_clean_uninstall_check.py` |
+| T14 | Installer handoff: the installer ships the `.mcpb`; its finish page offers "Add to Claude Desktop" (launches Claude Desktop with the file, or opens Explorer with it selected, per the owner's launch test) and, unchecked, removal of an old `uvx doc-control` config entry with a backup (`scripts/remove_uvx_entry.py`) (D-P9) | packaging, scripts | M | T8 | `installer_handoff_failures == 0` | `test_iss_ships_the_mcpb_and_offers_handoff`, `test_uvx_entry_removal_backs_up_and_asks` in `tests/packaging/test_installer_handoff.py` |
 
 **Status legend**: ☐ not started · ◐ in progress · ☑ merged
 
@@ -97,7 +101,7 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
 2. T2, then T3.
 3. T4, T5, T6 and T7 in parallel.
 4. T8.
-5. T9, then T10.
+5. T9, T12 and T14 after T8; T13 after T9. T11 has no dependency and can go any time. T10 is dropped.
 
 **Branch pattern**: `package-T<N>-description` from the default branch.
 
@@ -106,16 +110,19 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
 ```drawspec
 {"version": 1, "kind": "flow", "title": "Task dependencies",
  "nodes": [
-  {"id": "T1", "text": "T1\nFreezer spike"},
-  {"id": "T2", "text": "T2\nFrozen build"},
-  {"id": "T3", "text": "T3\nFrozen smoke"},
-  {"id": "T4", "text": "T4\nParity"},
-  {"id": "T5", "text": "T5\nLive Word via exe"},
-  {"id": "T6", "text": "T6\n.mcpb bundle"},
-  {"id": "T7", "text": "T7\nInstaller"},
-  {"id": "T8", "text": "T8\nRelease wiring"},
-  {"id": "T9", "text": "T9\nInstall docs"},
-  {"id": "T10", "text": "T10\nDirectory listing"}
+  {"id": "T1", "text": "T1\nQ1 spike, measured: a throwaway wor…"},
+  {"id": "T2", "text": "T2\nFrozen build with the T1 freezer: p…"},
+  {"id": "T3", "text": "T3\nscripts/frozensmoke.py --exe PATH -…"},
+  {"id": "T4", "text": "T4\nscripts/frozenparity.py --exe PATH:…"},
+  {"id": "T5", "text": "T5\nLive-Word gate over stdio: a Runner…"},
+  {"id": "T6", "text": "T6\n.mcpb bundle: packaging/mcpb/manife…"},
+  {"id": "T7", "text": "T7\nInno Setup installer: packaging/ins…"},
+  {"id": "T8", "text": "T8\nRelease wiring: release.yml gains p…"},
+  {"id": "T9", "text": "T9\nDocs: README \"Install without Pytho…"},
+  {"id": "T11", "text": "T11\nOpt-in update notice: doccontrol/up…"},
+  {"id": "T12", "text": "T12\nwinget manifest: scripts/buildwinge…"},
+  {"id": "T13", "text": "T13\nClean uninstall check: scripts/clea…"},
+  {"id": "T14", "text": "T14\nInstaller handoff: the installer sh…"}
  ],
  "edges": [
   {"from": "T1", "to": "T2"},
@@ -128,8 +135,9 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
   {"from": "T6", "to": "T8"},
   {"from": "T7", "to": "T8"},
   {"from": "T8", "to": "T9"},
-  {"from": "T6", "to": "T10"},
-  {"from": "T9", "to": "T10"}
+  {"from": "T8", "to": "T12"},
+  {"from": "T9", "to": "T13"},
+  {"from": "T8", "to": "T14"}
  ]}
 ```
 
