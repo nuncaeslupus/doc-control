@@ -1,6 +1,6 @@
 """Accepting and rejecting tracked changes in one paragraph element.
 
-:func:`scan` lists the revisions of a paragraph (as ``revisions.list`` reports
+:func:`scan` lists the revisions of a paragraph (as ``revision.list`` reports
 them) and :func:`resolve_paragraph` applies a decision, ``accept`` or ``reject``,
 to chosen ones. Both work on the element from
 :meth:`doc_control.ooxml.splice.DocumentSpans.parse_paragraph`; the element is
@@ -34,7 +34,7 @@ What survives a removal
     never orphans a comment or splits a bookmark.
 
 Not covered: revisions in text boxes (``w:txbxContent``) are left as they are, as
-``revisions.list`` does not report them, and table row and cell revisions live
+``revision.list`` does not report them, and table row and cell revisions live
 outside paragraphs.
 """
 
@@ -87,7 +87,7 @@ ACCEPT, REJECT = "accept", "reject"
 
 @dataclass(eq=False)
 class Revision:
-    """One revision found in a paragraph; ``kind`` is the ``revisions.list`` type."""
+    """One revision found in a paragraph; ``kind`` is the ``revision.list`` type."""
 
     id: str
     kind: str

@@ -1,4 +1,4 @@
-"""`sections.list`: each section's page setup, read-only (groundwork for changing it).
+"""`section.list`: each section's page setup, read-only (groundwork for changing it).
 
 A header or footer a section does not define is the previous section's, so the addresses
 reported here are those of the section that defines the part (see
@@ -31,7 +31,7 @@ def flag(parent: ET.Element, tag: str) -> bool:
 
 
 @operation(
-    "sections.list",
+    "section.list",
     "read",
     (
         "List each section's page setup: break type, title page, even/odd headers, "
@@ -54,7 +54,7 @@ def sections_list(request: dict[str, Any]) -> Reply:
 
 
 def section_rows(doc: Document) -> list[dict[str, Any]]:
-    """The rows `sections.list` returns, for other operations built on them."""
+    """The rows `section.list` returns, for other operations built on them."""
     pkg = doc.pkg
     even_and_odd = False
     if SETTINGS_PART in pkg:

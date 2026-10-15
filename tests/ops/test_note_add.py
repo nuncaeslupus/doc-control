@@ -33,7 +33,7 @@ def _run(name: str, request: dict[str, Any]) -> dict[str, Any]:
 def _body_point(doc: Path, *, last: bool = True) -> str:
     """A point in a body paragraph. LibreOffice pairs marks and notes by id order, so the
     default is the end of the last long paragraph, after every existing mark."""
-    rows = _run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
+    rows = _run("para.list", {"doc": str(doc)})["paragraphs"]
     long = [r for r in rows if len(r["text"]) > 20]
     row = long[-1] if last else long[0]
     offset = len(row["text"]) if last else 9
@@ -149,11 +149,11 @@ def test_note_add_tracked_and_rejectable(tmp_path: Path, corpus: str, kind: str)
     assert part in zipfile.ZipFile(doc).namelist()
 
     # The mark (in the body) and the text (in the note) are both listed as tracked insertions.
-    rows = _run("revisions.list", {"doc": str(doc), "stories": ALL})["revisions"]
+    rows = _run("revision.list", {"doc": str(doc), "stories": ALL})["revisions"]
     ours = [r for r in rows if r["at"].startswith(f"{prefix}{note['id']}/")]
     assert {r["type"] for r in ours} == {"insert"}
     assert any("/" not in r["at"] and r["type"] == "insert" for r in rows)
-    listed = _run("paragraphs.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
+    listed = _run("para.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
     assert any(r["at"] == note["at"] and NEEDLE in r["text"] for r in listed)
 
     with soffice_dir(tmp_path) as work:
@@ -171,17 +171,17 @@ def test_note_add_tracked_and_rejectable(tmp_path: Path, corpus: str, kind: str)
         assert left == before - 1
 
     # Our own reject-all takes out the mark and the note's text too.
-    _run("batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
+    _run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
     body = _package_xml(doc, "word/document.xml")
     assert body is not None
     marks = [e for e in body.iter() if e.tag == W + f"{kind}Reference"]
     assert note["id"] not in {e.get(W + "id") for e in marks}
-    listed = _run("paragraphs.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
+    listed = _run("para.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
     assert not any(NEEDLE in r["text"] for r in listed)
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
 
     # Undo restores the file byte for byte, also when the write created the notes part.
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -221,17 +221,17 @@ def test_note_add_before_existing_marks_warns_and_undo_needs_an_untouched_file(
     # Notes are found by id, so the new one takes the next free id wherever its mark is.
     assert api.run("note.add", request).result["note"]["id"] == 5
     after_add = doc.read_bytes()
-    listed = _run("paragraphs.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
+    listed = _run("para.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
     assert [r["text"] for r in listed if r["at"].startswith("fn5/")] == [" " + NEEDLE]
 
     # Undo of the note refuses once the file was edited since; undoing the edit first works.
-    body = _run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
+    body = _run("para.list", {"doc": str(doc)})["paragraphs"]
     edit = {"op": "text.replace", "at": body[1]["at"] + ":0-3", "text": "Zzz"}
-    _run("batch", {"doc": str(doc), "ops": [edit]})
+    _run("doc.batch", {"doc": str(doc), "ops": [edit]})
     with pytest.raises(DocControlError) as err:
-        _run("undo", {"doc": str(doc), "op_id": "h-000001"})
+        _run("history.undo", {"doc": str(doc), "op_id": "h-000001"})
     assert err.value.code is ErrorCode.BATCH_CONFLICT
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == after_add
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original

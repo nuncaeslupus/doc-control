@@ -1,4 +1,4 @@
-"""The headless LibreOffice runner behind `fields.update`, without a real LibreOffice: a
+"""The headless LibreOffice runner behind `field.update`, without a real LibreOffice: a
 timeout ends the whole process tree, and REF results LibreOffice cannot compute are not
 written."""
 
@@ -141,12 +141,12 @@ def test_ref_results_not_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     fresh = _fresh_docx(tmp_path, REF_ERROR, "", "Table 3")
     monkeypatch.setattr(fieldwrite, "soffice_path", lambda: "soffice")
     monkeypatch.setattr(fieldwrite, "refresh_fields", lambda path, exe: fresh)
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert [(u["before"], u["after"]) for u in out["updated"]] == [(["WRONG"], ["Table 3"])]
     reasons = [s["reason"] for s in out["skipped"] if s["type"] == "REF"]
     assert len(reasons) == 2
     assert "an error" in reasons[0] and "an empty result" in reasons[1]
-    rows = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    rows = api.run("field.list", {"doc": str(doc)}).result["fields"]
     assert [r["result"] for r in rows if r["type"] == "REF"][:2] == ["Table 1", "Figure 2"]
     with zipfile.ZipFile(doc) as zf:
         xml = zf.read("word/document.xml").decode()

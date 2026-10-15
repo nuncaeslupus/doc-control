@@ -1,4 +1,4 @@
-"""`segment`: scenes opened by a paragraph style and heading subtitles on a real .docx (T49).
+"""`doc.segment`: scenes opened by a paragraph style and heading subtitles on a real .docx (T49).
 
 Gate: ``scene_heading_mismatches == 0``: an ``After break`` paragraph opens a scene (not
 right under a heading), a short line under ``-I-`` is the heading's title, and both can
@@ -75,10 +75,10 @@ def rows() -> list[tuple[str, str]]:
 
 def test_after_break_style_opens_a_scene_and_subtitle_joins_the_heading(tmp_path: Path) -> None:
     doc = str(book(tmp_path, rows()))
-    scenes = run("segment", {"doc": doc, "unit": "scenes"})["scenes"]
+    scenes = run("doc.segment", {"doc": doc, "unit": "scenes"})["scenes"]
     assert [s["signals"] for s in scenes].count(["scene_style"]) == 3
     assert len(scenes) == 6
-    chapters = run("segment", {"doc": doc})["chapters"]
+    chapters = run("doc.segment", {"doc": doc})["chapters"]
     assert [(c["first"], c["heading_last"]) for c in chapters] == [(1, 2), (14, 15), (27, 28)]
     assert {c["words"] for c in chapters} == {11 * 16 + 3}  # the subtitle is not text
 
@@ -86,22 +86,22 @@ def test_after_break_style_opens_a_scene_and_subtitle_joins_the_heading(tmp_path
 def test_scene_styles_and_subtitles_can_be_switched_off(tmp_path: Path) -> None:
     doc = str(book(tmp_path, rows()))
     profile = {"scene_styles": False, "heading_subtitles": False}
-    scenes = run("segment", {"doc": doc, "unit": "scenes", "profile": profile})["scenes"]
+    scenes = run("doc.segment", {"doc": doc, "unit": "scenes", "profile": profile})["scenes"]
     assert len(scenes) == 3
-    chapters = run("segment", {"doc": doc, "profile": profile})["chapters"]
+    chapters = run("doc.segment", {"doc": doc, "profile": profile})["chapters"]
     assert [c["heading_last"] for c in chapters] == [1, 14, 27]
     words = {"scene_style_words": ["despues"]}
-    scenes = run("segment", {"doc": doc, "unit": "scenes", "profile": words})["scenes"]
+    scenes = run("doc.segment", {"doc": doc, "unit": "scenes", "profile": words})["scenes"]
     assert len(scenes) == 3
 
 
 def test_scene_styles_and_heading_subtitles(tmp_path: Path) -> None:
     doc = str(book(tmp_path, rows()))
     off = {"scene_styles": False, "heading_subtitles": False}
-    scenes = run("segment", {"doc": doc, "unit": "scenes"})["scenes"]
-    chapters = run("segment", {"doc": doc})["chapters"]
-    plain = run("segment", {"doc": doc, "unit": "scenes", "profile": off})["scenes"]
-    plain_chapters = run("segment", {"doc": doc, "profile": off})["chapters"]
+    scenes = run("doc.segment", {"doc": doc, "unit": "scenes"})["scenes"]
+    chapters = run("doc.segment", {"doc": doc})["chapters"]
+    plain = run("doc.segment", {"doc": doc, "unit": "scenes", "profile": off})["scenes"]
+    plain_chapters = run("doc.segment", {"doc": doc, "profile": off})["chapters"]
     checks = [
         [s["signals"] for s in scenes].count(["scene_style"]) == 3,
         len(scenes) == 6,

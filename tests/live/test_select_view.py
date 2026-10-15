@@ -31,9 +31,9 @@ def test_cursor_mode_leaves_the_cursor_at_the_start(tmp_path: Path) -> None:
         got = _run("live.select", {"doc": str(doc), "at": at, "mode": "cursor"})
         assert got["text"] == "Two words."
         assert fake.docs[str(doc.resolve())].selection == Span(1, 1, 0, 0)
-        assert _run("live.selection", {"doc": str(doc)})["text"] == ""
+        assert _run("live.get_selection", {"doc": str(doc)})["text"] == ""
         _run("live.select", {"doc": str(doc), "at": at})
-        assert _run("live.selection", {"doc": str(doc)})["text"] == "Two words."
+        assert _run("live.get_selection", {"doc": str(doc)})["text"] == "Two words."
 
 
 def test_select_and_open_bring_the_window_to_the_front(tmp_path: Path) -> None:
@@ -74,4 +74,4 @@ def test_a_failure_to_come_to_the_front_does_not_fail_the_select(tmp_path: Path)
     with using(fake):
         got = _run("live.select", {"doc": str(doc), "at": f"p1#{fingerprint('One.')}"})
         assert got["front"] is False
-        assert _run("live.selection", {"doc": str(doc)})["text"] == "One."
+        assert _run("live.get_selection", {"doc": str(doc)})["text"] == "One."

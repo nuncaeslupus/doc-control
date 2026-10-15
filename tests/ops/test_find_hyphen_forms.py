@@ -73,7 +73,7 @@ def test_hyphen_form_gate(tmp_path: Path) -> None:
         f"bad{NO_BREAK}ger",
     ]
     with api.open(path) as doc:
-        rows = doc.run("locate", {"structure": False})["paragraphs"]
+        rows = doc.run("para.locate", {"structure": False})["paragraphs"]
     mismatches += [r["find_phrase_word"] for r in rows] != [want for _, want in FORMS]
     print(f"hyphen_form_mismatches == {mismatches}")
     assert mismatches == 0
@@ -122,7 +122,7 @@ def test_a_phrase_across_a_mark_keeps_the_forms(tmp_path: Path) -> None:
         assert rows[1] == (f"first\rze{SOFT}bra", "first^pze^-bra")
         assert rows[3] == (f"second\rze{SOFT}bra", "second^pze^-bra")
     with api.open(path) as doc:
-        rows = doc.run("locate", {"structure": False})["paragraphs"]
+        rows = doc.run("para.locate", {"structure": False})["paragraphs"]
     assert rows[1]["find_phrase_across"] == "previous"
     assert rows[1]["find_phrase_word"] == "first^pze^-bra"
 

@@ -450,16 +450,16 @@ def test_cli_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     path = formatted_docx(tmp_path / "d.docx")
     before = snapshot(path)
     req = {"doc": str(path), "ops": [{"op": "para.delete", "at": addresses(path)[2]}]}
-    assert main(["batch", "--json", json.dumps(req)]) == 0
+    assert main(["doc.batch", "--json", json.dumps(req)]) == 0
     assert json.loads(capsys.readouterr().out)["result"]["op_id"] == "h-000001"
     for op in ("history.list", "history.search"):
         body = {"doc": str(path), **({"query": "Párrafo"} if op.endswith("search") else {})}
         assert main([op, "--json", json.dumps(body)]) == 0
         assert json.loads(capsys.readouterr().out)["ok"]
-    assert main(["undo", "--json", json.dumps({"doc": str(path)})]) == 0
+    assert main(["history.undo", "--json", json.dumps({"doc": str(path)})]) == 0
     assert json.loads(capsys.readouterr().out)["result"]["undid"] == "h-000001"
     assert snapshot(path) == before
-    assert main(["undo", "--json", json.dumps({"doc": str(path)})]) == 1
+    assert main(["history.undo", "--json", json.dumps({"doc": str(path)})]) == 1
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "HISTORY_NOT_FOUND"
 
 
@@ -468,16 +468,16 @@ def test_every_history_operation_is_registered_with_a_schema() -> None:
 
     registry = load_operations()
     for name in (
-        "open",
-        "undo",
-        "restore",
+        "doc.open",
+        "history.undo",
+        "history.restore",
         "history.list",
         "history.search",
         "history.purge",
         "history.orphans",
     ):
         assert name in registry and registry[name].schema["type"] == "object"
-    assert registry["undo"].kind == registry["restore"].kind == "write"
+    assert registry["history.undo"].kind == registry["history.restore"].kind == "write"
 
 
 def test_undo_whose_log_append_fails_still_succeeds_with_a_warning(

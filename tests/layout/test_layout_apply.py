@@ -215,11 +215,11 @@ def test_undo_restores_the_bytes_and_reject_restores_the_document(tmp_path: Path
     assert path.read_bytes() != original
 
     saved = path.read_bytes()
-    api.run("undo", {"doc": str(path)})
+    api.run("history.undo", {"doc": str(path)})
     assert path.read_bytes() == original
 
     path.write_bytes(saved)
-    api.run("batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
+    api.run("doc.batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
     assert current(path) == current(plain(tmp_path, 6, "o.docx"))
 
 
@@ -257,7 +257,7 @@ def accepted_copy(path: Path, to: Path) -> Path:
     """``path`` with every revision accepted: the pages as the writer sees them once the
     changes are taken (LibreOffice prints deleted text struck through otherwise)."""
     to.write_bytes(path.read_bytes())
-    api.run("batch", {"doc": str(to), "ops": [{"op": "revision.accept", "all": True}]})
+    api.run("doc.batch", {"doc": str(to), "ops": [{"op": "revision.accept", "all": True}]})
     return to
 
 
@@ -298,7 +298,7 @@ def test_a_part_only_one_section_uses_is_rewritten_as_tracked_changes(tmp_path: 
     assert [c["kind"] for c in out["changes"]] == ["header.text"]
     assert out["changes"][0]["tracked"] and out["plan"] == preview["plan"] == current(path)
     assert current(path)["sections"][0]["footer"]["default"] == "Page {PAGE} of {NUMPAGES}"
-    api.run("batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
+    api.run("doc.batch", {"doc": str(path), "ops": [{"op": "revision.reject", "all": True}]})
     assert current(path)["sections"][0]["footer"]["default"] == "pg:{PAGE}"
 
 
@@ -326,7 +326,7 @@ def test_untracked_changes_need_the_flag_and_null_drops_a_reference(tmp_path: Pa
 
 def printed_headers(path: Path, kind: str = "default") -> list[str | None]:
     """The header text each section prints, inheritance resolved: the text of the section
-    whose reference it uses (sections.list gives its key, hdr<N>.<kind>)."""
+    whose reference it uses (section.list gives its key, hdr<N>.<kind>)."""
     plan = current(path)["sections"]
     out = []
     for row in section_rows(Document(str(path))):

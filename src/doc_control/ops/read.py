@@ -1,11 +1,11 @@
-"""Read operations: `info`, `outline`, `stats`, `para.get`, `styles.list`, `style.get`,
-`comments.list`, `revisions.list`.
+"""Read operations: `doc.info`, `doc.outline`, `doc.stats`, `para.get`, `style.list`, `style.get`,
+`comment.list`, `revision.list`.
 
 None of them writes: the document is opened, read and closed. Lists are capped at
 about 8,000 bytes and continue with `next` (see :mod:`doc_control.ops.paging`).
 
 Extension points: every fact function in :data:`PARA_FACTS` is merged into the
-`para.get` result and every one in :data:`OUTLINE_FACTS` into each `outline`
+`para.get` result and every one in :data:`OUTLINE_FACTS` into each `doc.outline`
 entry, so layout facts can be added without touching the handlers.
 """
 
@@ -106,13 +106,13 @@ def _doc_props(doc: Document, part: str, fields: dict[str, str]) -> dict[str, An
 
 
 @operation(
-    "info",
+    "doc.info",
     "read",
     (
         "File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a "
         "write is refused if the file changed meanwhile), paragraph count, core "
         "properties and which parts exist (comments, notes, headers). A cheap first call "
-        "on a document; stats gives word and element counts. Read-only."
+        "on a document; doc.stats gives word and element counts. Read-only."
     ),
     {
         "type": "object",
@@ -149,12 +149,12 @@ def info(request: dict[str, Any]) -> Reply:
 
 
 @operation(
-    "outline",
+    "doc.outline",
     "read",
     (
         "List the document's headings (levels 1-9) in order, each with its style and "
-        "paragraph address: the table-of-contents view. Use segment for chapters that are "
-        "not styled as headings, paragraphs.list for every paragraph. Read-only, paged "
+        "paragraph address: the table-of-contents view. Use doc.segment for chapters that are "
+        "not styled as headings, para.list for every paragraph. Read-only, paged "
         "with limit and cursor."
     ),
     _list_schema(
@@ -189,7 +189,7 @@ def outline(request: dict[str, Any]) -> Reply:
             entry.update(fact(ParagraphContext(view, para)))
         entry.update(story_row.fields)
         entries.append(entry)
-    return paged("outline", doc, request, "headings", entries)
+    return paged("doc.outline", doc, request, "headings", entries)
 
 
 # -- stats -----------------------------------------------------------------
@@ -265,7 +265,7 @@ def _footnote_count(doc: Document) -> int:
 
 
 @operation(
-    "stats",
+    "doc.stats",
     "read",
     "Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.",
     {
@@ -348,7 +348,7 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
     (
         "Read one paragraph by address in full: text, style, direct formatting and "
         "formatted spans, and layout facts (heading_level is null for a body paragraph, "
-        "1-9 for a heading). Use it before editing a paragraph; paragraphs.list reads "
+        "1-9 for a heading). Use it before editing a paragraph; para.list reads "
         "many at once. Read-only; a long text is paged."
     ),
     {
@@ -426,7 +426,7 @@ def _style_row(style: Style, used: int) -> dict[str, Any]:
 
 
 @operation(
-    "styles.list",
+    "style.list",
     "read",
     (
         "List the styles defined in the document and how many times each is used; filter "
@@ -449,7 +449,7 @@ def styles_list(request: dict[str, Any]) -> Reply:
         if request.get("used_only") and not used:
             continue
         rows.append(_style_row(style, used))
-    return paged("styles.list", doc, request, "styles", rows)
+    return paged("style.list", doc, request, "styles", rows)
 
 
 @operation(
@@ -490,12 +490,12 @@ def style_get(request: dict[str, Any]) -> Reply:
 
 
 @operation(
-    "comments.list",
+    "comment.list",
     "read",
     (
         "List the document's comments in thread order (each root, then its replies) with "
         "author, text, resolved state and location; filter by author or resolved. Reply "
-        "to or resolve them with batch (comment.reply, comment.resolve). Read-only, "
+        "to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, "
         "paged."
     ),
     _list_schema(
@@ -528,16 +528,16 @@ def comments_list(request: dict[str, Any]) -> Reply:
         if c.story is not None:
             row["story"] = c.story
         rows.append(row)
-    return paged("comments.list", doc, request, "comments", rows)
+    return paged("comment.list", doc, request, "comments", rows)
 
 
 @operation(
-    "revisions.list",
+    "revision.list",
     "read",
     (
         "List the tracked changes (insertions, deletions, moves, formatting, table rows "
         "and cells) in document order, each with id, author, date, type, text and "
-        "paragraph address. Accept or reject them with batch (revision.accept, "
+        "paragraph address. Accept or reject them with doc.batch (revision.accept, "
         "revision.reject by ids, author, range or all). Read-only, paged."
     ),
     _list_schema(
@@ -580,7 +580,7 @@ def revisions_list(request: dict[str, Any]) -> Reply:
         if story_kind:
             row["story"] = story_kind
         rows.append(row)
-    return paged("revisions.list", doc, request, "revisions", rows)
+    return paged("revision.list", doc, request, "revisions", rows)
 
 
 # Layout facts register themselves on the hooks above; operations loaded one at a time

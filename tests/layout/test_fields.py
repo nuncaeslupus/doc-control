@@ -1,4 +1,4 @@
-"""`fields.list` (LAYOUT T6): fields are listed in every story, citations are never touched."""
+"""`field.list` (LAYOUT T6): fields are listed in every story, citations are never touched."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def _citation_doc(path: Path) -> Path:
 
 
 def _fields(doc: Path, **extra: Any) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = api.run("fields.list", {"doc": str(doc), **extra}).result["fields"]
+    rows: list[dict[str, Any]] = api.run("field.list", {"doc": str(doc), **extra}).result["fields"]
     return rows
 
 
@@ -133,7 +133,7 @@ def _citations(doc: Path) -> list[tuple[str, str, str]]:
 
 
 def _at(doc: Path, text: str) -> str:
-    rows = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    rows = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     return str(next(r["at"] for r in rows if text in r["text"]))
 
 
@@ -272,7 +272,7 @@ def test_write_ops_never_change_citation_fields(tmp_path: Path) -> None:
         doc = tmp_path / f"case{n}.docx"
         doc.write_bytes(source.read_bytes())
         try:
-            api.run("batch", {"doc": str(doc), "ops": ops})
+            api.run("doc.batch", {"doc": str(doc), "ops": ops})
         except DocControlError as err:
             # Refusing a paragraph that holds a field is safe, provided nothing was written.
             assert err.code is ErrorCode.UNSUPPORTED_CONTENT, (label, err)
@@ -284,7 +284,7 @@ def test_write_ops_never_change_citation_fields(tmp_path: Path) -> None:
             resolved.write_bytes(doc.read_bytes())
             try:
                 api.run(
-                    "batch",
+                    "doc.batch",
                     {"doc": str(resolved), "ops": [{"op": f"revision.{action}", "all": True}]},
                 )
             except DocControlError:  # nothing to resolve in an untracked change

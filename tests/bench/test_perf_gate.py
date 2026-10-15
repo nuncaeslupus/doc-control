@@ -57,21 +57,21 @@ def test_perf_budgets_100k(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     path.write_bytes(generate("novel", 1))
     seen: dict[str, float] = {}
     with api.open(path) as doc:
-        seen["first_parse"] = _timed(lambda: doc.run("outline"))
+        seen["first_parse"] = _timed(lambda: doc.run("doc.outline"))
         seen["paragraphs"] = _timed(doc.paragraphs)
-        seen["locate"] = _timed(lambda: doc.run("locate"))
+        seen["locate"] = _timed(lambda: doc.run("para.locate"))
         at = doc.paragraphs()[100]["at"]
         reads: list[float] = []
         for op, request in [
-            ("stats", {}),
-            ("outline", {}),
-            ("segment", {}),
-            ("segment", {"unit": "scenes"}),
+            ("doc.stats", {}),
+            ("doc.outline", {}),
+            ("doc.segment", {}),
+            ("doc.segment", {"unit": "scenes"}),
             ("para.get", {"at": at}),
-            ("styles.list", {}),
+            ("style.list", {}),
             ("page.estimate", {}),
-            ("find", {"query": "lluvia"}),
-            ("locate", {"at": at}),
+            ("text.find", {"query": "lluvia"}),
+            ("para.locate", {"at": at}),
         ]:
             doc.run(op, request)  # the first call may build a derived table once
             for _ in range(5):
@@ -86,7 +86,7 @@ def test_perf_budgets_100k(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
             if r["text"]
         ][:20]
         assert len(ops) == 20
-        seen["batch_20_edits"] = _timed(lambda: doc.run("batch", {"ops": ops}))
+        seen["batch_20_edits"] = _timed(lambda: doc.run("doc.batch", {"ops": ops}))
         seen["term_rename"] = _timed(
             lambda: doc.run("term.rename", {"from": "lluvia", "to": "nieve"})
         )

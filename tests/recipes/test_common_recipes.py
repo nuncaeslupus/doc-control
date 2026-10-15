@@ -77,7 +77,7 @@ def test_recipe_gives_expected_text_and_is_idempotent(tmp_path: Path, name: str)
     doc = make_docx(tmp_path / "a.docx", *before)
     batch = propose(doc, name)
     assert batch["ops"], name
-    assert isinstance(REGISTRY["batch"].run(batch), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run(batch), Reply)
     assert texts(doc) == after
     assert propose(doc, name)["ops"] == []  # a second run finds nothing left to fix
 
@@ -86,7 +86,7 @@ def test_proposing_and_previewing_write_nothing(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "a.docx", "a      b", "***")
     before = doc.read_bytes()
     for name in ("fake-tabs", "scene-break"):
-        preview = REGISTRY["batch"].run({**propose(doc, name), "dry_run": True})
+        preview = REGISTRY["doc.batch"].run({**propose(doc, name), "dry_run": True})
         assert isinstance(preview, Reply)
     assert doc.read_bytes() == before
 
@@ -133,7 +133,7 @@ def test_leftover_markers_comment_without_changing_text(tmp_path: Path) -> None:
     ops = propose(doc, "leftover-markers")["ops"]
     assert [o["op"] for o in ops] == ["comment.add", "comment.add"]
     assert ops[0]["text"] == "Leftover marker: [TODO check date]"
-    assert isinstance(REGISTRY["batch"].run({"doc": str(doc), "ops": ops}), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run({"doc": str(doc), "ops": ops}), Reply)
     assert texts(doc)[0] == "Fix this [TODO check date] now"
 
 
@@ -142,7 +142,7 @@ def test_quote_recipes_work_on_the_same_paragraph_in_turn(tmp_path: Path) -> Non
     for name in ("quotes-en-single", "quotes-en"):
         batch = propose(doc, name)
         assert batch["ops"], name
-        assert isinstance(REGISTRY["batch"].run(batch), Reply)
+        assert isinstance(REGISTRY["doc.batch"].run(batch), Reply)
     assert texts(doc) == ["\u2018It's mine,\u2019 he said, \u201cno.\u201d"]
 
 
@@ -175,7 +175,7 @@ def test_quote_recipes_leave_inch_and_foot_marks(tmp_path: Path, name: str) -> N
 
 def test_quotes_after_inch_marks_still_pair_up(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "a.docx", 'the 5" pipe said "hi"')
-    assert isinstance(REGISTRY["batch"].run(propose(doc, "quotes-en")), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run(propose(doc, "quotes-en")), Reply)
     assert texts(doc) == ['the 5" pipe said \u201chi\u201d']
 
 
@@ -187,7 +187,7 @@ def test_scene_break_does_not_propose_centring_for_a_centred_paragraph(tmp_path:
     doc = make_docx(tmp_path / "a.docx", "* * *")
     first = propose(doc, "scene-break")["ops"]
     assert [o["op"] for o in first] == ["format.apply"]  # text is right, centring is not
-    assert isinstance(REGISTRY["batch"].run(propose(doc, "scene-break")), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run(propose(doc, "scene-break")), Reply)
     reply = REGISTRY["recipe.run"].run({"doc": str(doc), "recipe": "scene-break"})
     assert isinstance(reply, Reply) and reply.result["batch"]["ops"] == []
     assert reply.result["skipped"] == [] and reply.warnings == []
@@ -203,5 +203,5 @@ def test_undeletable_blank_paragraph_is_skipped_not_fatal(tmp_path: Path) -> Non
     assert [s["at"].split("#")[0] for s in skipped] == ["p4"]
     assert "last paragraph" in skipped[0]["reason"]
     assert any(w.startswith("SKIPPED") for w in reply.warnings)
-    assert isinstance(REGISTRY["batch"].run(reply.result["batch"]), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run(reply.result["batch"]), Reply)
     assert texts(doc) == ["Keep", "", "Keep too", "   "]

@@ -1,4 +1,4 @@
-"""`find`: literal and regex search, folding with exact offsets, caps and cursors."""
+"""`text.find`: literal and regex search, folding with exact offsets, caps and cursors."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from tests.helpers import make_docx
 
 def run(doc: Path, query: str, **options: Any) -> dict[str, Any]:
     request = {"doc": str(doc), "query": query, **options}
-    reply = REGISTRY["find"].run(request)
+    reply = REGISTRY["text.find"].run(request)
     assert isinstance(reply, Reply)
     return {
         **reply.result,
@@ -224,23 +224,25 @@ def test_find_is_registered_with_a_schema_and_reachable_through_the_cli(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     doc = make_docx(tmp_path / "a.docx", "Dijo María, y se fue.")
-    assert "find" in REGISTRY and REGISTRY["find"].kind == "read"
+    assert "text.find" in REGISTRY and REGISTRY["text.find"].kind == "read"
     request = json.dumps(
         {"doc": str(doc), "query": "maria", "ignore_case": True, "ignore_accents": True}
     )
-    code = main(["find", "--json", request])
+    code = main(["text.find", "--json", request])
     env = json.loads(capsys.readouterr().out)
-    assert code == 0 and env["ok"] is True and env["op"] == "find"
+    assert code == 0 and env["ok"] is True and env["op"] == "text.find"
     assert env["doc"]["paragraphs"] == 1 and len(env["doc"]["sha256"]) == 64
     assert env["result"]["matches"][0]["text"] == "María"
     assert env["next"] is None and env["warnings"] == []
     assert "doc" not in env["result"]
 
-    code = main(["find", "--json", json.dumps({"doc": str(doc), "query": "x", "limit": 0})])
+    code = main(["text.find", "--json", json.dumps({"doc": str(doc), "query": "x", "limit": 0})])
     assert code == 2 and json.loads(capsys.readouterr().out)["error"]["code"] == "SCHEMA_INVALID"
-    code = main(["find", "--json", json.dumps({"doc": str(tmp_path / "no.docx"), "query": "x"})])
+    code = main(
+        ["text.find", "--json", json.dumps({"doc": str(tmp_path / "no.docx"), "query": "x"})]
+    )
     assert code == 1 and json.loads(capsys.readouterr().out)["error"]["code"] == "DOC_NOT_FOUND"
-    code = main(["help", "find"])
+    code = main(["server.help", "text.find"])
     assert code == 0
     assert "ignore_accents" in capsys.readouterr().out
 

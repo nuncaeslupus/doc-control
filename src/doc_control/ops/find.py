@@ -1,4 +1,4 @@
-"""`find`: literal or regex search, returned as addressable ranges.
+"""`text.find`: literal or regex search, returned as addressable ranges.
 
 Each match is ``{"at": "p142#a7b2a7b2:10-15", "text": ..., "context": ...}``: the range
 is a paragraph address plus code-point offsets into the paragraph's visible text.
@@ -86,7 +86,7 @@ SCHEMA: dict[str, Any] = {
             " ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each"
             " match gains `match_level`, the strictest level it meets. Not with `regex`"
             " (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a"
-            " folded level. Two meanings of exact: plain `find` (no `match_level`) matches"
+            " folded level. Two meanings of exact: plain `text.find` (no `match_level`) matches"
             " the query as typed, flags as given, ^ codes literal, and its matches carry no"
             ' level; `match_level: "exact"` keeps that text rule but reads the ^ codes and'
             " tags every match. A match's own `match_level` is `exact` only when it equals"
@@ -101,7 +101,7 @@ SCHEMA: dict[str, Any] = {
 
 
 @operation(
-    "find",
+    "text.find",
     "read",
     "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. "
     "The first page also gives `total` (or `total_at_least` and `more: true` when the time "

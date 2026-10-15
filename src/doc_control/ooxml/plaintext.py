@@ -13,7 +13,7 @@ Paragraphs (``.txt``), by mode
     ``blocks``: a block of lines between empty lines is a paragraph, its lines joined by
     one space (hard-wrapped prose, as in Project Gutenberg files). One empty line
     separates two paragraphs; each further empty line in a run is an empty paragraph, so
-    ``chapter_blank_lines`` in ``segment`` counts the extra ones. ``lines``: every line is
+    ``chapter_blank_lines`` in ``doc.segment`` counts the extra ones. ``lines``: every line is
     a paragraph and every empty line an empty paragraph (a writer's export, verse).
     ``auto`` (the default) picks ``blocks`` only when the text looks hard-wrapped: the
     lines inside multi-line blocks mostly end within 10 % of one width from 50 to 120, or

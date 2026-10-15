@@ -35,7 +35,7 @@ VERSE = "Roses are red,\nviolets are blue,\n\nsugar is sweet,\nand so are you.\n
 
 def _texts(path: Path, mode: str | None = None) -> tuple[list[str], dict[str, str]]:
     with api.open(path, text_mode=mode) as doc:
-        reply = doc.reply("paragraphs.list")
+        reply = doc.reply("para.list")
         assert reply.doc is not None
         return [r["text"] for r in reply.result["paragraphs"]], reply.doc["source"]
 
@@ -88,7 +88,7 @@ def test_unknown_environment_mode_is_refused(
     path.write_text("a\nb\n", "utf-8")
     monkeypatch.setenv("DOC_CONTROL_TEXT_MODE", "bogus")
     with api.open(path) as doc, pytest.raises(DocControlError) as err:
-        doc.run("info")
+        doc.run("doc.info")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
 
 

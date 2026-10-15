@@ -1,6 +1,6 @@
-"""`locate` phrases are pinned by a golden file (FIND T1: direction b stays untouched).
+"""`para.locate` phrases are pinned by a golden file (FIND T1: direction b stays untouched).
 
-The golden file holds, per corpus kind, every paragraph's generated phrases as `locate` returns
+The golden file holds, per corpus kind, every paragraph's generated phrases as `para.locate` returns
 them: `phrase`, `find_phrase`, `find_phrase_word`, `find_phrase_across` and the fields that
 explain a missing one. The novel is long, so it is pinned by a digest of the same rows.
 Regenerate on purpose with ``uv run python -m tests.ops.test_locate_golden``.
@@ -41,14 +41,14 @@ FIELDS = (
 def locate_page(request: dict[str, Any]) -> dict[str, Any]:
     out = io.StringIO()
     with redirect_stdout(out):
-        code = main(["locate", "--json", json.dumps(request)])
+        code = main(["para.locate", "--json", json.dumps(request)])
     assert code == 0, out.getvalue()
     reply: dict[str, Any] = json.loads(out.getvalue())
     return reply
 
 
 def locate_rows(path: Path) -> list[dict[str, Any]]:
-    """Every row `locate` returns for ``path``, paged through the CLI, cut to ``FIELDS``."""
+    """Every row `para.locate` returns for ``path``, paged through the CLI, cut to ``FIELDS``."""
     rows: list[dict[str, Any]] = []
     cursor: str | None = None
     while True:
@@ -82,7 +82,7 @@ def render(golden: dict[str, Any]) -> str:
 
 
 def test_locate_output_matches_golden() -> None:
-    """`locate` on every corpus kind is byte-identical to `tests/ops/data/locate_golden.json`."""
+    """`para.locate` on every corpus kind is byte-identical to the golden file."""
     assert render(snapshot()) == GOLDEN.read_text(encoding="utf-8")
 
 

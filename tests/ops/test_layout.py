@@ -1,4 +1,4 @@
-"""Layout facts in `para.get` and `outline` (T31), on documents with style chains."""
+"""Layout facts in `para.get` and `doc.outline` (T31), on documents with style chains."""
 
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def test_heading_after_two_empty_paragraphs(tmp_path: Path, run: Run) -> None:
 
 def test_outline_reports_layout_facts(tmp_path: Path, run: Run) -> None:
     doc = make_doc(tmp_path / "o.docx", [p("x"), p(), p("Chapter One", style("ChapterBreak"))])
-    (entry,) = run("outline", doc=str(doc))["headings"]
+    (entry,) = run("doc.outline", doc=str(doc))["headings"]
     assert entry["level"] == 1
     assert entry["style"] == "ChapterBreak"
     assert entry["style_name"] == "Chapter break"

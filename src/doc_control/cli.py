@@ -1,8 +1,9 @@
 """Command-line front door: `doc-control <op> [--json '<request>' | --json - < request.json]`.
 
-`doc-control help <op>` is shorthand for `doc-control help --json '{"op": "<op>"}'`, and
-`--help` / `-h` are aliases of `help`. `doc-control mcp` serves the same operations as an
-MCP server on stdio (see `doc_control.mcp`).
+`doc-control server.help <op>` is shorthand for
+`doc-control server.help --json '{"op": "<op>"}'`, and `help`, `--help` and `-h` are aliases
+of `server.help`. Names operations had before 0.7.0 (`registry.ALIASES`) still run.
+`doc-control mcp` serves the same operations as an MCP server on stdio (see `doc_control.mcp`).
 
 Never prompts and never reads stdin unless asked with `--json -`, so an agent whose
 stdin is an open pipe cannot hang it. Prints exactly one JSON envelope on stdout. Exit codes:
@@ -17,7 +18,7 @@ from typing import Any
 
 from doc_control.envelope import Reply, failure, success
 from doc_control.errors import DocControlError, ErrorCode
-from doc_control.registry import Operation, load_operations
+from doc_control.registry import Operation, canonical, load_operations
 
 _USAGE_CODES = {ErrorCode.SCHEMA_INVALID}
 
@@ -25,18 +26,19 @@ _USAGE_CODES = {ErrorCode.SCHEMA_INVALID}
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     registry = load_operations()
-    op = args[0] if args else "help"
+    op = args[0] if args else "server.help"
     if op == "mcp":
         from doc_control.mcp import serve
 
         return serve()
     if op in ("--version", "version"):
-        op = "capabilities"
+        op = "server.capabilities"
     elif op in ("--help", "-h"):
-        op = "help"
+        op = "server.help"
+    op = canonical(op)
     rest = args[1:]
     try:
-        if op == "help" and len(rest) == 1 and not rest[0].startswith("-"):
+        if op == "server.help" and len(rest) == 1 and not rest[0].startswith("-"):
             request: dict[str, Any] = {"op": rest[0]}
         else:
             request = _read_request(rest)
@@ -64,6 +66,7 @@ def execute(
     registry: dict[str, Operation], op: str, request: dict[str, Any]
 ) -> tuple[dict[str, Any], int]:
     """Run one operation; return its envelope and the CLI exit code. Never raises."""
+    op = canonical(op)
     try:
         if op not in registry:
             raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {op}", op=op)

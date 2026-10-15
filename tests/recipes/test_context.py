@@ -7,7 +7,7 @@ the first paragraph after a chapter heading takes the chapter-opening style, an 
 author line typed in the quote style before a blank line takes the author style, and empty
 headings go. Each is written here as a declarative recipe (bundled when it is general, a
 test definition over the house style set when it names house styles) and passes its case
-on a synthetic document, applied through ``batch`` as tracked changes.
+on a synthetic document, applied through ``doc.batch`` as tracked changes.
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ def commented(path: Path) -> list[str]:
 
 
 def run(doc: Path, recipe: str | dict[str, Any]) -> dict[str, Any]:
-    """Run a bundled recipe (by name) or a definition and apply its proposal with ``batch``."""
+    """Run a bundled recipe (by name) or a definition and apply its proposal with ``doc.batch``."""
     key = "recipe" if isinstance(recipe, str) else "definition"
     reply = REGISTRY["recipe.run"].run({"doc": str(doc), key: recipe})
     assert isinstance(reply, Reply)

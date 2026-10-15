@@ -8,7 +8,7 @@ comes back complete with no ``next``. Errors raise :class:`~doc_control.errors.D
     from doc_control import api
 
     with api.open("novel.docx") as doc:
-        chapters = doc.run("segment", {"unit": "chapters"})
+        chapters = doc.run("doc.segment", {"unit": "chapters"})
         for p in doc.paragraphs(normalized=True, pages=True):
             ...
 """
@@ -91,7 +91,7 @@ class OpenDocument:
         """The result of ``op`` on this document (``doc`` is filled in).
 
         Results are whole unless the request set a ``limit`` or an operation stopped at
-        its time budget (``find``); then the result carries ``next``, the cursor to
+        its time budget (``text.find``); then the result carries ``next``, the cursor to
         continue with, and :meth:`reply` has the warnings.
         """
         reply = self.reply(op, request)
@@ -100,12 +100,12 @@ class OpenDocument:
         return reply.result
 
     def paragraphs(self, *, normalized: bool = False, pages: bool = False) -> list[dict[str, Any]]:
-        """Every paragraph with its address, text, style and layout facts (``paragraphs.list``).
+        """Every paragraph with its address, text, style and layout facts (``para.list``).
 
         The page header (``page_basis``, ``rendered_marks``, ``page_count``) comes with
-        ``run("paragraphs.list", {"pages": True})``.
+        ``run("para.list", {"pages": True})``.
         """
-        result = self.run("paragraphs.list", {"normalized": normalized, "pages": pages})
+        result = self.run("para.list", {"normalized": normalized, "pages": pages})
         rows: list[dict[str, Any]] = result["paragraphs"]
         return rows
 
@@ -141,7 +141,7 @@ def open(
 
     ``engine="live"`` attaches to the Word or LibreOffice window holding ``path`` (opening
     the file there when none does; ``app`` picks ``word`` or ``libreoffice``), and the
-    handle then runs ``batch`` and the ``live.*`` operations on that open document.
+    handle then runs ``doc.batch`` and the ``live.*`` operations on that open document.
     """
     if text_mode is not None and text_mode not in TEXT_MODES:
         raise DocControlError(

@@ -154,7 +154,7 @@ def _live_fixtures(tmp: Path) -> Iterator[tuple[list[str], str, str | None]]:
         path.write_bytes(generate(kind, 0))
         with api.open(path) as handle:
             texts = [p["text"] for p in handle.paragraphs()]
-            rows = handle.run("locate", {})["paragraphs"]
+            rows = handle.run("para.locate", {})["paragraphs"]
         step = max(1, len(rows) // 8)
         for n, row in list(enumerate(rows))[::step]:
             if row.get("find_phrase"):

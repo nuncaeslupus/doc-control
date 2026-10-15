@@ -1,4 +1,4 @@
-"""`diff`: paragraph alignment between two versions, against known edits."""
+"""`doc.diff`: paragraph alignment between two versions, against known edits."""
 
 from __future__ import annotations
 
@@ -352,11 +352,11 @@ def test_diff_through_the_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]
         tmp_path / "o.docx", ["alpha beta gamma delta epsilon zeta eta", "other text here"]
     )
     new = _write(tmp_path / "n.docx", ["alpha beta gamma delta epsilon zeta eta", "changed"])
-    code = main(["diff", "--json", json.dumps({"old": str(old), "new": str(new)})])
+    code = main(["doc.diff", "--json", json.dumps({"old": str(old), "new": str(new)})])
     env = json.loads(capsys.readouterr().out)
-    assert code == 0 and env["ok"] and env["op"] == "diff"
+    assert code == 0 and env["ok"] and env["op"] == "doc.diff"
     assert env["result"]["summary"]["deleted"] == 1
-    bad = main(["diff", "--json", json.dumps({"old": str(old)})])
+    bad = main(["doc.diff", "--json", json.dumps({"old": str(old)})])
     assert bad == 2
     capsys.readouterr()
 

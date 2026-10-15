@@ -1,11 +1,11 @@
-"""`locate`: where a paragraph is (chapter, scene, estimated page) and how to find it again.
+"""`para.locate`: where a paragraph is (chapter, scene, estimated page) and how to find it again.
 
 For each paragraph the result carries
 
 * ``chapter`` (id, title, number, kind) and ``scene`` (id, ordinal within its chapter), from
-  :mod:`doc_control.model.structure` (same ``overrides`` and ``profile`` as `segment`, so the
+  :mod:`doc_control.model.structure` (same ``overrides`` and ``profile`` as `doc.segment`, so the
   ids agree); ``null`` before the first chapter or scene;
-* ``part`` (id, title, number) when the paragraph lies in a part (see `segment` unit
+* ``part`` (id, title, number) when the paragraph lies in a part (see `doc.segment` unit
   ``parts``), else ``null``;
 * ``page`` and ``page_label`` from :mod:`doc_control.model.pages`: always an estimate;
 * a *locator phrase*: the shortest ``head … tail`` made of the paragraph's first N and last M
@@ -765,7 +765,7 @@ class _Rows(Sequence[dict[str, Any]]):
 
 
 @operation(
-    "locate",
+    "para.locate",
     "read",
     (
         "Say where paragraphs are, for a person: for one paragraph, a range or the whole "
@@ -773,7 +773,7 @@ class _Rows(Sequence[dict[str, Any]]):
         "unique first-and-last-words phrase, plus a phrase Word's Find meets exactly "
         "once. Either phrase can be null (empty, duplicate or no unique phrase), with a "
         "reason saying why. Use it to tell a user where a passage is, or to get a find phrase for "
-        "live.select; outline lists only headings, find searches text, page.estimate "
+        "live.select; doc.outline lists only headings, text.find searches text, page.estimate "
         "gives only pages. Read-only."
     ),
     {
@@ -911,7 +911,7 @@ def locate(request: dict[str, Any]) -> Reply:
         return out
 
     head: dict[str, Any] = {"estimated": True, "page_count": pages.pages, "basis": pages.basis}
-    return paged("locate", doc, request, "paragraphs", _Rows(wanted, row), head)
+    return paged("para.locate", doc, request, "paragraphs", _Rows(wanted, row), head)
 
 
 def _locate_story(doc: Document, request: dict[str, Any], story: str) -> Reply:

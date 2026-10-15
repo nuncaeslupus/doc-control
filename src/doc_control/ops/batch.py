@@ -1,4 +1,4 @@
-"""The ``batch`` write operation: all-or-nothing tracked edits in one verified write.
+"""The ``doc.batch`` write operation: all-or-nothing tracked edits in one verified write.
 
 A request lists ``ops`` (``text.replace``, ``para.insert``, ``para.delete``,
 ``para.move``, ``style.apply``, ``format.apply``, ``revision.accept``, ``revision.reject``;
@@ -124,7 +124,7 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
 
 
 @operation(
-    "batch",
+    "doc.batch",
     "write",
     (
         "The main editing tool: apply several edits as tracked changes, all or nothing "
@@ -135,7 +135,7 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
         "style.create/update/rename/merge; or revision.accept and revision.reject (by "
         "ids, author, address range or all). Addresses refer to the document as read; "
         "on the file engine, expect.sha256 refuses a file changed since, dry_run previews, "
-        "the file is backed up first and undo takes the batch back. engine live edits the "
+        "the file is backed up first and history.undo takes the batch back. engine live edits the "
         "app's open document instead: no dry_run, expect, backup or all-or-nothing."
     ),
     _SCHEMA,

@@ -39,10 +39,10 @@ def test_operations_md_is_generated() -> None:
     levelled = sorted(n for n, op in REGISTRY.items() if "match_level" in op.schema["properties"])
     assert levelled == [
         "anchor.resolve",
-        "find",
         "history.search",
         "live.select",
         "term.rename",
+        "text.find",
     ]
     for name in levelled:
         section = text.split(f"## `{name}` (", 1)[1].split("\n## ", 1)[0]

@@ -195,7 +195,7 @@ def test_registered_and_batch_kinds() -> None:
     for name in ("style.create", "style.update", "style.rename", "style.merge", "styleset.install"):
         assert registry[name].kind == "write"
     assert registry["styleset.export"].kind == "read"
-    assert "style.merge" in REGISTRY["batch"].schema["properties"]["ops"]["description"]
+    assert "style.merge" in REGISTRY["doc.batch"].schema["properties"]["ops"]["description"]
 
 
 def test_create_adds_one_block_and_keeps_the_rest(doc: Path) -> None:

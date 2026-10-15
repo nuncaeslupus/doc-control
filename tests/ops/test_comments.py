@@ -395,7 +395,7 @@ def test_comment_ops_are_batch_kinds_only() -> None:
     registry = load_operations()
     for kind in ("comment.add", "comment.reply", "comment.resolve"):
         assert kind not in registry
-        assert kind in registry["batch"].schema["properties"]["ops"]["description"]
+        assert kind in registry["doc.batch"].schema["properties"]["ops"]["description"]
 
 
 def test_comments_mix_with_format_ops(tmp_path: Path) -> None:

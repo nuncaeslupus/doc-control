@@ -1,7 +1,7 @@
 """Exact anchors on normalised text (T41).
 
 Gate: ``exact_quotes_not_found_after_normalisation == 0``. Agents quote from the
-normalised text (``text.normalized``), so ``anchor.resolve`` in ``mode: "exact"`` must find a
+normalised text (``text.normalize``), so ``anchor.resolve`` in ``mode: "exact"`` must find a
 quote across soft hyphens, zero-width characters, tabs, no-break and double spaces in the
 document, and return a range whose own text normalises to the quote.
 """

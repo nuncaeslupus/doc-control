@@ -460,7 +460,7 @@ class IsolatedScan:
     behaves the same on Windows) publishes the paragraph it is in through shared
     memory; on timeout it is terminated, matches it already sent are kept, and
     ``stopped_at`` is the paragraph it was stuck in. Close the generator to stop early.
-    A script that calls this (through ``find``) must guard its entry point with
+    A script that calls this (through ``text.find``) must guard its entry point with
     ``if __name__ == "__main__":``, as ``spawn`` re-imports the main module.
     """
 

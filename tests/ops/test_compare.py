@@ -1,4 +1,4 @@
-"""`compare`: a redline whose accept-all is the new text and whose reject-all is the old."""
+"""`doc.compare`: a redline whose accept-all is the new text and whose reject-all is the old."""
 
 from __future__ import annotations
 
@@ -312,21 +312,21 @@ def test_compare_cli_envelope(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     old = make_docx(tmp_path / "o.docx", "Before text here.", "Same.")
     new = make_docx(tmp_path / "n.docx", "After text here.", "Same.")
     request = {"old": str(old), "new": str(new), "output": str(tmp_path / "r.docx"), "tag": "t"}
-    assert main(["compare", "--json", json.dumps(request)]) == 0
+    assert main(["doc.compare", "--json", json.dumps(request)]) == 0
     envelope: dict[str, Any] = json.loads(capsys.readouterr().out)
-    assert envelope["ok"] and envelope["op"] == "compare"
+    assert envelope["ok"] and envelope["op"] == "doc.compare"
     result = envelope["result"]
     assert result["output"]["path"] == str(tmp_path / "r.docx")
     assert result["summary"]["modified"] == 1 and result["revisions"] > 0
     assert result["author"] == "Claude (t)"
     assert envelope["doc"]["path"] == str(old)
-    assert REGISTRY["compare"].kind == "read"
+    assert REGISTRY["doc.compare"].kind == "read"
 
-    assert main(["compare", "--json", json.dumps(request)]) == 2  # output exists now
+    assert main(["doc.compare", "--json", json.dumps(request)]) == 2  # output exists now
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "SCHEMA_INVALID"
     request["output"] = str(tmp_path / "r2.docx")
     request["date"] = "2026-10-12T09:00:00"
-    assert main(["compare", "--json", json.dumps(request)]) == 2  # no time zone
+    assert main(["doc.compare", "--json", json.dumps(request)]) == 2  # no time zone
     assert not (tmp_path / "r2.docx").exists()
 
 

@@ -1,4 +1,5 @@
-"""`locate`: chapter, scene, estimated page and the shortest unique first-and-last-words phrase."""
+"""`para.locate`: chapter, scene, estimated page and the shortest unique first-and-last-words
+phrase."""
 
 from __future__ import annotations
 
@@ -78,7 +79,7 @@ def all_rows(run: Run, path: Path, **request: Any) -> list[dict[str, Any]]:
     cursor: str | None = None
     while True:
         extra = {"cursor": cursor} if cursor else {}
-        code, env, nbytes = run("locate", doc=str(path), **request, **extra)
+        code, env, nbytes = run("para.locate", doc=str(path), **request, **extra)
         assert code == 0, env
         assert nbytes <= RESPONSE_BUDGET
         assert env["result"]["estimated"] is True
@@ -96,7 +97,7 @@ def uniqueness_failures(path: Path, rows: list[dict[str, Any]]) -> int:
 def test_locator_phrase_is_unique_in_document(
     corpus_doc: CorpusWriter, run: Run, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every phrase `locate` returns matches exactly one paragraph (every corpus kind)."""
+    """Every phrase `para.locate` returns matches exactly one paragraph (every corpus kind)."""
     paths = [corpus_doc(kind, 1) for kind in KINDS if kind != "novel"]
     not_unique = 0
     total = 0
@@ -181,10 +182,10 @@ def test_short_empty_and_duplicate_paragraphs(run: Run, tmp_path: Path) -> None:
     assert len(rows) == 4  # the empty paragraph is left out of a whole-document list
     assert [r["phrase"] for r in rows] == [None] * 4
     assert [r["reason"] for r in rows] == ["duplicate"] * 4  # folded: case-insensitive
-    code, env, _ = run("locate", doc=str(path), at=str(rows[0]["at"]))
+    code, env, _ = run("para.locate", doc=str(path), at=str(rows[0]["at"]))
     assert code == 0
     two = Document(str(path)).index.paragraph(3)
-    code, env, _ = run("locate", doc=str(path), at=str(two.address))
+    code, env, _ = run("para.locate", doc=str(path), at=str(two.address))
     assert env["result"]["paragraphs"][0]["reason"] == "empty"
     assert env["result"]["paragraphs"][0]["phrase"] is None
 
@@ -217,26 +218,26 @@ def test_range_and_pages(run: Run, corpus_doc: CorpusWriter) -> None:
     path = corpus_doc("novel", 4)
     paras = Document(str(path)).index.paragraphs
     first, last = paras[100], paras[104]
-    code, env, _ = run("locate", doc=str(path), at=f"{first.address}:0..{last.address}:1")
+    code, env, _ = run("para.locate", doc=str(path), at=f"{first.address}:0..{last.address}:1")
     assert code == 0, env
     rows = env["result"]["paragraphs"]
     assert [r["at"] for r in rows] == [str(p.address) for p in paras[100:105]]
     assert env["result"]["estimated"] is True
     assert all(isinstance(r["page"], int) and r["page"] >= 1 for r in rows)
-    code, big, _ = run("locate", doc=str(path), limit=5)
+    code, big, _ = run("para.locate", doc=str(path), limit=5)
     assert big["result"]["total"] > 1000
     assert len(big["result"]["paragraphs"]) == 5
     assert big["next"] is not None
-    code, other, _ = run("locate", doc=str(path), cursor=big["next"], limit=5)
+    code, other, _ = run("para.locate", doc=str(path), cursor=big["next"], limit=5)
     assert other["result"]["paragraphs"][0]["at"] != big["result"]["paragraphs"][0]["at"]
 
 
 def test_chapters_agree_with_segment(run: Run, corpus_doc: CorpusWriter) -> None:
     path = corpus_doc("novel", 5)
-    code, env, _ = run("segment", doc=str(path), unit="chapters", limit=3)
+    code, env, _ = run("doc.segment", doc=str(path), unit="chapters", limit=3)
     assert code == 0
     chapters = env["result"]["chapters"]
-    code, env, _ = run("locate", doc=str(path), at=chapters[1]["at"])
+    code, env, _ = run("para.locate", doc=str(path), at=chapters[1]["at"])
     row = env["result"]["paragraphs"][0]
     assert row["chapter"]["id"] == chapters[1]["id"]
     assert row["chapter"]["number"] == chapters[1]["number"]
@@ -244,7 +245,7 @@ def test_chapters_agree_with_segment(run: Run, corpus_doc: CorpusWriter) -> None
 
 def test_stale_address_is_refused(run: Run, tmp_path: Path) -> None:
     path = make_docx(tmp_path / "d.docx", "one", "two")
-    code, env, _ = run("locate", doc=str(path), at="p1#00000000")
+    code, env, _ = run("para.locate", doc=str(path), at="p1#00000000")
     assert code != 0
     assert env["ok"] is False
 
@@ -255,7 +256,7 @@ def test_whole_novel_is_fast(
     """One response of a 100,000-word novel, and the index over all of it, stay quick."""
     path = corpus_doc("novel", 6)
     started = time.perf_counter()
-    code, _, _ = run("locate", doc=str(path))
+    code, _, _ = run("para.locate", doc=str(path))
     first_page = time.perf_counter() - started
     assert code == 0
     texts = [p.text for p in Document(str(path)).index.paragraphs]

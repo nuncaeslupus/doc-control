@@ -24,14 +24,14 @@ from tests.helpers import CONTENT_TYPES, RELS
 from tests.ops.bigdoc import write_big_doc
 
 READ_OPS = (
-    "info",
-    "outline",
-    "stats",
+    "doc.info",
+    "doc.outline",
+    "doc.stats",
     "para.get",
-    "styles.list",
+    "style.list",
     "style.get",
-    "comments.list",
-    "revisions.list",
+    "comment.list",
+    "revision.list",
 )
 Run = Callable[..., tuple[int, dict[str, Any], int]]
 CorpusWriter = Callable[..., Path]  # corpus_doc(kind, seed=0)
@@ -82,14 +82,14 @@ def test_read_ops_large_doc_responses_stay_under_budget(
     assert sum(len(p.text.split()) for p in doc.index.paragraphs) >= 100_000
     longest = max(doc.index.paragraphs, key=lambda p: len(p.text))
     requests: list[tuple[str, str | None, dict[str, Any]]] = [
-        ("info", None, {}),
-        ("stats", None, {}),
+        ("doc.info", None, {}),
+        ("doc.stats", None, {}),
         ("para.get", None, {"at": str(longest.address)}),
         ("style.get", None, {"style": "Heading1"}),
-        ("outline", "headings", {}),
-        ("styles.list", "styles", {}),
-        ("comments.list", "comments", {}),
-        ("revisions.list", "revisions", {}),
+        ("doc.outline", "headings", {}),
+        ("style.list", "styles", {}),
+        ("comment.list", "comments", {}),
+        ("revision.list", "revisions", {}),
     ]
     sizes: list[int] = []
     cut_lists = 0
@@ -138,16 +138,16 @@ def test_read_ops_never_write_the_document(
     before = path.read_bytes()
     mtime = path.stat().st_mtime_ns
     listing = sorted(p.name for p in tmp_path.iterdir())
-    para = ok(run, "outline", doc=str(path))["result"]["headings"][0]["at"]
+    para = ok(run, "doc.outline", doc=str(path))["result"]["headings"][0]["at"]
     for op, extra in [
-        ("info", {}),
-        ("outline", {}),
-        ("stats", {}),
+        ("doc.info", {}),
+        ("doc.outline", {}),
+        ("doc.stats", {}),
         ("para.get", {"at": para}),
-        ("styles.list", {}),
+        ("style.list", {}),
         ("style.get", {"style": "Normal"}),
-        ("comments.list", {}),
-        ("revisions.list", {}),
+        ("comment.list", {}),
+        ("revision.list", {}),
     ]:
         ok(run, op, doc=str(path), **extra)
     assert path.read_bytes() == before
@@ -157,7 +157,7 @@ def test_read_ops_never_write_the_document(
 
 def test_info_reports_file_facts(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("kitchen_sink")
-    env = ok(run, "info", doc=str(path))
+    env = ok(run, "doc.info", doc=str(path))
     result = env["result"]
     assert env["doc"]["paragraphs"] == len(Document(str(path)).index)
     assert len(env["doc"]["sha256"]) == 64
@@ -171,18 +171,18 @@ def test_info_reports_file_facts(corpus_doc: CorpusWriter, run: Run) -> None:
 def test_info_reports_word_lock(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("plain")
     path.with_name("~$" + path.name).write_bytes(b"")
-    assert ok(run, "info", doc=str(path))["result"]["word_lock"] is True
+    assert ok(run, "doc.info", doc=str(path))["result"]["word_lock"] is True
 
 
 def test_outline_lists_headings_with_levels(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("headings")
-    headings = ok(run, "outline", doc=str(path))["result"]["headings"]
+    headings = ok(run, "doc.outline", doc=str(path))["result"]["headings"]
     assert [h["level"] for h in headings] == [1, 2, 3, 2]
     assert headings[0]["style"] == "Heading1"
     index = Document(str(path)).index
     for h in headings:  # the address resolves back to the same text
         assert index.resolve_address(h["at"]).text.startswith(h["text"][:20])
-    shallow = ok(run, "outline", doc=str(path), max_level=2)["result"]
+    shallow = ok(run, "doc.outline", doc=str(path), max_level=2)["result"]
     assert [h["level"] for h in shallow["headings"]] == [1, 2, 2]
 
 
@@ -251,7 +251,9 @@ def test_outline_heading_level_follows_basedon_and_outline_levels(tmp_path: Path
         ]
     )
     path = _custom_docx(tmp_path / "levels.docx", body, styles)
-    got = [(h["text"], h["level"]) for h in ok(run, "outline", doc=str(path))["result"]["headings"]]
+    got = [
+        (h["text"], h["level"]) for h in ok(run, "doc.outline", doc=str(path))["result"]["headings"]
+    ]
     assert got == [
         ("Direct", 4),
         ("A chapter", 1),
@@ -270,7 +272,7 @@ def test_outline_heading_level_follows_basedon_and_outline_levels(tmp_path: Path
 def test_stats_counts_match_the_document(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("kitchen_sink")
     doc = Document(str(path))
-    result = ok(run, "stats", doc=str(path))["result"]
+    result = ok(run, "doc.stats", doc=str(path))["result"]
     assert result["paragraphs"] == len(doc.index)
     assert result["words"] == sum(len(p.text.split()) for p in doc.index.paragraphs)
     assert result["characters"] == sum(len(p.text) for p in doc.index.paragraphs)
@@ -290,7 +292,7 @@ def test_stats_lists_fonts_in_use(tmp_path: Path, run: Run) -> None:
         '<w:r><w:rPr><w:rFonts w:hAnsi="Calibri"/></w:rPr><w:t>c</w:t></w:r>'
     )
     path = _custom_docx(tmp_path / "fonts.docx", _para("", runs=runs), _style("Normal", "Normal"))
-    fonts = ok(run, "stats", doc=str(path))["result"]["fonts"]
+    fonts = ok(run, "doc.stats", doc=str(path))["result"]["fonts"]
     assert fonts == [{"font": "Garamond", "uses": 2}, {"font": "Calibri", "uses": 1}]
 
 
@@ -394,15 +396,15 @@ def test_para_get_rejects_bad_and_stale_addresses(corpus_doc: CorpusWriter, run:
 
 def test_styles_list_and_style_get(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("headings")
-    listed = pages(run, "styles.list", "styles", doc=str(path))
+    listed = pages(run, "style.list", "styles", doc=str(path))
     by_id = {s["id"]: s for s in listed}
     assert by_id["Heading2"]["name"] == "heading 2"
     assert by_id["Heading2"]["based_on"] == "Normal"
     assert by_id["Heading2"]["used"] == 2 and by_id["Heading3"]["used"] == 1
     assert by_id["Normal"]["default"] is True
-    only_char = pages(run, "styles.list", "styles", doc=str(path), type="character")
+    only_char = pages(run, "style.list", "styles", doc=str(path), type="character")
     assert {s["type"] for s in only_char} == {"character"}
-    used = pages(run, "styles.list", "styles", doc=str(path), used_only=True)
+    used = pages(run, "style.list", "styles", doc=str(path), used_only=True)
     assert used and all(s["used"] > 0 for s in used)
     got = ok(run, "style.get", doc=str(path), style="heading 2")["result"]  # by name
     assert got["id"] == "Heading2" and got["heading_level"] == 2
@@ -417,7 +419,7 @@ def test_comments_list_threads_resolved_state_and_filters(
     corpus_doc: CorpusWriter, run: Run
 ) -> None:
     path = corpus_doc("comments")
-    comments = pages(run, "comments.list", "comments", doc=str(path))
+    comments = pages(run, "comment.list", "comments", doc=str(path))
     assert [c["id"] for c in comments] == ["0", "1", "2", "3", "4", "5"]
     replies = {c["id"]: c["reply_to"] for c in comments if "reply_to" in c}
     assert replies == {"2": "1", "3": "1", "5": "4"}
@@ -426,21 +428,21 @@ def test_comments_list_threads_resolved_state_and_filters(
     for c in comments:  # every comment sits in a real paragraph
         assert index.resolve_address(c["at"]).text
     assert all(c["text"] and c["author"] and c["date"] for c in comments)
-    done = pages(run, "comments.list", "comments", doc=str(path), resolved=True)
+    done = pages(run, "comment.list", "comments", doc=str(path), resolved=True)
     assert [c["id"] for c in done] == ["4"]
     author = comments[1]["author"]
-    mine = pages(run, "comments.list", "comments", doc=str(path), author=author)
+    mine = pages(run, "comment.list", "comments", doc=str(path), author=author)
     assert mine and all(c["author"] == author for c in mine)
 
 
 def test_comments_list_is_empty_without_comments(corpus_doc: CorpusWriter, run: Run) -> None:
-    result = ok(run, "comments.list", doc=str(corpus_doc("plain")))["result"]
+    result = ok(run, "comment.list", doc=str(corpus_doc("plain")))["result"]
     assert result == {"total": 0, "comments": []}
 
 
 def test_revisions_list_types_authors_and_text(corpus_doc: CorpusWriter, run: Run) -> None:
     path = corpus_doc("revisions")
-    revs = pages(run, "revisions.list", "revisions", doc=str(path))
+    revs = pages(run, "revision.list", "revisions", doc=str(path))
     assert [r["type"] for r in revs] == [
         "delete",
         "insert",
@@ -454,10 +456,10 @@ def test_revisions_list_types_authors_and_text(corpus_doc: CorpusWriter, run: Ru
     assert all(r["author"] and r["date"] and r["id"] for r in revs)
     index = Document(str(path)).index
     assert index.resolve_address(revs[0]["at"]).text.startswith("Before the change, new wording")
-    only = pages(run, "revisions.list", "revisions", doc=str(path), type="insert")
+    only = pages(run, "revision.list", "revisions", doc=str(path), type="insert")
     assert [r["type"] for r in only] == ["insert", "insert"]
     author = revs[0]["author"]
-    by_author = pages(run, "revisions.list", "revisions", doc=str(path), author=author)
+    by_author = pages(run, "revision.list", "revisions", doc=str(path), author=author)
     assert by_author and all(r["author"] == author for r in by_author)
 
 
@@ -465,39 +467,39 @@ def test_cursors_page_lists_and_resist_misuse(
     corpus_doc: CorpusWriter, run: Run, tmp_path: Path
 ) -> None:
     path = corpus_doc("comments")
-    first = ok(run, "comments.list", doc=str(path), limit=2)
+    first = ok(run, "comment.list", doc=str(path), limit=2)
     assert [c["id"] for c in first["result"]["comments"]] == ["0", "1"]
     assert first["result"]["total"] == 6
     cursor = first["next"]
-    assert cursor.startswith("c:comments.list:")
-    second = ok(run, "comments.list", doc=str(path), limit=10, cursor=cursor)
+    assert cursor.startswith("c:comment.list:")
+    second = ok(run, "comment.list", doc=str(path), limit=10, cursor=cursor)
     assert [c["id"] for c in second["result"]["comments"]] == ["2", "3", "4", "5"]
     assert second["next"] is None
     # a cursor belongs to one operation
-    code, env, _ = run("revisions.list", doc=str(path), cursor=cursor)
+    code, env, _ = run("revision.list", doc=str(path), cursor=cursor)
     assert (code, env["error"]["code"]) == (2, "SCHEMA_INVALID")
-    for bad in ("c:comments.list:zz:1", "nonsense", "c:comments.list:" + "0" * 8 + ":-1"):
-        code, env, _ = run("comments.list", doc=str(path), cursor=bad)
+    for bad in ("c:comment.list:zz:1", "nonsense", "c:comment.list:" + "0" * 8 + ":-1"):
+        code, env, _ = run("comment.list", doc=str(path), cursor=bad)
         assert (code, env["error"]["code"]) == (2, "SCHEMA_INVALID")
     # a cursor from another version of the file
     other = corpus_doc("comments", 1)
-    code, env, _ = run("comments.list", doc=str(other), cursor=cursor)
+    code, env, _ = run("comment.list", doc=str(other), cursor=cursor)
     assert (code, env["error"]["code"]) == (1, "DOC_CHANGED_ON_DISK")
     # past the end: an empty page, not an error
-    far = ok(run, "comments.list", doc=str(path), cursor=cursor.rsplit(":", 1)[0] + ":50")
+    far = ok(run, "comment.list", doc=str(path), cursor=cursor.rsplit(":", 1)[0] + ":50")
     assert far["result"]["comments"] == [] and far["next"] is None
 
 
 def test_requests_are_validated_against_the_schema(corpus_doc: CorpusWriter, run: Run) -> None:
     path = str(corpus_doc("plain"))
     bad_requests: list[tuple[str, dict[str, Any]]] = [
-        ("outline", {}),
-        ("outline", {"doc": path, "limit": 0}),
-        ("outline", {"doc": path, "limit": 1001}),
-        ("outline", {"doc": path, "surprise": 1}),
+        ("doc.outline", {}),
+        ("doc.outline", {"doc": path, "limit": 0}),
+        ("doc.outline", {"doc": path, "limit": 1001}),
+        ("doc.outline", {"doc": path, "surprise": 1}),
         ("para.get", {"doc": path}),
         ("style.get", {"doc": path}),
-        ("revisions.list", {"doc": path, "type": "nonsense"}),
+        ("revision.list", {"doc": path, "type": "nonsense"}),
     ]
     for op, request in bad_requests:
         code, env, _ = run(op, **request)
@@ -505,11 +507,11 @@ def test_requests_are_validated_against_the_schema(corpus_doc: CorpusWriter, run
 
 
 def test_missing_and_foreign_files_are_reported(tmp_path: Path, run: Run) -> None:
-    code, env, _ = run("info", doc=str(tmp_path / "absent.docx"))
+    code, env, _ = run("doc.info", doc=str(tmp_path / "absent.docx"))
     assert (code, env["error"]["code"]) == (1, "DOC_NOT_FOUND")
     text = tmp_path / "notes.docx"
     text.write_text("not a zip")
-    code, env, _ = run("outline", doc=str(text))
+    code, env, _ = run("doc.outline", doc=str(text))
     assert (code, env["error"]["code"]) == (1, "NOT_A_DOCX")
 
 
@@ -520,7 +522,7 @@ def test_fact_hooks_extend_para_get_and_outline(
     path = corpus_doc("headings")
     monkeypatch.setattr(read, "PARA_FACTS", [lambda ctx: {"number_fact": ctx.paragraph.number}])
     monkeypatch.setattr(read, "OUTLINE_FACTS", [lambda ctx: {"seen": True}])
-    heading = ok(run, "outline", doc=str(path))["result"]["headings"][0]
+    heading = ok(run, "doc.outline", doc=str(path))["result"]["headings"][0]
     assert heading["seen"] is True
     got = ok(run, "para.get", doc=str(path), at=heading["at"])["result"]
     assert got["number_fact"] == 1
@@ -530,14 +532,14 @@ def test_cli_process_serves_read_operations(corpus_doc: CorpusWriter) -> None:
     path = corpus_doc("headings")
     request = json.dumps({"doc": str(path)})
     out = subprocess.run(
-        [sys.executable, "-m", "doc_control", "outline", "--json", request],
+        [sys.executable, "-m", "doc_control", "doc.outline", "--json", request],
         capture_output=True,
         text=True,
         timeout=60,
         check=True,
     ).stdout
     env = json.loads(out)
-    assert env["ok"] is True and env["op"] == "outline"
+    assert env["ok"] is True and env["op"] == "doc.outline"
     assert len(env["result"]["headings"]) == 4
 
 
@@ -553,7 +555,14 @@ def test_private_corpus_read_ops_stay_in_budget(doc_id: str, run: Run, tmp_path:
         pytest.skip("DOC_CONTROL_PRIVATE_CORPUS is not set")
     path = tmp_path / f"{short_id(data)}.docx"
     path.write_bytes(data)
-    for op in ("info", "outline", "stats", "styles.list", "comments.list", "revisions.list"):
+    for op in (
+        "doc.info",
+        "doc.outline",
+        "doc.stats",
+        "style.list",
+        "comment.list",
+        "revision.list",
+    ):
         code, _, nbytes = run(op, doc=str(path))
         assert code == 0 and nbytes <= RESPONSE_BUDGET, op
 
@@ -566,7 +575,7 @@ def _rev_attrs(rid: int, author: str) -> str:
 
 
 def _revisions_of(run: Run, path: Path) -> list[dict[str, Any]]:
-    return pages(run, "revisions.list", "revisions", doc=str(path))
+    return pages(run, "revision.list", "revisions", doc=str(path))
 
 
 def test_revisions_nested_inside_insertions_are_listed(tmp_path: Path, run: Run) -> None:
@@ -601,7 +610,7 @@ def test_revisions_nested_inside_insertions_are_listed(tmp_path: Path, run: Run)
         ("7", "move_to", "moved"),
         ("8", "insert", "moved"),
     ]
-    stats = ok(run, "stats", doc=str(path))["result"]["revisions"]
+    stats = ok(run, "doc.stats", doc=str(path))["result"]["revisions"]
     assert stats["total"] == 10
     assert stats["by_type"] == {
         "delete": 2,
@@ -644,17 +653,17 @@ def test_table_row_and_cell_revisions_are_listed(tmp_path: Path, run: Run) -> No
         "two",
         "gone",
     ]
-    assert ok(run, "stats", doc=str(path))["result"]["revisions"]["total"] == 5
+    assert ok(run, "doc.stats", doc=str(path))["result"]["revisions"]["total"] == 5
 
 
 def test_cursors_are_bound_to_filters_and_address(
     corpus_doc: CorpusWriter, run: Run, tmp_path: Path
 ) -> None:
     path = corpus_doc("comments")
-    cursor = ok(run, "comments.list", doc=str(path), limit=1, resolved=False)["next"]
-    assert ok(run, "comments.list", doc=str(path), resolved=False, cursor=cursor)["result"]
+    cursor = ok(run, "comment.list", doc=str(path), limit=1, resolved=False)["next"]
+    assert ok(run, "comment.list", doc=str(path), resolved=False, cursor=cursor)["result"]
     for other in ({"resolved": True}, {}, {"resolved": False, "author": "Claude"}):
-        code, env, _ = run("comments.list", doc=str(path), cursor=cursor, **other)
+        code, env, _ = run("comment.list", doc=str(path), cursor=cursor, **other)
         assert (code, env["error"]["code"]) == (2, "SCHEMA_INVALID"), other
     long = _custom_docx(
         tmp_path / "long.docx", _para("a" * 20000) + _para("b" * 20000), _style("Normal", "Normal")
@@ -688,7 +697,7 @@ def test_comment_location_is_the_range_start_not_the_reference(tmp_path: Path, r
         tmp_path / "c.docx", body, _style("Normal", "Normal"), {"word/comments.xml": comments}
     )
     index = Document(str(path)).index
-    listed = pages(run, "comments.list", "comments", doc=str(path))
+    listed = pages(run, "comment.list", "comments", doc=str(path))
     got = {c["id"]: index.resolve_address(c["at"]).text for c in listed}
     assert got == {"0": "second", "1": "second"}
 
@@ -711,6 +720,6 @@ def test_style_usage_ignores_deleted_runs_and_old_properties(tmp_path: Path, run
         f"</w:tblPrChange></w:tblPr><w:tr><w:tc>{_para('cell')}</w:tc></w:tr></w:tbl>"
     )
     path = _custom_docx(tmp_path / "u.docx", _para("", runs=runs) + table, styles)
-    used = {s["id"]: s["used"] for s in pages(run, "styles.list", "styles", doc=str(path))}
+    used = {s["id"]: s["used"] for s in pages(run, "style.list", "styles", doc=str(path))}
     assert used["Strong"] == 1
     assert used["Grid"] == 1

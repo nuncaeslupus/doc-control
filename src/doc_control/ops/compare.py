@@ -1,4 +1,4 @@
-"""``compare``: write a NEW redline ``.docx`` from two versions of a document.
+"""``doc.compare``: write a NEW redline ``.docx`` from two versions of a document.
 
 Request: ``old`` and ``new`` (paths to ``.docx`` files), ``output`` (path of the redline to
 create; it must not exist and must not be one of the inputs), optional ``author`` (default
@@ -7,7 +7,7 @@ create; it must not exist and must not be one of the inputs), optional ``author`
 The output is a copy of the OLD document's package in which every difference is a tracked
 change by one author, so that accepting all gives the text of the NEW version and
 rejecting all gives the text of the OLD one. Neither input is touched. Paragraphs are
-aligned by :func:`doc_control.model.align.align` (the engine of ``diff``) and the changes
+aligned by :func:`doc_control.model.align.align` (the engine of ``doc.diff``) and the changes
 are written with the tracked-text primitives of ``para.*`` / ``text.replace``
 (:func:`doc_control.ops.tracked.prepare_edits`):
 
@@ -25,7 +25,7 @@ are written with the tracked-text primitives of ``para.*`` / ``text.replace``
 * ``split`` paragraphs: the old paragraph is edited into the first part and the other
   parts are insertions.
 
-Result: ``output`` (path, sha256), ``summary`` (paragraphs by kind, from ``diff``),
+Result: ``output`` (path, sha256), ``summary`` (paragraphs by kind, from ``doc.diff``),
 ``revisions`` (count of tracked changes written), ``author``, ``date``. The envelope's
 ``doc`` is the old file. A warning is given when Word cannot represent a deletion (see
 ``_Plan.trailing``): the paragraph text is deleted and an empty paragraph remains.
@@ -593,7 +593,7 @@ def _parse_date(value: str) -> datetime:
 
 
 @operation(
-    "compare",
+    "doc.compare",
     "read",
     "Write a new redline .docx from two versions: every difference a tracked change; "
     "the inputs are never modified.",

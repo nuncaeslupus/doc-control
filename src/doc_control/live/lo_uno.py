@@ -263,7 +263,8 @@ class LibreOffice:
         )
 
     def probe(self) -> dict[str, Any]:
-        """Never imports ``uno``: a file-engine ``capabilities`` call must not load the bridge."""
+        """Never imports ``uno``: a file-engine ``server.capabilities`` call must not load
+        the bridge."""
         out: dict[str, Any] = {
             "app": self.app,
             "available": _soffice() is not None,

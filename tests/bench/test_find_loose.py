@@ -1,7 +1,7 @@
 """Loose find on the 100k-word novel (FIND T9): what ``match_level`` costs.
 
-Gates: ``find_loose_overhead_ratio <= 1.5``: the median time of ``find`` with
-``match_level: "default"`` over 20 queries, against the same queries as literal ``find``
+Gates: ``find_loose_overhead_ratio <= 1.5``: the median time of ``text.find`` with
+``match_level: "default"`` over 20 queries, against the same queries as literal ``text.find``
 (no ``match_level``), on one open document; and ``live_select_loose_extra_ms <= 50``: the
 p95, over the same phrases, of ``live.select``'s phrase resolution (``_found``) at
 ``default`` minus at ``exact``, on the novel's paragraph texts, without LibreOffice.
@@ -98,7 +98,7 @@ def _find(doc: api.OpenDocument, query: str, level: Level | None) -> Callable[[]
     request: dict[str, Any] = {"query": query}
     if level is not None:
         request["match_level"] = level
-    return lambda: doc.run("find", request)
+    return lambda: doc.run("text.find", request)
 
 
 def _ratio(
@@ -121,7 +121,9 @@ def _ratio(
 def test_find_loose_overhead_on_novel(novel: tuple[api.OpenDocument, list[str]]) -> None:
     doc, texts = novel
     queries = _queries(texts)
-    found = {q: doc.run("find", {"query": q, "match_level": "default"})["total"] for q in queries}
+    found = {
+        q: doc.run("text.find", {"query": q, "match_level": "default"})["total"] for q in queries
+    }
     assert sum(1 for n in found.values() if n) >= 15, found  # the folded queries do find
     assert all(found[q] == 0 for q in queries[-3:]), found
     for query in queries:  # warm-up: the parse, the fold caches, the compiled patterns
@@ -162,7 +164,7 @@ def _resolves(texts: list[str], phrase: str) -> bool:
 @pytest.mark.bench
 def test_live_select_loose_extra_ms(novel: tuple[api.OpenDocument, list[str]]) -> None:
     doc, texts = novel
-    rows = doc.run("locate", {"structure": False})["paragraphs"]
+    rows = doc.run("para.locate", {"structure": False})["paragraphs"]
     phrased = [str(r["find_phrase"]) for r in rows if r.get("find_phrase")]
     picks = phrased[:: max(1, len(phrased) // PHRASES)][:PHRASES]
     # As locate gives them, lowercased, and without accents: exact (a casefold match)

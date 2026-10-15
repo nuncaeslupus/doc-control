@@ -77,7 +77,7 @@ def paragraphs(path: Path) -> list[tuple[str, str]]:
 
 
 def run_recipe(doc: Path, name: str) -> dict[str, Any]:
-    """Run a stored user recipe and apply its proposal with ``batch``; return the proposal."""
+    """Run a stored user recipe and apply its proposal with ``doc.batch``; return the proposal."""
     assert catalogue().recipes[name][0] == "user"
     proposal = REGISTRY["recipe.run"].run({"doc": str(doc), "recipe": name}).result  # type: ignore[union-attr]
     assert proposal["stable"] is True and proposal["applied"] is False
@@ -195,7 +195,7 @@ def case_author_note_patterns(tmp: Path) -> None:
     assert proposal["matches"] == len(notes)
     ops = proposal["batch"]["ops"]
     assert [o["op"] for o in ops] == ["comment.add"] * len(notes)
-    commented = REGISTRY["comments.list"].run({"doc": str(doc)}).result["comments"]  # type: ignore[union-attr]
+    commented = REGISTRY["comment.list"].run({"doc": str(doc)}).result["comments"]  # type: ignore[union-attr]
     assert len(commented) == len(notes)
     assert [t for _, t in paragraphs(doc)] == notes + ordinary  # comments only: prose untouched
     assert run_recipe(doc, "house-author-notes")["matches"] == len(

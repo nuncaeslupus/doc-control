@@ -63,7 +63,7 @@ def _word_file(path: Path) -> Path:
 def test_accept_deleted_closer_in_word_file_keeps_paragraphs(tmp_path: Path) -> None:
     path = _word_file(tmp_path / "word.docx")
     assert [r["type"] for r in revisions(path)] == ["mark_delete"]
-    out = api.run("batch", {"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
+    out = api.run("doc.batch", {"doc": str(path), "ops": [{"op": "revision.accept", "all": True}]})
     assert revisions(path) == []
     texts = [p.text for p in Document(str(path)).index.paragraphs]
     assert texts == ["Chapter one begins", "Chapter one ends", "Chapter two begins"]

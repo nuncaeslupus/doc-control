@@ -1,14 +1,14 @@
-"""History operations: ``open``, ``undo``, ``restore`` and ``history.*``.
+"""History operations: ``doc.open``, ``history.undo``, ``history.restore`` and ``history.*``.
 
 Everything here reads or writes the document's store (see :mod:`doc_control.safety.history`
-for the log format). ``undo`` takes back a logged ``batch`` or ``restore`` exactly (the
-paragraphs it changed return byte for byte, so text and paragraph properties are as they
-were) and is itself logged; it is untracked, since it removes the tool's own tracked
-changes. ``restore`` brings a logged paragraph back as a *tracked insertion* after the
-paragraph that holds its place now, so the writer sees it and can reject it. ``history.purge``
-removes history only after a dry run, and leaves a tombstone. Reading history never creates a
-store, and works for a document that no longer exists (or, with ``store``, straight from a
-store folder listed by ``history.orphans``).
+for the log format). ``history.undo`` takes back a logged ``doc.batch`` or
+``history.restore`` exactly (the paragraphs it changed return byte for byte, so text and
+paragraph properties are as they were) and is itself logged; it is untracked, since it
+removes the tool's own tracked changes. ``history.restore`` brings a logged paragraph back
+as a *tracked insertion* after the paragraph that holds its place now, so the writer sees it
+and can reject it. ``history.purge`` removes history only after a dry run, and leaves a
+tombstone. Reading history never creates a store, and works for a document that no longer
+exists (or, with ``store``, straight from a store folder listed by ``history.orphans``).
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _short(text: str) -> str:
 
 
 @operation(
-    "open",
+    "doc.open",
     "write",
     "Back up the document into its store (retention applies) and note it in the history; "
     "call it when a session starts. The document is not changed.",
@@ -118,10 +118,11 @@ def _undoable(entry: dict[str, Any]) -> bool:
 
 
 @operation(
-    "undo",
+    "history.undo",
     "write",
-    "Take back a logged batch or restore (the latest one that is still in effect by default), "
-    "returning its paragraphs to their prior state. Refused if they were edited since.",
+    "Take back a logged doc.batch or history.restore (the latest one that is still in "
+    "effect by default), returning its paragraphs to their prior state. Refused if they "
+    "were edited since.",
     {
         "type": "object",
         "properties": {
@@ -180,7 +181,7 @@ def undo(request: dict[str, Any]) -> Reply:
                 after_sha256=outcome.after_sha256,
                 backup=outcome.backup,
                 changes=outcome.reverted,
-                request={"op": "undo", "op_id": entry["op_id"]},
+                request={"op": "history.undo", "op_id": entry["op_id"]},
                 extra={"undoes": entry["op_id"]},
             )
         except (DocControlError, OSError) as exc:
@@ -201,7 +202,7 @@ def _restorable(change: dict[str, Any]) -> bool:
 
 
 @operation(
-    "restore",
+    "history.restore",
     "write",
     "Bring a logged paragraph back as a tracked insertion after the paragraph that holds its "
     "place now. Without `change`, every paragraph the op deleted.",
@@ -268,7 +269,7 @@ def restore(request: dict[str, Any]) -> Reply:
         tag=request.get("tag"),
         dry_run=dry_run,
         kind="restore",
-        request={"op": "restore", "op_id": entry["op_id"], "changes": chosen},
+        request={"op": "history.restore", "op_id": entry["op_id"], "changes": chosen},
         log_extra={"restores": entry["op_id"]},
     )
     result = done.to_dict()
@@ -342,9 +343,9 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
     "read",
     (
         "List a document's undo log, newest first: each write's op_id, what it changed, "
-        "whether it was undone, and the deleted paragraphs restore can bring back. Use it "
-        "to find the op_id for undo or restore; history.search finds a quote in the log. "
-        "Read-only, paged."
+        "whether it was undone, and the deleted paragraphs history.restore can bring "
+        "back. Use it to find the op_id for history.undo or history.restore; "
+        "history.search finds a quote in the log. Read-only, paged."
     ),
     {
         "type": "object",
@@ -389,7 +390,7 @@ def history_list(request: dict[str, Any]) -> Reply:
     (
         "Search a document's undo log for a quote: in the requests, and in the text of "
         "every paragraph before and after each write. Use it to find when a passage was "
-        "changed or deleted, and the op_id to undo or restore it. Exact unless "
+        "changed or deleted, and the op_id for history.undo or history.restore. Exact unless "
         "`match_level` folds it; then every hit, with its offsets and the level it "
         "matched at. Read-only."
     ),
@@ -403,7 +404,7 @@ def history_list(request: dict[str, Any]) -> Reply:
             "match_level": {
                 "type": "string",
                 "enum": ["exact", "default", "loose"],
-                "description": "Fold the search as `find` does: `default` ignores case,"
+                "description": "Fold the search as `text.find` does: `default` ignores case,"
                 " accents and punctuation (symbols such as `$` still count), `loose` drops"
                 " symbols too; `exact` keeps the flags. When passed, Word's Find codes in"
                 " `query` are read as their characters, every hit in a text is returned"

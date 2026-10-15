@@ -1,4 +1,4 @@
-"""Structure detection: signals, stable ids, overrides, profile settings, the `segment` op."""
+"""Structure detection: signals, stable ids, overrides, profile settings, the `doc.segment` op."""
 
 from __future__ import annotations
 
@@ -392,7 +392,7 @@ def novel(tmp_path: Path) -> Path:
 def test_segment_chapters_report_ids_and_signals(
     novel: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, env = _call(capsys, "segment", doc=str(novel))
+    code, env = _call(capsys, "doc.segment", doc=str(novel))
     assert code == 0, env
     chapters = env["result"]["chapters"]
     assert [(c["first"], c["kind"]) for c in chapters] == [
@@ -408,28 +408,28 @@ def test_segment_chapters_report_ids_and_signals(
 
 
 def test_segment_scenes_filter_by_chapter(novel: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _, env = _call(capsys, "segment", doc=str(novel))
+    _, env = _call(capsys, "doc.segment", doc=str(novel))
     first = env["result"]["chapters"][0]["id"]
-    code, env = _call(capsys, "segment", doc=str(novel), unit="scenes", chapter=first)
+    code, env = _call(capsys, "doc.segment", doc=str(novel), unit="scenes", chapter=first)
     assert code == 0, env
     scenes = env["result"]["scenes"]
     assert [(s["first"], s["signals"]) for s in scenes] == [
         (1, ["chapter_start"]),
         (3, ["scene_marker", "centred"]),
     ]
-    code, env = _call(capsys, "segment", doc=str(novel), unit="scenes", chapter="ch-00000000")
+    code, env = _call(capsys, "doc.segment", doc=str(novel), unit="scenes", chapter="ch-00000000")
     assert code != 0 and env["error"]["code"] == "ADDRESS_INVALID"
 
 
 def test_segment_overrides_profile_and_unmatched(
     novel: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _, env = _call(capsys, "segment", doc=str(novel))
+    _, env = _call(capsys, "doc.segment", doc=str(novel))
     chapters = env["result"]["chapters"]
     fp = chapters[1]["at"].split("#")[1]
     code, env = _call(
         capsys,
-        "segment",
+        "doc.segment",
         doc=str(novel),
         overrides=[
             {"fp": fp, "kind": "chapter", "action": "deny"},
@@ -451,7 +451,7 @@ def test_segment_pages_with_cursors(tmp_path: Path, capsys: pytest.CaptureFixtur
     cursor = None
     for _ in range(500):
         extra: dict[str, Any] = {"cursor": cursor} if cursor else {}
-        code, env = _call(capsys, "segment", doc=str(doc), unit="scenes", limit=25, **extra)
+        code, env = _call(capsys, "doc.segment", doc=str(doc), unit="scenes", limit=25, **extra)
         assert code == 0, env
         seen += [s["id"] for s in env["result"]["scenes"]]
         cursor = env["next"]
@@ -471,16 +471,16 @@ def test_segment_sentences_and_dialogue(tmp_path: Path, capsys: pytest.CaptureFi
         + _p("—Hola —dijo Ana—. Vamos.")
         + _p("Sin voces aquí."),
     )
-    code, env = _call(capsys, "segment", doc=str(doc), unit="sentences")
+    code, env = _call(capsys, "doc.segment", doc=str(doc), unit="sentences")
     assert code == 0, env
     sentences = env["result"]["sentences"]
     assert [s["at"].rsplit(".", 1)[1] for s in sentences[:3]] == ["s1", "s2", "s3"]
     assert sentences[0]["text"] == "¿Quién anda ahí?"
     assert sentences[0]["at"].startswith("p1#")
     only = sentences[0]["at"].split(".")[0]
-    code, env = _call(capsys, "segment", doc=str(doc), unit="sentences", range=only)
+    code, env = _call(capsys, "doc.segment", doc=str(doc), unit="sentences", range=only)
     assert code == 0 and env["result"]["total"] == 3
-    code, env = _call(capsys, "segment", doc=str(doc), unit="dialogue")
+    code, env = _call(capsys, "doc.segment", doc=str(doc), unit="dialogue")
     assert code == 0, env
     [line] = env["result"]["dialogue"]
     assert line["at"].startswith("p2#")
@@ -492,7 +492,7 @@ def test_segment_rejects_a_malformed_override_fingerprint(
 ) -> None:
     code, env = _call(
         capsys,
-        "segment",
+        "doc.segment",
         doc=str(novel),
         overrides=[{"fp": "NOT-HEX!!", "kind": "chapter", "action": "force"}],
     )
@@ -571,6 +571,6 @@ def test_layout_facts_come_from_the_shared_layout_module(
     }
     for name, body in cases.items():
         doc = _write(tmp_path / "layout.docx", body, styles)
-        code, env = _call(capsys, "segment", doc=str(doc))
+        code, env = _call(capsys, "doc.segment", doc=str(doc))
         assert code == 0, env
         assert [c["text"] for c in env["result"]["chapters"]] == ["IV"], name

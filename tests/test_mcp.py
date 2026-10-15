@@ -20,7 +20,7 @@ from doc_control.mcp import (
     serve,
     tool_name,
 )
-from doc_control.registry import load_operations
+from doc_control.registry import ALIASES, load_operations
 
 
 def talk(*messages: Any) -> list[dict[str, Any]]:
@@ -76,18 +76,32 @@ def test_every_operation_is_listed_as_a_tool_with_its_schema() -> None:
             assert hints["destructiveHint"] is (op.name in DESTRUCTIVE)
 
 
-def test_tool_call_returns_the_envelope() -> None:
+def test_tools_list_names_only_current_operations() -> None:
+    """Old operation names (registry.ALIASES) still run but are never listed as tools."""
+    (reply,) = talk(call(1, "tools/list"))
+    names = {tool["name"] for tool in reply["result"]["tools"]}
+    assert names == {tool_name(name) for name in load_operations()}
+    assert not names & {tool_name(old) for old in ALIASES}
+
+
+def test_an_old_tool_name_still_calls_the_renamed_operation() -> None:
     (reply,) = talk(call(1, "tools/call", name="capabilities", arguments={}))
+    envelope = json.loads(reply["result"]["content"][0]["text"])
+    assert envelope["ok"] is True and envelope["op"] == "server.capabilities"
+
+
+def test_tool_call_returns_the_envelope() -> None:
+    (reply,) = talk(call(1, "tools/call", name="server_capabilities", arguments={}))
     result = reply["result"]
     assert result["isError"] is False
     envelope = json.loads(result["content"][0]["text"])
     assert envelope["ok"] is True
-    assert envelope["op"] == "capabilities"
+    assert envelope["op"] == "server.capabilities"
     assert envelope["result"]["version"] == __version__
 
 
 def test_operation_error_is_a_tool_error_not_a_protocol_error() -> None:
-    (reply,) = talk(call(1, "tools/call", name="help", arguments={"op": "no.such.op"}))
+    (reply,) = talk(call(1, "tools/call", name="server_help", arguments={"op": "no.such.op"}))
     assert reply["result"]["isError"] is True
     envelope = json.loads(reply["result"]["content"][0]["text"])
     assert envelope["ok"] is False
@@ -112,7 +126,7 @@ def test_protocol_errors() -> None:
 def test_cli_mcp_subcommand_serves_on_stdio() -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "doc_control", "mcp"],
-        input=json.dumps(call(1, "tools/call", name="capabilities", arguments={})) + "\n",
+        input=json.dumps(call(1, "tools/call", name="server_capabilities", arguments={})) + "\n",
         capture_output=True,
         text=True,
         encoding="utf-8",

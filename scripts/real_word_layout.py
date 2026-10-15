@@ -17,7 +17,7 @@ page number, given one page plan from the LAYOUT spec (§1):
     recto_chapters     Capítulo 2 and Capítulo 3 start on a right-hand (odd) page
     two_sided          the README's plan: mirrored margins, the chapter title in the odd
                        headers and the book title in the even ones
-    toc                a table of contents after the title, filled by ``fields.update``
+    toc                a table of contents after the title, filled by ``field.update``
                        (built only when LibreOffice is installed)
 """
 
@@ -58,12 +58,12 @@ LOOK = {
 
 def _headings(path: Path) -> list[str]:
     with api.open(path) as doc:
-        return [h["at"] for h in doc.run("outline", {})["headings"]]
+        return [h["at"] for h in doc.run("doc.outline", {})["headings"]]
 
 
 def _paragraph_after(path: Path, at: str) -> str:
     with api.open(path) as doc:
-        rows = doc.run("paragraphs.list", {})["paragraphs"]
+        rows = doc.run("para.list", {})["paragraphs"]
     found = [i for i, row in enumerate(rows) if row["at"] == at]
     return str(rows[found[0] + 1]["at"])
 
@@ -71,7 +71,7 @@ def _paragraph_after(path: Path, at: str) -> str:
 def _plan(name: str, path: Path) -> tuple[dict[str, Any], bool]:
     """The page plan for document ``name`` and whether it needs ``untracked``."""
     with api.open(path) as doc:
-        first = doc.run("paragraphs.list", {})["paragraphs"][0]["at"]
+        first = doc.run("para.list", {})["paragraphs"][0]["at"]
     ch = dict(enumerate(_headings(path), start=1))  # chapter number -> heading address
     if name == "front_matter":
         sections = [
@@ -125,10 +125,10 @@ def _base(path: Path, store: Path) -> None:
     """The corpus novel with a footer printing the page number, every change accepted."""
     path.write_bytes(generate("novel", 1))
     with api.open(path, store=store) as doc:
-        first = doc.run("paragraphs.list", {})["paragraphs"][0]["at"]
+        first = doc.run("para.list", {})["paragraphs"][0]["at"]
         plan = {"version": 1, "sections": [{"from": first, "footer": {"default": "{PAGE}"}}]}
         doc.run("layout.apply", {"plan": plan, "untracked": True, "author": AUTHOR})
-        doc.run("batch", {"ops": [{"op": "revision.accept", "all": True}]})
+        doc.run("doc.batch", {"ops": [{"op": "revision.accept", "all": True}]})
 
 
 def _layout(path: Path) -> dict[str, Any]:
@@ -139,12 +139,12 @@ def _layout(path: Path) -> dict[str, Any]:
 
 def _remaining(path: Path) -> int:
     with api.open(path) as doc:
-        return len(doc.run("revisions.list", {"stories": ["body", "headers"]})["revisions"])
+        return len(doc.run("revision.list", {"stories": ["body", "headers"]})["revisions"])
 
 
 def _tocs(path: Path) -> list[str]:
     with api.open(path) as doc:
-        rows = doc.run("fields.list", {"stories": ["body"], "type": "TOC"})["fields"]
+        rows = doc.run("field.list", {"stories": ["body"], "type": "TOC"})["fields"]
     return [" ".join(str(row["result"]).split()) for row in rows]
 
 
@@ -167,9 +167,9 @@ def build(out: Path) -> None:
         entry: dict[str, Any] = {"look": LOOK[name]}
         with api.open(path, store=store) as doc:
             if name == "toc":
-                first = doc.run("paragraphs.list", {})["paragraphs"][0]["at"]
+                first = doc.run("para.list", {})["paragraphs"][0]["at"]
                 doc.run("toc.insert", {"after": first, "levels": "1", "author": AUTHOR})
-                doc.run("fields.update", {"author": AUTHOR})
+                doc.run("field.update", {"author": AUTHOR})
             else:
                 plan, untracked = _plan(name, path)
                 doc.run("layout.apply", {"plan": plan, "untracked": untracked, "author": AUTHOR})

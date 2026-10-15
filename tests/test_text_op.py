@@ -1,4 +1,4 @@
-"""`text.normalized` as a document read operation."""
+"""`text.normalize` as a document read operation."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ CAP = 8000
 
 
 def run(capsys: pytest.CaptureFixture[str], **request: Any) -> tuple[int, dict[str, Any]]:
-    code = main(["text.normalized", "--json", json.dumps(request)])
+    code = main(["text.normalize", "--json", json.dumps(request)])
     return code, json.loads(capsys.readouterr().out)
 
 
@@ -129,7 +129,7 @@ def test_limit_and_stale_cursor(tmp_path: Path, capsys: pytest.CaptureFixture[st
     code, env = run(capsys, doc=str(path), limit=2)
     assert code == 0 and len(env["result"]["paragraphs"]) == 2
     cursor = env["next"]
-    assert cursor.startswith("c:text.normalized:")
+    assert cursor.startswith("c:text.normalize:")
     make_docx(path, "one", "two", "changed")
     code, env = run(capsys, doc=str(path), cursor=cursor)
     assert code == 1 and env["error"]["code"] == ErrorCode.DOC_CHANGED_ON_DISK
@@ -178,8 +178,8 @@ def test_missing_document_is_doc_not_found(
 
 
 def test_registered_read_only_with_schema() -> None:
-    op = load_operations()["text.normalized"]
-    assert op is REGISTRY["text.normalized"] and op.kind == "read"
+    op = load_operations()["text.normalize"]
+    assert op is REGISTRY["text.normalize"] and op.kind == "read"
     assert "to_normalized" in op.schema["description"]
     with pytest.raises(DocControlError):
         op.run({"doc": "a.docx", "limit": 0})
@@ -189,7 +189,7 @@ def test_registered_read_only_with_schema() -> None:
 def test_a_page_of_a_novel_is_built_in_under_a_fifth_of_a_second(tmp_path: Path) -> None:
     path = tmp_path / "novel.docx"
     path.write_bytes(generate_docx("novel", 1))
-    op = load_operations()["text.normalized"]
+    op = load_operations()["text.normalize"]
     first = op.run({"doc": str(path)})
     assert not isinstance(first, dict)
     cursor = first.next_cursor

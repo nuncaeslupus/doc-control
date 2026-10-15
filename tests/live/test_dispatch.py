@@ -22,7 +22,7 @@ def doc(tmp_path: Path) -> Path:
 
 
 def _live_calls(doc: Path) -> list[tuple[str, dict[str, object]]]:
-    """Every live operation, plus ``batch`` and a file-only operation asked to run live.
+    """Every live operation, plus ``doc.batch`` and a file-only operation asked to run live.
 
     ``live.places`` is left out: it only hands places to the MCP App and never asks the app.
     """
@@ -33,7 +33,7 @@ def _live_calls(doc: Path) -> list[tuple[str, dict[str, object]]]:
         if name.startswith("live.") and name != "live.places"
     ]
     assert len(calls) >= 4
-    calls.append(("batch", {"doc": str(doc), "engine": "live", "ops": []}))
+    calls.append(("doc.batch", {"doc": str(doc), "engine": "live", "ops": []}))
     calls.append(("para.get", {"doc": str(doc), "engine": "live", "at": "p1#00000000"}))
     return calls
 
@@ -55,7 +55,7 @@ def test_live_call_without_app_returns_engine_unavailable(doc: Path) -> None:
             error = envelope["error"]
             if error["code"] != "ENGINE_UNAVAILABLE" or not error["details"]["reason"]:
                 tracebacks += 1
-        assert execute(registry, "capabilities", {})[0]["result"]["live"] == {"apps": []}
+        assert execute(registry, "server.capabilities", {})[0]["result"]["live"] == {"apps": []}
     assert tracebacks == 0  # live_unavailable_tracebacks
 
 
@@ -95,11 +95,11 @@ def test_a_refused_span_stops_the_batch_before_any_write(doc: Path) -> None:
     with using(fake):
         api.run("live.open", {"doc": str(doc)})
         with pytest.raises(DocControlError) as err:
-            api.run("batch", {"doc": str(doc), "engine": "live", "ops": ops})
+            api.run("doc.batch", {"doc": str(doc), "engine": "live", "ops": ops})
         assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
         assert not fake.dirty(doc) and not fake.docs[str(doc.resolve())].comments
         ops[1]["op"] = "comment.add"
-        api.run("batch", {"doc": str(doc), "engine": "live", "ops": ops})
+        api.run("doc.batch", {"doc": str(doc), "engine": "live", "ops": ops})
         assert len(fake.docs[str(doc.resolve())].comments) == 2
 
 

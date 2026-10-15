@@ -5,7 +5,7 @@ They are batch operation kinds, not standalone writes (see :mod:`doc_control.ops
 ``comment.add`` anchors a new comment on a range (``at``: a paragraph, a range inside
 one or across paragraphs, as for ``text.replace``) with ``commentRangeStart``,
 ``commentRangeEnd`` and a ``commentReference`` run. ``comment.reply`` takes the id
-``comments.list`` reports; the reply is anchored on the same range as the thread's root
+``comment.list`` reports; the reply is anchored on the same range as the thread's root
 (a reply to a reply joins the thread). ``comment.resolve`` marks the whole thread
 resolved (``resolved: false`` reopens it). All of them keep ``comments.xml``,
 ``commentsExtended.xml``, ``commentsIds.xml``, ``commentsExtensible.xml`` and
@@ -110,7 +110,7 @@ COMMENT_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "op": {"enum": ["comment.reply"]},
-            "comment": {**_STR, "description": "Id of the comment to reply to (comments.list)."},
+            "comment": {**_STR, "description": "Id of the comment to reply to (comment.list)."},
             "text": {**_STR, "description": "Reply text."},
         },
         "required": ["op", "comment", "text"],
@@ -503,7 +503,7 @@ def apply_batch(
             author=result.author,
             tag=tag,
             footprint={DOCUMENT_PART: result.footprint, **result.parts},
-            # Comment parts are not logged, so `undo` refuses this entry (see safety.history).
+            # Comment parts are not logged, so `history.undo` refuses this entry (safety.history).
             extra={"parts": sorted(part_bytes)},
             now=now,
             env=env,

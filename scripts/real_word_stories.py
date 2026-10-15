@@ -38,7 +38,7 @@ ALL_STORIES = ["body", "notes", "headers"]
 def _rows(path: Path) -> list[dict[str, Any]]:
     """Every paragraph of every story (the body, notes, headers and footers)."""
     with api.open(path) as doc:
-        result = doc.run("paragraphs.list", {"stories": ALL_STORIES})
+        result = doc.run("para.list", {"stories": ALL_STORIES})
     rows: list[dict[str, Any]] = result["paragraphs"]
     return rows
 
@@ -49,7 +49,7 @@ def _texts(path: Path) -> list[str]:
 
 def _remaining(path: Path) -> int:
     with api.open(path) as doc:
-        return len(doc.run("revisions.list", {"stories": ALL_STORIES})["revisions"])
+        return len(doc.run("revision.list", {"stories": ALL_STORIES})["revisions"])
 
 
 def _first(rows: list[dict[str, Any]], story: str, words: int = 1) -> dict[str, Any]:
@@ -82,7 +82,7 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
             removed.append(note["text"])
             added.append(note["text"][:lead] + "EDITED" + note["text"][word:])
             doc.run(
-                "batch",
+                "doc.batch",
                 {
                     "ops": [
                         {
@@ -114,7 +114,7 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
             removed.append(header["text"])
             added.append(header["text"][:lead] + "EDITED" + header["text"][word:])
             doc.run(
-                "batch",
+                "doc.batch",
                 {
                     "ops": [
                         {
@@ -136,7 +136,7 @@ def _edit(path: Path, name: str, store: Path) -> tuple[list[str], list[str]]:
                 {"op": "table.row.insert", "table": 1, "after_row": 1, "cells": cells},
                 {"op": "table.row.delete", "table": 1, "row": len(table)},
             ]
-            doc.run("batch", {"ops": ops, "author": AUTHOR})
+            doc.run("doc.batch", {"ops": ops, "author": AUTHOR})
     return removed, added
 
 

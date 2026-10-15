@@ -1,4 +1,4 @@
-"""`segment` unit ``parts``, ``front`` and `locate`'s ``part`` on a real .docx (T40)."""
+"""`doc.segment` unit ``parts``, ``front`` and `para.locate`'s ``part`` on a real .docx (T40)."""
 
 from __future__ import annotations
 
@@ -68,19 +68,19 @@ def run(op: str, request: dict[str, Any]) -> dict[str, Any]:
 
 def test_segment_parts_front_and_locate(tmp_path: Path) -> None:
     doc = str(book(tmp_path))
-    parts = run("segment", {"doc": doc, "unit": "parts"})
+    parts = run("doc.segment", {"doc": doc, "unit": "parts"})
     assert [(p["text"], p["chapters"]) for p in parts["parts"]] == [
         ("El invierno", 3),
         ("La huida", 3),
     ]
     assert (parts["front"]["first"], parts["front"]["last"]) == (1, 2)
-    chapters = run("segment", {"doc": doc})["chapters"]
+    chapters = run("doc.segment", {"doc": doc})["chapters"]
     assert len(chapters) == 6
     assert {c["part"] for c in chapters} == {p["id"] for p in parts["parts"]}
     assert all(c["signals"][0] == "chapter_style" for c in chapters)
-    scenes = run("segment", {"doc": doc, "unit": "scenes"})["scenes"]
+    scenes = run("doc.segment", {"doc": doc, "unit": "scenes"})["scenes"]
     assert all(s["words"] > 0 for s in scenes)  # no empty scene for a bare part heading
-    located = run("locate", {"doc": doc})["paragraphs"]  # the first page of rows
+    located = run("para.locate", {"doc": doc})["paragraphs"]  # the first page of rows
     assert located[0]["part"] is None  # front matter
     assert located[2]["part"]["title"] == "El invierno"  # the part heading itself
     assert located[3]["part"]["id"] == chapters[0]["part"]
@@ -89,5 +89,5 @@ def test_segment_parts_front_and_locate(tmp_path: Path) -> None:
 @pytest.mark.parametrize(("words", "count"), [(["apertura"], 0), (["  ", "CAPÍTULO"], 6)])
 def test_style_words_from_json(tmp_path: Path, words: list[str], count: int) -> None:
     doc = str(book(tmp_path))
-    found = run("segment", {"doc": doc, "profile": {"chapter_style_words": words}})
+    found = run("doc.segment", {"doc": doc, "profile": {"chapter_style_words": words}})
     assert sum(1 for c in found["chapters"] if "chapter_style" in c["signals"]) == count

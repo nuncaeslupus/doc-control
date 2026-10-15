@@ -1,6 +1,6 @@
 """Body reads must not slow down because documents can now have stories (STORIES T11).
 
-Gate: ``paragraphs_list_ratio <= 1.10``. ``paragraphs.list`` (body only, the default
+Gate: ``paragraphs_list_ratio <= 1.10``. ``para.list`` (body only, the default
 ``stories``) on the corpus novel is timed on this tree and on the 0.6.0 release, measured
 live on the same machine: the release is checked out into a temporary ``git worktree`` and
 timed in a subprocess with its own ``src`` on ``PYTHONPATH`` (each probe checks it imported
@@ -121,7 +121,7 @@ def test_body_read_time_within_ratio(tmp_path: Path, gate_mode: bool) -> None:
             }
             ratios.append(times["new"] / times["old"])
         ratio = statistics.median(ratios)
-        print(f"paragraphs.list on the novel, per-round ratios vs {BASELINE_TAG}:")
+        print(f"para.list on the novel, per-round ratios vs {BASELINE_TAG}:")
         print(" ".join(f"{r:.3f}" for r in ratios))
         print(f"paragraphs_list_ratio == {ratio:.3f} (median of {ROUNDS}, limit {MAX_RATIO})")
         assert ratio <= MAX_RATIO

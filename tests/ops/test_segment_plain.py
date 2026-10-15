@@ -1,4 +1,4 @@
-"""`segment` on plain text: blank-line headings, ``chapter_level: auto``, every break (T50).
+"""`doc.segment` on plain text: blank-line headings, ``chapter_level: auto``, every break (T50).
 
 Gate: ``plain_structure_mismatches == 0``: an unstyled .docx with headings set off by
 blank lines gives its chapters with ``chapter_blank_lines``; ``auto`` finds level-2
@@ -37,7 +37,7 @@ def docx(tmp: Path, texts: list[str]) -> str:
 
 def run(request: dict[str, Any]) -> dict[str, Any]:
     load_operations()
-    reply = REGISTRY["segment"].run(request)
+    reply = REGISTRY["doc.segment"].run(request)
     assert isinstance(reply, Reply)
     return reply.result
 
@@ -56,7 +56,7 @@ def test_plain_text_structure(tmp_path: Path) -> None:
     auto = run({"doc": doc, "profile": {"chapter_level": "auto"}})
     capped = run({"doc": doc, "unit": "scenes", "profile": {"chapter_blank_lines": 2}})
     with api.open(doc) as opened:
-        whole = opened.run("segment", {"unit": "scenes", "profile": {"chapter_blank_lines": 2}})
+        whole = opened.run("doc.segment", {"unit": "scenes", "profile": {"chapter_blank_lines": 2}})
     title = "Donde se cuenta lo que pasó en la casa del molino"
     hard = [r for n in ("XII", "XIII", "XIV") for r in ("", "", "", f"-{n}-", title, BODY, BODY)]
     wrapped = run({"doc": docx(tmp_path, hard), "profile": {"chapter_blank_lines": 2}})["chapters"]

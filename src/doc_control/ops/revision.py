@@ -1,10 +1,10 @@
 """``revision.accept`` and ``revision.reject``: resolve tracked changes in one verified write.
 
-Both are batch operations (``batch`` with ``{"op": "revision.accept", ...}``); they work on
+Both are batch operations (``doc.batch`` with ``{"op": "revision.accept", ...}``); they work on
 revisions the tool wrote and on revisions the document already had, whoever the author.
 
 Selection (at least one; they narrow each other)
-    ``ids``     revision ids as ``revisions.list`` reports them;
+    ``ids``     revision ids as ``revision.list`` reports them;
     ``author``  the exact ``w:author`` value (``Claude (tag)`` for a tagged call);
     ``at``      a paragraph address ``p3#fp`` or a run ``p3#fp..p9#fp`` (inclusive);
     ``all``     true: every revision.
@@ -118,7 +118,7 @@ def _schema(action: str, what: str) -> dict[str, Any]:
             "ids": {
                 "type": "array",
                 "items": {"type": ["string", "integer"]},
-                "description": f"{what} the revisions with these ids (from revisions.list).",
+                "description": f"{what} the revisions with these ids (from revision.list).",
             },
             "author": {"type": "string", "minLength": 1, "description": "Exact revision author."},
             "at": {
@@ -918,7 +918,7 @@ def apply_resolutions(
             changes=prepared.changes,
             request=[_as_request(op) for op in ops],
             footprint={DOCUMENT_PART: result.footprint, **result.parts},
-            # Joined paragraphs are not logged, so `undo` refuses this entry (safety.history).
+            # Joined paragraphs are not logged, so `history.undo` refuses this (safety.history).
             extra=(
                 {"undo_by_backup": True}
                 if prepared.footprint.body_section or prepared.rows

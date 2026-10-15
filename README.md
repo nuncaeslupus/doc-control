@@ -31,16 +31,16 @@ Python 3.11+, no other dependencies. To drive the Word that is open on Windows, 
 Command line, JSON in and JSON out:
 
 ```bash
-doc-control outline --json '{"doc": "Novela.docx"}'
-doc-control find --json '{"doc": "Novela.docx", "query": "lluvia"}'
-doc-control batch --json '{"doc": "Novela.docx", "ops": [
+doc-control doc.outline --json '{"doc": "Novela.docx"}'
+doc-control text.find --json '{"doc": "Novela.docx", "query": "lluvia"}'
+doc-control doc.batch --json '{"doc": "Novela.docx", "ops": [
   {"op": "text.replace", "at": "p12#a7b2a7b2:4-10", "text": "nieve"},
   {"op": "comment.add", "at": "p40#c0ffee00", "text": "¿Seguro?"}]}'
-doc-control help batch          # the JSON Schema of any operation
+doc-control server.help doc.batch   # the JSON Schema of any operation
 ```
 
 Every write is a tracked change by `DOC_CONTROL_AUTHOR` (default `Claude`), made after a
-backup and verified, with `undo` and `history.*` to go back. Addresses like
+backup and verified, with `history.undo` and `history.*` to go back. Addresses like
 `p12#a7b2a7b2` come from read results and fail loudly if the paragraph changed.
 
 From Python, a document can be held open for many reads, with whole results:
@@ -51,7 +51,7 @@ from doc_control import api
 with api.open("Novela.docx") as doc:
     for p in doc.paragraphs(normalized=True, pages=True):
         print(p["at"], p["style_name"], p["page"], p["text"][:40])
-    chapters = doc.run("segment", {"unit": "chapters"})["chapters"]
+    chapters = doc.run("doc.segment", {"unit": "chapters"})["chapters"]
 ```
 
 Recipes propose batches of fixes (Spanish typography, quotes, dashes, spacing, empty
@@ -60,17 +60,17 @@ paragraphs and more): `recipe.list`, then `recipe.run` returns a batch to review
 ### Notes, headers, footers and tables
 
 Reads cover the body only unless asked; `stories` opts in to the rest (`"notes"` for
-footnotes and endnotes, `"headers"` for headers and footers) on `paragraphs.list`,
-`find`, `locate`, `para.get`, `outline`, `stats` and `revisions.list`. Their paragraphs
-carry an address with a prefix (`fn3/p1#0c9e0c9e`, `en2/…`, `hdr1.default/…`,
+footnotes and endnotes, `"headers"` for headers and footers) on `para.list`,
+`text.find`, `para.locate`, `para.get`, `doc.outline`, `doc.stats` and `revision.list`.
+Their paragraphs carry an address with a prefix (`fn3/p1#0c9e0c9e`, `en2/…`, `hdr1.default/…`,
 `ftr1.first/…`) that the edit operations accept, so a tracked edit inside a footnote or a
 running header works like one in the body. A body read stays as fast as before.
 
 ```bash
-doc-control paragraphs.list --json '{"doc": "Tesis.docx", "stories": ["body", "notes"]}'
+doc-control para.list --json '{"doc": "Tesis.docx", "stories": ["body", "notes"]}'
 doc-control text.replace --json '{"doc": "Tesis.docx", "at": "fn3/p1#0c9e0c9e:4-10", "text": "2019"}'
 doc-control note.add --json '{"doc": "Tesis.docx", "at": "p40#c0ffee00:17", "kind": "footnote", "text": "Ver el cap. 2."}'
-doc-control sections.list --json '{"doc": "Tesis.docx"}'
+doc-control section.list --json '{"doc": "Tesis.docx"}'
 doc-control table.get --json '{"doc": "Tesis.docx", "table": 1}'
 doc-control table.row.insert --json '{"doc": "Tesis.docx", "table": 1, "after_row": 2, "cells": ["a", "b"]}'
 doc-control table.row.delete --json '{"doc": "Tesis.docx", "table": 1, "row": 4}'
@@ -104,8 +104,8 @@ doc-control layout.apply --json '{"doc": "Novela.docx", "untracked": true, "plan
      "footer": {"default": "{PAGE}", "even": "{PAGE}"}}]}}'
 ```
 
-Each `from` is the address of the paragraph the section starts at (from `outline` or
-`paragraphs.list`). `{PAGE}`, `{NUMPAGES}` and `{chapter}` (the current Heading 1) become
+Each `from` is the address of the paragraph the section starts at (from `doc.outline` or
+`para.list`). `{PAGE}`, `{NUMPAGES}` and `{chapter}` (the current Heading 1) become
 fields. Keys left out stay as they are. Breaks and numbering go in as tracked changes;
 a new header or footer part and the two-sided and mirror settings cannot be tracked in
 Word, so the plan needs `untracked: true` (without it the answer names what needs it).
@@ -113,9 +113,9 @@ Run it with `"dry_run": true` first to see the changes; nothing is written unles
 plan read back from the result equals the request. A new section break adds a paragraph
 to carry it, so the addresses after it renumber: read them again with `layout.get`.
 
-Fields: `fields.list` shows every field (TOC, PAGE, SEQ, REF, citations) and whether its
+Fields: `field.list` shows every field (TOC, PAGE, SEQ, REF, citations) and whether its
 result is stale; `toc.insert`, `caption.add`, `xref.add`, `index.mark` and
-`index.insert` add them as tracked insertions; `fields.update` refreshes the TOC, page,
+`index.insert` add them as tracked insertions; `field.update` refreshes the TOC, page,
 sequence and reference results through headless LibreOffice (`ENGINE_UNAVAILABLE`
 without it; `set_update_on_open` asks Word to refresh them on open instead). An index is
 built by Word (F9); citation fields are never changed. `scripts/real_word_layout.py` checks the
@@ -129,17 +129,21 @@ writer sees each comment and tracked change appear, and saves when they choose.
 ```bash
 doc-control live.open --json '{"doc": "Novela.docx"}'
 doc-control live.select --json '{"doc": "Novela.docx", "find_phrase": "lluvia fina"}'
-doc-control batch --json '{"doc": "Novela.docx", "engine": "live", "ops": [
+doc-control doc.batch --json '{"doc": "Novela.docx", "engine": "live", "ops": [
   {"op": "comment.add", "at": "p40#c0ffee00", "text": "¿Seguro?"}]}'
 doc-control live.close --json '{"doc": "Novela.docx", "save": true}'
 ```
 
-Live `batch` takes `comment.add`, `text.replace` and `para.insert`; anything else, or a
+Live `doc.batch` takes `comment.add`, `text.replace` and `para.insert`; anything else, or a
 machine with no app to drive, answers `ENGINE_UNAVAILABLE` with the reason
 (`live.status` lists the apps found). LibreOffice needs a Python its own bridge was
 built for: the system Python with `python3-uno` for a distribution's package, the
 Python version the snap bundles for the snap (`live.status` names it). Closing never
 drops unsaved work: a changed document needs `save` or `discard`.
+
+Operations are named `resource.action` (`doc.outline`, `text.find`, `para.list`); the
+names used before 0.7.0 (`outline`, `find`, `paragraphs.list`…) still run but are no longer
+listed ([renamed operations](docs/operations.md#renamed-operations)).
 
 References: [operations](docs/operations.md) · [errors](docs/errors.md).
 

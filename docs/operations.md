@@ -3,7 +3,7 @@
 
 # Operation reference
 
-Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). `doc-control help <op>` prints the full JSON Schema.
+Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). `doc-control server.help <op>` prints the full JSON Schema.
 
 ## `anchor.create` (read)
 
@@ -23,31 +23,12 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx file. |
 | `anchor` | object | yes | An anchor from anchor.create, or just {exact, prefix, suffix}. |
-| `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalized) or at a fold level of match_level; anything else is ANCHOR_NOT_FOUND. |
+| `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalize) or at a fold level of match_level; anything else is ANCHOR_NOT_FOUND. |
 | `match_level` | `exact` \| `default` \| `loose` |  | How far the quote is folded when neither it nor its normalised text occurs. exact: today's rule (verbatim, then normalised, then fuzzy in mode best). default: then ignoring case, accents and punctuation (case, then default level), and failing that symbols too (loose). loose: the same ladder. The reply's match_level is the strictest level at which the quote equals the matched text (exact: character for character; case: normalised text with case ignored), with matched_text when it is not exact; a fuzzy match has neither. Not the reply's match kind `match` (exact, normalized, fuzzy), which keeps its meaning. |
-
-## `batch` (write)
-
-The main editing tool: apply several edits as tracked changes, all or nothing on the file engine. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']; table.row.insert ['after_row', 'cells', 'table']; table.row.delete ['row', 'table']. |
-| `expect` | object |  |  |
-| `dry_run` | boolean |  | Preview only; write nothing. |
-| `tracked` | boolean |  | Tracked changes (the only mode, true). |
-| `author` | string |  | Revision author. |
-| `tag` | string |  | Appended to the author. |
-| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
-
-## `capabilities` (read)
-
-Describe this doc-control server: API version, engines (file, live), whether it is a frozen build, and every operation it offers. Call it once at the start; help gives one operation's full schema. Read-only; needs no document.
 
 ## `caption.add` (write)
 
-Add a caption paragraph above or below a body paragraph, as tracked insertions: the label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a hidden bookmark around the label and number for cross-references. The number is refreshed by fields.update. Returns the address of the caption.
+Add a caption paragraph above or below a body paragraph, as tracked insertions: the label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a hidden bookmark around the label and number for cross-references. The number is refreshed by field.update. Returns the address of the caption.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -61,9 +42,9 @@ Add a caption paragraph above or below a body paragraph, as tracked insertions: 
 | `text` | string | yes | Caption text after the number; may be empty. |
 | `position` | `above` \| `below` |  | Default: above for a Table, below for a Figure or Equation. |
 
-## `comments.list` (read)
+## `comment.list` (read)
 
-List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with batch (comment.reply, comment.resolve). Read-only, paged.
+List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -73,7 +54,22 @@ List the document's comments in thread order (each root, then its replies) with 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
-## `compare` (read)
+## `doc.batch` (write)
+
+The main editing tool: apply several edits as tracked changes, all or nothing on the file engine. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and history.undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']; table.row.insert ['after_row', 'cells', 'table']; table.row.delete ['row', 'table']. |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `tracked` | boolean |  | Tracked changes (the only mode, true). |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
+
+## `doc.compare` (read)
 
 Write a new redline .docx from two versions: every difference a tracked change; the inputs are never modified.
 
@@ -86,9 +82,9 @@ Write a new redline .docx from two versions: every difference a tracked change; 
 | `tag` | string |  | Appended to the author as `author (tag)`. |
 | `date` | string |  | Revision date, ISO 8601 with time zone. |
 
-## `diff` (read)
+## `doc.diff` (read)
 
-Align the paragraphs of two versions of a .docx (old and new): which are unchanged, modified, inserted, deleted, moved or split, with a map from old addresses to new ones. Use it to carry addresses across versions; use compare to write a redline .docx instead. Read-only: neither file is changed.
+Align the paragraphs of two versions of a .docx (old and new): which are unchanged, modified, inserted, deleted, moved or split, with a map from old addresses to new ones. Use it to carry addresses across versions; use doc.compare to write a redline .docx instead. Read-only: neither file is changed.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -98,7 +94,60 @@ Align the paragraphs of two versions of a .docx (old and new): which are unchang
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
-## `fields.list` (read)
+## `doc.info` (read)
+
+File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a write is refused if the file changed meanwhile), paragraph count, core properties and which parts exist (comments, notes, headers). A cheap first call on a document; doc.stats gives word and element counts. Read-only.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+
+## `doc.open` (write)
+
+Back up the document into its store (retention applies) and note it in the history; call it when a session starts. The document is not changed.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+
+## `doc.outline` (read)
+
+List the document's headings (levels 1-9) in order, each with its style and paragraph address: the table-of-contents view. Use doc.segment for chapters that are not styled as headings, para.list for every paragraph. Read-only, paged with limit and cursor.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `max_level` | integer |  | Only headings up to this level. |
+| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
+| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `doc.segment` (read)
+
+Split the document into chapters, parts or scenes, with stable ids and the signals that detected them, or split a range into sentences or dialogue lines. Use it to work chapter by chapter or to get sentence addresses (p142#a7b2a7b2.s3); doc.outline lists only styled headings. Detection is tuned with profile and overrides. Read-only.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `unit` | `chapters` \| `parts` \| `scenes` \| `sentences` \| `dialogue` |  | What to list (default chapters). |
+| `chapter` | string |  | scenes only: the chapter id whose scenes to list. |
+| `range` | string |  | sentences and dialogue only: what to cover — a paragraph address or range, a run of whole paragraphs (p24#fp..p60#fp), or a chapter, scene or part id (ch-…, sc-…, pt-…; same profile and overrides). |
+| `language` | `es` \| `en` \| `generic` |  | Sentence rules (default es). |
+| `overrides` | array |  | Force or deny a chapter or scene at paragraphs by fingerprint. |
+| `profile` | object |  | Detection settings for this document. |
+| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
+| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `doc.stats` (read)
+
+Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+
+## `field.list` (read)
 
 Every field of the document, by story: its address, instruction code, type (PAGE, TOC, REF, ADDIN ZOTERO_ITEM, CITATION, ...), result text and whether the result is stale. Covers complex fields (also nested, or split across runs), simple fields and fields in text boxes.
 
@@ -108,7 +157,7 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 | `stories` | array |  | Stories to read (default all): "body", "notes", "headers" and "comments". |
 | `type` | string |  | Only fields of this type, e.g. "TOC" or "ADDIN ZOTERO_ITEM". |
 
-## `fields.update` (write)
+## `field.update` (write)
 
 Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. INDEX is never recomputed (LibreOffice ignores its switches and flattens sub-entries): every index is left as it is and listed under skipped; rebuild it in Word (F9). A REF that LibreOffice resolves to an error (a missing bookmark) or to nothing (a number of an unnumbered paragraph) keeps its result and is listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
 
@@ -121,35 +170,9 @@ Recompute the results of the body's TOC, page, page-count, sequence and referenc
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
-## `find` (read)
-
-Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex; null at a folded `match_level`), with `query_word_options` (match_case, whole_words) to tick there.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx file. |
-| `query` | string | yes | Text to find (at most 1000 characters), or a Python regex if `regex`. |
-| `regex` | boolean |  | Treat `query` as a regex. |
-| `ignore_case` | boolean |  | Ignore case. |
-| `ignore_accents` | boolean |  | Ignore accents: `maria` finds `María`. A regex must be written without accents then. |
-| `whole_word` | boolean |  | Match only whole words (no letter, digit or mark on either side). |
-| `limit` | integer |  | Most matches to return; more are reached with `cursor`. |
-| `context` | integer |  | Characters of surrounding text on each side of a match. |
-| `match_level` | `exact` \| `default` \| `loose` |  | Fold a literal query: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the search as without it. When passed, Word's Find codes (^p, ^t, ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each match gains `match_level`, the strictest level it meets. Not with `regex` (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a folded level. Two meanings of exact: plain `find` (no `match_level`) matches the query as typed, flags as given, ^ codes literal, and its matches carry no level; `match_level: "exact"` keeps that text rule but reads the ^ codes and tags every match. A match's own `match_level` is `exact` only when it equals the query character for character (`case` when only case differs). |
-| `cursor` | string |  | The `next` value of the previous page. |
-| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
-
-## `help` (read)
-
-JSON Schema of one operation, or of all operations; also the kinds batch takes in `ops` (text.replace, comment.add…), listed under batch_operations.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `op` | string |  | Operation or batch operation kind. |
-
 ## `history.list` (read)
 
-List a document's undo log, newest first: each write's op_id, what it changed, whether it was undone, and the deleted paragraphs restore can bring back. Use it to find the op_id for undo or restore; history.search finds a quote in the log. Read-only, paged.
+List a document's undo log, newest first: each write's op_id, what it changed, whether it was undone, and the deleted paragraphs history.restore can bring back. Use it to find the op_id for history.undo or history.restore; history.search finds a quote in the log. Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -180,9 +203,25 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 | `dry_run` | boolean |  | List what would go; returns confirm. |
 | `confirm` | string |  | From the dry run. |
 
+## `history.restore` (write)
+
+Bring a logged paragraph back as a tracked insertion after the paragraph that holds its place now. Without `change`, every paragraph the op deleted.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `store` | string |  | A store folder (see history.orphans) to read instead of the document's own. |
+| `op_id` | string | yes | The logged op the paragraph was changed by. |
+| `change` | integer |  | Index of one change of the op (history.list shows them). |
+| `after` | string |  | Insert after this paragraph address instead of the old place (needed when that place was edited, or the history comes from `store`). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+
 ## `history.search` (read)
 
-Search a document's undo log for a quote: in the requests, and in the text of every paragraph before and after each write. Use it to find when a passage was changed or deleted, and the op_id to undo or restore it. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at. Read-only.
+Search a document's undo log for a quote: in the requests, and in the text of every paragraph before and after each write. Use it to find when a passage was changed or deleted, and the op_id for history.undo or history.restore. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -191,12 +230,23 @@ Search a document's undo log for a quote: in the requests, and in the text of ev
 | `query` | string | yes | Text to find. |
 | `ignore_case` | boolean |  |  |
 | `ignore_accents` | boolean |  |  |
-| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` keeps the flags. When passed, Word's Find codes in `query` are read as their characters, every hit in a text is returned (not only the first, `exact` included), each with `start` and `end` (its offsets in that text: the request's JSON or the paragraph before or after the write, as `in` names it; not offsets into the cut `text`), `match_level` (the strictest level it meets) and `text` cut around it, and the reply gains `matches_by_level`, adding up to `total`. Without it, the first hit per text, with no `start`, `end` or level. Not with `ignore_case` or `ignore_accents` false at a folded level. |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `text.find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` keeps the flags. When passed, Word's Find codes in `query` are read as their characters, every hit in a text is returned (not only the first, `exact` included), each with `start` and `end` (its offsets in that text: the request's JSON or the paragraph before or after the write, as `in` names it; not offsets into the cut `text`), `match_level` (the strictest level it meets) and `text` cut around it, and the reply gains `matches_by_level`, adding up to `total`. Without it, the first hit per text, with no `start`, `end` or level. Not with `ignore_case` or `ignore_accents` false at a folded level. |
 | `limit` | integer |  |  |
+
+## `history.undo` (write)
+
+Take back a logged doc.batch or history.restore (the latest one that is still in effect by default), returning its paragraphs to their prior state. Refused if they were edited since.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `op_id` | string |  | The op to undo (default: the latest in effect). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Check and preview; write nothing. |
 
 ## `index.insert` (write)
 
-Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The field is marked dirty: Word builds the entries and page numbers from the index.mark marks (F9); fields.update leaves it alone. Returns the address of the field's paragraph.
+Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The field is marked dirty: Word builds the entries and page numbers from the index.mark marks (F9); field.update leaves it alone. Returns the address of the field's paragraph.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -221,14 +271,6 @@ Mark an index entry: an XE field, as a tracked insertion, right after a range. T
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | A range inside one paragraph; the mark goes after it. |
 | `entry` | string | yes | The index entry, e.g. "Term" or "Term:Sub". |
-
-## `info` (read)
-
-File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a write is refused if the file changed meanwhile), paragraph count, core properties and which parts exist (comments, notes, headers). A cheap first call on a document; stats gives word and element counts. Read-only.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
 
 ## `layout.apply` (write)
 
@@ -263,6 +305,15 @@ Close the open document; with unsaved changes it needs `save` or `discard`.
 | `save` | boolean |  | Save, then close. |
 | `discard` | boolean |  | Close and drop the unsaved changes. |
 
+## `live.get_selection` (read)
+
+Read what the user has selected in Word or LibreOffice right now, and the paragraph (with its address) the cursor is in. Use it when the user points at text ("this paragraph", "here"). Read-only; the document must be attached with live.open.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
+| `engine` | `live` |  | Always the live engine; may be left out. |
+
 ## `live.open` (write)
 
 Attach to Word or LibreOffice for live editing: find the app window already holding the document, or open it in the app (`app`). Call it before the other live operations (engine live). It opens or focuses a window but does not change the document.
@@ -287,7 +338,7 @@ Show a list of places in the document as buttons; in a client that renders MCP A
 
 ## `live.save` (write)
 
-Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (batch with engine live) to keep them; live.close with save: true saves and closes in one call.
+Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (doc.batch with engine live) to keep them; live.close with save: true saves and closes in one call.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -296,28 +347,19 @@ Save the document open in Word or LibreOffice (attached with live.open) to its f
 
 ## `live.select` (write)
 
-Show the user a place: select a paragraph (or put the cursor at it) in the Word or LibreOffice window, by address (`at`) or by a locate find phrase, and return its text and address. Changes only the selection, never the text; the document must be attached with live.open.
+Show the user a place: select a paragraph (or put the cursor at it) in the Word or LibreOffice window, by address (`at`) or by a para.locate find phrase, and return its text and address. Changes only the selection, never the text; the document must be attached with live.open.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 | `at` | string |  | Paragraph address, e.g. `p142#a7b2a7b2`. |
-| `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `locate` gives it. |
-| `find_phrase_across` | `previous` \| `next` \| `both` |  | `locate`'s `find_phrase_across`, for a phrase spanning a mark. |
-| `match_level` | `exact` \| `default` \| `loose` |  | How loosely `find_phrase` matches. `default` (the default) ignores case, accents and punctuation; `loose` symbols too. Either tries the levels from verbatim on and takes the first that matches, so one verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case ignored, nothing else, no retry. Two meanings of exact: the request's `exact` allows a case difference, the reply's does not. The reply's `match_level` (`exact` character for character, `case`, `default`, `loose`) names the level that matched, with `matched_text` when it is not `exact`. |
+| `find_phrase` | string |  | A phrase that occurs once in the document (`\r` for a paragraph mark), as `para.locate` gives it. |
+| `find_phrase_across` | `previous` \| `next` \| `both` |  | `para.locate`'s `find_phrase_across`, for a phrase spanning a mark. |
+| `match_level` | `exact` \| `default` \| `loose` |  | How loosely `find_phrase` matches. `default` (the default) ignores case, accents and punctuation; `loose` symbols too. Either tries the levels from verbatim on and takes the first that matches, so one verbatim paragraph beats looser ones. `exact` is `para.locate`'s rule: case ignored, nothing else, no retry. Two meanings of exact: the request's `exact` allows a case difference, the reply's does not. The reply's `match_level` (`exact` character for character, `case`, `default`, `loose`) names the level that matched, with `matched_text` when it is not `exact`. |
 | `mode` | `select` \| `cursor` |  | `select` (default) selects the paragraph; `cursor` only puts the cursor at its start, so typing or Delete cannot replace it. |
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 | `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
-
-## `live.selection` (read)
-
-Read what the user has selected in Word or LibreOffice right now, and the paragraph (with its address) the cursor is in. Use it when the user points at text ("this paragraph", "here"). Read-only; the document must be attached with live.open.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
-| `engine` | `live` |  | Always the live engine; may be left out. |
 
 ## `live.status` (read)
 
@@ -327,20 +369,6 @@ Check which live apps (Word, LibreOffice) are running and reachable and which do
 |---|---|---|---|
 | `doc` | string |  | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
-
-## `locate` (read)
-
-Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Either phrase can be null (empty, duplicate or no unique phrase), with a reason saying why. Use it to tell a user where a passage is, or to get a find phrase for live.select; outline lists only headings, find searches text, page.estimate gives only pages. Read-only.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `at` | string |  | Paragraph address or range (offsets ignored), e.g. p142#a7b2a7b2; default the whole document (empty paragraphs left out). |
-| `overrides` | array |  | Force or deny a chapter or scene at paragraphs by fingerprint. |
-| `profile` | object |  | Detection settings for this document. |
-| `structure` | boolean |  | false: skip chapter, part and scene detection (they come back null), for callers that keep their own structure; faster on a single paragraph. Default true. |
-| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
-| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
 ## `note.add` (write)
 
@@ -357,26 +385,6 @@ Add a footnote or endnote at a body offset: the reference mark and the note text
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
-## `open` (write)
-
-Back up the document into its store (retention applies) and note it in the history; call it when a session starts. The document is not changed.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-
-## `outline` (read)
-
-List the document's headings (levels 1-9) in order, each with its style and paragraph address: the table-of-contents view. Use segment for chapters that are not styled as headings, paragraphs.list for every paragraph. Read-only, paged with limit and cursor.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `max_level` | integer |  | Only headings up to this level. |
-| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
-| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
-| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
-
 ## `page.estimate` (read)
 
 Estimated page of each paragraph (or of one): rendered page marks and explicit breaks first, a word-count model otherwise. Always `estimated: true`.
@@ -391,7 +399,7 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 
 ## `para.get` (read)
 
-Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; paragraphs.list reads many at once. Read-only; a long text is paged.
+Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; para.list reads many at once. Read-only; a long text is paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -400,16 +408,30 @@ Read one paragraph by address in full: text, style, direct formatting and format
 | `limit` | integer |  | Most characters of text to return. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
-## `paragraphs.list` (read)
+## `para.list` (read)
 
 Every paragraph with its address, text, style and layout facts (optionally the normalised text and the estimated page), in document order. heading_level is null for a body paragraph.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `normalized` | boolean |  | Add `normalized`, the text as `text.normalized` gives it. |
+| `normalized` | boolean |  | Add `normalized`, the text as `text.normalize` gives it. |
 | `pages` | boolean |  | Add the estimated `page` and `page_label` per paragraph, and `page_basis`, `rendered_marks` and `page_count` (see page.estimate). |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
+| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `para.locate` (read)
+
+Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Either phrase can be null (empty, duplicate or no unique phrase), with a reason saying why. Use it to tell a user where a passage is, or to get a find phrase for live.select; doc.outline lists only headings, text.find searches text, page.estimate gives only pages. Read-only.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `at` | string |  | Paragraph address or range (offsets ignored), e.g. p142#a7b2a7b2; default the whole document (empty paragraphs left out). |
+| `overrides` | array |  | Force or deny a chapter or scene at paragraphs by fingerprint. |
+| `profile` | object |  | Detection settings for this document. |
+| `structure` | boolean |  | false: skip chapter, part and scene detection (they come back null), for callers that keep their own structure; faster on a single paragraph. Default true. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
@@ -419,7 +441,7 @@ List the bundled and user recipes, and any recipe files that are invalid.
 
 ## `recipe.run` (write)
 
-Run a recipe and return a batch proposal (repeated until stable); apply it with batch.
+Run a recipe and return a batch proposal (repeated until stable); apply it with doc.batch.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -428,25 +450,9 @@ Run a recipe and return a batch proposal (repeated until stable); apply it with 
 | `definition` | object |  | An inline declarative recipe (same schema as a stored one). |
 | `dry_run` | boolean |  | Accepted for symmetry; recipe.run never writes. |
 
-## `restore` (write)
+## `revision.list` (read)
 
-Bring a logged paragraph back as a tracked insertion after the paragraph that holds its place now. Without `change`, every paragraph the op deleted.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `store` | string |  | A store folder (see history.orphans) to read instead of the document's own. |
-| `op_id` | string | yes | The logged op the paragraph was changed by. |
-| `change` | integer |  | Index of one change of the op (history.list shows them). |
-| `after` | string |  | Insert after this paragraph address instead of the old place (needed when that place was edited, or the history comes from `store`). |
-| `expect` | object |  |  |
-| `dry_run` | boolean |  | Preview only; write nothing. |
-| `author` | string |  | Revision author. |
-| `tag` | string |  | Appended to the author. |
-
-## `revisions.list` (read)
-
-List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
+List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with doc.batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -457,7 +463,7 @@ List the tracked changes (insertions, deletions, moves, formatting, table rows a
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
-## `sections.list` (read)
+## `section.list` (read)
 
 List each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer part address per kind (default, first, even). Use layout.get for the same plan with the header and footer text, in the form layout.apply takes back. Read-only.
 
@@ -465,30 +471,17 @@ List each section's page setup: break type, title page, even/odd headers, page-n
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
-## `segment` (read)
+## `server.capabilities` (read)
 
-Split the document into chapters, parts or scenes, with stable ids and the signals that detected them, or split a range into sentences or dialogue lines. Use it to work chapter by chapter or to get sentence addresses (p142#a7b2a7b2.s3); outline lists only styled headings. Detection is tuned with profile and overrides. Read-only.
+Describe this doc-control server: API version, engines (file, live), whether it is a frozen build, and every operation it offers. Call it once at the start; server.help gives one operation's full schema. Read-only; needs no document.
 
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `unit` | `chapters` \| `parts` \| `scenes` \| `sentences` \| `dialogue` |  | What to list (default chapters). |
-| `chapter` | string |  | scenes only: the chapter id whose scenes to list. |
-| `range` | string |  | sentences and dialogue only: what to cover — a paragraph address or range, a run of whole paragraphs (p24#fp..p60#fp), or a chapter, scene or part id (ch-…, sc-…, pt-…; same profile and overrides). |
-| `language` | `es` \| `en` \| `generic` |  | Sentence rules (default es). |
-| `overrides` | array |  | Force or deny a chapter or scene at paragraphs by fingerprint. |
-| `profile` | object |  | Detection settings for this document. |
-| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
-| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+## `server.help` (read)
 
-## `stats` (read)
-
-Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.
+JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in `ops` (text.replace, comment.add…), listed under batch_operations. An operation's old name (before 0.7.0) gives the operation it was renamed to.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+| `op` | string |  | Operation or batch operation kind. |
 
 ## `style.create` (write)
 
@@ -520,6 +513,18 @@ One style by id or name: its own formatting, inherited formatting and heading le
 | `doc` | string | yes | Path to the .docx. |
 | `style` | string | yes | Style id or name. |
 
+## `style.list` (read)
+
+List the styles defined in the document and how many times each is used; filter by type or to used styles only. Use style.get for one style's full and inherited formatting. Read-only, paged.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `type` | `paragraph` \| `character` \| `table` \| `numbering` |  | Only this kind of style. |
+| `used_only` | boolean |  | Only styles used at least once. |
+| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
+| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
 ## `style.merge` (write)
 
 Merge styles: re-point every use of the `from` styles to `into`, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames. Not a tracked change: the file is backed up first and the write is logged for undo; check with dry_run first.
@@ -547,7 +552,7 @@ Rename a style's display name and/or id; every reference follows (paragraphs, he
 
 ## `style.update` (write)
 
-Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (null removes a key). Every paragraph using the style changes with it; to format one paragraph, use format.apply in batch. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
+Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (null removes a key). Every paragraph using the style changes with it; to format one paragraph, use format.apply in doc.batch. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -562,21 +567,9 @@ Change an existing style: its parent (based_on), next or linked style, quick-gal
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 
-## `styles.list` (read)
-
-List the styles defined in the document and how many times each is used; filter by type or to used styles only. Use style.get for one style's full and inherited formatting. Read-only, paged.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `type` | `paragraph` \| `character` \| `table` \| `numbering` |  | Only this kind of style. |
-| `used_only` | boolean |  | Only styles used at least once. |
-| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
-| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
-
 ## `styleset.export` (read)
 
-Export the document's styles (all, the ones named, or custom ones only) as a JSON style set, returned and optionally also written to `out`. Feed it to styleset.install on another document; styleset.export-dotx writes a Word template instead. The document is not changed.
+Export the document's styles (all, the ones named, or custom ones only) as a JSON style set, returned and optionally also written to `out`. Feed it to styleset.install on another document; styleset.export_dotx writes a Word template instead. The document is not changed.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -586,9 +579,9 @@ Export the document's styles (all, the ones named, or custom ones only) as a JSO
 | `custom_only` | boolean |  | Only user-defined styles. |
 | `out` | string |  | Also write the JSON here. |
 
-## `styleset.export-dotx` (write)
+## `styleset.export_dotx` (write)
 
-Write the document's styles (all, the ones named, or custom ones only) to a new .dotx Word template at `out`; the document itself is never changed. styleset.import-dotx brings a template's styles into a document; styleset.export gives a JSON style set instead.
+Write the document's styles (all, the ones named, or custom ones only) to a new .dotx Word template at `out`; the document itself is never changed. styleset.import_dotx brings a template's styles into a document; styleset.export gives a JSON style set instead.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -598,7 +591,7 @@ Write the document's styles (all, the ones named, or custom ones only) to a new 
 | `styles` | array |  | Only these styles (ids or names). |
 | `custom_only` | boolean |  | Only user-defined styles. |
 
-## `styleset.import-dotx` (write)
+## `styleset.import_dotx` (write)
 
 Install the styles of a .dotx template into the document: new styles are added, existing ones replaced (or skipped); dry_run previews.
 
@@ -676,14 +669,32 @@ Rename a term or a character's name everywhere (Lucía to Elena) as one tracked 
 | `preserve_case` | boolean |  | LUCÍA becomes ELENA, lucía becomes elena, Lucía becomes Elena. |
 | `ignore_accents` | boolean |  | `Lucia` also matches `Lucía`. |
 | `inflections` | array |  | Suffixes that follow the term: "s" renames Lucías to Elenas; {"from": "o", "to": "a"} renames Lucíao to Elenaa. |
-| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the rename as without it. When passed, Word's Find codes in `from` are read as their characters, each `preview` change and `skipped` row gains `match_level` (the strictest level it meets) and the reply gains `matches_by_level`, adding up to `counts.matches`. No retry at a looser level. Two meanings of exact: without `match_level` the rename is today's, with ^ codes literal and no levels; `match_level: "exact"` keeps that rule but reads the ^ codes and tags each change (`exact` there: character for character). Not with `case_sensitive` or `ignore_accents: false` at a folded level. |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `text.find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the rename as without it. When passed, Word's Find codes in `from` are read as their characters, each `preview` change and `skipped` row gains `match_level` (the strictest level it meets) and the reply gains `matches_by_level`, adding up to `counts.matches`. No retry at a looser level. Two meanings of exact: without `match_level` the rename is today's, with ^ codes literal and no levels; `match_level: "exact"` keeps that rule but reads the ^ codes and tags each change (`exact` there: character for character). Not with `case_sensitive` or `ignore_accents: false` at a folded level. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Plan and preview only; write nothing. |
 | `preview_limit` | integer |  | Most changes echoed back in `preview`. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
-## `text.normalized` (read)
+## `text.find` (read)
+
+Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex; null at a folded `match_level`), with `query_word_options` (match_case, whole_words) to tick there.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx file. |
+| `query` | string | yes | Text to find (at most 1000 characters), or a Python regex if `regex`. |
+| `regex` | boolean |  | Treat `query` as a regex. |
+| `ignore_case` | boolean |  | Ignore case. |
+| `ignore_accents` | boolean |  | Ignore accents: `maria` finds `María`. A regex must be written without accents then. |
+| `whole_word` | boolean |  | Match only whole words (no letter, digit or mark on either side). |
+| `limit` | integer |  | Most matches to return; more are reached with `cursor`. |
+| `context` | integer |  | Characters of surrounding text on each side of a match. |
+| `match_level` | `exact` \| `default` \| `loose` |  | Fold a literal query: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the search as without it. When passed, Word's Find codes (^p, ^t, ^l, ^s, ^-, ^~, ^uNNN, ^^) in `query` are read as their characters and each match gains `match_level`, the strictest level it meets. Not with `regex` (unless `exact`), nor with `ignore_case` or `ignore_accents` false at a folded level. Two meanings of exact: plain `text.find` (no `match_level`) matches the query as typed, flags as given, ^ codes literal, and its matches carry no level; `match_level: "exact"` keeps that text rule but reads the ^ codes and tags every match. A match's own `match_level` is `exact` only when it equals the query character for character (`case` when only case differs). |
+| `cursor` | string |  | The `next` value of the previous page. |
+| `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+
+## `text.normalize` (read)
 
 Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) with a two-way offset map to the original code points, for a document (whole, or the paragraph/range `at`) or for a `text` string.
 
@@ -697,7 +708,7 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 
 ## `toc.insert` (write)
 
-Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The result text is filled by fields.update; until then fields.list shows the field as stale. Returns the address of the field's paragraph.
+Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The result text is filled by field.update; until then field.list shows the field as stale. Returns the address of the field's paragraph.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -710,20 +721,9 @@ Insert a table of contents (a TOC field) after a body paragraph, as tracked inse
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
-## `undo` (write)
-
-Take back a logged batch or restore (the latest one that is still in effect by default), returning its paragraphs to their prior state. Refused if they were edited since.
-
-| Field | Type | Required | Meaning |
-|---|---|---|---|
-| `doc` | string | yes | Path to the .docx. |
-| `op_id` | string |  | The op to undo (default: the latest in effect). |
-| `expect` | object |  |  |
-| `dry_run` | boolean |  | Check and preview; write nothing. |
-
 ## `xref.add` (write)
 
-Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, as a tracked insertion, pointing at a caption or another body paragraph. The target gets a hidden bookmark when it has none that fits. fields.update fills in the shown number, text or page.
+Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, as a tracked insertion, pointing at a caption or another body paragraph. The target gets a hidden bookmark when it has none that fits. field.update fills in the shown number, text or page.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -738,7 +738,7 @@ Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion po
 
 # Batch operation kinds
 
-The kinds `batch` takes in `ops`, each applied as a tracked change.
+The kinds `doc.batch` takes in `ops`, each applied as a tracked change.
 
 ## `comment.add`
 
@@ -753,7 +753,7 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | `comment.reply` | yes |  |
-| `comment` | string | yes | Id of the comment to reply to (comments.list). |
+| `comment` | string | yes | Id of the comment to reply to (comment.list). |
 | `text` | string | yes | Reply text. |
 
 ## `comment.resolve`
@@ -814,7 +814,7 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | `revision.accept` | yes |  |
-| `ids` | array |  | Accept the revisions with these ids (from revisions.list). |
+| `ids` | array |  | Accept the revisions with these ids (from revision.list). |
 | `author` | string |  | Exact revision author. |
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
@@ -824,7 +824,7 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | `revision.reject` | yes |  |
-| `ids` | array |  | Reject the revisions with these ids (from revisions.list). |
+| `ids` | array |  | Reject the revisions with these ids (from revision.list). |
 | `author` | string |  | Exact revision author. |
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
@@ -835,7 +835,7 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 |---|---|---|---|
 | `op` | `style.apply` | yes |  |
 | `at` | string | yes | Paragraph p3#fp or run p3#fp..p5#fp (paragraph style), or a range p3#fp:10-15 (character style). |
-| `style` | string | yes | Style id or name (see styles.list). |
+| `style` | string | yes | Style id or name (see style.list). |
 
 ## `style.create`
 
@@ -908,3 +908,35 @@ The kinds `batch` takes in `ops`, each applied as a tracked change.
 | `op` | `text.replace` | yes |  |
 | `at` | string | yes | Range p3#fp:10-15, p3#fp or p3#fp:10..p5#fp:2. |
 | `text` | string | yes | New text; empty deletes the range. |
+
+# Renamed operations
+
+0.7.0 named every operation `resource.action`, with a singular resource. The old names still run (CLI, `server.help`, `doc_control.api`, MCP `tools/call`) but are no longer listed.
+
+| Old name | Current name |
+|---|---|
+| `batch` | `doc.batch` |
+| `capabilities` | `server.capabilities` |
+| `comments.list` | `comment.list` |
+| `compare` | `doc.compare` |
+| `diff` | `doc.diff` |
+| `fields.list` | `field.list` |
+| `fields.update` | `field.update` |
+| `find` | `text.find` |
+| `help` | `server.help` |
+| `info` | `doc.info` |
+| `live.selection` | `live.get_selection` |
+| `locate` | `para.locate` |
+| `open` | `doc.open` |
+| `outline` | `doc.outline` |
+| `paragraphs.list` | `para.list` |
+| `restore` | `history.restore` |
+| `revisions.list` | `revision.list` |
+| `sections.list` | `section.list` |
+| `segment` | `doc.segment` |
+| `stats` | `doc.stats` |
+| `styles.list` | `style.list` |
+| `styleset.export-dotx` | `styleset.export_dotx` |
+| `styleset.import-dotx` | `styleset.import_dotx` |
+| `text.normalized` | `text.normalize` |
+| `undo` | `history.undo` |

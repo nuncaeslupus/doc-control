@@ -4,7 +4,7 @@ They edit ``word/styles.xml`` (one verified write, backup first) and, for a rena
 style id or a merge, the style references (``w:pStyle``, ``w:rStyle``, ``w:tblStyle``) in
 every other part: the document's paragraphs, headers, footers, footnotes, endnotes,
 comments and numbering. ``basedOn``, ``next`` and ``link`` inside the styles part follow.
-Each operation is also a ``batch`` kind, but a style batch holds only style operations
+Each operation is also a ``doc.batch`` kind, but a style batch holds only style operations
 and its definition changes are not tracked changes (they are covered by the dry run, the
 backup and the undo log). Latent styles are left alone: they are defaults for built-in
 styles that are not instantiated, keyed by name.
@@ -95,7 +95,7 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "Change an existing style: its parent (based_on), next or linked style, quick-"
             "gallery flag, or run and paragraph formatting (null removes a key). Every "
             "paragraph using the style changes with it; to format one paragraph, use "
-            "format.apply in batch. Not a tracked change: the file is backed up first and the"
+            "format.apply in doc.batch. Not a tracked change: the file is backed up first and the"
             " write is logged for undo; dry_run previews."
         ),
     ),

@@ -1,4 +1,4 @@
-"""``diff``: paragraph alignment between two versions of a document, read-only.
+"""``doc.diff``: paragraph alignment between two versions of a document, read-only.
 
 Request: ``old`` and ``new`` (paths to ``.docx`` files), optional ``limit`` and
 ``cursor`` (the envelope's ``next`` of the previous page; the cursor is tied to the old
@@ -122,12 +122,12 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
 
 
 @operation(
-    "diff",
+    "doc.diff",
     "read",
     (
         "Align the paragraphs of two versions of a .docx (old and new): which are "
         "unchanged, modified, inserted, deleted, moved or split, with a map from old "
-        "addresses to new ones. Use it to carry addresses across versions; use compare to "
+        "addresses to new ones. Use it to carry addresses across versions; use doc.compare to "
         "write a redline .docx instead. Read-only: neither file is changed."
     ),
     {
@@ -154,7 +154,7 @@ def diff(request: dict[str, Any]) -> Reply:
 
     # The cursor must also notice the new file changing: fold its hash into the scope.
     scoped = {**request, "new_sha256": new.sha256}
-    start = read_cursor("diff", old, scoped)
+    start = read_cursor("doc.diff", old, scoped)
     limit = request.get("limit", len(records))
     result: dict[str, Any] = {
         "old": old.envelope_doc(),
@@ -164,9 +164,9 @@ def diff(request: dict[str, Any]) -> Reply:
         "changes": [],
         "address_map": {},
     }
-    placeholder = make_cursor("diff", old, scoped, 10**12)
+    placeholder = make_cursor("doc.diff", old, scoped, 10**12)
     room = budget(RESPONSE_BUDGET) - size(
-        success("diff", result, doc=old.envelope_doc(), next_cursor=placeholder)
+        success("doc.diff", result, doc=old.envelope_doc(), next_cursor=placeholder)
     )
     taken: list[dict[str, Any]] = []
     used = 0
@@ -179,5 +179,5 @@ def diff(request: dict[str, Any]) -> Reply:
     end = start + len(taken)
     result["changes"] = taken
     result["address_map"] = _page_map(taken)
-    cursor = make_cursor("diff", old, scoped, end) if end < len(records) else None
+    cursor = make_cursor("doc.diff", old, scoped, end) if end < len(records) else None
     return Reply(result, doc=old.envelope_doc(), next_cursor=cursor)

@@ -13,7 +13,14 @@ import pytest
 
 from doc_control.cli import main
 from doc_control.errors import HINTS, DocControlError, ErrorCode
-from doc_control.registry import REGISTRY, load_operations, operation
+from doc_control.registry import (
+    ALIASES,
+    REGISTRY,
+    canonical,
+    get_operation,
+    load_operations,
+    operation,
+)
 from doc_control.schema import check_schema, validate
 
 
@@ -25,13 +32,13 @@ def run_cli(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[s
 def test_registry_every_op_has_schema_and_appears_in_capabilities(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Every registered schema is well formed and `capabilities` lists exactly the ops.
+    """Every registered schema is well formed and `server.capabilities` lists exactly the ops.
 
     `check_schema` inspects the schema itself (keywords, nesting, required names), so this
     fails if an op ships a schema the validator would silently misread.
     """
     registry = load_operations()
-    code, env = run_cli(capsys, "capabilities")
+    code, env = run_cli(capsys, "server.capabilities")
     listed = [op["name"] for op in env["result"]["operations"]]
     failing = {n: check_schema(op.schema) for n, op in registry.items() if check_schema(op.schema)}
     not_object = [n for n, op in registry.items() if op.schema.get("type") != "object"]
@@ -105,43 +112,48 @@ def test_unknown_operation_returns_usage_error(capsys: pytest.CaptureFixture[str
 
 
 def test_help_returns_schema_for_one_operation(capsys: pytest.CaptureFixture[str]) -> None:
-    """`help` with an op name returns that op's JSON Schema."""
-    code, env = run_cli(capsys, "help", "--json", '{"op": "capabilities"}')
+    """`server.help` with an op name returns that op's JSON Schema."""
+    code, env = run_cli(capsys, "server.help", "--json", '{"op": "server.capabilities"}')
     assert code == 0
-    assert env["result"]["operations"]["capabilities"]["schema"]["type"] == "object"
+    assert env["result"]["operations"]["server.capabilities"]["schema"]["type"] == "object"
 
 
 def test_help_accepts_positional_op_as_the_hint_says(capsys: pytest.CaptureFixture[str]) -> None:
-    """`doc-control help <op>`, which the SCHEMA_INVALID hint names, works as written."""
-    assert "`doc-control help <op>`" in HINTS[ErrorCode.SCHEMA_INVALID]
-    code, env = run_cli(capsys, "help", "capabilities")
+    """`doc-control server.help <op>`, which the SCHEMA_INVALID hint names, works as written."""
+    assert "`doc-control server.help <op>`" in HINTS[ErrorCode.SCHEMA_INVALID]
+    code, env = run_cli(capsys, "server.help", "server.capabilities")
     assert code == 0
-    assert list(env["result"]["operations"]) == ["capabilities"]
-    code, env = run_cli(capsys, "help", "no.such.op")
+    assert list(env["result"]["operations"]) == ["server.capabilities"]
+    code, env = run_cli(capsys, "server.help", "no.such.op")
     assert code == 2
     assert env["error"]["code"] == "SCHEMA_INVALID"
 
 
 @pytest.mark.parametrize("flag", ["--help", "-h"])
 def test_help_flags_are_aliases_of_help(capsys: pytest.CaptureFixture[str], flag: str) -> None:
-    """`--help` and `-h` behave as `help`, with or without a positional op."""
+    """`--help` and `-h` behave as `server.help`, with or without a positional op."""
     code, env = run_cli(capsys, flag)
     assert code == 0
-    assert env["op"] == "help"
-    assert "capabilities" in env["result"]["operations"]
-    code, env = run_cli(capsys, flag, "capabilities")
+    assert env["op"] == "server.help"
+    assert "server.capabilities" in env["result"]["operations"]
+    code, env = run_cli(capsys, flag, "server.capabilities")
     assert code == 0
-    assert list(env["result"]["operations"]) == ["capabilities"]
+    assert list(env["result"]["operations"]) == ["server.capabilities"]
 
 
 @pytest.mark.parametrize(
     "args",
-    [["capabilities", "help"], ["help", "capabilities", "extra"], ["help", "a", "--json", "{}"]],
+    [
+        ["server.capabilities", "server.help"],
+        ["server.help", "server.capabilities", "extra"],
+        ["server.help", "a", "--json", "{}"],
+        ["help", "capabilities", "extra"],
+    ],
 )
 def test_positional_args_are_rejected_except_one_op_for_help(
     capsys: pytest.CaptureFixture[str], args: list[str]
 ) -> None:
-    """Only `help` takes a positional op, and only one."""
+    """Only `server.help` (or its old name `server.help`) takes a positional op, and only one."""
     code, env = run_cli(capsys, *args)
     assert code == 2
     assert env["error"]["code"] == "SCHEMA_INVALID"
@@ -149,14 +161,14 @@ def test_positional_args_are_rejected_except_one_op_for_help(
 
 def test_request_with_unknown_key_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:
     """Strict schemas reject keys they do not declare, naming the JSON path."""
-    code, env = run_cli(capsys, "capabilities", "--json", '{"bogus": 1}')
+    code, env = run_cli(capsys, "server.capabilities", "--json", '{"bogus": 1}')
     assert code == 2
     assert env["error"]["details"]["path"] == "$.bogus"
 
 
 def test_non_json_request_is_rejected(capsys: pytest.CaptureFixture[str]) -> None:
     """A request that is not JSON returns SCHEMA_INVALID instead of a traceback."""
-    code, env = run_cli(capsys, "help", "--json", "{not json")
+    code, env = run_cli(capsys, "server.help", "--json", "{not json")
     assert code == 2
     assert env["error"]["code"] == "SCHEMA_INVALID"
 
@@ -164,14 +176,14 @@ def test_non_json_request_is_rejected(capsys: pytest.CaptureFixture[str]) -> Non
 def test_cli_reads_request_from_stdin_only_with_json_dash() -> None:
     """`--json -` reads the request from stdin; without it stdin is never read."""
     out = subprocess.run(
-        [sys.executable, "-m", "doc_control", "help", "--json", "-"],
-        input='{"op": "help"}',
+        [sys.executable, "-m", "doc_control", "server.help", "--json", "-"],
+        input='{"op": "server.help"}',
         capture_output=True,
         text=True,
         timeout=30,
         check=True,
     ).stdout
-    assert json.loads(out)["result"]["operations"]["help"]["kind"] == "read"
+    assert json.loads(out)["result"]["operations"]["server.help"]["kind"] == "read"
 
 
 def test_cli_does_not_block_on_open_stdin() -> None:
@@ -183,7 +195,7 @@ def test_cli_does_not_block_on_open_stdin() -> None:
     read_end, write_end = os.pipe()
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "doc_control", "capabilities"],
+            [sys.executable, "-m", "doc_control", "server.capabilities"],
             stdin=read_end,
             stdout=subprocess.PIPE,
             text=True,
@@ -257,3 +269,37 @@ def test_operation_modules_name_the_module_of_every_operation() -> None:
     assert {name: op.handler.__module__.rsplit(".", 1)[1] for name, op in registry.items()} == (
         OPERATION_MODULES
     )
+
+
+def test_every_old_name_resolves_to_a_current_operation() -> None:
+    """Each name an operation had before 0.7.0 runs the operation it was renamed to."""
+    registry = load_operations()
+    assert not set(ALIASES) & set(registry)  # an old name never shadows a current one
+    for old, new in ALIASES.items():
+        assert new in registry, old
+        assert canonical(old) == new
+        assert get_operation(old) is registry[new]
+
+
+@pytest.mark.parametrize("old", sorted(ALIASES))
+def test_old_names_still_run_on_every_front_door(
+    capsys: pytest.CaptureFixture[str], old: str
+) -> None:
+    """The CLI, help's `op` and the Python API all accept an old name."""
+    from doc_control import api
+
+    new = ALIASES[old]
+    code, env = run_cli(capsys, "help", old)
+    assert code == 0 and list(env["result"]["operations"]) == [new]
+    if old == "capabilities":
+        code, env = run_cli(capsys, old)
+        assert code == 0 and env["op"] == new
+        assert api.run(old, {}).result["version"]
+
+
+def test_old_names_are_not_listed(capsys: pytest.CaptureFixture[str]) -> None:
+    code, env = run_cli(capsys, "server.capabilities")
+    listed = {op["name"] for op in env["result"]["operations"]}
+    assert code == 0 and not listed & set(ALIASES)
+    code, env = run_cli(capsys, "server.help")
+    assert code == 0 and not set(env["result"]["operations"]) & set(ALIASES)

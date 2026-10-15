@@ -21,14 +21,14 @@ from doc_control.registry import OPERATION_MODULES
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "frozen_smoke.py"
 
-# doc-control, except that `tools/list` answers a JSON-RPC error; `capabilities` also
+# doc-control, except that `tools/list` answers a JSON-RPC error; `server.capabilities` also
 # records the environment it was given, for the PATH test.
 STUB = """
 import json, os, sys
 
 def main():
     dump = os.environ.get("SMOKE_STUB_ENV_DUMP")
-    if dump and sys.argv[1:2] == ["capabilities"]:
+    if dump and sys.argv[1:2] == ["server.capabilities"]:
         keys = ("PATH", "PYTHONHOME", "PYTHONPATH")
         with open(dump, "w", encoding="utf-8") as f:
             json.dump({k: os.environ.get(k) for k in keys}, f)

@@ -8,7 +8,7 @@ where it is now, how well it matches, or that it cannot tell.
 Matching
     Exact first: every place the quote occurs verbatim is a candidate; when there is none,
     every place it occurs in the normalised text (match kind ``normalized``: the range's
-    own text normalises to the quote but is not equal to it) (``text.normalized``: soft hyphens and
+    own text normalises to the quote but is not equal to it) (``text.normalize``: soft hyphens and
     zero-width characters removed, whitespace collapsed, NFC), mapped back to the
     original offsets, so a quote copied from normalised text is found across a soft
     hyphen, a tab or a double space. When neither finds a span, the folded stages of

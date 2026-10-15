@@ -5,8 +5,8 @@ Usage::
     python scripts/frozen_parity.py --exe build-out/doc-control/doc-control.exe
     python scripts/frozen_parity.py --exe python -- -m doc_control   # the pip install
 
-Runs ``capabilities`` and, for every corpus kind (``tests/corpus/generator.py``, ``KINDS``
-plus ``STORY_KINDS``), a few ``find`` queries (plain and regex), once through the binary
+Runs ``server.capabilities`` and, for every corpus kind (``tests/corpus/generator.py``, ``KINDS``
+plus ``STORY_KINDS``), a few ``text.find`` queries (plain and regex), once through the binary
 (``<exe> <op> --json -``) and once through ``doc_control.cli.execute`` in this process,
 on the same fixture file. The two envelopes must be equal; ``capabilities.build`` is
 ignored (the binary says ``frozen: true``, the pip install ``frozen: false``).
@@ -115,7 +115,7 @@ class Parity:
         self.cases += 1
         want, _ = self.execute(self.registry, op, dict(request))
         got = self.exe(op, request)
-        if op == "capabilities":
+        if op == "server.capabilities":
             want, got = _drop_build(want), _drop_build(got)
         found = first_diff(json.loads(json.dumps(want)), got)
         if found:
@@ -129,13 +129,13 @@ def run(command: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="frozen-parity-") as scratch:
         tmp = Path(scratch)
         parity = Parity(command, tmp)
-        parity.compare("capabilities", "capabilities", {})
+        parity.compare("capabilities", "server.capabilities", {})
         for kind in kinds:
             doc = tmp / f"{kind}.docx"
             doc.write_bytes(generator.generate(kind, SEED))
             for query, regex in QUERIES:
                 request = {"doc": str(doc), "query": query, "regex": regex}
-                parity.compare(f"find {kind} {query!r} regex={regex}", "find", request)
+                parity.compare(f"find {kind} {query!r} regex={regex}", "text.find", request)
     print(f"{parity.cases} cases over {len(kinds)} corpus kinds", flush=True)
     print(f"frozen_vs_python_result_diffs == {parity.diffs}", flush=True)
     return 0 if parity.diffs == 0 else 1

@@ -86,7 +86,7 @@ def test_read_ops_see_styles_headings_and_breaks(tmp_path: Path) -> None:
     path.write_bytes(odt())
     with api.open(path) as doc:
         rows = doc.paragraphs()
-        reply = doc.reply("info")
+        reply = doc.reply("doc.info")
     assert reply.doc is not None and reply.doc["source"] == {"format": "odt"}
     assert rows[0]["heading_level"] == 2
     assert rows[1]["style_name"] == "Scene break"
@@ -102,7 +102,7 @@ def test_unreadable_odt_is_not_a_document(tmp_path: Path, data: bytes) -> None:
     path = tmp_path / "bad.odt"
     path.write_bytes(data)
     with api.open(path) as doc, pytest.raises(DocControlError) as err:
-        doc.run("info")
+        doc.run("doc.info")
     assert err.value.code is ErrorCode.NOT_A_DOCX
 
 
@@ -110,7 +110,7 @@ def test_writes_are_refused(tmp_path: Path) -> None:
     path = tmp_path / "book.odt"
     path.write_bytes(odt())
     with api.open(path, store=tmp_path / "store") as doc, pytest.raises(DocControlError) as err:
-        doc.run("open")
+        doc.run("doc.open")
     assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
     assert not (tmp_path / "store").exists()
 
@@ -147,7 +147,7 @@ def test_deep_nesting_is_not_a_document(tmp_path: Path) -> None:
     path = tmp_path / "deep.odt"
     path.write_bytes(odt(f"<text:p>{deep}</text:p>"))
     with api.open(path) as doc, pytest.raises(DocControlError) as err:
-        doc.run("info")
+        doc.run("doc.info")
     assert err.value.code is ErrorCode.NOT_A_DOCX
     assert "nested" in str(err.value)
 

@@ -152,7 +152,7 @@ uv run python scripts/real_word_layout.py build C:\layout
 
 `C:\layout` now holds the documents below and `expected.json`; `build` prints what to
 look for in each. `toc.docx` is built only when LibreOffice is installed (its page
-numbers come from `fields.update`); without it, the script says so and leaves it out.
+numbers come from `field.update`); without it, the script says so and leaves it out.
 
 | Document | What Word must show |
 |---|---|

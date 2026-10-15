@@ -1,4 +1,4 @@
-"""`sections.list` (STORIES T8): each section's page setup, as LibreOffice reads it."""
+"""`section.list` (STORIES T8): each section's page setup, as LibreOffice reads it."""
 
 from __future__ import annotations
 
@@ -118,8 +118,8 @@ def test_sections_list_matches_libreoffice(tmp_path: Path) -> None:
         for kind in ("headers", "novel"):
             doc = work / f"{kind}.docx"
             doc.write_bytes(generate(kind, 0))
-            ours = api.run("sections.list", {"doc": str(doc)}).result["sections"]
-            rows = api.run("paragraphs.list", {"doc": str(doc), "stories": ["headers"]})
+            ours = api.run("section.list", {"doc": str(doc)}).result["sections"]
+            rows = api.run("para.list", {"doc": str(doc), "stories": ["headers"]})
             texts: dict[str, list[str]] = {}
             for row in rows.result["paragraphs"]:
                 if row.get("story") in ("header", "footer"):

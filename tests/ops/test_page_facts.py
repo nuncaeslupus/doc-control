@@ -64,7 +64,7 @@ def test_bulk_page_header_and_section_breaks(tmp_path: Path) -> None:
         mismatches += _breaks(build(tmp_path, body, final=final, name=f"s{n}")) != expected
     doc = build(tmp_path, para(words(50)) + para(words(50), before=MARK), name="marks")
     with api.open(doc) as d:
-        bulk = d.run("paragraphs.list", {"pages": True})
+        bulk = d.run("para.list", {"pages": True})
         estimate = d.run("page.estimate")
     mismatches += (bulk["page_basis"], bulk["rendered_marks"], bulk["page_count"]) != (
         estimate["basis"],

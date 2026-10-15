@@ -9,8 +9,8 @@ a live app has open, wherever it is, for a caller that does not know the path th
 sees (an assistant in a sandbox). ``live.status`` without ``doc`` lists them.
 
 ``live.select`` puts the app's selection on a paragraph, named by address or by a find
-phrase from ``locate``; ``paragraphs_after`` moves that many paragraphs on from it (as in
-``locate``'s ``context``). ``live.places`` hands a list of such places to the MCP App in
+phrase from ``para.locate``; ``paragraphs_after`` moves that many paragraphs on from it (as in
+``para.locate``'s ``context``). ``live.places`` hands a list of such places to the MCP App in
 ``doc_control/app`` (see ``doc_control.mcp``), whose buttons call ``live.select``.
 """
 
@@ -213,7 +213,7 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
     "write",
     (
         "Save the document open in Word or LibreOffice (attached with live.open) to its "
-        "file, from inside the app. Call it after live edits (batch with engine live) to "
+        "file, from inside the app. Call it after live edits (doc.batch with engine live) to "
         "keep them; live.close with save: true saves and closes in one call."
     ),
     _schema(),
@@ -259,7 +259,7 @@ def _found(
 ) -> tuple[int, Level, str]:
     """The paragraph (from 0) a find phrase names, the level it matched at and its text.
 
-    ``requested`` ``exact`` is ``locate``'s rule of today: one casefold match in the
+    ``requested`` ``exact`` is ``para.locate``'s rule of today: one casefold match in the
     joined text, the phrase taken as given. Otherwise the ladder runs from ``exact`` to
     ``loose`` over the joined text, and the first level with any hit must have exactly
     one. A phrase holding a caret is tried raw, verbatim, before its Word codes are
@@ -394,7 +394,7 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
     "write",
     (
         "Show the user a place: select a paragraph (or put the cursor at it) in the Word "
-        "or LibreOffice window, by address (`at`) or by a locate find phrase, and return "
+        "or LibreOffice window, by address (`at`) or by a para.locate find phrase, and return "
         "its text and address. Changes only the selection, never the text; the document "
         "must be attached with live.open."
     ),
@@ -404,18 +404,18 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
             "type": "string",
             "minLength": 1,
             "description": "A phrase that occurs once in the document (`\\r` for a paragraph "
-            "mark), as `locate` gives it.",
+            "mark), as `para.locate` gives it.",
         },
         find_phrase_across={
             "enum": ["previous", "next", "both"],
-            "description": "`locate`'s `find_phrase_across`, for a phrase spanning a mark.",
+            "description": "`para.locate`'s `find_phrase_across`, for a phrase spanning a mark.",
         },
         match_level={
             "enum": ["exact", "default", "loose"],
             "description": "How loosely `find_phrase` matches. `default` (the default) "
             "ignores case, accents and punctuation; `loose` symbols too. Either tries "
             "the levels from verbatim on and takes the first that matches, so one "
-            "verbatim paragraph beats looser ones. `exact` is `locate`'s rule: case "
+            "verbatim paragraph beats looser ones. `exact` is `para.locate`'s rule: case "
             "ignored, nothing else, no retry. Two meanings of exact: the request's "
             "`exact` allows a case difference, the reply's does not. The reply's "
             "`match_level` (`exact` character for character, `case`, `default`, "
@@ -480,7 +480,7 @@ _PLACE = {
         "find_phrase": {
             "type": "string",
             "minLength": 1,
-            "description": "A `locate` find phrase; used when `at` is missing or stale.",
+            "description": "A `para.locate` find phrase; used when `at` is missing or stale.",
         },
         "find_phrase_across": {"enum": ["previous", "next", "both"]},
     },
@@ -529,7 +529,7 @@ def places(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @operation(
-    "live.selection",
+    "live.get_selection",
     "read",
     (
         "Read what the user has selected in Word or LibreOffice right now, and the "
@@ -550,7 +550,7 @@ def selection(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def live_batch(request: dict[str, Any]) -> dict[str, Any]:
-    """``batch`` with ``engine: "live"``: comments and tracked edits in the open document.
+    """``doc.batch`` with ``engine: "live"``: comments and tracked edits in the open document.
 
     Addresses refer to the document as read, so the edits are applied from the end of
     the document backwards. Each one is logged to history (``engine: live``) without a

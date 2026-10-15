@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "frozen_parity.py"
 
-# doc-control, except that one `find` (the kitchen-sink fixture, query "the") answers a
+# doc-control, except that one `text.find` (the kitchen-sink fixture, query "the") answers a
 # different text for its first match.
 STUB = """
 import sys
@@ -23,7 +23,7 @@ _execute = cli.execute
 
 def execute(registry, op, request):
     envelope, code = _execute(registry, op, request)
-    if (op == "find" and str(request.get("doc", "")).endswith("kitchen_sink.docx")
+    if (op == "text.find" and str(request.get("doc", "")).endswith("kitchen_sink.docx")
             and request.get("query") == "the" and envelope.get("ok")):
         envelope["result"]["matches"][0]["text"] = "teh"
     return envelope, code

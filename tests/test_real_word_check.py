@@ -26,7 +26,7 @@ def test_build_then_verify_a_simulated_word_run(tmp_path: Path, capsys: Any) -> 
         target = out / f"{name}.docx"
         target.write_bytes((out / "edits.docx").read_bytes())
         with api.open(target, store=store) as doc:
-            doc.run("batch", {"ops": [{"op": op, "all": True}]})
+            doc.run("doc.batch", {"ops": [{"op": op, "all": True}]})
     replied = out / "commented-word.docx"
     replied.write_bytes((out / "commented.docx").read_bytes())
     with api.open(replied, store=store) as doc:
@@ -34,6 +34,6 @@ def test_build_then_verify_a_simulated_word_run(tmp_path: Path, capsys: Any) -> 
             {"op": "comment.reply", "comment": "0", "text": "Done."},
             {"op": "comment.resolve", "comment": "1"},
         ]
-        doc.run("batch", {"ops": ops})
+        doc.run("doc.batch", {"ops": ops})
     assert module["verify"](out) == 0
     assert "real_word_roundtrip_mismatches == 0" in capsys.readouterr().out

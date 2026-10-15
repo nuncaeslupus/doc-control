@@ -247,7 +247,7 @@ OPERATION_SCHEMAS: dict[str, dict[str, Any]] = {
                 "description": "Paragraph p3#fp or run p3#fp..p5#fp (paragraph style), or a "
                 "range p3#fp:10-15 (character style).",
             },
-            "style": {**_STR, "description": "Style id or name (see styles.list)."},
+            "style": {**_STR, "description": "Style id or name (see style.list)."},
         },
         "required": ["op", "at", "style"],
         "additionalProperties": False,
@@ -1033,7 +1033,7 @@ def prepare_edits(
     With ``layered`` several paragraphs may be inserted at the same place (they
     keep the order of the edits), a paragraph may be edited and also be the anchor of an
     insertion after the end of its container, and the first paragraph of a range across
-    paragraphs may carry other (non-overlapping) edits; used by ``compare``.
+    paragraphs may carry other (non-overlapping) edits; used by ``doc.compare``.
 
     ``annotations`` maps paragraphs (a body paragraph number, or ``(story, number)``) to
     functions that rewrite that paragraph's element without changing its text (comment

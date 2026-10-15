@@ -24,7 +24,7 @@ from doc_control.model.document import Document
 RESPONSE_BUDGET = 8000
 MAX_LIMIT = 1000
 _CURSOR = re.compile(
-    r"c:(?P<op>[a-z.]+):(?P<sha>[0-9a-f]{8}):(?P<scope>[0-9a-f]{6}):(?P<offset>0|[1-9][0-9]{0,11})"
+    r"c:(?P<op>[a-z._]+):(?P<sha>[0-9a-f]{8}):(?P<scope>[0-9a-f]{6}):(?P<offset>0|[1-9][0-9]{0,11})"
 )
 _NOT_SCOPE = frozenset({"doc", "limit", "cursor"})
 
