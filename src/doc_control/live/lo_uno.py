@@ -530,14 +530,15 @@ class LibreOffice:
         return "\n".join(parts), at
 
     @contextmanager
-    def _as(self, doc: Any, author: str) -> Iterator[None]:
-        """Tracked changes on and ``author`` as the user's name, both put back after."""
+    def _as(self, doc: Any, author: str, track: bool = True) -> Iterator[None]:
+        """Tracked changes on (``track`` False: off, for a plain write) and ``author`` as
+        the user's name, both put back after, in ``finally``."""
         profile = self._config("/org.openoffice.UserProfile/Data")
         name, tracking = (profile.givenname, profile.sn), doc.RecordChanges
         profile.givenname, profile.sn = author, ""
         profile.commitChanges()
-        doc.RecordChanges = True
         try:
+            doc.RecordChanges = track
             yield
         finally:
             doc.RecordChanges = tracking
@@ -562,14 +563,50 @@ class LibreOffice:
         cursor.getText().insertTextContent(cursor, note, True)
 
     @_guard
-    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
+    def unresolved(self, path: Path, span: Span) -> bool:
+        doc = self._doc(path)
+        texts = self._texts(doc)
+        if not 0 <= span.start <= span.end < len(texts):
+            raise LiveUnavailable(f"the open document has no paragraph {span.end + 1}")
+        first = self._paragraph(doc, texts, span.start)
+        last = first if span.end == span.start else self._paragraph(doc, texts, span.end)
+        story = first.getText()
+        redlines = doc.Redlines.createEnumeration()
+        while redlines.hasMoreElements():
+            redline = redlines.nextElement()
+            if redline.IsInHeaderFooter:
+                continue
+            start, end = redline.RedlineStart, redline.RedlineEnd
+            if start.getText() != story or end.getText() != story:
+                continue  # another story (a cell, a frame): not these paragraphs
+            try:
+                if story.compareRegionStarts(start, end) < 0:
+                    start, end = end, start  # reported the other way round
+                # compareRegion*(a, b): 1 when a is before b, -1 after, 0 at the same place.
+                # One ending where the first paragraph starts is the mark before it.
+                if (
+                    story.compareRegionStarts(start, last.getEnd()) >= 0
+                    and story.compareRegionEnds(end, first.getStart()) < 0
+                ):
+                    return True
+            except Exception as err:  # ends the bridge cannot compare: not these paragraphs
+                if not _from_uno(err):
+                    raise
+        return False
+
+    @_guard
+    def tracked_replace(
+        self, path: Path, span: Span, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
         cursor, _ = self._range(doc, span)
-        with self._as(doc, author):
+        with self._as(doc, author, track=tracked):
             cursor.setString(text)
 
     @_guard
-    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
+    def tracked_insert(
+        self, path: Path, after: int, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
         texts = self._texts(doc)
         if not -1 <= after < len(texts):
@@ -577,7 +614,7 @@ class LibreOffice:
         anchor = self._paragraph(doc, texts, max(after, 0))
         story = anchor.getText()
         break_ = _uno().getConstantByName("com.sun.star.text.ControlCharacter.PARAGRAPH_BREAK")
-        with self._as(doc, author):
+        with self._as(doc, author, track=tracked):
             if after < 0:
                 cursor = story.createTextCursorByRange(anchor.getStart())
                 story.insertString(cursor, text, False)

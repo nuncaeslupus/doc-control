@@ -27,7 +27,7 @@ _TRACKED = (
     "A tracked change: on the file engine the file is backed up first, history.undo takes "
     "it back, dry_run previews and expect.sha256 refuses a file changed since. "
     "tracked: false writes it plainly instead (a change the writer already approved; no "
-    "revision marks; file engine)."
+    "revision marks; text.replace and para.insert live too)."
 )
 _RESOLVES = (
     "Not itself tracked: on the file engine the file is backed up first and the write is "

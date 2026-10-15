@@ -142,6 +142,9 @@ def process(
     if dry_run:
         print("Would remove the entries above (dry run: nothing changed).")
         return True, False
+    if not yes:
+        # Claude Desktop rewrites its config on exit: an edit made while it runs can be lost.
+        print("Quit Claude Desktop first (its tray icon > Quit) if it is running.")
     if not yes and not _ask_yes(ask, "Remove them? A backup is kept. [y/N] "):
         print("Left unchanged.")
         return True, False
