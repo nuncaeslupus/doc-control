@@ -169,12 +169,14 @@ def test_expect_sha256_must_match(doc: Path) -> None:
     assert digest(doc) != good
 
 
-def test_untracked_live_is_refused(doc: Path) -> None:
-    # plain writes (D-21) are file engine only for now; see tests/ops/test_plain_writes.py
-    with pytest.raises(DocControlError) as err:
+def test_untracked_live_needs_the_app(doc: Path) -> None:
+    # plain writes go live (D-21; tests/ops/test_plain_live_dispatch.py): without an app
+    # the batch is the live engine's to refuse, not the schema's
+    from doc_control.live.dispatch import using
+
+    with using(), pytest.raises(DocControlError) as err:
         run(doc, [{"op": "para.delete", "at": addresses(doc)[1]}], tracked=False, engine="live")
-    assert err.value.code is ErrorCode.SCHEMA_INVALID
-    assert "live plain writes come later" in err.value.message
+    assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
 
 
 def test_cli_batch_envelope_and_error(doc: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -564,6 +564,73 @@ def refused_batch(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def plain(word: Word, home: Path) -> list[str]:
+    """``tracked: false`` (D-21): no revision of its own, Word's tracking put back as the
+    writer had it, and a paragraph holding another tracked change refused before writing
+    (``live_plain_write_failures``)."""
+    bad = Failures()
+    texts = ["Alpha line one.", "Beta line two.", "Gamma line three.", "Delta line four."]
+    doc = make_docx(home / "plain.docx", *texts)
+
+    def at(n: int, text: str, span: str = "") -> str:
+        return f"p{n}#{fingerprint(text)}{span}"
+
+    with _opened(doc) as base:
+        live = word._doc(doc)
+        batch = {**base, "engine": "live", "author": AUTHOR}
+
+        def count() -> int:
+            return int(live.Revisions.Count)
+
+        for prior, ops in (
+            (True, [{"op": "text.replace", "at": at(1, texts[0], ":0-5"), "text": "ALPHA"}]),
+            (
+                False,
+                [
+                    {"op": "text.replace", "at": at(2, texts[1], ":0-4"), "text": "BETA"},
+                    {"op": "para.insert", "after": at(2, texts[1]), "text": "Inserted plain."},
+                ],
+            ),
+        ):
+            live.TrackRevisions = prior
+            done = _run("doc.batch", {**batch, "ops": ops, "tracked": False})
+            bad.check(done.get("tracked") is False, f"reply with tracking {prior}", done)
+            bad.check(count() == 0, f"revisions with tracking {prior}", count())
+            bad.check(bool(live.TrackRevisions) is prior, f"tracking {prior} not put back")
+        live.TrackRevisions = False
+
+        gamma = {"op": "text.replace", "at": at(4, texts[2], ":0-5"), "text": "GAMMA"}
+        _run("doc.batch", {**batch, "ops": [gamma]})
+        marked = count()
+        bad.check(marked > 0, "the tracked edit", marked)
+        revised = _run("live.select", {**base, "find_phrase": "GAMMA"})["at"]
+        for ops in (
+            [{"op": "text.replace", "at": f"{revised}:6-10", "text": "LINE"}],
+            [{"op": "para.insert", "after": revised, "text": "Not here."}],
+        ):
+            bad.refused(
+                f"plain {ops[0]['op']} by a tracked change",
+                "doc.batch",
+                {**batch, "ops": ops, "tracked": False},
+                ErrorCode.UNSUPPORTED_CONTENT,
+            )
+            bad.check(count() == marked, "revisions after a refusal", count())
+        delta = {"op": "text.replace", "at": at(5, texts[3], ":0-5"), "text": "DELTA"}
+        _run("doc.batch", {**batch, "ops": [delta], "tracked": False})
+        bad.check(count() == marked, "a plain write after a tracked one", count())
+        bad.check(bool(live.TrackRevisions) is False, "tracking after the last write")
+        _run("live.save", base)
+
+    want = ["ALPHA line one.", "BETA line two.", "Inserted plain.", "GAMMA line three."]
+    bad.check(_texts(doc) == [*want, "DELTA line four."], "text", _texts(doc))
+    revisions = _run("revision.list", {"doc": str(doc)})["revisions"]
+    bad.check(len(revisions) == marked, "revisions in the file", revisions)
+    history = _run("history.list", {"doc": str(doc)})["entries"]
+    plain_entries = [e for e in history if e.get("tracked") is False]
+    bad.check(len(plain_entries) == 4, "plain history entries", history)
+    return bad
+
+
 def _as_file(bad: Failures, word: Word, doc: Path, where: str) -> None:
     """The open document reads, paragraph by paragraph, as the file engine reads the file."""
     rows = _read(doc)
@@ -788,6 +855,7 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     roundtrip,
     marks,
     refused_batch,
+    plain,
     buried,
     linked,
     named,
