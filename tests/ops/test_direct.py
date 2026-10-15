@@ -155,3 +155,22 @@ def test_direct_tools_are_mcp_writes_not_destructive() -> None:
     for name in DIRECT_TOOLS:
         hints = tools[tool_name(name)]["annotations"]
         assert hints["readOnlyHint"] is False and hints["destructiveHint"] is False
+
+
+@pytest.mark.parametrize("op", ["para.delete", "revision.accept", "revision.reject"])
+def test_a_live_handle_refuses_a_direct_tool_with_no_live_engine(tmp_path: Path, op: str) -> None:
+    """On a live handle these must not quietly edit the file on disk under the open app."""
+    doc = make_docx(tmp_path / "d.docx", "One.", "Two.")
+    request = {"at": _paras(doc)[0]["at"]} if op == "para.delete" else {"all": True}
+    with pytest.raises(DocControlError) as err:
+        api.open(doc, engine="live").run(op, request)
+    assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
+
+
+def test_a_cursor_naming_an_old_operation_still_continues(tmp_path: Path) -> None:
+    doc = make_docx(tmp_path / "d.docx", "One.", "Two.", "Three.")
+    cursor = api.run("para.list", {"doc": str(doc), "limit": 1}).next_cursor
+    assert cursor is not None
+    old = cursor.replace("c:para.list:", "c:paragraphs.list:")
+    second = api.run("para.list", {"doc": str(doc), "limit": 1, "cursor": old}).result
+    assert [p["text"] for p in second["paragraphs"]] == ["Two."]

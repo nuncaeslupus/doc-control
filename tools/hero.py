@@ -184,7 +184,7 @@ def terminal() -> list[str]:
         out.append(f'<circle cx="{x + 16 + i * 14}" cy="{y + 14}" r="4.5" fill="{c}"/>')
     key, val, punct = "#c9bff0", "#f2d29b", "#e9e6f2"
     rows: list[list[tuple[str, str]]] = [
-        [("$ ", BAR), ("doc-control batch --json '{", punct)],
+        [("$ ", BAR), ("doc-control doc.batch --json '{", punct)],
         [
             ('  "doc"', key),
             (": ", punct),

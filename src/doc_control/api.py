@@ -70,7 +70,12 @@ class OpenDocument:
         req = dict(request or {})
         if "doc" in operation.schema.get("properties", {}):
             req.setdefault("doc", self.path)
-        if self.engine == "live" and "engine" in operation.schema.get("properties", {}):
+        if self.engine == "live" and (
+            "engine" in operation.schema.get("properties", {})
+            or operation.handler.__module__ == "doc_control.ops.direct"
+        ):
+            # A direct write without a live engine is refused, as doc.batch would refuse it,
+            # rather than quietly editing the file on disk under the open app.
             req.setdefault("engine", "live")
         if operation.kind != "read":
             self._cache.clear()

@@ -153,7 +153,7 @@ def test_help_flags_are_aliases_of_help(capsys: pytest.CaptureFixture[str], flag
 def test_positional_args_are_rejected_except_one_op_for_help(
     capsys: pytest.CaptureFixture[str], args: list[str]
 ) -> None:
-    """Only `server.help` (or its old name `server.help`) takes a positional op, and only one."""
+    """Only `server.help` (or its old name `help`) takes a positional op, and only one."""
     code, env = run_cli(capsys, *args)
     assert code == 2
     assert env["error"]["code"] == "SCHEMA_INVALID"

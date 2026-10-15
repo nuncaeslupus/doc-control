@@ -64,7 +64,10 @@ def read_cursor(op: str, doc: Document, request: dict[str, Any]) -> int:
     if cursor is None:
         return 0
     m = _CURSOR.fullmatch(cursor)
-    if m is None or m["op"] != op:
+    from doc_control.registry import canonical  # late: the registry imports the ops
+
+    # A cursor issued before the 0.7 renames names the old operation; it still continues.
+    if m is None or canonical(m["op"]) != op:
         raise DocControlError(
             ErrorCode.SCHEMA_INVALID, f"cursor is not a {op} cursor: {cursor!r}", path="$.cursor"
         )
