@@ -84,7 +84,8 @@ def test_text_replace_answers_exactly_as_the_batch_does(tmp_path: Path) -> None:
     direct = api.run("text.replace", {"doc": str(one), "at": at, "text": "Hi", "dry_run": True})
     op = {"op": "text.replace", "at": at, "text": "Hi"}
     batch = api.run("doc.batch", {"doc": str(two), "ops": [op], "dry_run": True})
-    assert direct.result == batch.result
+    # The revision date has one-second resolution; two calls can straddle a tick.
+    assert {**direct.result, "date": None} == {**batch.result, "date": None}
 
 
 def test_expect_guards_a_direct_write(tmp_path: Path) -> None:
