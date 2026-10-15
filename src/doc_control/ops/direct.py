@@ -58,7 +58,7 @@ DIRECT: dict[str, str] = {
         "(p3#a1b2c3d4:10-15) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); a "
         "newline in `text` starts a new comment paragraph. Author defaults to "
         "DOC_CONTROL_AUTHOR. File engine: backed up first, dry_run previews, expect.sha256 "
-        "refuses a file changed since; history.undo cannot take a comment back. engine live "
+        "refuses a file changed since, logged for history.undo. engine live "
         "adds it in the open Word/LibreOffice window (after live.open). Use doc.batch to add "
         "several, or with comment.reply/comment.resolve, all or nothing. Returns the new "
         "comment id."

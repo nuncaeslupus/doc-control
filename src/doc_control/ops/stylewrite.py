@@ -83,8 +83,8 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             '{"bold": true, "size_pt": 14}; paragraph in twips). `id` defaults from `name`. '
             "Refused (STYLE_CONFLICT) when the id or name exists: use style.update to change a "
             "style, style.rename to rename one, styleset.install to add many. Not a tracked "
-            "change and not in the undo log: the file is backed up first (`backup`); dry_run "
-            "previews."
+            "change, but history.undo takes it back: the file is backed up first (`backup`); "
+            "dry_run previews."
         ),
     ),
     "style.update": (
@@ -100,7 +100,7 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             'quick-gallery flag, or run and paragraph formatting (e.g. run {"italic": true, '
             '"font": "Garamond"}; null removes a key; other keys stay). Every paragraph using '
             "the style changes with it; to format one paragraph use format.apply in doc.batch. "
-            "Not a tracked change and not in the undo log: the file is backed up first "
+            "Not a tracked change, but history.undo takes it back: the file is backed up first "
             "(`backup`); dry_run previews. STYLE_NOT_FOUND for an unknown style."
         ),
     ),
@@ -115,8 +115,8 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "Rename a style's display `name` and/or `id` (id defaults from the name); every "
             "reference follows: paragraphs, runs, headers, notes, numbering, and based_on, "
             "next and link in other styles. STYLE_CONFLICT if the new name or id is taken. Use "
-            "style.merge to fold one style into another instead. Not a tracked change and not "
-            "in the undo log: the file is backed up first (`backup`); dry_run previews."
+            "style.merge to fold one style into another instead. Not a tracked change, but "
+            "history.undo takes it back: the file is backed up first (`backup`); dry_run previews."
         ),
     ),
     "style.merge": (
@@ -131,8 +131,8 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "Merge styles: re-point every use of the `from` style or styles (ids or names) to "
             "`into` in the body, notes, headers and other styles, then delete the `from` "
             "styles. Use it to clean up duplicate styles; style.rename only renames, "
-            "style.update changes formatting. Not a tracked change and not in the undo log, "
-            "and it removes style definitions: the file is backed up first (`backup`); check "
+            "style.update changes formatting. Not a tracked change, but history.undo takes it "
+            "back; it removes style definitions, so the file is backed up first (`backup`); check "
             "with dry_run first. STYLE_NOT_FOUND for an unknown style."
         ),
     ),

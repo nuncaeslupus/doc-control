@@ -79,7 +79,7 @@ Returns (`result`):
 
 ## `comment.add` (write)
 
-Add one comment on a range: `at` is a paragraph (p3#a1b2c3d4), part of one (p3#a1b2c3d4:10-15) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); a newline in `text` starts a new comment paragraph. Author defaults to DOC_CONTROL_AUTHOR. File engine: backed up first, dry_run previews, expect.sha256 refuses a file changed since; history.undo cannot take a comment back. engine live adds it in the open Word/LibreOffice window (after live.open). Use doc.batch to add several, or with comment.reply/comment.resolve, all or nothing. Returns the new comment id.
+Add one comment on a range: `at` is a paragraph (p3#a1b2c3d4), part of one (p3#a1b2c3d4:10-15) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); a newline in `text` starts a new comment paragraph. Author defaults to DOC_CONTROL_AUTHOR. File engine: backed up first, dry_run previews, expect.sha256 refuses a file changed since, logged for history.undo. engine live adds it in the open Word/LibreOffice window (after live.open). Use doc.batch to add several, or with comment.reply/comment.resolve, all or nothing. Returns the new comment id.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -134,7 +134,7 @@ Returns (`result`):
 
 ## `doc.batch` (write)
 
-The main editing tool: apply several edits in one verified write, as tracked changes, all or nothing. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add/reply/resolve; or table.row.insert/delete; or style.create/update/rename/merge; or revision.accept/reject. Example ops: [{"op": "text.replace", "at": "p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run previews, expect.sha256 refuses a changed file, history.undo takes text, row and revision batches back. tracked: false writes approved text plainly, on either engine. engine live edits the open app (comment.add, text.replace, para.insert only; no dry_run or rollback). server.help <kind> gives each kind's fields.
+The main editing tool: apply several edits in one verified write, as tracked changes, all or nothing. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add/reply/resolve; or table.row.insert/delete; or style.create/update/rename/merge; or revision.accept/reject. Example ops: [{"op": "text.replace", "at": "p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run previews, expect.sha256 refuses a changed file, history.undo takes the batch back. tracked: false writes approved text plainly, on either engine. engine live edits the open app (comment.add, text.replace, para.insert only; no dry_run or rollback). server.help <kind> gives each kind's fields.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1180,7 +1180,7 @@ Returns (`result`):
 
 ## `style.create` (write)
 
-Add a new paragraph, character, table or numbering style with its parent (based_on), next and linked styles and run and paragraph formatting (e.g. run {"bold": true, "size_pt": 14}; paragraph in twips). `id` defaults from `name`. Refused (STYLE_CONFLICT) when the id or name exists: use style.update to change a style, style.rename to rename one, styleset.install to add many. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
+Add a new paragraph, character, table or numbering style with its parent (based_on), next and linked styles and run and paragraph formatting (e.g. run {"bold": true, "size_pt": 14}; paragraph in twips). `id` defaults from `name`. Refused (STYLE_CONFLICT) when the id or name exists: use style.update to change a style, style.rename to rename one, styleset.install to add many. Not a tracked change, but history.undo takes it back: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1263,7 +1263,7 @@ Returns (`result`):
 
 ## `style.merge` (write)
 
-Merge styles: re-point every use of the `from` style or styles (ids or names) to `into` in the body, notes, headers and other styles, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames, style.update changes formatting. Not a tracked change and not in the undo log, and it removes style definitions: the file is backed up first (`backup`); check with dry_run first. STYLE_NOT_FOUND for an unknown style.
+Merge styles: re-point every use of the `from` style or styles (ids or names) to `into` in the body, notes, headers and other styles, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames, style.update changes formatting. Not a tracked change, but history.undo takes it back; it removes style definitions, so the file is backed up first (`backup`); check with dry_run first. STYLE_NOT_FOUND for an unknown style.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1290,7 +1290,7 @@ Returns (`result`):
 
 ## `style.rename` (write)
 
-Rename a style's display `name` and/or `id` (id defaults from the name); every reference follows: paragraphs, runs, headers, notes, numbering, and based_on, next and link in other styles. STYLE_CONFLICT if the new name or id is taken. Use style.merge to fold one style into another instead. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
+Rename a style's display `name` and/or `id` (id defaults from the name); every reference follows: paragraphs, runs, headers, notes, numbering, and based_on, next and link in other styles. STYLE_CONFLICT if the new name or id is taken. Use style.merge to fold one style into another instead. Not a tracked change, but history.undo takes it back: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1318,7 +1318,7 @@ Returns (`result`):
 
 ## `style.update` (write)
 
-Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (e.g. run {"italic": true, "font": "Garamond"}; null removes a key; other keys stay). Every paragraph using the style changes with it; to format one paragraph use format.apply in doc.batch. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews. STYLE_NOT_FOUND for an unknown style.
+Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (e.g. run {"italic": true, "font": "Garamond"}; null removes a key; other keys stay). Every paragraph using the style changes with it; to format one paragraph use format.apply in doc.batch. Not a tracked change, but history.undo takes it back: the file is backed up first (`backup`); dry_run previews. STYLE_NOT_FOUND for an unknown style.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1390,7 +1390,7 @@ Returns (`result`):
 
 ## `styleset.import_dotx` (write)
 
-Install the styles of a .dotx Word template (`path`) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to apply a house template; styleset.install takes a JSON style set, style.create adds one style. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
+Install the styles of a .dotx Word template (`path`) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to apply a house template; styleset.install takes a JSON style set, style.create adds one style. Not a tracked change, but history.undo takes it back: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1417,7 +1417,7 @@ Returns (`result`):
 
 ## `styleset.install` (write)
 
-Install a JSON style set (inline `styleset`, or a file at `path`, as styleset.export writes it) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles between documents; styleset.import_dotx reads a Word template, style.create adds one style. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
+Install a JSON style set (inline `styleset`, or a file at `path`, as styleset.export writes it) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles between documents; styleset.import_dotx reads a Word template, style.create adds one style. Not a tracked change, but history.undo takes it back: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
