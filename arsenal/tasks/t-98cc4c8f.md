@@ -21,4 +21,7 @@ uv run pytest -q tests/packaging/test_installer_handoff.py
 packaging/installer, scripts
 
 ## Description
-Installer handoff (D-P9): Claude Desktop has no `.mcpb` file association on Windows. The installer ships the `.mcpb` and its finish page offers "Add to Claude Desktop": launch `claude-desktop.exe "<mcpb>"` if the owner's 2026-10-15 test showed that opens the install dialog, otherwise `explorer /select,"<mcpb>"` with the text "drag it onto Claude Desktop > Settings > Extensions". A second, unchecked option removes an old `uvx doc-control` entry from `claude_desktop_config.json` after asking, with a `.bak` backup, and tells the user to restart Claude Desktop. Record the launch-test result in this file before starting.
+Installer handoff (D-P9): Claude Desktop has no `.mcpb` file association on Windows. The installer ships the `.mcpb` and its finish page offers "Add to Claude Desktop": launch `%LOCALAPPDATA%\Microsoft\WindowsApps\claude-desktop.exe "<mcpb>"`; when that alias is missing (a non-Store install, or Claude Desktop not installed), fall back to `explorer /select,"<mcpb>"` with the text "drag it onto Claude Desktop > Settings > Extensions". A second, unchecked option removes an old `uvx doc-control` entry from `claude_desktop_config.json` after asking, with a `.bak` backup, and tells the user to restart Claude Desktop.
+
+## Launch test (owner's PC, 2026-10-15)
+`claude-desktop.exe "doc-control-0.6.4-windows-x64.mcpb"` (Store build 2.37337.1.0) opened Claude Desktop's extension dialog for the file: name, description, the red access warning, and, since 0.6.4 was already installed, Uninstall/Enabled/Configure. So the launch hands the file over; on a machine without the extension the same dialog offers Install.
