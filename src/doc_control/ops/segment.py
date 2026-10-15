@@ -254,11 +254,14 @@ _OUTPUT = outputs.result(
     "doc.segment",
     "read",
     (
-        "Split the document into chapters, parts or scenes, with stable ids and the "
-        "signals that detected them, or split a range into sentences or dialogue lines. "
-        "Use it to work chapter by chapter or to get sentence addresses "
-        "(p142#a7b2a7b2.s3); doc.outline lists only styled headings. Detection is tuned with "
-        "profile and overrides. Read-only."
+        "Split a manuscript into units with stable ids: unit chapters (default), parts or "
+        "scenes (detected from headings, numerals, centring, scene markers; signals say "
+        "which), or sentences or dialogue lines within `range` (an address, "
+        "p24#a1b2c3d4..p60#e5f6a7b8, or a unit id such as ch-d5a3930d). `chapter` limits "
+        "scenes to one chapter; language (default es) sets sentence rules; profile and "
+        "overrides tune detection. Use it to work chapter by chapter or to get sentence "
+        "addresses (p142#a7b2a7b2.s3); doc.outline lists only styled headings. Read-only; "
+        "paged at about 8,000 bytes with `cursor`."
     ),
     {
         "type": "object",

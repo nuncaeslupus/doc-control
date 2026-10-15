@@ -621,8 +621,15 @@ _OUTPUT = outputs.result(
 @operation(
     "doc.compare",
     "read",
-    "Write a new redline .docx from two versions: every difference a tracked change; "
-    "the inputs are never modified.",
+    (
+        "Write a redline: a new .docx at `output` (which must not exist) holding the `new` version "
+        "with every difference from `old` as a tracked change (author default Claude, `date` ISO "
+        "8601 with time zone, default now), so a writer reviews and accepts or rejects them in "
+        "Word. The input files are never modified; the redline is verified (accepting every change "
+        "gives the new text) or removed (VERIFY_FAILED_RESTORED). Use doc.diff for the alignment "
+        "as data without writing a file. Returns the output path and hash, per-kind paragraph "
+        "counts and the revision count."
+    ),
     {
         "type": "object",
         "properties": {

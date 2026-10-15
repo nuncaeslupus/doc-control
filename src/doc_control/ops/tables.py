@@ -40,11 +40,14 @@ _OUTPUT = outputs.result(
 @operation(
     "table.get",
     "read",
-    "One table's grid: its rows of cells, each with its first grid column (`col`), `span` "
-    '(w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own '
-    "paragraphs. A nested table is a table of its own, numbered after the one holding it; an "
-    "empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` "
-    "works in any story (a footnote's table is numbered within that footnote's story).",
+    (
+        "Read one table's grid: rows of cells, each with its first grid column, span, vertical "
+        "merge (null, restart, continue) and the addresses of its paragraphs (read their text with "
+        "para.get or para.list). Name it by `table` (1-based, body only, the `cell.table` "
+        "para.list shows) or by `at`, any paragraph address in it, also in notes and headers. Use "
+        "it before table.row.insert/delete or to edit cells with text.replace. Read-only; "
+        "ANCHOR_NOT_FOUND for no such table."
+    ),
     {
         "type": "object",
         "properties": {

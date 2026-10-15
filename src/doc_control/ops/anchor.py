@@ -67,7 +67,15 @@ _CREATE_OUTPUT = outputs.result(
 @operation(
     "anchor.create",
     "read",
-    "Make an anchor (quote with context) for a range, to find the passage again after edits.",
+    (
+        "Make an anchor for a passage so it can be found again after edits shift or change "
+        "addresses: the quoted text, `context` characters before and after (default 32, max 200), "
+        "and the paragraph's number and fingerprint then. `at` is a range in one paragraph "
+        "(p142#a7b2a7b2:10-15), a whole paragraph (p142#a7b2a7b2) or a sentence "
+        "(p142#a7b2a7b2.s3). Use it to bookmark passages you will come back to; find them later "
+        "with anchor.resolve (text.find searches for any text instead). Read-only; STALE_ADDRESS "
+        "when `at` is outdated, SCHEMA_INVALID for a range across paragraphs."
+    ),
     {
         "type": "object",
         "properties": {
@@ -111,9 +119,16 @@ _RESOLVE_OUTPUT = outputs.result(
 @operation(
     "anchor.resolve",
     "read",
-    "Find an anchor's passage now: its range, score and match kind (exact, normalized or"
-    " fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match."
-    " match_level says how far the quote is folded when it is not found verbatim.",
+    (
+        "Find an anchor's passage in the document as it is now: its current range, a 0-1 score and "
+        "the match kind (exact, normalized or fuzzy). Pass the `anchor` object anchor.create "
+        "returned, or just {exact, prefix, suffix}. mode best (default) falls back to a fuzzy "
+        "match scoring at least 0.80; mode exact accepts only verbatim, normalised or folded "
+        "(match_level, default `default`: case, accents, punctuation) matches. Fails with "
+        "ANCHOR_NOT_FOUND, or ANCHOR_AMBIGUOUS listing up to 5 tied candidates. Use it to "
+        "re-address a passage after edits; doc.diff maps addresses between two files instead. "
+        "Read-only."
+    ),
     {
         "type": "object",
         "properties": {

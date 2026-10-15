@@ -82,10 +82,10 @@ _EXPORT_OUTPUT = outputs.result(
     "styleset.export",
     "read",
     (
-        "Export the document's styles (all, the ones named, or custom ones only) as a "
-        "JSON style set, returned and optionally also written to `out`. Feed it to "
-        "styleset.install on another document; styleset.export_dotx writes a Word "
-        "template instead. The document is not changed."
+        "Export the document's style definitions (all, the `styles` named, or custom_only) as "
+        "a JSON style set, returned and also written to `out` when given (never overwrites an "
+        "existing file). Feed it to styleset.install on another document to copy the look; "
+        "styleset.export_dotx writes a Word template instead. The document is not changed."
     ),
     {
         "type": "object",
@@ -268,8 +268,14 @@ _INSTALL_OUTPUT = outputs.result(
 @operation(
     "styleset.install",
     "write",
-    "Install a JSON style set into the document: new styles are added, existing ones "
-    "replaced (or skipped); dry_run previews.",
+    (
+        "Install a JSON style set (inline `styleset`, or a file at `path`, as styleset.export "
+        "writes it) into the document: new styles are added, existing ids replaced (on_conflict "
+        "replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles "
+        "between documents; styleset.import_dotx reads a Word template, style.create adds one "
+        "style. Not a tracked change and not in the undo log: the file is backed up first "
+        "(`backup`); dry_run previews."
+    ),
     {
         "type": "object",
         "properties": {
@@ -282,6 +288,10 @@ _INSTALL_OUTPUT = outputs.result(
             },
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },

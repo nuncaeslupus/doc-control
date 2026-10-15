@@ -673,10 +673,15 @@ _CAPTION_OUTPUT = outputs.result(
 @operation(
     "caption.add",
     "write",
-    "Add a caption paragraph above or below a body paragraph, as tracked insertions: the "
-    "label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a "
-    "hidden bookmark around the label and number for cross-references. The number is "
-    "refreshed by field.update. Returns the address of the caption.",
+    (
+        "Add a numbered caption next to a body paragraph (a table, figure or equation), as tracked "
+        "insertions: label, a SEQ field with the number, and `text` (e.g. label Table, text "
+        '"Results" gives "Table 3 Results"). position defaults to above for Table, below for '
+        "Figure and Equation. A hidden bookmark wraps label and number so xref.add can point at "
+        "it; field.update renumbers after later inserts. Backed up and undoable (history.undo); "
+        "dry_run previews; expect.sha256 refuses a changed file. Returns the caption's address; "
+        "UNSUPPORTED_CONTENT for a paragraph in a text box."
+    ),
     _schema(
         ["at", "label", "text"],
         at={**_STR, "description": "Address of the body paragraph the caption goes next to."},
@@ -716,10 +721,14 @@ _XREF_OUTPUT = outputs.result(
 @operation(
     "xref.add",
     "write",
-    "Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, "
-    "as a tracked insertion, pointing at a caption or another body paragraph. The target "
-    "gets a hidden bookmark when it has none that fits. field.update fills in the shown "
-    "number, text or page.",
+    (
+        "Insert a cross-reference field at an insertion point (`at`: p14#a1b2c3d4:20-20, or a "
+        "paragraph address for its end), pointing `to` a caption or another body paragraph. show "
+        'number (default: "Table 3" for a caption), page (a PAGEREF) or text. The target gets a '
+        "hidden bookmark when it has none; run field.update afterwards to fill in the shown value. "
+        "A tracked insertion; backed up and undoable (history.undo); dry_run previews. Add "
+        "captions with caption.add first."
+    ),
     _schema(
         ["at", "to"],
         at={
@@ -756,9 +765,14 @@ _MARK_OUTPUT = outputs.result(
 @operation(
     "index.mark",
     "write",
-    "Mark an index entry: an XE field, as a tracked insertion, right after a range. "
-    'The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, '
-    "which Word builds from the marks.",
+    (
+        "Mark an index entry: insert an XE field, as a tracked insertion, right after a range "
+        '(p8#a1b2c3d4:10-15) so that word or phrase is indexed on its page. `entry` is "Term", or '
+        '"Term:Sub" / "Term:Sub:Detail" for sub-entries. Mark every occurrence you want listed, '
+        "then insert the index once with index.insert. Backed up and undoable (history.undo); "
+        "dry_run previews; expect.sha256 refuses a changed file. Returns the paragraph address and "
+        "field code."
+    ),
     _schema(
         ["at", "entry"],
         at={**_STR, "description": "A range inside one paragraph; the mark goes after it."},
@@ -785,11 +799,14 @@ _INDEX_OUTPUT = outputs.result(
 @operation(
     "index.insert",
     "write",
-    "Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an "
-    "optional title, the field with a placeholder result and the paragraph that closes it. "
-    "The field is marked dirty: Word builds the entries and page numbers "
-    "from the index.mark marks (F9); field.update leaves it alone. "
-    "Returns the address of the field's paragraph.",
+    (
+        "Insert an index (an INDEX field) after a body paragraph `after` (p40#a1b2c3d4), as "
+        'tracked insertions: a title (default "Index", "" for none), the field with a placeholder '
+        "result, and a closing paragraph. Mark entries first with index.mark; Word builds the "
+        "entries and page numbers when the field is updated there (F9), since field.update leaves "
+        "indexes alone. Backed up and undoable (history.undo); dry_run previews; expect.sha256 "
+        "refuses a changed file. Returns the field paragraph's address."
+    ),
     _schema(
         ["after"],
         after={**_STR, "description": "Address of the body paragraph it goes after."},

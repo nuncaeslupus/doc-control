@@ -817,13 +817,13 @@ _OUTPUT = outputs.result(
     "para.locate",
     "read",
     (
-        "Say where paragraphs are, for a person: for one paragraph, a range or the whole "
-        "document (paged), each paragraph's chapter, scene, estimated page and shortest "
-        "unique first-and-last-words phrase, plus a phrase Word's Find meets exactly "
-        "once. Either phrase can be null (empty, duplicate or no unique phrase), with a "
-        "reason saying why. Use it to tell a user where a passage is, or to get a find phrase for "
-        "live.select; doc.outline lists only headings, text.find searches text, page.estimate "
-        "gives only pages. Read-only."
+        "Say where paragraphs are, in terms a person can follow: for one paragraph, a range "
+        "(p40#a1b2c3d4:0..p45#e5f6a7b8:0, offsets ignored) or the whole document, each one's "
+        "chapter, scene, estimated page, shortest unique first … last words phrase, and a "
+        "phrase Word's Find meets exactly once (for Ctrl+F or live.select). A phrase can be "
+        "null with a `reason` (empty, duplicate). structure: false skips chapter detection "
+        "for speed. Use it to tell a writer where a passage is; page.estimate gives only "
+        "pages. Read-only; paged at about 8,000 bytes with `cursor`."
     ),
     {
         "type": "object",

@@ -67,12 +67,14 @@ def tool_name(op: str) -> str:
 DESTRUCTIVE = frozenset({"history.purge", "live.close", "style.merge"})
 # Reads of the document that still create a file: compare's redline, styleset.export's `out`.
 CREATES_FILES = frozenset({"doc.compare", "styleset.export"})
+# Write-kind operations that change nothing: recipe.run only proposes a batch for doc.batch.
+PROPOSES = frozenset({"recipe.run"})
 
 
 def _annotations(op: Operation) -> dict[str, bool]:
     """MCP tool hints: reads are safe to repeat; most writes are tracked changes, backed up
     and undoable, so only the few in DESTRUCTIVE are marked destructive."""
-    if op.kind == "read" and op.name not in CREATES_FILES:
+    if (op.kind == "read" and op.name not in CREATES_FILES) or op.name in PROPOSES:
         return {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
     return {
         "readOnlyHint": False,

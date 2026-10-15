@@ -77,8 +77,14 @@ _OUTPUT = outputs.result(
 @operation(
     "page.estimate",
     "read",
-    "Estimated page of each paragraph (or of one): rendered page marks and explicit "
-    "breaks first, a word-count model otherwise. Always `estimated: true`.",
+    (
+        "Estimate the page each paragraph starts on (and ends on when it spans pages): from Word's "
+        "rendered page marks and explicit breaks where present, else a words-per-page model; "
+        'always flagged `estimated`. `at` (p142#a7b2a7b2) gives one paragraph; by "page" lists '
+        "pages with their first and last paragraph instead. Use it to tell a user roughly where "
+        "text is; para.locate adds chapter, scene and a find phrase. Read-only; paged at about "
+        "8,000 bytes with `cursor`."
+    ),
     {
         "type": "object",
         "properties": {

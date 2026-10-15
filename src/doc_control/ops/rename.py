@@ -116,6 +116,10 @@ _SCHEMA: dict[str, Any] = {
         },
         "expect": {
             "type": "object",
+            "description": (
+                "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+            ),
             "properties": {"sha256": {"type": "string", "minLength": 1}},
             "additionalProperties": False,
         },
@@ -414,11 +418,13 @@ _OUTPUT = outputs.result(
     "term.rename",
     "write",
     (
-        "Rename a term or a character's name everywhere (Lucía to Elena) as one tracked "
-        "batch (tracked: false writes it plainly): whole word, case, preserve case and "
-        "inflections. Use it instead of many "
-        "text.replace edits; run dry_run first to check the counts. Exact unless "
-        "`match_level` folds it; then each change says the level it matched at."
+        "Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch: "
+        "whole words by default, case-insensitive with case preserved (LUCÍA becomes ELENA), "
+        'with optional inflections (["s"] also renames Lucías) and ignore_accents. match_level '
+        "default/loose folds case, accents and punctuation. Matches inside fields or links are "
+        "left and counted. Run dry_run first to check counts and the preview, then the same "
+        "request without it. Use it instead of many text.replace edits. Backed up, undoable; "
+        "tracked: false writes plainly."
     ),
     _SCHEMA,
     output=_OUTPUT,

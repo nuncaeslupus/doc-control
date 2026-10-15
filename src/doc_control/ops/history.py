@@ -54,6 +54,10 @@ _STORE: dict[str, Any] = {
 _OP_ID: dict[str, Any] = {"type": "string", "minLength": 3, "description": "Op id, e.g. h-000123."}
 _EXPECT: dict[str, Any] = {
     "type": "object",
+    "description": (
+        "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+        'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+    ),
     "properties": {"sha256": {"type": "string", "minLength": 1}},
     "additionalProperties": False,
 }
@@ -121,8 +125,14 @@ _OPEN_OUTPUT = outputs.result(
 @operation(
     "doc.open",
     "write",
-    "Back up the document into its store (retention applies) and note it in the history; "
-    "call it when a session starts. The document is not changed.",
+    (
+        "Start a session on a document: back it up into its store (.doc-control/<file name>/ next "
+        "to it; the newest 20 backups or 30 days are kept) and note it in the undo log if it "
+        "changed since the last logged write. Call it once before editing; the document itself is "
+        "not changed. If the document has no history yet, `adoptable` lists orphaned stores (it "
+        "was moved or renamed) that history.adopt can re-attach. Returns the backup path, the log "
+        "entry and the store folder."
+    ),
     {
         "type": "object",
         "properties": {"doc": _DOC},
@@ -170,9 +180,16 @@ _UNDO_OUTPUT = outputs.result(
 @operation(
     "history.undo",
     "write",
-    "Take back a logged doc.batch or history.restore (the latest one that is still in "
-    "effect by default), returning its paragraphs to their prior state. Refused if they "
-    "were edited since.",
+    (
+        "Take back one logged write (doc.batch, text.replace and the other direct writes, "
+        "term.rename, field and note inserts, layout.apply, history.restore), returning its "
+        "paragraphs to their state before it: by default the latest one still in effect, or the "
+        "`op_id` from history.list. Comment and style writes cannot be undone. Refused with "
+        "BATCH_CONFLICT if a paragraph it changed was edited since (undo the later write first). "
+        "Use history.restore to bring back single deleted paragraphs, revision.reject to drop "
+        "tracked changes by author or id. The undo is itself logged; dry_run checks without "
+        "writing; expect.sha256 refuses a changed file."
+    ),
     {
         "type": "object",
         "properties": {
@@ -271,9 +288,15 @@ _RESTORE_OUTPUT = outputs.result(
 @operation(
     "history.restore",
     "write",
-    "Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, without "
-    "revision marks) after the paragraph that holds its place now. Without `change`, every "
-    "paragraph the op deleted.",
+    (
+        "Bring back paragraphs a logged write deleted or changed, as a tracked insertion (tracked: "
+        "false: plainly, for a change the writer approved). Give the `op_id` (from history.list or "
+        "history.search); without `change`, every paragraph that op deleted comes back after the "
+        "paragraph now holding its old place; `change` picks one (also an edited one) and `after` "
+        "(p12#a1b2c3d4) places it when that place was edited (BATCH_CONFLICT otherwise). Use "
+        "history.undo to revert a whole write instead. Backed up, logged, undoable; dry_run "
+        "previews."
+    ),
     {
         "type": "object",
         "properties": {
@@ -465,18 +488,28 @@ _LIST_OUTPUT = outputs.result(
     "history.list",
     "read",
     (
-        "List a document's undo log, newest first: each write's op_id, what it changed, "
-        "whether it was undone, and the deleted paragraphs history.restore can bring "
-        "back. Use it to find the op_id for history.undo or history.restore; "
-        "history.search finds a quote in the log. Read-only, paged."
+        "List the document's undo log, newest first: each write's op_id, kind, time, author, "
+        "the operations it ran, whether it was undone, and the deleted paragraphs "
+        "history.restore can bring back (change numbers). Filter with `kind` (batch, restore, "
+        "undo, open, purge, adopt); `store` reads an orphaned store instead. Use it to find "
+        "the op_id for history.undo or history.restore; history.search finds a quote in the "
+        "log. Read-only; paged with limit (default 20) and `cursor` (the reply's `next`)."
     ),
     {
         "type": "object",
         "properties": {
             **_READ_PROPS,
-            "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_LIMIT,
+                "description": "Most entries per page (default 20).",
+            },
             "cursor": {**_OP_ID, "description": "The `next` of the previous response."},
-            "kind": {"enum": ["batch", "restore", "undo", "open", "purge", "adopt"]},
+            "kind": {
+                "enum": ["batch", "restore", "undo", "open", "purge", "adopt"],
+                "description": "Only entries of this kind (batch: every logged edit).",
+            },
         },
         "additionalProperties": False,
     },
@@ -531,19 +564,24 @@ _SEARCH_OUTPUT = outputs.result(
     "history.search",
     "read",
     (
-        "Search a document's undo log for a quote: in the requests, and in the text of "
-        "every paragraph before and after each write. Use it to find when a passage was "
-        "changed or deleted, and the op_id for history.undo or history.restore. Exact unless "
-        "`match_level` folds it; then every hit, with its offsets and the level it "
-        "matched at. Read-only."
+        "Search the undo log for a quote: in each logged request and in the text of every "
+        "paragraph before and after each write, newest first. Use it to find when a passage "
+        "was changed or deleted, and the op_id for history.undo or history.restore; text.find "
+        "searches the current document instead. Exact by default (ignore_case, ignore_accents "
+        "loosen it); match_level default or loose folds case, accents and punctuation and "
+        "returns each hit's offsets and level. Works on an orphaned `store` too. Read-only; "
+        "limit (default 20) caps hits, `total` counts all."
     ),
     {
         "type": "object",
         "properties": {
             **_READ_PROPS,
             "query": {"type": "string", "minLength": 1, "description": "Text to find."},
-            "ignore_case": {"type": "boolean"},
-            "ignore_accents": {"type": "boolean"},
+            "ignore_case": {"type": "boolean", "description": "Ignore case."},
+            "ignore_accents": {
+                "type": "boolean",
+                "description": "Ignore accents: `maria` finds `María`.",
+            },
             "match_level": {
                 "type": "string",
                 "enum": ["exact", "default", "loose"],
@@ -559,7 +597,12 @@ _SEARCH_OUTPUT = outputs.result(
                 " it, the first hit per text, with no `start`, `end` or level. Not"
                 " with `ignore_case` or `ignore_accents` false at a folded level.",
             },
-            "limit": {"type": "integer", "minimum": 1, "maximum": MAX_LIMIT},
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_LIMIT,
+                "description": "Most hits to return (default 20); `total` counts them all.",
+            },
         },
         "required": ["query"],
         "additionalProperties": False,
@@ -615,8 +658,14 @@ _PURGE_OUTPUT = outputs.result(
 @operation(
     "history.purge",
     "write",
-    "Remove undo history (all, or before a date) for privacy, leaving a tombstone. Run with "
-    "dry_run first, then repeat with its `confirm`.",
+    (
+        "Delete undo history for privacy: the whole log (`all`) or entries before a date "
+        "(`before`, ISO 8601, UTC), of the document or of an orphaned `store`. Two steps: run with "
+        "dry_run to see what would go and get a `confirm` token, then repeat with `confirm`; a log "
+        "that changed in between is refused. Leaves a tombstone entry; backups are not removed by "
+        "it. Destructive: purged entries can no longer be undone or restored. Use history.list "
+        "first to check what you remove."
+    ),
     {
         "type": "object",
         "properties": {
@@ -673,8 +722,14 @@ _ORPHANS_OUTPUT = outputs.result(
 @operation(
     "history.orphans",
     "read",
-    "List stores whose document is gone (app-data stores, and `dir`/.doc-control). Their "
-    "history is never deleted automatically: restore from it with `store`, or purge it.",
+    (
+        "List undo stores whose document is gone (moved, renamed or deleted): the app-data stores, "
+        "plus `dir`/.doc-control when `dir` is given, each with its folder, last document path, "
+        "entry count and last time; `unknown` holds stores that name no document. Their history is "
+        "never deleted automatically. Use history.adopt to re-attach one to a moved document, "
+        "history.list or history.restore with `store` to read from it, history.purge with `store` "
+        "to delete it. Read-only."
+    ),
     {
         "type": "object",
         "properties": {
@@ -711,13 +766,13 @@ _ADOPT_OUTPUT = outputs.result(
     "history.adopt",
     "write",
     (
-        "Re-attach a moved or renamed document to its old history: finds the orphaned store "
-        "whose last recorded state is this file's sha256 (next to it, in neighbouring folders, "
-        "app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to "
-        "where the document's store lives now, keeping backups and log, so history.undo and "
-        "history.restore work again. A file that differs from the store's last state needs "
-        "`force`, as does a store whose document still exists; a document that already has "
-        "history is never overwritten. `dry_run` moves nothing."
+        "Re-attach a moved or renamed document to its old undo history, so history.undo and "
+        "history.restore work again. It finds the orphaned store whose last recorded state is "
+        "this file's sha256 (doc.open lists them as `adoptable`, history.orphans lists all) "
+        "and moves it, backups and log, to where this document's store lives now. Pass `store` "
+        "when several match (the reply lists `candidates`); `force` adopts a file edited "
+        "since; a document that already has history is never overwritten (BATCH_CONFLICT). "
+        "dry_run moves nothing."
     ),
     {
         "type": "object",

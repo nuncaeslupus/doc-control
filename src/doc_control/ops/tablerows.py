@@ -109,13 +109,18 @@ ROW_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 _SUMMARY = {
     "table.row.insert": (
-        "Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text), "
-        "after row `after_row`, one text per cell. Refused between two rows that a vertical "
-        "merge spans."
+        "Insert a row into a body table as a tracked change: after row `after_row` (0: before "
+        'the first), with one text per cell in `cells` (e.g. ["2024", "12.5"]), matching the '
+        "row it follows (SCHEMA_INVALID otherwise). Refused (UNSUPPORTED_CONTENT) between two "
+        "rows a vertical merge spans. Backed up and logged for history.undo; dry_run previews; "
+        "expect.sha256 refuses a changed file. Use doc.batch for several rows at once."
     ),
     "table.row.delete": (
-        "Delete a row of a body table as a tracked change (w:trPr/w:del, tracked deleted "
-        "runs). Refused for a row with a vertical merge (w:vMerge) cell."
+        "Delete one row of a body table (`table` as table.get numbers it, `row` 1-based) as a "
+        "tracked change the writer can reject. Refused (UNSUPPORTED_CONTENT) for a row with a "
+        "vertically merged cell. Backed up and logged for history.undo; dry_run previews; "
+        "expect.sha256 refuses a changed file. Use doc.batch to change several rows at once, "
+        "para.delete for paragraphs outside tables."
     ),
 }
 
@@ -595,6 +600,10 @@ def _register(kind: str) -> None:
             **fields,
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },

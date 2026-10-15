@@ -216,9 +216,14 @@ _OUTPUT = outputs.result(
 @operation(
     OP,
     "read",
-    "Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace "
-    "collapsed) with a two-way offset map to the original code points, for a document "
-    "(whole, or the paragraph/range `at`) or for a `text` string.",
+    (
+        "Normalise text (NFC, soft hyphens and zero-width characters removed, whitespace "
+        "collapsed) and return a two-way offset map to the original code points, for the whole "
+        "document, one paragraph or range (`at`, p142#a7b2a7b2:10-15), or a `text` string (give "
+        "`doc` or `text`). Use it to compare or search text robustly and map found offsets back to "
+        "addresses for text.replace; para.list normalized adds just the text. Read-only; paged at "
+        "about 8,000 bytes with `cursor`; a very long paragraph comes in parts."
+    ),
     {
         "type": "object",
         "description": _RESULT,

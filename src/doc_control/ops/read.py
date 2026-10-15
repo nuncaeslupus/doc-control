@@ -144,10 +144,12 @@ _INFO_OUTPUT = outputs.result(
     "doc.info",
     "read",
     (
-        "File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a "
-        "write is refused if the file changed meanwhile), paragraph count, core "
-        "properties and which parts exist (comments, notes, headers). A cheap first call "
-        "on a document; doc.stats gives word and element counts. Read-only."
+        "Cheap first look at a file: size, sha256 (pass it as expect.sha256 to a later write "
+        "so it is refused if the file changed meanwhile), core properties (title, author, "
+        "dates), whether Track Changes is on, whether Word holds it open (a ~$ lock file) and "
+        "which parts exist (comments, notes, headers). The envelope's `doc` gives the "
+        "paragraph count. Use doc.stats for word, heading and revision counts, doc.outline for "
+        "the headings. Read-only; DOC_NOT_FOUND or NOT_A_DOCX for a bad path."
     ),
     {
         "type": "object",
@@ -214,10 +216,12 @@ _OUTLINE_OUTPUT = outputs.result(
     "doc.outline",
     "read",
     (
-        "List the document's headings (levels 1-9) in order, each with its style and "
-        "paragraph address: the table-of-contents view. Use doc.segment for chapters that are "
-        "not styled as headings, para.list for every paragraph. Read-only, paged "
-        "with limit and cursor."
+        "List the headings (levels 1-9, by style or outline level) in document order, each "
+        "with its address, level, style and text: the table-of-contents view. max_level 2 "
+        'keeps levels 1-2; stories ["body", "notes"] adds headings in notes. Use doc.segment '
+        "for chapters that are not styled as headings, para.list for every paragraph, para.get "
+        "to read one heading in full. Read-only; paged: about 8,000 bytes per reply (limit up "
+        "to 1,000), continue with `cursor` set to the reply's `next`."
     ),
     _list_schema(
         max_level={
@@ -379,7 +383,14 @@ _STATS_OUTPUT = outputs.result(
 @operation(
     "doc.stats",
     "read",
-    "Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.",
+    (
+        "Count what the body holds: paragraphs (and empty ones), words, characters, headings, "
+        "tables, comments, footnotes, tracked changes by type, styles in use and the 20 most used "
+        'fonts. stories ["notes", "headers"] adds separate counts for notes and for '
+        "headers/footers (the body counts stay the body's). Use it to size a document or check for "
+        "leftover revisions; doc.info gives file facts and the hash, revision.list the changes "
+        "themselves. Read-only; one reply, not paged."
+    ),
     {
         "type": "object",
         "properties": {"doc": _DOC, "stories": STORIES_PROPERTY},
@@ -491,10 +502,13 @@ _PARA_GET_OUTPUT = outputs.extensible(_PARA_GET_OUTPUT)
     "para.get",
     "read",
     (
-        "Read one paragraph by address in full: text, style, direct formatting and "
-        "formatted spans, and layout facts (heading_level is null for a body paragraph, "
-        "1-9 for a heading). Use it before editing a paragraph; para.list reads "
-        "many at once. Read-only; a long text is paged."
+        "Read one paragraph in full by address (p142#a7b2a7b2, or fn3/p1#… in a note): text, "
+        "style, direct paragraph formatting, character-formatted spans (bold, italic, font...) "
+        "and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use "
+        "it before editing a paragraph or to check its formatting; para.list reads many "
+        "paragraphs, style.get a style. Read-only; a very long text is paged (limit "
+        "characters, `cursor` from the reply's `next`). STALE_ADDRESS if it changed since "
+        "read."
     ),
     {
         "type": "object",
@@ -591,9 +605,12 @@ _STYLE_LIST_OUTPUT = outputs.result(
     "style.list",
     "read",
     (
-        "List the styles defined in the document and how many times each is used; filter "
-        "by type or to used styles only. Use style.get for one style's full and inherited "
-        "formatting. Read-only, paged."
+        "List the styles defined in the document with id, name, type, parent and how many "
+        "times each is used in the body. `type` keeps one kind (paragraph, character, table, "
+        "numbering); used_only drops unused ones. Use it to find styles to clean up or reuse; "
+        "style.get gives one style's full and inherited formatting. Read-only; paged: about "
+        "8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's "
+        "`next`."
     ),
     _list_schema(
         type={"type": "string", "enum": _STYLE_TYPES, "description": "Only this kind of style."},
@@ -636,7 +653,13 @@ _STYLE_GET_OUTPUT = outputs.result(
 @operation(
     "style.get",
     "read",
-    "One style by id or name: its own formatting, inherited formatting and heading level.",
+    (
+        'Read one style by id or name ("Heading1" or "heading 1"): its type, parent chain, next '
+        "and linked styles, how often it is used, heading level, the formatting it sets itself and "
+        "its effective formatting after inheritance. Use it before style.update, or to see why "
+        "text looks as it does; style.list lists all styles, para.get a paragraph's direct "
+        "formatting. Read-only; STYLE_NOT_FOUND for an unknown style."
+    ),
     {
         "type": "object",
         "properties": {
@@ -696,10 +719,13 @@ _COMMENT_LIST_OUTPUT = outputs.result(
     "comment.list",
     "read",
     (
-        "List the document's comments in thread order (each root, then its replies) with "
-        "author, text, resolved state and location; filter by author or resolved. Reply "
-        "to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, "
-        "paged."
+        "List the comments in thread order (each root comment, then its replies) with id, "
+        "author, date, text (clipped at 1,000 characters), resolved state and the address "
+        "where each starts, including comments in notes and headers. Filter with `resolved` "
+        "(true or false) and `author` (exact). Use the ids to reply or resolve with doc.batch "
+        "(comment.reply, comment.resolve); use revision.list for tracked changes instead. "
+        "Read-only; paged: a reply is capped at about 8,000 bytes (limit up to 1,000), "
+        "continue with `cursor` set to the reply's `next`."
     ),
     _list_schema(
         resolved={"type": "boolean", "description": "Only resolved (true) or open (false)."},
@@ -759,10 +785,12 @@ _REVISION_LIST_OUTPUT = outputs.result(
     "revision.list",
     "read",
     (
-        "List the tracked changes (insertions, deletions, moves, formatting, table rows "
-        "and cells) in document order, each with id, author, date, type, text and "
-        "paragraph address. Accept or reject them with doc.batch (revision.accept, "
-        "revision.reject by ids, author, range or all). Read-only, paged."
+        "List the tracked changes (insertions, deletions, moves, formatting, table rows and "
+        "cells) in document order, each with id, type, author, date, paragraph address and "
+        "text (clipped at 200 characters). Filter by `author` or `type`; stories notes or "
+        "headers adds their changes. Use the ids with revision.accept or revision.reject; "
+        "doc.stats counts changes by type. Read-only; paged: about 8,000 bytes per reply "
+        "(limit up to 1,000), continue with `cursor` set to the reply's `next`."
     ),
     _list_schema(
         author={"type": "string", "minLength": 1, "description": "Only this author."},

@@ -316,9 +316,14 @@ _OUTPUT = outputs.result(
 @operation(
     "note.add",
     "write",
-    "Add a footnote or endnote at a body offset: the reference mark and the note text are "
-    "both tracked insertions, so rejecting them removes the note. Creates the notes part "
-    "when the document has none. Returns the note's id, displayed number and address.",
+    (
+        "Add a footnote or endnote: the reference mark goes at a body point (p3#a1b2c3d4:10-10, "
+        "after offset 10), after a range, or at the end of a paragraph (p3#a1b2c3d4); `text` is "
+        "the note's one line. Mark and note are tracked insertions, so rejecting them removes the "
+        "note; the notes part is created when missing. Backed up and undoable (history.undo); "
+        "dry_run previews; expect.sha256 refuses a changed file. Returns the note's id, displayed "
+        "number and address (fn5/p1#…)."
+    ),
     {
         "type": "object",
         "properties": {
@@ -328,10 +333,17 @@ _OUTPUT = outputs.result(
                 "description": "Body point p3#fp:10-10 (the mark goes after the offset), a "
                 "range inside one paragraph (after it) or a paragraph (at its end).",
             },
-            "kind": {"enum": ["footnote", "endnote"]},
+            "kind": {
+                "enum": ["footnote", "endnote"],
+                "description": "footnote (bottom of the page) or endnote (end of the document).",
+            },
             "text": {**_STR, "description": "The note text, one line."},
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": _STR},
                 "additionalProperties": False,
             },

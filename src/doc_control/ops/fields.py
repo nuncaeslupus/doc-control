@@ -197,10 +197,14 @@ _OUTPUT = outputs.result(
 @operation(
     "field.list",
     "read",
-    "Every field of the document, by story: its address, instruction code, type (PAGE, TOC, "
-    "REF, ADDIN ZOTERO_ITEM, CITATION, ...), result text and whether the result is stale. "
-    "Covers complex fields (also nested, or split across runs), simple fields and fields in "
-    "text boxes.",
+    (
+        "List every field (PAGE, TOC, REF, SEQ, XE, citations such as ADDIN ZOTERO_ITEM...) with "
+        "its address, story, code, type, shown result and whether it is stale (needs updating). "
+        "stories defaults to all: body, notes, headers and comments; `type` keeps one type "
+        '("TOC"). Covers nested, split and simple fields and fields in text boxes. Use it before '
+        "field.update to see what is stale, or to find citations; it never changes anything. "
+        "Read-only; one reply, not paged."
+    ),
     {
         "type": "object",
         "properties": {

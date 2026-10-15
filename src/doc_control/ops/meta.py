@@ -51,9 +51,11 @@ _CAPABILITIES_OUTPUT = outputs.result(
     "server.capabilities",
     "read",
     (
-        "Describe this doc-control server: API version, engines (file, live), whether it "
-        "is a frozen build, and every operation it offers. Call it once at the start; "
-        "server.help gives one operation's full schema. Read-only; needs no document."
+        "Describe this doc-control server: API and package version, engines (file, live), "
+        "which live apps are reachable, feature support per engine, every operation with its "
+        "kind and summary, every error code, and whether it is a frozen build. Call it once at "
+        "the start of a session; server.help gives one operation's full request and result "
+        "schemas. Read-only; needs no document."
     ),
     _EMPTY,
     output=_CAPABILITIES_OUTPUT,
@@ -97,10 +99,14 @@ _HELP_OUTPUT = outputs.result(
 @operation(
     "server.help",
     "read",
-    "JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in "
-    "`ops` (text.replace, comment.add…), listed under batch_operations; a name that is "
-    "both gets both. An operation's old name (before 0.7.0) gives the operation it was "
-    "renamed to.",
+    (
+        'Get the JSON Schemas of one operation (`op`, e.g. "para.get": its request schema and its '
+        "result's output_schema), or of every operation when `op` is left out. A doc.batch kind "
+        '("comment.reply", "para.move"...) gives the fields it takes inside `ops`, under '
+        "batch_operations; a name that is both gets both. Old names (before 0.7.0) give the "
+        "renamed operation. Call it before using an operation whose fields you are unsure of; "
+        "server.capabilities lists the operations. Read-only."
+    ),
     {
         "type": "object",
         "properties": {

@@ -159,10 +159,13 @@ _OUTPUT = outputs.result(
     "doc.diff",
     "read",
     (
-        "Align the paragraphs of two versions of a .docx (old and new): which are "
-        "unchanged, modified, inserted, deleted, moved or split, with a map from old "
-        "addresses to new ones. Use it to carry addresses across versions; use doc.compare to "
-        "write a redline .docx instead. Read-only: neither file is changed."
+        "Align the paragraphs of two versions (`old`, `new`; .docx, or .txt/.md/.odt): which "
+        "are unchanged, modified, moved, split, merged, inserted or deleted, with a map from "
+        "old addresses to new ones (null for deleted). Use it to carry addresses read from an "
+        "older version over to the current one, or to see what changed; doc.compare writes the "
+        "same differences as a redline .docx instead. collapse_runs folds runs of shifted "
+        "unchanged paragraphs into one record. Read-only; paged at about 8,000 bytes with "
+        "limit and `cursor` (the `next` of the previous reply)."
     ),
     {
         "type": "object",

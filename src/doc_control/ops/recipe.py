@@ -73,7 +73,11 @@ _LIST_OUTPUT = outputs.result(
 @operation(
     "recipe.list",
     "read",
-    "List the bundled and user recipes, and any recipe files that are invalid.",
+    (
+        "List the cleanup recipes recipe.run can apply: the bundled ones and the user's own, each "
+        "with name, version, description and source, plus any recipe files that failed validation "
+        "and why. Call it to pick a recipe before recipe.run. Read-only; needs no document."
+    ),
     _LIST,
     output=_LIST_OUTPUT,
 )
@@ -186,7 +190,14 @@ _RUN_OUTPUT = outputs.result(
 @operation(
     "recipe.run",
     "write",
-    "Run a recipe and return a batch proposal (repeated until stable); apply it with doc.batch.",
+    (
+        "Run a cleanup recipe (a name from recipe.list, or an inline `definition`) over the "
+        "document and return the edits it proposes as a ready doc.batch request (`batch`, guarded "
+        "by expect.sha256), repeating until the text is stable. Writes nothing itself: review the "
+        "proposal, then apply it with doc.batch (dry_run there to preview). RECIPE_INVALID for an "
+        "unknown or invalid recipe; edits that would touch unsupported content are listed under "
+        "skipped. Refused for .txt/.md/.odt sources, which cannot be written."
+    ),
     _RUN,
     output=_RUN_OUTPUT,
 )

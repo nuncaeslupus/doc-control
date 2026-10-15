@@ -89,6 +89,10 @@ BATCH_SCHEMA: dict[str, Any] = {
         },
         "expect": {
             "type": "object",
+            "description": (
+                "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+            ),
             "properties": {
                 "sha256": {"type": "string", "minLength": 1, "description": "Hash read earlier."}
             },
@@ -145,17 +149,17 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
     "doc.batch",
     "write",
     (
-        "The main editing tool: apply several edits as tracked changes, all or nothing "
-        "on the file engine; tracked: false writes a change the writer already approved "
-        "plainly, without revision marks (file engine). "
-        "One family per batch: text.replace, para.insert, para.delete, para.move, "
-        "style.apply, format.apply, comment.add, comment.reply and comment.resolve; or "
-        "table.row.insert and table.row.delete (tracked table rows); or "
-        "style.create/update/rename/merge; or revision.accept and revision.reject (by "
-        "ids, author, address range or all). Addresses refer to the document as read; "
-        "on the file engine, expect.sha256 refuses a file changed since, dry_run previews, "
-        "the file is backed up first and history.undo takes the batch back. engine live edits the "
-        "app's open document instead: no dry_run, expect, backup or all-or-nothing."
+        "The main editing tool: apply several edits in one verified write, as tracked changes, "
+        "all or nothing. One family per batch: text.replace, para.insert, para.delete, "
+        "para.move, style.apply, format.apply, comment.add/reply/resolve; or "
+        "table.row.insert/delete; or style.create/update/rename/merge; or "
+        'revision.accept/reject. Example ops: [{"op": "text.replace", "at": '
+        '"p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are '
+        "BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run "
+        "previews, expect.sha256 refuses a changed file, history.undo takes text, row and "
+        "revision batches back, tracked: false writes approved text plainly. engine live edits "
+        "the open app (comment.add, text.replace, para.insert only; no dry_run or rollback). "
+        "server.help <kind> gives each kind's fields."
     ),
     BATCH_SCHEMA,
     output=outputs.BATCH_OUTPUT,

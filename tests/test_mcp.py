@@ -15,6 +15,7 @@ from doc_control.mcp import (
     APPS,
     CREATES_FILES,
     DESTRUCTIVE,
+    PROPOSES,
     PROTOCOL_VERSIONS,
     UI_EXTENSION,
     UI_MIME,
@@ -73,7 +74,7 @@ def test_every_operation_is_listed_as_a_tool_with_its_schema() -> None:
         assert op.output is not None
         assert tool["outputSchema"] == envelope_schema(op.output)
         hints = tool["annotations"]
-        read_only = op.kind == "read" and op.name not in CREATES_FILES
+        read_only = (op.kind == "read" and op.name not in CREATES_FILES) or op.name in PROPOSES
         assert hints["readOnlyHint"] is read_only
         assert hints["openWorldHint"] is False
         if read_only:

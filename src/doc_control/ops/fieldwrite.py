@@ -396,6 +396,10 @@ def insert_toc(
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 _EXPECT: dict[str, Any] = {
     "type": "object",
+    "description": (
+        "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+        'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+    ),
     "properties": {"sha256": _STR},
     "additionalProperties": False,
 }
@@ -414,10 +418,14 @@ _TOC_OUTPUT = outputs.result(
 @operation(
     "toc.insert",
     "write",
-    "Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: "
-    "an optional title, the field with a placeholder result and the paragraph that closes it. "
-    "The result text is filled by field.update; until then field.list shows the field as "
-    "stale. Returns the address of the field's paragraph.",
+    (
+        "Insert a table of contents (a TOC field) after a body paragraph `after` (p1#a1b2c3d4), as "
+        'tracked insertions: a title (default "Contents", "" for none), the field listing heading '
+        'levels `levels` (default "1-3") with a placeholder result, and a closing paragraph. Run '
+        "field.update next to fill in the entries and page numbers (until then field.list shows it "
+        "stale). Backed up and undoable (history.undo); dry_run previews. Returns the field "
+        "paragraph's address."
+    ),
     {
         "type": "object",
         "properties": {
@@ -1126,7 +1134,9 @@ _UPDATE_OUTPUT = outputs.result(
     ),
     unchanged=outputs.integer("Fields whose result was already right."),
     skipped=outputs.arr(
-        "Fields left as they are, with why.",
+        "Fields left as they are, with why: SECTIONPAGES, SECTION and NOTEREF (LibreOffice "
+        "keeps their cached results), every INDEX (rebuild it in Word, F9), a REF that "
+        "resolves to an error or to nothing, and fields not paired with LibreOffice's.",
         outputs.obj(
             "A skipped field.",
             at=outputs.string("Its address."),
@@ -1148,18 +1158,15 @@ _UPDATE_OUTPUT = outputs.result(
 @operation(
     "field.update",
     "write",
-    "Recompute the results of the body's TOC, page, page-count, sequence and reference "
-    "fields through headless LibreOffice and write only those result runs, as tracked "
-    "changes (the old result is struck, the new one inserted). Without LibreOffice it "
-    "refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets "
-    "w:updateFields instead, so Word updates the fields when it opens the file. Citation "
-    "fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed "
-    "(LibreOffice keeps their cached results) and are listed under skipped. INDEX is "
-    "never recomputed (LibreOffice ignores its switches and flattens sub-entries): every "
-    "index is left as it is and listed under skipped; rebuild it in Word (F9). A REF "
-    "that LibreOffice resolves to an error (a missing bookmark) or to nothing (a number "
-    "of an unnumbered paragraph) keeps its result and is listed under skipped. Fields it "
-    "could not pair with LibreOffice's are listed under skipped.",
+    (
+        "Recompute the body's TOC, PAGE, NUMPAGES, SEQ and REF/PAGEREF results with headless "
+        "LibreOffice and write only those result runs, as tracked changes (old result struck, new "
+        "inserted). Needs LibreOffice (soffice): without it, ENGINE_UNAVAILABLE names the stale "
+        "fields; set_update_on_open instead sets w:updateFields so Word updates them on opening. "
+        "Citations are never changed; INDEX, SECTIONPAGES, SECTION, NOTEREF and unresolvable REFs "
+        "are left and listed under `skipped`. Run after toc.insert, caption.add or xref.add. "
+        "Backed up and undoable; dry_run previews; slow (seconds)."
+    ),
     {
         "type": "object",
         "properties": {

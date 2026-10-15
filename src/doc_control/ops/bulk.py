@@ -62,9 +62,15 @@ _OUTPUT = outputs.result(
 @operation(
     "para.list",
     "read",
-    "Every paragraph with its address, text, style and layout facts (optionally the "
-    "normalised text and the estimated page), in document order. heading_level is null for "
-    "a body paragraph.",
+    (
+        "List every paragraph in document order with its address, text, style, heading level and "
+        "layout facts (centred, page break before, blank paragraphs before, empty, table cell); "
+        "heading_level is null for a body paragraph. normalized adds normalised text, pages the "
+        "estimated page, stories notes or headers. Use it to index or scan a whole document; "
+        "para.get reads one paragraph with formatting, doc.outline only headings, text.find "
+        "searches. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue "
+        "with `cursor` set to the reply's `next`."
+    ),
     {
         "type": "object",
         "properties": {
