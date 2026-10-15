@@ -95,3 +95,52 @@ def test_failed_check_is_quiet(counter: Counter, monkeypatch: pytest.MonkeyPatch
     assert info is not None and set(info) == {"error"}
     assert "update" in _caps()
     assert "error" in _status()["update"]
+
+
+def test_failed_check_is_cached_for_an_hour(
+    counter: Counter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOC_CONTROL_UPDATE_CHECK", "1")
+    counter.error = urllib.error.URLError("offline")
+    first = update_check.update_info(now=1_000_000.0)
+    second = update_check.update_info(now=1_000_000.0 + 600)
+    assert len(counter.calls) == 1
+    assert first is not None and second is not None and "error" in second
+    update_check.update_info(now=1_000_000.0 + 3700)
+    assert len(counter.calls) == 2
+
+
+def test_failure_keeps_the_last_good_answer(
+    counter: Counter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOC_CONTROL_UPDATE_CHECK", "1")
+    update_check.update_info(now=1_000_000.0)
+    counter.error = urllib.error.URLError("offline")
+    info = update_check.update_info(now=1_000_000.0 + 25 * 3600)
+    assert info is not None and info["latest"] == "9.9.9" and "error" in info
+
+
+def test_release_without_mcpb_is_rechecked_after_an_hour(
+    counter: Counter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOC_CONTROL_UPDATE_CHECK", "1")
+    monkeypatch.setitem(RELEASE, "assets", [])
+    update_check.update_info(now=1_000_000.0)
+    update_check.update_info(now=1_000_000.0 + 600)
+    assert len(counter.calls) == 1
+    update_check.update_info(now=1_000_000.0 + 3700)
+    assert len(counter.calls) == 2
+
+
+def test_wrong_typed_cache_is_refetched(
+    counter: Counter, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DOC_CONTROL_UPDATE_CHECK", "1")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "update-check.json").write_text(
+        json.dumps({"checked_at": 1_000_000.0, "latest": 5, "mcpb_url": None}), encoding="utf-8"
+    )
+    info = update_check.update_info(now=1_000_000.0 + 10)
+    assert len(counter.calls) == 1 and info is not None and info["latest"] == "9.9.9"
+    assert not list(cache.glob("*.tmp"))

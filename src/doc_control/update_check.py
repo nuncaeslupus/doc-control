@@ -22,6 +22,7 @@ ENV_SWITCH = "DOC_CONTROL_UPDATE_CHECK"
 RELEASES_URL = "https://api.github.com/repos/nuncaeslupus/doc-control/releases/latest"
 TIMEOUT_SECONDS = 3
 CACHE_SECONDS = 24 * 60 * 60
+RETRY_SECONDS = 60 * 60  # after a failure or a release without its .mcpb yet
 _TRUE = {"1", "true", "yes", "on"}
 
 
@@ -46,13 +47,32 @@ def cache_dir(env: Mapping[str, str] | None = None) -> Path:
 
 
 def _read_cache(path: Path) -> dict[str, Any] | None:
+    """The cache, or ``None`` when missing or corrupt (any wrong type means refetch)."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if isinstance(data, dict) and isinstance(data.get("checked_at"), (int, float)):
-        return data
-    return None
+    if not isinstance(data, dict):
+        return None
+    checked, ttl = data.get("checked_at"), data.get("ttl", CACHE_SECONDS)
+    for number in (checked, ttl):
+        if isinstance(number, bool) or not isinstance(number, (int, float)):
+            return None
+    for key in ("latest", "mcpb_url", "error"):
+        if data.get(key) is not None and not isinstance(data[key], str):
+            return None
+    return data
+
+
+def _write_cache(path: Path, data: dict[str, Any]) -> None:
+    """Atomic: a temp file beside the cache, then a rename over it."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass  # a cache that cannot be written only costs another request
 
 
 def _fetch() -> dict[str, Any]:
@@ -77,7 +97,12 @@ def _fetch() -> dict[str, Any]:
 def update_info(
     env: Mapping[str, str] | None = None, now: float | None = None
 ) -> dict[str, Any] | None:
-    """The ``update`` field, or ``None`` when the notice is off (then nothing is touched)."""
+    """The ``update`` field, or ``None`` when the notice is off (then nothing is touched).
+
+    A failure is cached too (with the last good answer kept), and so is a release whose
+    ``.mcpb`` is not attached yet, both for an hour: no call waits on the network twice
+    in a window.
+    """
     env = os.environ if env is None else env
     if not enabled(env):
         return None
@@ -85,19 +110,32 @@ def update_info(
     try:
         path = cache_dir(env) / "update-check.json"
         cached = _read_cache(path)
-        if cached is None or not 0 <= now - cached["checked_at"] < CACHE_SECONDS:
-            cached = {**_fetch(), "checked_at": now}
+        if cached is None or not 0 <= now - cached["checked_at"] < cached.get("ttl", CACHE_SECONDS):
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(cached), encoding="utf-8")
-            except OSError:
-                pass  # a cache that cannot be written only costs a request tomorrow
-        return {
+                fresh = _fetch()
+                ttl = CACHE_SECONDS if fresh["mcpb_url"] else RETRY_SECONDS
+                cached = {**fresh, "checked_at": now, "ttl": ttl}
+            except Exception as exc:
+                last = cached or {}
+                cached = {
+                    "latest": last.get("latest"),
+                    "mcpb_url": last.get("mcpb_url"),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "checked_at": now,
+                    "ttl": RETRY_SECONDS,
+                }
+            _write_cache(path, cached)
+        if cached.get("error") and cached.get("latest") is None:
+            return {"error": cached["error"]}
+        out = {
             "current": __version__,
             "latest": cached.get("latest"),
             "mcpb_url": cached.get("mcpb_url"),
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cached["checked_at"])),
         }
+        if cached.get("error"):
+            out["error"] = cached["error"]
+        return out
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 

@@ -32,6 +32,12 @@ def corpus_doc(tmp_path: Path) -> CorpusWriter:
 
 
 @pytest.fixture(autouse=True)
+def _no_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A developer's opt-in must never make the suite reach the network."""
+    monkeypatch.delenv("DOC_CONTROL_UPDATE_CHECK", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _keep_written_documents(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:

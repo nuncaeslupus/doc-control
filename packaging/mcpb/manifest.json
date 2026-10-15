@@ -34,7 +34,7 @@
     "update_check": {
       "type": "boolean",
       "title": "Check for updates",
-      "description": "Once a day, ask GitHub whether a newer doc-control release exists and say so in server.capabilities. Never downloads or installs. Off by default: nothing leaves your machine.",
+      "description": "Once a day, ask GitHub whether a newer doc-control release exists and say so in server.capabilities and live.status. Never downloads or installs. Off by default: nothing leaves your machine.",
       "default": false,
       "required": false
     }
