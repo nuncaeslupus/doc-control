@@ -6,6 +6,8 @@ name: Release
 #    exist yet, the workflow builds, publishes, then creates the tag and a GitHub release;
 #  - push a tag vX.Y.Z by hand that matches pyproject.toml.
 # A tag created here with GITHUB_TOKEN does not re-trigger this workflow.
+# The Windows packages (package.yml) are built alongside and attached to the GitHub release
+# with a SHA256SUMS.txt and a `## Checksums` section in the notes (PACKAGE T8).
 
 on:
   push:
@@ -113,3 +115,60 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.build.outputs.version }}
         run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+  package:
+    # The Windows zip, installer and .mcpb, built and smoke-tested; nothing here publishes.
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/package.yml
+    with:
+      attach: true
+
+  attach:
+    # After `tag` on the branch path, or alone on the hand-pushed tag path (where `tag` is
+    # skipped and there may be no release yet). `publish` must have succeeded either way.
+    needs: [build, package, tag, publish]
+    if: >-
+      always() && needs.package.result == 'success' && needs.publish.result == 'success' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-packages
+          path: assets/
+      - name: Create the release if absent, upload the assets, write the checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+          fi
+          (cd assets && sha256sum -c SHA256SUMS.txt)
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber             assets/*.zip assets/*-setup.exe assets/*.mcpb assets/SHA256SUMS.txt
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          # Drop a previous ## Checksums section (a re-run), then append the current one.
+          awk '/^## Checksums$/ {skip=1; next} skip && /^## / {skip=0} !skip' notes.md > notes-new.md
+          {
+            echo
+            echo "## Checksums"
+            echo
+            echo '```'
+            cat assets/SHA256SUMS.txt
+            echo '```'
+          } >> notes-new.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes-new.md
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Every asset attached, each with a checksum line
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.build.outputs.version }}
+        run: python3 scripts/check_release_assets.py --tag "$TAG" | tee -a "$GITHUB_STEP_SUMMARY"
