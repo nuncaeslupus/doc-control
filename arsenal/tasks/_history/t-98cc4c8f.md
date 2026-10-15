@@ -5,6 +5,7 @@ label: "installer .mcpb handoff"
 priority: 5
 deps: [t-b45708fd]
 workspace: PACKAGE
+status: merged
 ---
 
 ## Acceptance gate

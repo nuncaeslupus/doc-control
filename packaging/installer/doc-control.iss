@@ -5,6 +5,14 @@
 ; user PATH (HKCU\Environment), shows the claude_desktop_config.json snippet after the
 ; install, and registers an uninstaller that takes the PATH entry back out.
 ;
+; It also ships the .mcpb (PACKAGE T14, D-P9). Claude Desktop registers no .mcpb file
+; association on Windows, so the finish page offers, unchecked, "Add to Claude Desktop":
+; it launches Claude Desktop's Store alias with the file (which opens its extension install
+; dialog) or, when the alias is missing, opens Explorer with the file selected to drag onto
+; Claude Desktop > Settings > Extensions. A second unchecked option, shown only when the
+; config mentions uvx and doc-control, runs `doc-control.exe --remove-uvx-entry --pause`
+; (scripts/remove_uvx_entry.py, frozen in): it asks, keeps a .bak and removes only that entry.
+;
 ; Build (package.yml does this with the version from pyproject.toml):
 ;   ISCC /DAppVersion=X.Y.Z packaging\installer\doc-control.iss
 ; Relative paths below resolve against this file's folder.
@@ -13,6 +21,10 @@
   #error AppVersion is not defined: compile with ISCC /DAppVersion=X.Y.Z (pyproject.toml's version)
 #endif
 #define SourceDir "..\..\build-out\doc-control"
+; Built by package.yml (scripts/build_mcpb.py) before ISCC runs; the T8 release asset name.
+#define McpbName "doc-control-" + AppVersion + "-windows-x64.mcpb"
+; The App Execution Alias the Microsoft Store build of Claude Desktop installs.
+#define ClaudeLauncher "{localappdata}\Microsoft\WindowsApps\claude-desktop.exe"
 
 [Setup]
 ; Never change AppId: it is how an upgrade finds the installed copy and its uninstaller.
@@ -38,6 +50,14 @@ UninstallDisplayIcon={app}\doc-control.exe
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\build-out\{#McpbName}"; DestDir: "{app}"; Flags: ignoreversion
+
+[Run]
+; Finish-page options, all unchecked and skipped by a silent install. Exactly one of the
+; first two is shown, depending on whether Claude Desktop's launcher alias exists.
+Filename: "{#ClaudeLauncher}"; Parameters: """{app}\{#McpbName}"""; Description: "Add to Claude Desktop (opens its extension install dialog)"; Check: HasClaudeLauncher; Flags: postinstall unchecked skipifsilent nowait shellexec
+Filename: "{win}\explorer.exe"; Parameters: "/select,""{app}\{#McpbName}"""; Description: "Add to Claude Desktop: show the .mcpb in Explorer; drag it onto Claude Desktop > Settings > Extensions"; Check: not HasClaudeLauncher; Flags: postinstall unchecked skipifsilent nowait
+Filename: "{app}\doc-control.exe"; Parameters: "--remove-uvx-entry --pause"; Description: "Remove the old ""uvx doc-control"" entry from claude_desktop_config.json (asks first, keeps a .bak; then restart Claude Desktop)"; Check: HasUvxEntry; Flags: postinstall unchecked skipifsilent
 
 [UninstallDelete]
 ; Only the frozen build's own folder: {app} itself is removed by the uninstaller once empty,
@@ -117,6 +137,46 @@ begin
     RegWriteExpandStringValue(HKCU, EnvKey, 'Path', Kept);
 end;
 
+function HasClaudeLauncher: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{#ClaudeLauncher}'));
+end;
+
+{ A cheap look, not a parse: does this config mention both uvx and doc-control?
+  scripts/remove_uvx_entry.py decides what (if anything) to remove, and asks first. }
+function MentionsUvxDocControl(Path: String): Boolean;
+var
+  Text: AnsiString;
+begin
+  Result := False;
+  if LoadStringFromFile(Path, Text) then
+    Result := (Pos('uvx', Text) > 0) and (Pos('doc-control', Text) > 0);
+end;
+
+{ Claude Desktop's config: %APPDATA%\Claude, or the Store build's virtualised copy. Read only. }
+function HasUvxEntry: Boolean;
+var
+  Find: TFindRec;
+  Packages: String;
+begin
+  Result := MentionsUvxDocControl(ExpandConstant('{userappdata}\Claude\claude_desktop_config.json'));
+  if Result then
+    Exit;
+  Packages := ExpandConstant('{localappdata}\Packages\');
+  if FindFirst(Packages + 'Claude_*', Find) then
+  try
+    repeat
+      if MentionsUvxDocControl(Packages + Find.Name + '\LocalCache\Roaming\Claude\claude_desktop_config.json') then
+      begin
+        Result := True;
+        Break;
+      end;
+    until not FindNext(Find);
+  finally
+    FindClose(Find);
+  end;
+end;
+
 function JsonPath(S: String): String;
 begin
   Result := S;
@@ -128,8 +188,9 @@ begin
   SnippetPage := CreateOutputMsgMemoPage(wpInfoAfter,
     'Use doc-control from Claude Desktop',
     'Add this to claude_desktop_config.json, then restart Claude Desktop.',
-    'doc-control is on your PATH for new terminals. To use it from Claude Desktop, ' +
-    'merge this into %APPDATA%\Claude\claude_desktop_config.json:', '');
+    'doc-control is on your PATH for new terminals. For Claude Desktop, the simplest way ' +
+    'is "Add to Claude Desktop" on the last page (it installs the .mcpb extension). ' +
+    'Or merge this into %APPDATA%\Claude\claude_desktop_config.json:', '');
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
