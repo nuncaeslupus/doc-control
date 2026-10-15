@@ -149,6 +149,7 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
 | T1 | first run (40aa765, run 38629330164) | `capabilities` smoke failed under both freezers: the CLI printed cp1252 into the pipe; fixed in this PR (`cli.py` writes UTF-8, `tests/test_cli_encoding.py`) | same workflow | 40aa765 | windows-latest | 2026-10-14 |
 | T2 | `frozen_exe_size_mb <= 40` | 29.54 (uncompressed one-folder build, 110 files); `packaging/smoke.py --frozen` passed: capabilities frozen, regex find ok | `.github/workflows/package.yml` via ci.yml, run 38643198602 | 9b8d88d | windows-latest, Python 3.12, PyInstaller 6.22.3 | 2026-10-14 |
 | T5 | `live_word_failures == 0` | 0 with the frozen exe (CI artifact `windows-frozen` of run 38667575655, 0.6.4, 82cdc33) as the MCP server; 0 with `python -m doc_control mcp`; the in-process suite (`scripts/live_word_check.py`) also 0 after the `match_level` fix in `deletions` | `scripts/live_word_frozen_check.py --exe doc-control.exe` | (this PR) | owner's PC, Windows 11, Word 16.0.17932 64-bit (no Word running before) | 2026-10-15 |
+| T12 | `winget_manifest_errors == 0` | 0 — `winget validate` accepts the manifest generated for v0.7.1 (schema 1.9.0, `InstallerType: inno`, `Scope: user`, URL and SHA-256 of the release's setup.exe); submission to `microsoft/winget-pkgs` pending the owner's agreement | `scripts/build_winget.py --tag v0.7.1`, then `winget validate --manifest packaging/winget/out/0.7.1` | (this PR) | owner's PC, Windows 11, winget v1.29.380 | 2026-10-15 |
 
 ---
 

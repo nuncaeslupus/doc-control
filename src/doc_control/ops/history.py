@@ -181,6 +181,15 @@ _UNDO_OUTPUT = outputs.result(
 )
 
 
+_UNDO_OUTPUT = outputs.result(
+    ("undid", "dry_run", "paragraphs"),
+    undid=outputs.string("Op id taken back."),
+    dry_run=outputs.DRY_RUN,
+    paragraphs=outputs.integer("Paragraphs returned to their prior state."),
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "history.undo",
     "write",
