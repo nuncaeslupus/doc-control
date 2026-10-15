@@ -42,6 +42,21 @@ Add a caption paragraph above or below a body paragraph, as tracked insertions: 
 | `text` | string | yes | Caption text after the number; may be empty. |
 | `position` | `above` \| `below` |  | Default: above for a Table, below for a Figure or Equation. |
 
+## `comment.add` (write)
+
+Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the author. On the file engine the file is backed up first, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
+| `at` | string | yes | Range to comment on: p3#fp, p3#fp:10-15 or across. |
+| `text` | string | yes | Comment text; a newline starts a new paragraph. |
+
 ## `comment.list` (read)
 
 List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, paged.
@@ -397,6 +412,19 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+## `para.delete` (write)
+
+Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked deletion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `at` | string | yes | Paragraph p3#fp or run p3#fp..p5#fp. |
+
 ## `para.get` (read)
 
 Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; para.list reads many at once. Read-only; a long text is paged.
@@ -407,6 +435,22 @@ Read one paragraph by address in full: text, style, direct formatting and format
 | `at` | string | yes | Paragraph address from a read result, e.g. p142#a7b2a7b2. |
 | `limit` | integer |  | Most characters of text to return. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `para.insert` (write)
+
+Insert one new paragraph after or before a paragraph (give one of them), as a tracked insertion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
+| `text` | string | yes |  |
+| `after` | string |  | Insert after this paragraph (or before). |
+| `before` | string |  | Insert before this paragraph (or after). |
 
 ## `para.list` (read)
 
@@ -450,6 +494,20 @@ Run a recipe and return a batch proposal (repeated until stable); apply it with 
 | `definition` | object |  | An inline declarative recipe (same schema as a stored one). |
 | `dry_run` | boolean |  | Accepted for symmetry; recipe.run never writes. |
 
+## `revision.accept` (write)
+
+Accept tracked changes: by ids (from revision.list), by revision author, in a paragraph or run (at), or all of them. Not itself tracked: on the file engine the file is backed up first and the write is logged for history.undo, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `ids` | array |  | Accept the revisions with these ids (from revision.list). |
+| `author` | string |  | Exact revision author. |
+| `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
+| `all` | boolean |  | true: every revision in the document. |
+
 ## `revision.list` (read)
 
 List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with doc.batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
@@ -462,6 +520,20 @@ List the tracked changes (insertions, deletions, moves, formatting, table rows a
 | `stories` | array |  | Stories to list (default ["body"]): "notes" adds footnotes and endnotes, "headers" headers and footers, after the body's revisions; their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). Row and cell revisions are listed for the body's tables only. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `revision.reject` (write)
+
+Reject tracked changes: by ids (from revision.list), by revision author, in a paragraph or run (at), or all of them. Not itself tracked: on the file engine the file is backed up first and the write is logged for history.undo, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `ids` | array |  | Reject the revisions with these ids (from revision.list). |
+| `author` | string |  | Exact revision author. |
+| `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
+| `all` | boolean |  | true: every revision in the document. |
 
 ## `section.list` (read)
 
@@ -477,7 +549,7 @@ Describe this doc-control server: API version, engines (file, live), whether it 
 
 ## `server.help` (read)
 
-JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in `ops` (text.replace, comment.add…), listed under batch_operations. An operation's old name (before 0.7.0) gives the operation it was renamed to.
+JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in `ops` (text.replace, comment.add…), listed under batch_operations; a name that is both gets both. An operation's old name (before 0.7.0) gives the operation it was renamed to.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -705,6 +777,21 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 | `at` | string |  | Paragraph address or range, e.g. p142#a7b2a7b2:10-15. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+## `text.replace` (write)
+
+Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) with new text; empty text deletes it. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
+| `expect` | object |  |  |
+| `dry_run` | boolean |  | Preview only; write nothing. |
+| `author` | string |  | Revision author. |
+| `tag` | string |  | Appended to the author. |
+| `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
+| `at` | string | yes | Range p3#fp:10-15, p3#fp or p3#fp:10..p5#fp:2. |
+| `text` | string | yes | New text; empty deletes the range. |
 
 ## `toc.insert` (write)
 

@@ -1,6 +1,7 @@
 """Comment operations of a batch: ``comment.add``, ``comment.reply``, ``comment.resolve``.
 
-They are batch operation kinds, not standalone writes (see :mod:`doc_control.ops.batch`).
+They are batch operation kinds (see :mod:`doc_control.ops.batch`); ``comment.add`` is also a
+direct write tool that applies one through ``doc.batch`` (:mod:`doc_control.ops.direct`).
 
 ``comment.add`` anchors a new comment on a range (``at``: a paragraph, a range inside
 one or across paragraphs, as for ``text.replace``) with ``commentRangeStart``,

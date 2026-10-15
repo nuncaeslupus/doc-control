@@ -391,10 +391,11 @@ def test_comment_with_text_edits_on_other_paragraphs_in_one_batch(tmp_path: Path
     assert len(comments(path)) == 1
 
 
-def test_comment_ops_are_batch_kinds_only() -> None:
+def test_comment_ops_are_batch_kinds_and_only_add_is_standalone() -> None:
     registry = load_operations()
+    assert registry["comment.add"].kind == "write"  # a direct write tool (ops/direct.py)
     for kind in ("comment.add", "comment.reply", "comment.resolve"):
-        assert kind not in registry
+        assert kind == "comment.add" or kind not in registry
         assert kind in registry["doc.batch"].schema["properties"]["ops"]["description"]
 
 

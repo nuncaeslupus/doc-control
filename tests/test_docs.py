@@ -100,3 +100,10 @@ def test_readme_layout_example_runs(tmp_path: Path) -> None:
         got = doc.run("layout.get", {})
     assert len(got["sections"]) == len(plan["sections"]) > 1
     assert _plan_mismatches(plan, got) == []
+
+
+def test_readme_commands_use_current_operation_names() -> None:
+    """Old names still run, but the README teaches the current ones."""
+    load_operations()
+    named = re.findall(r"doc-control ([a-z][\w.-]*)", README.read_text("utf-8"))
+    assert named and [n for n in named if n not in REGISTRY and n != "mcp"] == []

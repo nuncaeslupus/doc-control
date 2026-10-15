@@ -54,10 +54,12 @@ def doc(tmp_path: Path) -> Path:
     return make_docx(tmp_path / "d.docx", *TEXTS)
 
 
-def test_batch_is_registered_and_kinds_are_not_standalone() -> None:
+def test_batch_is_registered_and_only_the_direct_kinds_are_standalone() -> None:
     registry = load_operations()
     assert registry["doc.batch"].kind == "write"
-    for kind in ("text.replace", "para.insert", "para.delete", "para.move"):
+    for kind in ("text.replace", "para.insert", "para.delete"):
+        assert registry[kind].kind == "write"  # direct write tools (ops/direct.py)
+    for kind in ("para.move", "style.apply", "format.apply", "comment.reply"):
         assert kind not in registry
     assert "text.replace" in registry["doc.batch"].schema["properties"]["ops"]["description"]
 

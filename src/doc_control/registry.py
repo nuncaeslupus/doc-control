@@ -25,6 +25,9 @@ class Operation:
     summary: str
     schema: dict[str, Any]
     handler: Handler
+    #: Whether a write's missing ``author`` is filled from DOC_CONTROL_AUTHOR (default);
+    #: off where ``author`` selects rather than stamps (revision.accept/reject).
+    fills_author: bool = True
 
     def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         if request.get("engine") == "live" and "engine" not in self.schema["properties"]:
@@ -36,6 +39,7 @@ class Operation:
         validate(request, self.schema)
         if (
             self.kind == "write"
+            and self.fills_author
             and "author" in self.schema["properties"]
             and "author" not in request
             and request.get("engine") != "live"
@@ -50,7 +54,12 @@ REGISTRY: dict[str, Operation] = {}
 
 
 def operation(
-    name: str, kind: Literal["read", "write"], summary: str, schema: dict[str, Any]
+    name: str,
+    kind: Literal["read", "write"],
+    summary: str,
+    schema: dict[str, Any],
+    *,
+    fills_author: bool = True,
 ) -> Callable[[Handler], Handler]:
     """Register a handler; the schema must be a well-formed object schema."""
 
@@ -62,7 +71,7 @@ def operation(
         problems = check_schema(schema)
         if problems:
             raise ValueError(f"schema for {name} is malformed: {'; '.join(problems)}")
-        REGISTRY[name] = Operation(name, kind, summary, schema, handler)
+        REGISTRY[name] = Operation(name, kind, summary, schema, handler, fills_author)
         return handler
 
     return wrap
@@ -74,6 +83,7 @@ OPERATION_MODULES: dict[str, str] = {
     "anchor.create": "anchor",
     "anchor.resolve": "anchor",
     "caption.add": "crossref",
+    "comment.add": "direct",
     "comment.list": "read",
     "doc.batch": "batch",
     "doc.compare": "compare",
@@ -104,12 +114,16 @@ OPERATION_MODULES: dict[str, str] = {
     "live.status": "live",
     "note.add": "notes",
     "page.estimate": "page",
+    "para.delete": "direct",
     "para.get": "read",
+    "para.insert": "direct",
     "para.list": "bulk",
     "para.locate": "locate",
     "recipe.list": "recipe",
     "recipe.run": "recipe",
+    "revision.accept": "direct",
     "revision.list": "read",
+    "revision.reject": "direct",
     "section.list": "sections",
     "server.capabilities": "meta",
     "server.help": "meta",
@@ -129,6 +143,7 @@ OPERATION_MODULES: dict[str, str] = {
     "term.rename": "rename",
     "text.find": "find",
     "text.normalize": "text",
+    "text.replace": "direct",
     "toc.insert": "fieldwrite",
     "xref.add": "crossref",
 }

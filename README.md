@@ -42,6 +42,9 @@ doc-control server.help doc.batch   # the JSON Schema of any operation
 Every write is a tracked change by `DOC_CONTROL_AUTHOR` (default `Claude`), made after a
 backup and verified, with `history.undo` and `history.*` to go back. Addresses like
 `p12#a7b2a7b2` come from read results and fail loudly if the paragraph changed.
+One edit can also go straight to its own operation (`text.replace`, `para.insert`,
+`para.delete`, `comment.add`, `revision.accept`, `revision.reject`), which runs it as a
+one-edit `doc.batch`.
 
 From Python, a document can be held open for many reads, with whole results:
 

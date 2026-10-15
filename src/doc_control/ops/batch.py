@@ -13,16 +13,18 @@ response with a per-operation preview. The result carries ``address_map`` (old t
 address of every paragraph whose index changed) and, with the envelope's ``doc``, the
 new sha256.
 
-The text operation kinds are batch operations only; they are not registered as
-standalone writes. The style kinds (``style.create``, ``style.update``, ``style.rename``,
-``style.merge``, see :mod:`doc_control.ops.stylewrite`) are batch kinds too, but a batch
-holds either text kinds or style kinds, never both: style definition changes are not
-tracked changes, so a style batch is one verified write of ``word/styles.xml`` (and the
-references to renamed or merged styles) with the same dry run, ``expect`` and backup.
-``revision.accept`` and ``revision.reject`` (see :mod:`doc_control.ops.revision`) are batch
-kinds that resolve revisions; they cannot share a batch with other kinds. Nor can
-``table.row.insert`` and ``table.row.delete`` (see :mod:`doc_control.ops.tablerows`), which
-add or delete whole table rows as tracked changes.
+``text.replace``, ``para.insert``, ``para.delete``, ``comment.add``, ``revision.accept`` and
+``revision.reject`` are also operations of their own that apply one edit through this one
+(:mod:`doc_control.ops.direct`); the other text kinds are batch kinds only. The style kinds
+(``style.create``, ``style.update``, ``style.rename``, ``style.merge``, see
+:mod:`doc_control.ops.stylewrite`) are batch kinds too, but a batch holds either text kinds
+or style kinds, never both: style definition changes are not tracked changes, so a style
+batch is one verified write of ``word/styles.xml`` (and the references to renamed or merged
+styles) with the same dry run, ``expect`` and backup. ``revision.accept`` and
+``revision.reject`` (see :mod:`doc_control.ops.revision`) are batch kinds that resolve
+revisions; they cannot share a batch with other kinds. Nor can ``table.row.insert`` and
+``table.row.delete`` (see :mod:`doc_control.ops.tablerows`), which add or delete whole table
+rows as tracked changes.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ ALL_SCHEMAS = {
 }
 BATCH_KINDS = tuple(ALL_SCHEMAS)
 
-_SCHEMA: dict[str, Any] = {
+BATCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "doc": {
@@ -138,7 +140,7 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
         "the file is backed up first and history.undo takes the batch back. engine live edits the "
         "app's open document instead: no dry_run, expect, backup or all-or-nothing."
     ),
-    _SCHEMA,
+    BATCH_SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:
     if request.get("tracked", True) is not True:

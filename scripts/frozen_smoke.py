@@ -67,6 +67,7 @@ FAMILY_CALLS: dict[str, tuple[str, dict[str, Any]]] = {
         "caption_add",
         {"doc": "{doc}", "at": "{at}", "label": "Figure", "text": "smoke", "dry_run": True},
     ),
+    "direct": ("text_replace", {"doc": "{doc}", "at": "{at}", "text": "smoke", "dry_run": True}),
     "diff": ("doc_diff", {"old": "{doc}", "new": "{doc}"}),
     "dotx": ("styleset_export_dotx", {"doc": "{doc}", "out": "{tmp}/styles.dotx"}),
     "fields": ("field_list", {"doc": "{doc}"}),

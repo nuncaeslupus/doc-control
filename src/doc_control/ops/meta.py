@@ -50,8 +50,9 @@ def _build() -> dict[str, Any]:
     "server.help",
     "read",
     "JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in "
-    "`ops` (text.replace, comment.add…), listed under batch_operations. An operation's old "
-    "name (before 0.7.0) gives the operation it was renamed to.",
+    "`ops` (text.replace, comment.add…), listed under batch_operations; a name that is "
+    "both gets both. An operation's old name (before 0.7.0) gives the operation it was "
+    "renamed to.",
     {
         "type": "object",
         "properties": {
@@ -70,11 +71,15 @@ def help_(request: dict[str, Any]) -> dict[str, Any]:
             "operations": {n: _describe(n) for n in sorted(REGISTRY)},
             "batch_operations": {k: _describe_kind(k, s) for k, s in sorted(kinds.items())},
         }
-    if name in kinds and name not in REGISTRY:
-        return {"batch_operations": {name: _describe_kind(name, kinds[name])}}
-    if name not in REGISTRY:
+    if name not in REGISTRY and name not in kinds:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {name}", op=name)
-    return {"operations": {name: _describe(name)}}
+    # A name can be both (text.replace is a direct write tool and a doc.batch kind): both.
+    out: dict[str, Any] = {}
+    if name in REGISTRY:
+        out["operations"] = {name: _describe(name)}
+    if name in kinds:
+        out["batch_operations"] = {name: _describe_kind(name, kinds[name])}
+    return out
 
 
 def _batch_kinds() -> dict[str, dict[str, Any]]:
