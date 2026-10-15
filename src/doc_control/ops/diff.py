@@ -32,6 +32,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply, success
 from doc_control.inprocess import budget
 from doc_control.model.align import UNCHANGED, Alignment, Change, align
@@ -121,14 +122,50 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
     return out
 
 
+_OUTPUT = outputs.result(
+    ("old", "new", "summary", "total", "changes", "address_map"),
+    old={**outputs.DOC_BLOCK, "description": "The earlier version."},
+    new={**outputs.DOC_BLOCK, "description": "The later version."},
+    summary=outputs.obj(
+        "Paragraphs per alignment kind.",
+        unchanged=outputs.integer("Unchanged."),
+        modified=outputs.integer("Edited in place."),
+        moved=outputs.integer("Moved."),
+        split=outputs.integer("Split in two or more."),
+        merged=outputs.integer("Joined."),
+        deleted=outputs.integer("Deleted."),
+        inserted=outputs.integer("Inserted."),
+    ),
+    total=outputs.integer("Change records in all pages."),
+    changes=outputs.arr(
+        "This page of change records (unchanged paragraphs that kept their address are left out).",
+        outputs.obj(
+            "One aligned change.",
+            kind=outputs.string("unchanged, modified, inserted, deleted, moved, split or merged."),
+            old=outputs.strings("Old addresses involved."),
+            new=outputs.strings("New addresses involved."),
+            similarity=outputs.number("Text similarity, 0-1, for a modified paragraph."),
+            moved=outputs.boolean("True when it also moved."),
+            count=outputs.integer(
+                "With collapse_runs: unchanged paragraphs this record stands for."
+            ),
+        ),
+    ),
+    address_map=outputs.mapping("Old address -> new address (null if deleted) for this page."),
+)
+
+
 @operation(
     "doc.diff",
     "read",
     (
-        "Align the paragraphs of two versions of a .docx (old and new): which are "
-        "unchanged, modified, inserted, deleted, moved or split, with a map from old "
-        "addresses to new ones. Use it to carry addresses across versions; use doc.compare to "
-        "write a redline .docx instead. Read-only: neither file is changed."
+        "Align the paragraphs of two versions (`old`, `new`; .docx, or .txt/.md/.odt): which "
+        "are unchanged, modified, moved, split, merged, inserted or deleted, with a map from "
+        "old addresses to new ones (null for deleted). Use it to carry addresses read from an "
+        "older version over to the current one, or to see what changed; doc.compare writes the "
+        "same differences as a redline .docx instead. collapse_runs folds runs of shifted "
+        "unchanged paragraphs into one record. Read-only; paged at about 8,000 bytes with "
+        "limit and `cursor` (the `next` of the previous reply)."
     ),
     {
         "type": "object",
@@ -144,6 +181,7 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
         "required": ["old", "new"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def diff(request: dict[str, Any]) -> Reply:
     old, new = Document(request["old"]), Document(request["new"])

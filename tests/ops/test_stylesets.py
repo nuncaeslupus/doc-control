@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
 from doc_control.model.styles import load_styles
@@ -455,3 +456,18 @@ def test_export_out_never_overwrites(doc: Path, tmp_path: Path) -> None:
     assert existing.read_text(encoding="utf-8") == "mine"
     with pytest.raises(DocControlError):
         styleset_export({"doc": str(doc), "out": str(tmp_path / "nodir" / "x.json")})
+
+
+def test_each_style_operation_runs_as_a_tool(doc: Path) -> None:
+    """The four style kinds are operations of their own too, answering as a style batch."""
+    created = api.run("style.create", {"doc": str(doc), "name": "Fresh", "based_on": "Body"})
+    assert created.result["applied"] == [
+        {"op": "style.create", "style": "Fresh", "name": "Fresh", "type": "paragraph"}
+    ]
+    updated = api.run("style.update", {"doc": str(doc), "style": "Fresh", "run": {"bold": True}})
+    assert updated.result["applied"][0]["op"] == "style.update"
+    renamed = api.run("style.rename", {"doc": str(doc), "style": "Fresh", "name": "Renamed"})
+    assert renamed.result["applied"][0]["op"] == "style.rename"
+    merged = api.run("style.merge", {"doc": str(doc), "from": "Old", "into": "Body"})
+    assert merged.result["applied"][0]["merged"] == ["Old"]
+    assert merged.result["tracked"] is False and merged.result["backup"]

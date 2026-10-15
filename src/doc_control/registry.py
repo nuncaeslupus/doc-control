@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -17,6 +18,10 @@ from doc_control.schema import check_schema, validate
 # A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
 Handler = Callable[[dict[str, Any]], dict[str, Any] | Reply]
 
+#: Called with ``(operation name, what the handler returned)`` after every handler returns.
+#: None in use; the test suite sets it to check each result against the operation's ``output``.
+RESULT_CHECK: Callable[[str, dict[str, Any] | Reply], None] | None = None
+
 
 @dataclass(frozen=True)
 class Operation:
@@ -28,6 +33,8 @@ class Operation:
     #: Whether a write's missing ``author`` is filled from DOC_CONTROL_AUTHOR (default);
     #: off where ``author`` selects rather than stamps (revision.accept/reject).
     fills_author: bool = True
+    #: JSON Schema of the ``result`` (see :mod:`doc_control.outputs`).
+    output: dict[str, Any] | None = None
 
     def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         if request.get("engine") == "live" and "engine" not in self.schema["properties"]:
@@ -60,19 +67,32 @@ def operation(
     schema: dict[str, Any],
     *,
     fills_author: bool = True,
+    output: dict[str, Any] | None = None,
 ) -> Callable[[Handler], Handler]:
-    """Register a handler; the schema must be a well-formed object schema."""
+    """Register a handler; the schema (and the ``output`` schema of its result) must be
+    well-formed object schemas."""
 
     def wrap(handler: Handler) -> Handler:
         if name in REGISTRY:
             raise ValueError(f"operation registered twice: {name}")
-        if schema.get("type") != "object":
-            raise ValueError(f"schema for {name} must be an object schema")
-        problems = check_schema(schema)
-        if problems:
-            raise ValueError(f"schema for {name} is malformed: {'; '.join(problems)}")
-        REGISTRY[name] = Operation(name, kind, summary, schema, handler, fills_author)
-        return handler
+        for label, value in (("schema", schema), ("output schema", output)):
+            if value is None:
+                continue
+            if value.get("type") != "object":
+                raise ValueError(f"{label} for {name} must be an object schema")
+            problems = check_schema(value)
+            if problems:
+                raise ValueError(f"{label} for {name} is malformed: {'; '.join(problems)}")
+
+        @functools.wraps(handler)
+        def checked(request: dict[str, Any]) -> dict[str, Any] | Reply:
+            out = handler(request)
+            if RESULT_CHECK is not None:
+                RESULT_CHECK(name, out)
+            return out
+
+        REGISTRY[name] = Operation(name, kind, summary, schema, checked, fills_author, output)
+        return checked
 
     return wrap
 

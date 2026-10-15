@@ -11,21 +11,43 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import parse_range
 from doc_control.model.document import Document
 from doc_control.registry import operation
 
+_OUTPUT = outputs.result(
+    ("table", "rows"),
+    table=outputs.integer("Table number (in its story)."),
+    rows=outputs.arr(
+        "Rows, each a list of cells.",
+        outputs.arr(
+            "A row.",
+            outputs.obj(
+                "A cell.",
+                col=outputs.integer("First grid column (0-based)."),
+                span=outputs.integer("Grid columns it spans (w:gridSpan)."),
+                vmerge=outputs.nullable("string", "Vertical merge: restart, continue or null."),
+                paragraphs=outputs.strings("Addresses of its own paragraphs."),
+            ),
+        ),
+    ),
+)
+
 
 @operation(
     "table.get",
     "read",
-    "One table's grid: its rows of cells, each with its first grid column (`col`), `span` "
-    '(w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own '
-    "paragraphs. A nested table is a table of its own, numbered after the one holding it; an "
-    "empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` "
-    "works in any story (a footnote's table is numbered within that footnote's story).",
+    (
+        "Read one table's grid: rows of cells, each with its first grid column, span, vertical "
+        "merge (null, restart, continue) and the addresses of its paragraphs (read their text with "
+        "para.get or para.list). Name it by `table` (1-based, body only, the `cell.table` "
+        "para.list shows) or by `at`, any paragraph address in it, also in notes and headers. Use "
+        "it before table.row.insert/delete or to edit cells with text.replace. Read-only; "
+        "ANCHOR_NOT_FOUND for no such table."
+    ),
     {
         "type": "object",
         "properties": {
@@ -52,6 +74,7 @@ from doc_control.registry import operation
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def table_get(request: dict[str, Any]) -> Reply:
     if ("at" in request) == ("table" in request):

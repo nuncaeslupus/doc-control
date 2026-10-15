@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import parse_range
@@ -658,13 +659,29 @@ def _reply(path: Path, result: dict[str, Any]) -> Reply:
     return Reply(result, doc=Document(str(path)).envelope_doc(), warnings=warnings)
 
 
+_CAPTION_OUTPUT = outputs.result(
+    ("dry_run", "label", "position", "number", "bookmark", "at", "revision_ids"),
+    label=outputs.string("Table, Figure or Equation."),
+    position=outputs.string("above or below."),
+    number=outputs.integer("The number its SEQ field shows now."),
+    bookmark=outputs.string("Hidden bookmark around label and number (xref.add points at it)."),
+    at=outputs.string("Address of the caption paragraph."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "caption.add",
     "write",
-    "Add a caption paragraph above or below a body paragraph, as tracked insertions: the "
-    "label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a "
-    "hidden bookmark around the label and number for cross-references. The number is "
-    "refreshed by field.update. Returns the address of the caption.",
+    (
+        "Add a numbered caption next to a body paragraph (a table, figure or equation), as tracked "
+        "insertions: label, a SEQ field with the number, and `text` (e.g. label Table, text "
+        '"Results" gives "Table 3 Results"). position defaults to above for Table, below for '
+        "Figure and Equation. A hidden bookmark wraps label and number so xref.add can point at "
+        "it; field.update renumbers after later inserts. Backed up and undoable (history.undo); "
+        "dry_run previews; expect.sha256 refuses a changed file. Returns the caption's address; "
+        "UNSUPPORTED_CONTENT for a paragraph in a text box."
+    ),
     _schema(
         ["at", "label", "text"],
         at={**_STR, "description": "Address of the body paragraph the caption goes next to."},
@@ -675,6 +692,7 @@ def _reply(path: Path, result: dict[str, Any]) -> Reply:
             "description": "Default: above for a Table, below for a Figure or Equation.",
         },
     ),
+    output=_CAPTION_OUTPUT,
 )
 def caption_add(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -689,13 +707,28 @@ def caption_add(request: dict[str, Any]) -> Reply:
     return _reply(path, result)
 
 
+_XREF_OUTPUT = outputs.result(
+    ("dry_run", "at", "to", "show", "code", "bookmark", "revision_ids"),
+    at=outputs.string("Address of the paragraph that holds the field."),
+    to=outputs.string("Address of the target paragraph."),
+    show=outputs.string("number, page or text."),
+    code=outputs.string("The field code, e.g. REF _Ref100000001 \\h."),
+    bookmark=outputs.string("The target's bookmark."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "xref.add",
     "write",
-    "Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, "
-    "as a tracked insertion, pointing at a caption or another body paragraph. The target "
-    "gets a hidden bookmark when it has none that fits. field.update fills in the shown "
-    "number, text or page.",
+    (
+        "Insert a cross-reference field at an insertion point (`at`: p14#a1b2c3d4:20-20, or a "
+        "paragraph address for its end), pointing `to` a caption or another body paragraph. show "
+        'number (default: "Table 3" for a caption), page (a PAGEREF) or text. The target gets a '
+        "hidden bookmark when it has none; run field.update afterwards to fill in the shown value. "
+        "A tracked insertion; backed up and undoable (history.undo); dry_run previews. Add "
+        "captions with caption.add first."
+    ),
     _schema(
         ["at", "to"],
         at={
@@ -710,6 +743,7 @@ def caption_add(request: dict[str, Any]) -> Reply:
             "number; page: the page it is on; text: the caption or paragraph text.",
         },
     ),
+    output=_XREF_OUTPUT,
 )
 def xref_add(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -719,17 +753,32 @@ def xref_add(request: dict[str, Any]) -> Reply:
     return _reply(path, result)
 
 
+_MARK_OUTPUT = outputs.result(
+    ("dry_run", "at", "entry", "code", "revision_ids"),
+    at=outputs.string("Address of the paragraph that holds the mark."),
+    entry=outputs.string("The entry, levels joined with a colon."),
+    code=outputs.string('The XE field code, e.g. XE "Term:Sub".'),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "index.mark",
     "write",
-    "Mark an index entry: an XE field, as a tracked insertion, right after a range. "
-    'The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, '
-    "which Word builds from the marks.",
+    (
+        "Mark an index entry: insert an XE field, as a tracked insertion, right after a range "
+        '(p8#a1b2c3d4:10-15) so that word or phrase is indexed on its page. `entry` is "Term", or '
+        '"Term:Sub" / "Term:Sub:Detail" for sub-entries. Mark every occurrence you want listed, '
+        "then insert the index once with index.insert. Backed up and undoable (history.undo); "
+        "dry_run previews; expect.sha256 refuses a changed file. Returns the paragraph address and "
+        "field code."
+    ),
     _schema(
         ["at", "entry"],
         at={**_STR, "description": "A range inside one paragraph; the mark goes after it."},
         entry={**_STR, "description": 'The index entry, e.g. "Term" or "Term:Sub".'},
     ),
+    output=_MARK_OUTPUT,
 )
 def index_mark(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -737,14 +786,27 @@ def index_mark(request: dict[str, Any]) -> Reply:
     return _reply(path, result)
 
 
+_INDEX_OUTPUT = outputs.result(
+    ("dry_run", "at", "after", "code", "title", "revision_ids"),
+    at=outputs.string("Address of the field's paragraph."),
+    after=outputs.string("Address of the paragraph it went after."),
+    code=outputs.string("The field code."),
+    title=outputs.nullable("string", "The title paragraph's text, or null for none."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "index.insert",
     "write",
-    "Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an "
-    "optional title, the field with a placeholder result and the paragraph that closes it. "
-    "The field is marked dirty: Word builds the entries and page numbers "
-    "from the index.mark marks (F9); field.update leaves it alone. "
-    "Returns the address of the field's paragraph.",
+    (
+        "Insert an index (an INDEX field) after a body paragraph `after` (p40#a1b2c3d4), as "
+        'tracked insertions: a title (default "Index", "" for none), the field with a placeholder '
+        "result, and a closing paragraph. Mark entries first with index.mark; Word builds the "
+        "entries and page numbers when the field is updated there (F9), since field.update leaves "
+        "indexes alone. Backed up and undoable (history.undo); dry_run previews; expect.sha256 "
+        "refuses a changed file. Returns the field paragraph's address."
+    ),
     _schema(
         ["after"],
         after={**_STR, "description": "Address of the body paragraph it goes after."},
@@ -753,6 +815,7 @@ def index_mark(request: dict[str, Any]) -> Reply:
             "description": 'Title paragraph above it (default "Index"); "" for none.',
         },
     ),
+    output=_INDEX_OUTPUT,
 )
 def index_insert(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

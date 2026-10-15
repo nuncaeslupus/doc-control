@@ -211,7 +211,10 @@ OPERATION_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "op": {"enum": ["para.insert"]},
-            "text": {"type": "string"},
+            "text": {
+                "type": "string",
+                "description": "Text of the new paragraph.",
+            },
             "after": {**_STR, "description": "Insert after this paragraph (or before)."},
             "before": {**_STR, "description": "Insert before this paragraph (or after)."},
         },

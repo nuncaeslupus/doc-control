@@ -26,6 +26,8 @@ def _properties(schema: dict[str, Any]) -> list[str]:
         kind = spec.get("type") or " \\| ".join(
             str(o.get("type", "?")) for o in options if isinstance(o, dict)
         )
+        if isinstance(kind, list):
+            kind = " \\| ".join(kind)
         kind = kind or "any"
         if "enum" in spec:
             kind = " \\| ".join(f"`{v}`" for v in spec["enum"])
@@ -45,7 +47,9 @@ def operations_markdown() -> str:
         "Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP "
         "tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the "
         "envelope `{api, ok, op, doc, result, warnings, next}` or an error from "
-        "[errors.md](errors.md). `doc-control server.help <op>` prints the full JSON Schema.\n"
+        "[errors.md](errors.md). Returns lists the keys of `result` (Always: present in every "
+        "success). `doc-control server.help <op>` prints the full JSON Schemas of the request "
+        "and the result; MCP lists the result's as the tool's `outputSchema`.\n"
     )
     for name in sorted(REGISTRY):
         op = REGISTRY[name]
@@ -54,6 +58,12 @@ def operations_markdown() -> str:
         if rows:
             out.append("| Field | Type | Required | Meaning |\n|---|---|---|---|")
             out.extend(rows)
+            out.append("")
+        returns = _properties(op.output or {})
+        if returns:
+            out.append("Returns (`result`):\n")
+            out.append("| Key | Type | Always | Meaning |\n|---|---|---|---|")
+            out.extend(returns)
             out.append("")
     out.append("# Batch operation kinds\n")
     out.append("The kinds `doc.batch` takes in `ops`, each applied as a tracked change.\n")

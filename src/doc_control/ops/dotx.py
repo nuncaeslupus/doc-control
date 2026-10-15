@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.styles import load_styles
@@ -128,14 +129,23 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
     return _zip(parts)
 
 
+_EXPORT_OUTPUT = outputs.result(
+    ("path", "count", "bytes"),
+    path=outputs.string("The template written."),
+    count=outputs.integer("Styles in it."),
+    bytes=outputs.integer("Its size."),
+)
+
+
 @operation(
     "styleset.export_dotx",
     "write",
     (
-        "Write the document's styles (all, the ones named, or custom ones only) to a new "
-        ".dotx Word template at `out`; the document itself is never changed. "
-        "styleset.import_dotx brings a template's styles into a document; styleset.export "
-        "gives a JSON style set instead."
+        "Write the document's style definitions (all, the `styles` named, or custom_only) to a "
+        "new .dotx Word template at `out` (must not exist), for Word users to attach or base "
+        "documents on. The document itself is never changed. styleset.import_dotx brings a "
+        "template's styles into a document; styleset.export gives a JSON style set instead. "
+        "Returns the path, style count and size."
     ),
     {
         "type": "object",
@@ -153,6 +163,7 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
         "required": ["doc", "out"],
         "additionalProperties": False,
     },
+    output=_EXPORT_OUTPUT,
 )
 def styleset_export_dotx(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -168,11 +179,30 @@ def read_dotx(path: Path) -> list[dict[str, Any]]:
     return [style_entry(s) for s in load_styles(Package(path)).styles]
 
 
+_IMPORT_OUTPUT = outputs.result(
+    ("applied", "dry_run", "tracked", "changed_parts"),
+    applied=outputs.arr(
+        "One entry per style in the template.",
+        outputs.obj(
+            "What happened to a style.",
+            style=outputs.string("Style id."),
+            action=outputs.string("created, replaced or skipped."),
+        ),
+    ),
+    **outputs.STYLE_WRITE_FIELDS,
+)
+
+
 @operation(
     "styleset.import_dotx",
     "write",
-    "Install the styles of a .dotx template into the document: new styles are added, "
-    "existing ones replaced (or skipped); dry_run previews.",
+    (
+        "Install the styles of a .dotx Word template (`path`) into the document: new styles are "
+        "added, existing ids replaced (on_conflict replace, default), kept (skip) or refused "
+        "(error: STYLE_CONFLICT). Use it to apply a house template; styleset.install takes a JSON "
+        "style set, style.create adds one style. Not a tracked change and not in the undo log: the "
+        "file is backed up first (`backup`); dry_run previews."
+    ),
     {
         "type": "object",
         "properties": {
@@ -184,6 +214,10 @@ def read_dotx(path: Path) -> list[dict[str, Any]]:
             },
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
@@ -192,6 +226,7 @@ def read_dotx(path: Path) -> list[dict[str, Any]]:
         "required": ["doc", "path"],
         "additionalProperties": False,
     },
+    output=_IMPORT_OUTPUT,
 )
 def styleset_import_dotx(request: dict[str, Any]) -> Reply:
     source, target = Path(request["path"]), Path(request["doc"])

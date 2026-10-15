@@ -111,7 +111,8 @@ window.addEventListener("message", event => {
   }
   if (m.method === "ui/notifications/tool-result") {
     const sc = (m.params || {}).structuredContent;
-    if (sc && sc.places) render(sc);
+    const data = sc && sc.result ? sc.result : sc;  // the envelope; its result holds the places
+    if (data && data.places) render(data);
     else status("No places to show.");
   }
   if (m.method === "ping" && m.id !== undefined) send({ jsonrpc: "2.0", id: m.id, result: {} });

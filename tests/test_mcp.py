@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from doc_control import __version__
@@ -14,13 +15,17 @@ from doc_control.mcp import (
     APPS,
     CREATES_FILES,
     DESTRUCTIVE,
+    PROPOSES,
     PROTOCOL_VERSIONS,
     UI_EXTENSION,
     UI_MIME,
     serve,
     tool_name,
 )
+from doc_control.outputs import envelope_schema
 from doc_control.registry import ALIASES, load_operations
+from doc_control.schema import validate
+from tests.helpers import make_docx
 
 
 def talk(*messages: Any) -> list[dict[str, Any]]:
@@ -66,8 +71,10 @@ def test_every_operation_is_listed_as_a_tool_with_its_schema() -> None:
         assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tool["name"])
         assert tool["inputSchema"] == op.schema
         assert tool["description"] == op.summary
+        assert op.output is not None
+        assert tool["outputSchema"] == envelope_schema(op.output)
         hints = tool["annotations"]
-        read_only = op.kind == "read" and op.name not in CREATES_FILES
+        read_only = (op.kind == "read" and op.name not in CREATES_FILES) or op.name in PROPOSES
         assert hints["readOnlyHint"] is read_only
         assert hints["openWorldHint"] is False
         if read_only:
@@ -179,9 +186,27 @@ def test_live_places_result_carries_structured_content() -> None:
     (reply,) = talk(call(1, "tools/call", name="live_places", arguments=PLACES))
     result = reply["result"]
     assert result["isError"] is False
-    assert result["structuredContent"] == {"mode": "cursor", **PLACES}
+    assert result["structuredContent"]["result"] == {"mode": "cursor", **PLACES}
     assert result["_meta"]["ui"]["resourceUri"].startswith("ui://doc-control/places-")
-    assert json.loads(result["content"][0]["text"])["result"] == result["structuredContent"]
+    assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
+
+
+def test_a_success_carries_the_envelope_as_structured_content(tmp_path: Path) -> None:
+    """structuredContent is the envelope the text holds, and it conforms to the tool's
+    outputSchema; an error reply has none."""
+    doc = make_docx(tmp_path / "a.docx", "Hello world.")
+    listed, ok, bad = talk(
+        call(1, "tools/list"),
+        call(2, "tools/call", name="para_list", arguments={"doc": str(doc)}),
+        call(3, "tools/call", name="para_list", arguments={"doc": str(tmp_path / "no.docx")}),
+    )
+    schema = {t["name"]: t for t in listed["result"]["tools"]}["para_list"]["outputSchema"]
+    structured = ok["result"]["structuredContent"]
+    assert structured == json.loads(ok["result"]["content"][0]["text"])
+    assert structured["result"]["paragraphs"][0]["text"] == "Hello world."
+    validate(structured, schema)
+    assert bad["result"]["isError"] is True
+    assert "structuredContent" not in bad["result"]
 
 
 def test_live_places_refuses_a_place_with_no_address() -> None:

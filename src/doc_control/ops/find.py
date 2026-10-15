@@ -20,6 +20,7 @@ import re
 import time
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
@@ -100,16 +101,50 @@ SCHEMA: dict[str, Any] = {
 }
 
 
+_OUTPUT = outputs.result(
+    ("matches",),
+    matches=outputs.arr(
+        "This page of matches, in document order.",
+        outputs.obj(
+            "A match.",
+            at=outputs.RANGE,
+            text=outputs.string("The matched text (clipped when very long)."),
+            text_truncated=outputs.boolean("True when text was clipped."),
+            context=outputs.string("The match with some text around it (… marks a cut)."),
+            match_level=outputs.string("With match_level: the level it matched at."),
+        ),
+    ),
+    total=outputs.integer("First page only: matches in the whole document."),
+    total_at_least=outputs.integer("First page, time budget hit: matches counted so far."),
+    more=outputs.boolean("First page, time budget hit: true (more matches may follow)."),
+    query_word=outputs.nullable(
+        "string",
+        "The query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^ codes); null past 255 "
+        "characters, with ignore_accents, with a soft or no-break hyphen, or at a folded "
+        "match_level. Absent for a regex.",
+    ),
+    query_word_options=outputs.obj(
+        "Find options to tick in Word for the same matches.",
+        match_case=outputs.boolean("Match case."),
+        whole_words=outputs.boolean("Find whole words only."),
+    ),
+)
+
+
 @operation(
     "text.find",
     "read",
-    "Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. "
-    "The first page also gives `total` (or `total_at_least` and `more: true` when the time "
-    "budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, "
-    "^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break "
-    "hyphen in the query; not for a regex; null at a folded `match_level`), "
-    "with `query_word_options` (match_case, whole_words) to tick there.",
+    (
+        "Find text or a Python regex (`regex`) in the document; each match comes back as a range "
+        "(p8#b72009e4:0-8) with context, ready for text.replace or anchor.create. ignore_case, "
+        "ignore_accents (maria finds María), whole_word and match_level (default: also ignores "
+        "punctuation) loosen it; stories adds notes or headers. The first page gives `total`, and "
+        "query_word, the query as typed in Word's Find box. Use para.locate to describe where a "
+        "paragraph is, history.search for removed text. Read-only; limit (default 20) per page, "
+        "`cursor` continues; stops after 10 s with `more`."
+    ),
     SCHEMA,
+    output=_OUTPUT,
 )
 def find(request: dict[str, Any]) -> Reply:
     level: Level | None = request.get("match_level")
