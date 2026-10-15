@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import importlib
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -37,6 +39,66 @@ def corpus_doc(tmp_path: Path) -> CorpusWriter:
 def _no_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """A developer's opt-in must never make the suite reach the network."""
     monkeypatch.delenv("DOC_CONTROL_UPDATE_CHECK", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _close_what_a_test_opens(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Iterator[None]:
+    """A test that reaches a real Word or LibreOffice (``engine="live"`` without a fake
+    adapter) may open its document there, but must close it: the app is the owner's.
+
+    ``tests/live`` manages its own private app instances and session-wide documents, so
+    it is left alone.
+    """
+    if request.path.is_relative_to(Path(__file__).parent / "live"):
+        yield
+        return
+    from doc_control.live import lo_uno, word_com
+
+    opened: list[tuple[Any, Path]] = []
+    started: list[Any] = []
+    for cls in (word_com.Word, lo_uno.LibreOffice):
+        original = cls.open
+
+        def recording(self: Any, path: Path, _original: Any = original) -> None:
+            if isinstance(self, word_com.Word) and not _word_running():
+                started.append(self)
+            was_open = True
+            with contextlib.suppress(Exception):
+                was_open = self.is_open(path)
+            _original(self, path)
+            if not was_open:
+                opened.append((self, path))
+
+        monkeypatch.setattr(cls, "open", recording)
+    try:
+        yield
+    finally:
+        for adapter, path in reversed(opened):
+            with contextlib.suppress(Exception):
+                if adapter.is_open(path):
+                    adapter.close(path)
+        for word in started:  # a Word the test started, now empty: quit it
+            with contextlib.suppress(Exception):
+                _quit_if_empty(word)
+
+
+def _word_running() -> bool:
+    try:
+        client: Any = importlib.import_module("win32com.client")
+
+        client.GetActiveObject("Word.Application")
+    except Exception:
+        return False
+    return True
+
+
+def _quit_if_empty(adapter: Any) -> None:
+    app = adapter._word
+    if app is not None and app.Documents.Count == 0:
+        app.Quit(0)
+        adapter._forget()
 
 
 @pytest.fixture(autouse=True)
