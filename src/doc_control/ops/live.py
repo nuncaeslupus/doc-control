@@ -44,6 +44,7 @@ from doc_control.registry import operation
 from doc_control.safety.history import append_entry
 from doc_control.safety.lock import lock_info
 from doc_control.safety.store import DocStore
+from doc_control.update_check import attach
 
 LIVE_KINDS = ("comment.add", "text.replace", "para.insert")
 
@@ -179,7 +180,7 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
             if lock is not None:
                 # Open in a window this engine does not drive (or a lock left behind).
                 out["open_in"] = {"app": lock["app"], "controlled": False, "stale": lock["stale"]}
-    return out
+    return attach(out)
 
 
 @operation(

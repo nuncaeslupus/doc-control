@@ -194,6 +194,15 @@ same response envelope as the CLI. It needs nothing beyond the package itself:
 To drive the Word a writer has open on Windows, the server needs the `live` extra:
 `"args": ["--from", "doc-control[live]", "doc-control", "mcp"]`.
 
+### Privacy and the update notice
+
+Everything runs on your machine and nothing leaves it, with one opt-in exception.
+If you set `DOC_CONTROL_UPDATE_CHECK=1` (the `.mcpb` setting "Check for updates"), it asks
+the GitHub Releases API for the latest version at most once a day, caches the answer in
+your local app data (`%LOCALAPPDATA%\doc-control` on Windows), and reports
+`update: {current, latest, mcpb_url, checked_at}` in `server.capabilities` and `live.status`.
+It never downloads or installs anything. Left off (the default), it makes no request.
+
 ## Documents
 
 - [Operation reference](docs/operations.md) and [error reference](docs/errors.md), generated from the code

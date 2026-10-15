@@ -95,6 +95,7 @@ OPERATION_MODULES: dict[str, str] = {
     "doc.stats": "read",
     "field.list": "fields",
     "field.update": "fieldwrite",
+    "history.adopt": "history",
     "history.list": "history",
     "history.orphans": "history",
     "history.purge": "history",

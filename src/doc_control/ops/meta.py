@@ -9,6 +9,7 @@ from doc_control import API_VERSION, __version__
 from doc_control.errors import HINTS, DocControlError, ErrorCode
 from doc_control.live.dispatch import apps
 from doc_control.registry import REGISTRY, canonical, load_operations, operation
+from doc_control.update_check import attach
 
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -25,7 +26,7 @@ _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalPropert
 )
 def capabilities(_: dict[str, Any]) -> dict[str, Any]:
     load_operations()
-    return {
+    out: dict[str, Any] = {
         "api": API_VERSION,
         "version": __version__,
         "engines": ["file", "live"],
@@ -39,6 +40,7 @@ def capabilities(_: dict[str, Any]) -> dict[str, Any]:
         "errors": sorted(code.value for code in HINTS),
         "build": _build(),
     }
+    return attach(out)
 
 
 def _build() -> dict[str, Any]:
