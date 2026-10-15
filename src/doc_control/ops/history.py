@@ -340,8 +340,12 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
 @operation(
     "history.list",
     "read",
-    "The undo log, newest first: what each write changed, whether it was undone, and the "
-    "deleted paragraphs `restore` can bring back.",
+    (
+        "List a document's undo log, newest first: each write's op_id, what it changed, "
+        "whether it was undone, and the deleted paragraphs restore can bring back. Use it "
+        "to find the op_id for undo or restore; history.search finds a quote in the log. "
+        "Read-only, paged."
+    ),
     {
         "type": "object",
         "properties": {
@@ -382,9 +386,13 @@ def history_list(request: dict[str, Any]) -> Reply:
 @operation(
     "history.search",
     "read",
-    "Find a quote in the undo log: in the requests, and in the text of every paragraph "
-    "before and after each write. Exact unless `match_level` folds it; then every hit, "
-    "with its offsets and the level it matched at.",
+    (
+        "Search a document's undo log for a quote: in the requests, and in the text of "
+        "every paragraph before and after each write. Use it to find when a passage was "
+        "changed or deleted, and the op_id to undo or restore it. Exact unless "
+        "`match_level` folds it; then every hit, with its offsets and the level it "
+        "matched at. Read-only."
+    ),
     {
         "type": "object",
         "properties": {

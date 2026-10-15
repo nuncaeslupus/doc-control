@@ -126,11 +126,18 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
 @operation(
     "batch",
     "write",
-    "Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, "
-    "comment.add, comment.reply and comment.resolve together, all or nothing, or "
-    "table.row.insert and table.row.delete (tracked table rows) together, or "
-    "style.create/update/rename/merge together, or revision.accept and revision.reject to "
-    "resolve revisions (by ids, author, address range or all); dry_run previews.",
+    (
+        "The main editing tool: apply several edits as tracked changes, all or nothing "
+        "on the file engine. "
+        "One family per batch: text.replace, para.insert, para.delete, para.move, "
+        "style.apply, format.apply, comment.add, comment.reply and comment.resolve; or "
+        "table.row.insert and table.row.delete (tracked table rows); or "
+        "style.create/update/rename/merge; or revision.accept and revision.reject (by "
+        "ids, author, address range or all). Addresses refer to the document as read; "
+        "on the file engine, expect.sha256 refuses a file changed since, dry_run previews, "
+        "the file is backed up first and undo takes the batch back. engine live edits the "
+        "app's open document instead: no dry_run, expect, backup or all-or-nothing."
+    ),
     _SCHEMA,
 )
 def batch(request: dict[str, Any]) -> Reply:

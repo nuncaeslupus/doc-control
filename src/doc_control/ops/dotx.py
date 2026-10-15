@@ -131,7 +131,12 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
 @operation(
     "styleset.export-dotx",
     "write",
-    "Write the document's styles as a new .dotx template; never touches the document.",
+    (
+        "Write the document's styles (all, the ones named, or custom ones only) to a new "
+        ".dotx Word template at `out`; the document itself is never changed. "
+        "styleset.import-dotx brings a template's styles into a document; styleset.export "
+        "gives a JSON style set instead."
+    ),
     {
         "type": "object",
         "properties": {

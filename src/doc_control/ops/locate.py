@@ -767,9 +767,15 @@ class _Rows(Sequence[dict[str, Any]]):
 @operation(
     "locate",
     "read",
-    "Chapter, scene, estimated page and the shortest unique first-and-last-words phrase of "
-    "each paragraph, plus a phrase Word's Find meets once (one, a range, or the whole "
-    "document, paged).",
+    (
+        "Say where paragraphs are, for a person: for one paragraph, a range or the whole "
+        "document (paged), each paragraph's chapter, scene, estimated page and shortest "
+        "unique first-and-last-words phrase, plus a phrase Word's Find meets exactly "
+        "once. Either phrase can be null (empty, duplicate or no unique phrase), with a "
+        "reason saying why. Use it to tell a user where a passage is, or to get a find phrase for "
+        "live.select; outline lists only headings, find searches text, page.estimate "
+        "gives only pages. Read-only."
+    ),
     {
         "type": "object",
         "properties": {

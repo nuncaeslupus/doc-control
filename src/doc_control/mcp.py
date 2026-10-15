@@ -59,6 +59,25 @@ def tool_name(op: str) -> str:
     return op.replace(".", "_")
 
 
+# Writes that drop something a later call cannot take back from the document itself:
+# purged history, discarded unsaved edits, merged-away styles.
+DESTRUCTIVE = frozenset({"history.purge", "live.close", "style.merge"})
+# Reads of the document that still create a file: compare's redline, styleset.export's `out`.
+CREATES_FILES = frozenset({"compare", "styleset.export"})
+
+
+def _annotations(op: Operation) -> dict[str, bool]:
+    """MCP tool hints: reads are safe to repeat; most writes are tracked changes, backed up
+    and undoable, so only the few in DESTRUCTIVE are marked destructive."""
+    if op.kind == "read" and op.name not in CREATES_FILES:
+        return {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
+    return {
+        "readOnlyHint": False,
+        "destructiveHint": op.name in DESTRUCTIVE,
+        "openWorldHint": False,
+    }
+
+
 def _tools(registry: dict[str, Operation]) -> list[dict[str, Any]]:
     tools = []
     for op in sorted(registry.values(), key=lambda o: o.name):
@@ -66,7 +85,7 @@ def _tools(registry: dict[str, Operation]) -> list[dict[str, Any]]:
             "name": tool_name(op.name),
             "description": op.summary,
             "inputSchema": op.schema,
-            "annotations": {"readOnlyHint": op.kind == "read"},
+            "annotations": _annotations(op),
         }
         if tool["name"] in APPS:
             tool["_meta"] = {

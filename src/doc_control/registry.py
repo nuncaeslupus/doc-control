@@ -11,6 +11,7 @@ from typing import Any, Literal
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.ooxml.plaintext import refuse_write
+from doc_control.ooxml.revisions import default_author
 from doc_control.schema import check_schema, validate
 
 # A handler returns its result dict, or a Reply to also fill `doc`, `warnings` and `next`.
@@ -33,6 +34,13 @@ class Operation:
                 reason="operation not supported live",
             )
         validate(request, self.schema)
+        if (
+            self.kind == "write"
+            and "author" in self.schema["properties"]
+            and "author" not in request
+            and request.get("engine") != "live"
+        ):
+            request = {**request, "author": default_author()}
         if self.kind == "write" and isinstance(request.get("doc"), str):
             refuse_write(Path(request["doc"]))
         return self.handler(request)

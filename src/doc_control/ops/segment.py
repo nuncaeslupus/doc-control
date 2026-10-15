@@ -166,7 +166,13 @@ PROFILE_SCHEMA: dict[str, Any] = {
 @operation(
     "segment",
     "read",
-    "Chapters and scenes with stable ids and detection signals, or sentences and dialogue lines.",
+    (
+        "Split the document into chapters, parts or scenes, with stable ids and the "
+        "signals that detected them, or split a range into sentences or dialogue lines. "
+        "Use it to work chapter by chapter or to get sentence addresses "
+        "(p142#a7b2a7b2.s3); outline lists only styled headings. Detection is tuned with "
+        "profile and overrides. Read-only."
+    ),
     {
         "type": "object",
         "properties": {

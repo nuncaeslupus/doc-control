@@ -16,7 +16,11 @@ _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalPropert
 @operation(
     "capabilities",
     "read",
-    "API version, engines, the build (frozen or not) and the list of operations.",
+    (
+        "Describe this doc-control server: API version, engines (file, live), whether it "
+        "is a frozen build, and every operation it offers. Call it once at the start; "
+        "help gives one operation's full schema. Read-only; needs no document."
+    ),
     _EMPTY,
 )
 def capabilities(_: dict[str, Any]) -> dict[str, Any]:

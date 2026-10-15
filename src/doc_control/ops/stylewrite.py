@@ -71,7 +71,18 @@ _FIELDS: dict[str, dict[str, Any]] = {
 }
 _STYLE_REF = {"type": "string", "minLength": 1, "description": "Style id or name."}
 _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
-    "style.create": (_FIELDS, ["name"], "Add a style."),
+    "style.create": (
+        _FIELDS,
+        ["name"],
+        (
+            "Add a new paragraph, character, table or numbering style to the document, with "
+            "its parent, next and linked styles and its run and paragraph formatting. Refused"
+            " when the id or name already exists: use style.update to change a style, "
+            "style.rename to rename one, styleset.install to add many at once. Not a tracked "
+            "change: the file is backed up first and the write is logged for undo; dry_run "
+            "previews."
+        ),
+    ),
     "style.update": (
         {
             "style": _STYLE_REF,
@@ -80,7 +91,13 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "paragraph": _FIELDS["paragraph"],
         },
         ["style"],
-        "Change a style's parent, next/link styles, quick flag or formatting.",
+        (
+            "Change an existing style: its parent (based_on), next or linked style, quick-"
+            "gallery flag, or run and paragraph formatting (null removes a key). Every "
+            "paragraph using the style changes with it; to format one paragraph, use "
+            "format.apply in batch. Not a tracked change: the file is backed up first and the"
+            " write is logged for undo; dry_run previews."
+        ),
     ),
     "style.rename": (
         {
@@ -89,7 +106,12 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "id": _FIELDS["id"],
         },
         ["style"],
-        "Change a style's display name and/or id; references follow.",
+        (
+            "Rename a style's display name and/or id; every reference follows (paragraphs, "
+            "headers, notes, numbering, and based_on, next and link in other styles). Use "
+            "style.merge to fold one style into another instead. Not a tracked change: the "
+            "file is backed up first and the write is logged for undo; dry_run previews."
+        ),
     ),
     "style.merge": (
         {
@@ -99,7 +121,12 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
             "into": _STYLE_REF,
         },
         ["from", "into"],
-        "Re-point every use of the 'from' styles to 'into' and delete them.",
+        (
+            "Merge styles: re-point every use of the `from` styles to `into`, then delete the"
+            " `from` styles. Use it to clean up duplicate styles; style.rename only renames. "
+            "Not a tracked change: the file is backed up first and the write is logged for "
+            "undo; check with dry_run first."
+        ),
     ),
 }
 
@@ -464,7 +491,8 @@ def commit_styles(
     env: Mapping[str, str] | None = None,
     stage: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Run ``prepare`` on a session over ``doc_path`` and write the result in one verified write."""
+    """Run ``prepare`` on a session over ``doc_path`` and write the result in one "
+    "verified write."""
     if not doc_path.is_file():
         raise DocControlError(
             ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)

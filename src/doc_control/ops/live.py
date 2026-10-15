@@ -37,7 +37,7 @@ from doc_control.model.loosefold import (
     ladder,
 )
 from doc_control.model.wordcodes import translate_codes
-from doc_control.ooxml.revisions import DEFAULT_AUTHOR, format_author
+from doc_control.ooxml.revisions import default_author, format_author
 from doc_control.ops.comments import AddComment
 from doc_control.ops.tracked import InsertParagraph
 from doc_control.registry import operation
@@ -152,8 +152,11 @@ def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
 @operation(
     "live.status",
     "read",
-    "Live apps (Word, LibreOffice) found and reachable, and the documents they have open; "
-    "with `doc`, which app has it open, its full path, and whether it has unsaved changes.",
+    (
+        "Check which live apps (Word, LibreOffice) are running and reachable and which "
+        "documents they have open; with `doc`, which app holds it, its full path and "
+        "whether it has unsaved changes. Call it before live.open. Read-only."
+    ),
     _schema(required=False),
 )
 def status(request: dict[str, Any]) -> dict[str, Any]:
@@ -182,7 +185,12 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
 @operation(
     "live.open",
     "write",
-    "Attach to the app window holding the document, or open it in a live app.",
+    (
+        "Attach to Word or LibreOffice for live editing: find the app window already "
+        "holding the document, or open it in the app (`app`). Call it before the other "
+        "live operations (engine live). It opens or focuses a window but does not change "
+        "the document."
+    ),
     _schema(
         app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."},
         front=_FRONT,
@@ -200,7 +208,16 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-@operation("live.save", "write", "Save the open document in its app.", _schema())
+@operation(
+    "live.save",
+    "write",
+    (
+        "Save the document open in Word or LibreOffice (attached with live.open) to its "
+        "file, from inside the app. Call it after live edits (batch with engine live) to "
+        "keep them; live.close with save: true saves and closes in one call."
+    ),
+    _schema(),
+)
 def save(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
     guarded(adapter.save, path)
@@ -375,8 +392,12 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
 @operation(
     "live.select",
     "write",
-    "Select a paragraph in the app's window, by address (`at`) or by a `locate` find "
-    "phrase, and return its text and address.",
+    (
+        "Show the user a place: select a paragraph (or put the cursor at it) in the Word "
+        "or LibreOffice window, by address (`at`) or by a locate find phrase, and return "
+        "its text and address. Changes only the selection, never the text; the document "
+        "must be attached with live.open."
+    ),
     _schema(
         at={"type": "string", "description": "Paragraph address, e.g. `p142#a7b2a7b2`."},
         find_phrase={
@@ -510,7 +531,12 @@ def places(request: dict[str, Any]) -> dict[str, Any]:
 @operation(
     "live.selection",
     "read",
-    "The text selected in the app's window, and the paragraph the cursor is in.",
+    (
+        "Read what the user has selected in Word or LibreOffice right now, and the "
+        "paragraph (with its address) the cursor is in. Use it when the user points at "
+        'text ("this paragraph", "here"). Read-only; the document must be attached with '
+        "live.open."
+    ),
     _schema(),
 )
 def selection(request: dict[str, Any]) -> dict[str, Any]:
@@ -550,7 +576,9 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
         if raw.get("op") not in LIVE_KINDS:
             raise unavailable("operation not supported live", op_index=i, op=raw.get("op"))
     author = format_author(
-        request.get("author") or os.environ.get("DOC_CONTROL_LIVE_AUTHOR") or DEFAULT_AUTHOR,
+        request.get("author")
+        or os.environ.get("DOC_CONTROL_LIVE_AUTHOR", "").strip()
+        or default_author(),
         request.get("tag"),
     )
     count = len(guarded(adapter.paragraphs, path))

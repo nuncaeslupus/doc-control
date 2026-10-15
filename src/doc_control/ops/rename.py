@@ -357,9 +357,12 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
 @operation(
     "term.rename",
     "write",
-    "Rename a term everywhere as one tracked batch: whole word, case, preserve case and "
-    "inflections; dry_run previews with counts. Exact unless `match_level` folds it; then "
-    "each change says the level it matched at.",
+    (
+        "Rename a term or a character's name everywhere (Lucía to Elena) as one tracked "
+        "batch: whole word, case, preserve case and inflections. Use it instead of many "
+        "text.replace edits; run dry_run first to check the counts. Exact unless "
+        "`match_level` folds it; then each change says the level it matched at."
+    ),
     _SCHEMA,
 )
 def term_rename(request: dict[str, Any]) -> Reply:
