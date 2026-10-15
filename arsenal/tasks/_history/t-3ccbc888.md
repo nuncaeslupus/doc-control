@@ -5,6 +5,7 @@ label: "install without Python docs"
 priority: 10
 deps: [t-b45708fd]
 workspace: PACKAGE
+status: merged
 ---
 
 ## Acceptance gate

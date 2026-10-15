@@ -3,6 +3,7 @@ examples run (LAYOUT T9)."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -107,3 +108,49 @@ def test_readme_commands_use_current_operation_names() -> None:
     load_operations()
     named = re.findall(r"doc-control ([a-z][\w.-]*)", README.read_text("utf-8"))
     assert named and [n for n in named if n not in REGISTRY and n != "mcp"] == []
+
+
+#: An asset file name as the install docs write it, ``X.Y.Z`` standing for the version.
+ASSET_NAME = re.compile(r"doc-control-[0-9A-Za-z.]+-windows-x64[0-9A-Za-z.-]*[0-9A-Za-z]")
+LATEST_RELEASE = "https://github.com/nuncaeslupus/doc-control/releases/latest"
+
+
+def _numbered_steps(text: str, heading: str) -> list[str]:
+    """The numbered list under ``heading`` (up to the next heading), numbered 1..n."""
+    section = text.split(heading, 1)[1].split("\n#", 1)[0]
+    steps = re.findall(r"^(\d+)\. (.+)$", section, re.M)
+    assert [int(n) for n, _ in steps] == list(range(1, len(steps) + 1)), heading
+    return [step for _, step in steps]
+
+
+def test_readme_windows_install_steps_are_numbered_and_bounded() -> None:
+    """PACKAGE T9 (``install_steps_windows_mcpb <= 2``): without Python, the ``.mcpb`` takes
+    at most 2 numbered steps and the installer at most 3, besides the SmartScreen step, in
+    the README and in docs/install-windows.md; every asset they name is a T8 release asset."""
+    spec = importlib.util.spec_from_file_location(
+        "check_release_assets", DOCS.parent / "scripts" / "check_release_assets.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _, assets = module.expected_assets("X.Y.Z")
+
+    readme = README.read_text("utf-8")
+    guide = (DOCS / "install-windows.md").read_text("utf-8")
+    assert "## Install without Python (Windows)" in readme
+    assert "docs/install-windows.md" in readme
+    for text in (readme, guide):
+        mcpb = _numbered_steps(text, "Claude Desktop extension (`.mcpb`)\n")
+        installer = _numbered_steps(text, "Installer (`-setup.exe`)")
+        mcpb_counted = [s for s in mcpb if "SmartScreen" not in s]
+        installer_counted = [s for s in installer if "SmartScreen" not in s]
+        assert 1 <= len(mcpb_counted) <= 2, mcpb
+        assert 1 <= len(installer_counted) <= 3, installer
+        assert len(installer) - len(installer_counted) == 1, "one SmartScreen step"
+        assert "More info" in text and "Run anyway" in text
+        for steps, suffix in ((mcpb, ".mcpb"), (installer, "-setup.exe")):
+            assert LATEST_RELEASE in steps[0] and f"-windows-x64{suffix}" in steps[0]
+        named = set(ASSET_NAME.findall(text))
+        assert named and named <= set(assets), named - set(assets)
+    for topic in ("SHA256SUMS.txt", "Get-FileHash", "Uninstalling", "Updating", "winget"):
+        assert topic in guide, topic

@@ -22,6 +22,35 @@ Every content change is a tracked change the writer can accept or reject.
 For anyone — writers and editors first — who wants an AI agent's help inside a
 Word document without a single silent change.
 
+## Install without Python (Windows)
+
+No Python needed. Every release on the [latest release page](https://github.com/nuncaeslupus/doc-control/releases/latest)
+carries a Claude Desktop extension and an installer. Both install for the current Windows
+user only, need no admin rights, and work with any Claude account, the free plan included.
+They drive Microsoft Word live; LibreOffice live control still needs the Python install
+below. The full guide (checksums, updates, uninstalling, moving from `uvx`) is
+[docs/install-windows.md](docs/install-windows.md).
+
+### Claude Desktop extension (`.mcpb`)
+
+1. Download `doc-control-X.Y.Z-windows-x64.mcpb` from the [latest release](https://github.com/nuncaeslupus/doc-control/releases/latest).
+2. Drag the file onto Claude Desktop's **Settings > Extensions** page and click **Install**.
+
+Claude Desktop then warns, in red, that the extension can access everything on your
+computer. Every local extension gets that warning; it is expected. Double-clicking the
+file does not install it: Windows only asks which program should open it.
+
+### Installer (`-setup.exe`), for the command line
+
+1. Download `doc-control-X.Y.Z-windows-x64-setup.exe` from the [latest release](https://github.com/nuncaeslupus/doc-control/releases/latest).
+2. Double-click it.
+3. If Windows SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway** (the installer is not code-signed).
+4. Click **Install**, **Next** and **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
+
+To update, install the newer release the same way. To uninstall, remove the extension
+from **Settings > Extensions**, or the installer's copy from Windows **Settings > Apps**
+("doc-control X.Y.Z"). A winget package is coming.
+
 ## Usage
 
 Install with `pip install doc-control` (or run it without installing: `uvx doc-control`).
