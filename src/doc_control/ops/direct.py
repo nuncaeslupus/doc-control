@@ -20,11 +20,14 @@ from doc_control.ops.batch import ALL_SCHEMAS, BATCH_SCHEMA, batch
 from doc_control.ops.live import LIVE_KINDS
 from doc_control.registry import Handler, operation
 
-_ENVELOPE = ("doc", "expect", "dry_run", "author", "tag", "engine")
+_ENVELOPE = ("doc", "expect", "dry_run", "tracked", "author", "tag", "engine")
+_PLAIN_KINDS = ("text.replace", "para.insert", "para.delete")
 _ONE = "Use doc.batch to apply several edits all or nothing."
 _TRACKED = (
     "A tracked change: on the file engine the file is backed up first, history.undo takes "
-    "it back, dry_run previews and expect.sha256 refuses a file changed since."
+    "it back, dry_run previews and expect.sha256 refuses a file changed since. "
+    "tracked: false writes it plainly instead (a change the writer already approved; no "
+    "revision marks; file engine)."
 )
 _RESOLVES = (
     "Not itself tracked: on the file engine the file is backed up first and the write is "
@@ -71,6 +74,7 @@ def direct_schema(kind: str) -> dict[str, Any]:
         for k in _ENVELOPE
         if k not in fields
         and (k != "engine" or kind in LIVE_KINDS)
+        and (k != "tracked" or kind in _PLAIN_KINDS)
         and not (kind.startswith("revision.") and k == "tag")
     }
     return {

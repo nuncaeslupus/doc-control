@@ -370,13 +370,45 @@ def test_unknown_parameters_are_still_rejected(tmp_path: Path) -> None:
     path = make_docx(tmp_path / "d.docx", "Uno largo uno", "Dos largo dos")
     ops = [{"op": "para.delete", "at": address(path, 0)}]
     for name, request in (
-        ("batch", {"ops": ops, "plain": True}),
+        ("doc.batch", {"ops": ops, "plain": True}),
         ("term.rename", {"from": "Uno", "to": "Dos", "plain": True}),
-        ("restore", {"op_id": "op-1", "plain": True}),
+        ("history.restore", {"op_id": "op-1", "plain": True}),
     ):
         with pytest.raises(DocControlError) as caught:
             registry[name].run({"doc": str(path), **request})
         assert caught.value.code is ErrorCode.SCHEMA_INVALID, name
     # and the new key is accepted by all three schemas
-    for name in ("batch", "term.rename", "restore"):
+    for name in ("doc.batch", "term.rename", "history.restore"):
         assert registry[name].schema["properties"]["tracked"]["type"] == "boolean"
+
+
+def test_direct_write_tools_take_tracked_false(tmp_path: Path) -> None:
+    from doc_control.registry import load_operations
+
+    registry = load_operations()
+    for name in ("text.replace", "para.insert", "para.delete"):
+        assert registry[name].schema["properties"]["tracked"]["type"] == "boolean", name
+    for name in ("comment.add", "revision.accept", "revision.reject"):
+        assert "tracked" not in registry[name].schema["properties"], name
+    path = make_docx(tmp_path / "d.docx", "Uno largo uno", "Dos largo dos", "Tres largo tres")
+    a = [address(path, n) for n in range(3)]
+    replaced = result_of(
+        registry["text.replace"].run(
+            {"doc": str(path), "at": f"{a[0]}:0-3", "text": "Un", "tracked": False}
+        )
+    )
+    inserted = result_of(
+        registry["para.insert"].run(
+            {"doc": str(path), "after": a[1], "text": "Nuevo", "tracked": False}
+        )
+    )
+    a = [address(path, n) for n in range(4)]
+    deleted = result_of(
+        registry["para.delete"].run({"doc": str(path), "at": a[1], "tracked": False})
+    )
+    assert all(r["tracked"] is False for r in (replaced, inserted, deleted))
+    assert marks(path) == 0
+    assert texts(path) == ["Un largo uno", "Nuevo", "Tres largo tres"]
+    with pytest.raises(DocControlError) as caught:  # not offered where it makes no sense
+        registry["comment.add"].run({"doc": str(path), "at": a[0], "text": "x", "tracked": False})
+    assert caught.value.code is ErrorCode.SCHEMA_INVALID
