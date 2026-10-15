@@ -71,7 +71,7 @@ List the document's comments in thread order (each root, then its replies) with 
 
 ## `doc.batch` (write)
 
-The main editing tool: apply several edits as tracked changes, all or nothing on the file engine. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and history.undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
+The main editing tool: apply several edits as tracked changes, all or nothing on the file engine; tracked: false writes a change the writer already approved plainly, without revision marks (file engine). One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and history.undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -79,7 +79,7 @@ The main editing tool: apply several edits as tracked changes, all or nothing on
 | `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']; table.row.insert ['after_row', 'cells', 'table']; table.row.delete ['row', 'table']. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
-| `tracked` | boolean |  | Tracked changes (the only mode, true). |
+| `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations); file engine only for now. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
@@ -231,7 +231,7 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 
 ## `history.restore` (write)
 
-Bring a logged paragraph back as a tracked insertion after the paragraph that holds its place now. Without `change`, every paragraph the op deleted.
+Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, without revision marks) after the paragraph that holds its place now. Without `change`, every paragraph the op deleted.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -244,6 +244,7 @@ Bring a logged paragraph back as a tracked insertion after the paragraph that ho
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
+| `tracked` | boolean |  | false: a plain write for a change the writer already approved: the paragraph comes back without revision marks (this call's own insertion accepted in the same verified write). |
 
 ## `history.search` (read)
 
@@ -425,13 +426,14 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 
 ## `para.delete` (write)
 
-Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked deletion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked deletion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; file engine). Use doc.batch to apply several edits all or nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+| `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations); file engine only for now. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | Paragraph p3#fp or run p3#fp..p5#fp. |
@@ -449,13 +451,14 @@ Read one paragraph by address in full: text, style, direct formatting and format
 
 ## `para.insert` (write)
 
-Insert one new paragraph after or before a paragraph (give one of them), as a tracked insertion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Insert one new paragraph after or before a paragraph (give one of them), as a tracked insertion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; file engine). Use doc.batch to apply several edits all or nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+| `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations); file engine only for now. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
@@ -740,7 +743,7 @@ Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text),
 
 ## `term.rename` (write)
 
-Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch: whole word, case, preserve case and inflections. Use it instead of many text.replace edits; run dry_run first to check the counts. Exact unless `match_level` folds it; then each change says the level it matched at.
+Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch (tracked: false writes it plainly): whole word, case, preserve case and inflections. Use it instead of many text.replace edits; run dry_run first to check the counts. Exact unless `match_level` folds it; then each change says the level it matched at.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -756,6 +759,7 @@ Rename a term or a character's name everywhere (Lucía to Elena) as one tracked 
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Plan and preview only; write nothing. |
 | `preview_limit` | integer |  | Most changes echoed back in `preview`. |
+| `tracked` | boolean |  | false: a plain write for a change the writer already approved: the same edits, with this call's own revisions accepted in the same verified write (no revision marks; undo works). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
@@ -791,13 +795,14 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 
 ## `text.replace` (write)
 
-Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) with new text; empty text deletes it. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) with new text; empty text deletes it. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; file engine). Use doc.batch to apply several edits all or nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+| `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations); file engine only for now. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |

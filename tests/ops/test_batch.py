@@ -169,11 +169,12 @@ def test_expect_sha256_must_match(doc: Path) -> None:
     assert digest(doc) != good
 
 
-def test_untracked_is_refused(doc: Path) -> None:
+def test_untracked_live_is_refused(doc: Path) -> None:
+    # plain writes (D-21) are file engine only for now; see tests/ops/test_plain_writes.py
     with pytest.raises(DocControlError) as err:
-        run(doc, [{"op": "para.delete", "at": addresses(doc)[1]}], tracked=False)
+        run(doc, [{"op": "para.delete", "at": addresses(doc)[1]}], tracked=False, engine="live")
     assert err.value.code is ErrorCode.SCHEMA_INVALID
-    assert "not supported in v1" in err.value.message
+    assert "live plain writes come later" in err.value.message
 
 
 def test_cli_batch_envelope_and_error(doc: Path, capsys: pytest.CaptureFixture[str]) -> None:

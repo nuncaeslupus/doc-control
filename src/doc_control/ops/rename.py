@@ -126,6 +126,14 @@ _SCHEMA: dict[str, Any] = {
             "default": DEFAULT_PREVIEW,
             "description": "Most changes echoed back in `preview`.",
         },
+        "tracked": {
+            "type": "boolean",
+            "default": True,
+            "description": "false: a plain write for a change the writer already approved: the "
+            "same edits, with this call's own revisions accepted in the same verified write (no "
+            "revision marks; undo works). Refused (UNSUPPORTED_CONTENT) when a paragraph it "
+            "rewrites holds another unresolved tracked change.",
+        },
         "author": {"type": "string", "minLength": 1, "description": "Revision author."},
         "tag": {"type": "string", "minLength": 1, "description": "Appended to the author."},
     },
@@ -359,7 +367,8 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
     "write",
     (
         "Rename a term or a character's name everywhere (Lucía to Elena) as one tracked "
-        "batch: whole word, case, preserve case and inflections. Use it instead of many "
+        "batch (tracked: false writes it plainly): whole word, case, preserve case and "
+        "inflections. Use it instead of many "
         "text.replace edits; run dry_run first to check the counts. Exact unless "
         "`match_level` folds it; then each change says the level it matched at."
     ),
@@ -388,10 +397,17 @@ def term_rename(request: dict[str, Any]) -> Reply:
     expect = request.get("expect", {}).get("sha256") or pkg.sha256
     author = request.get("author", DEFAULT_AUTHOR)
     tag = request.get("tag")
+    plain = request.get("tracked", True) is False
 
     def apply(edits: list[ReplaceText]) -> TrackedResult:
         return apply_edits(
-            path, edits, expect_sha256=expect, author=author, tag=tag, dry_run=dry_run
+            path,
+            edits,
+            expect_sha256=expect,
+            author=author,
+            tag=tag,
+            dry_run=dry_run,
+            tracked=plain is not True,
         )
 
     applied: TrackedResult | None = None
@@ -419,7 +435,16 @@ def term_rename(request: dict[str, Any]) -> Reply:
     warnings: list[str] = []
     if applied is not None:
         body = applied.to_dict()
-        keys = ("address_map", "footprint", "revision_ids", "author", "date", "sha256", "backup")
+        keys = (
+            "address_map",
+            "footprint",
+            "revision_ids",
+            "author",
+            "date",
+            "tracked",
+            "sha256",
+            "backup",
+        )
         for key in keys:
             if key in body:
                 result[key] = body[key]

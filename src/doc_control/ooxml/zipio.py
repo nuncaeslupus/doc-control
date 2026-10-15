@@ -15,6 +15,7 @@ encrypted members are refused: Word never writes them for normal documents.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import os
@@ -160,6 +161,16 @@ class Package:
     @property
     def names(self) -> list[str]:
         return [info.filename for info in self.infos]
+
+    def with_parts(self, parts: Mapping[str, bytes]) -> Package:
+        """A view of this package whose existing parts ``parts`` read as the given bytes
+        (in memory only: nothing is written, the fingerprints stay the original's)."""
+        view = copy.copy(self)
+        unknown = sorted(n for n in parts if n not in self._data)
+        if unknown:
+            raise KeyError(f"with_parts: no such part: {', '.join(unknown)}")
+        view._data = {**self._data, **parts}
+        return view
 
     def read(self, name: str) -> bytes:
         return self._data[name]

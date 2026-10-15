@@ -216,8 +216,9 @@ def _restorable(change: dict[str, Any]) -> bool:
 @operation(
     "history.restore",
     "write",
-    "Bring a logged paragraph back as a tracked insertion after the paragraph that holds its "
-    "place now. Without `change`, every paragraph the op deleted.",
+    "Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, without "
+    "revision marks) after the paragraph that holds its place now. Without `change`, every "
+    "paragraph the op deleted.",
     {
         "type": "object",
         "properties": {
@@ -239,6 +240,13 @@ def _restorable(change: dict[str, Any]) -> bool:
             "dry_run": {"type": "boolean", "description": "Preview only; write nothing."},
             "author": {"type": "string", "minLength": 1, "description": "Revision author."},
             "tag": {"type": "string", "minLength": 1, "description": "Appended to the author."},
+            "tracked": {
+                "type": "boolean",
+                "default": True,
+                "description": "false: a plain write for a change the writer already approved: "
+                "the paragraph comes back without revision marks (this call's own insertion "
+                "accepted in the same verified write).",
+            },
         },
         "required": ["doc", "op_id"],
         "additionalProperties": False,
@@ -280,6 +288,7 @@ def restore(request: dict[str, Any]) -> Reply:
         author=request.get("author", DEFAULT_AUTHOR),
         tag=request.get("tag"),
         dry_run=dry_run,
+        tracked=request.get("tracked", True) is not False,
         kind="restore",
         request={"op": "history.restore", "op_id": entry["op_id"], "changes": chosen},
         log_extra={"restores": entry["op_id"]},
@@ -344,7 +353,15 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
             for n, c in enumerate(changes)
             if _restorable(c) and c.get("deleted")
         ][:5]
-    for key in ("undoes", "restores", "sha256_after", "backup", "engine", "adopted_from"):
+    for key in (
+        "undoes",
+        "restores",
+        "sha256_after",
+        "backup",
+        "engine",
+        "tracked",
+        "adopted_from",
+    ):
         if entry.get(key) is not None:
             out[key] = entry[key]
     return out
