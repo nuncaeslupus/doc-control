@@ -17,6 +17,7 @@ import pytest
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError
 from doc_control.ops import history as history_ops
+from doc_control.safety import history as history_mod
 from doc_control.safety.history import read_log
 from doc_control.safety.store import store_dir
 from tests.safety.test_history import addresses, formatted_docx, run_batch
@@ -155,3 +156,140 @@ def test_adopt_with_several_matches_lists_them(tmp_path: Path) -> None:
     # neighbouring test folders hold identical documents, so count only this one's
     ours = [c for c in out["candidates"] if Path(c["store"]).is_relative_to(tmp_path)]
     assert out["adopted"] is False and len(ours) == 2
+
+
+def _ours(found: list[dict[str, Any]], root: Path) -> list[dict[str, Any]]:
+    return [f for f in found if Path(f["store"]).is_relative_to(root)]
+
+
+def test_renamed_folder_copy_does_not_take_the_live_store(tmp_path: Path) -> None:
+    # the store moved with its folder; the logged doc_path (Libro/...) is stale, but the
+    # document beside the store is alive, so a copy of it must not steal the history
+    (tmp_path / "Libro").mkdir()
+    doc = formatted_docx(tmp_path / "Libro" / "Novela.docx")
+    edited_twice(doc)
+    (tmp_path / "Libro").rename(tmp_path / "Libro2")
+    live = tmp_path / "Libro2" / "Novela.docx"
+    copy = tmp_path / "Libro2" / "Novela - copia.docx"
+    shutil.copyfile(live, copy)
+    store = tmp_path / "Libro2" / ".doc-control" / "Novela.docx"
+    log = (store / "log.jsonl").read_bytes()
+    assert not _ours(open_({"doc": str(copy)}).result.get("adoptable", []), tmp_path)
+    with pytest.raises(DocControlError) as err:
+        adopt({"doc": str(copy), "store": str(store)})
+    assert "orphan" in str(err.value)
+    assert (store / "log.jsonl").read_bytes() == log
+
+
+def test_explicit_store_of_a_live_document_needs_force(tmp_path: Path) -> None:
+    a = formatted_docx(tmp_path / "A.docx")
+    edited_twice(a)
+    b = tmp_path / "B.docx"
+    shutil.copyfile(a, b)
+    store = tmp_path / ".doc-control" / "A.docx"
+    with pytest.raises(DocControlError) as err:
+        adopt({"doc": str(b), "store": str(store)})
+    assert "orphan" in str(err.value) and store.is_dir()
+    out = adopt({"doc": str(b), "store": str(store), "force": True}).result
+    assert out["adopted"] is True and not store.exists()
+
+
+def test_failed_record_puts_both_stores_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = formatted_docx(tmp_path / "Old.docx")
+    edited_twice(doc)
+    renamed = tmp_path / "New.docx"
+    doc.rename(renamed)
+    open_({"doc": str(renamed)})  # a fresh store: an `open` note and a backup
+    old_store = tmp_path / ".doc-control" / "Old.docx"
+    fresh = store_dir(renamed)
+    old_files = sorted(str(p.relative_to(old_store)) for p in old_store.rglob("*"))
+    fresh_log = (fresh / "log.jsonl").read_bytes()
+
+    def boom(*_a: Any, **_k: Any) -> str:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(history_mod, "record", boom)
+    with pytest.raises(OSError):
+        adopt({"doc": str(renamed), "store": str(old_store)})
+    assert sorted(str(p.relative_to(old_store)) for p in old_store.rglob("*")) == old_files
+    assert (fresh / "log.jsonl").read_bytes() == fresh_log
+    assert not [p for p in (tmp_path / ".doc-control").iterdir() if p.name.startswith(".")]
+
+
+def test_failed_copy_puts_both_stores_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = formatted_docx(tmp_path / "Old.docx")
+    edited_twice(doc)
+    renamed = tmp_path / "New.docx"
+    doc.rename(renamed)
+    open_({"doc": str(renamed)})
+    old_store = (tmp_path / ".doc-control" / "Old.docx").resolve()
+    fresh = store_dir(renamed)
+    fresh_log = (fresh / "log.jsonl").read_bytes()
+    real_rename = Path.rename
+
+    def no_rename(self: Path, target: Any) -> Path:
+        if self.resolve() == old_store:
+            raise OSError("in use")
+        return real_rename(self, target)
+
+    def half_copy(src: Any, dst: Any, *_a: Any, **_k: Any) -> None:
+        Path(dst).mkdir()
+        (Path(dst) / "log.jsonl").write_bytes(b"partial")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "rename", no_rename)
+    monkeypatch.setattr(history_mod.shutil, "copytree", half_copy)
+    with pytest.raises(OSError):
+        adopt({"doc": str(renamed), "store": str(old_store)})
+    monkeypatch.undo()
+    assert (old_store / "log.jsonl").is_file()
+    assert (fresh / "log.jsonl").read_bytes() == fresh_log
+    assert not [p for p in (tmp_path / ".doc-control").iterdir() if p.name.startswith(".")]
+
+
+def test_undeletable_old_store_is_set_aside_after_adopt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    doc = formatted_docx(tmp_path / "Old.docx")
+    first = edited_twice(doc)
+    renamed = tmp_path / "New.docx"
+    doc.rename(renamed)
+    old_store = (tmp_path / ".doc-control" / "Old.docx").resolve()
+    real_rename = Path.rename
+    real_rmtree = shutil.rmtree
+
+    def no_rename(self: Path, target: Any) -> Path:
+        if self.resolve() == old_store and Path(target).name == "New.docx":
+            raise OSError("in use")
+        return real_rename(self, target)
+
+    def no_rmtree(path: Any, *a: Any, **k: Any) -> None:
+        if Path(path).resolve() == old_store:
+            raise OSError("in use")
+        real_rmtree(path, *a, **k)
+
+    monkeypatch.setattr(Path, "rename", no_rename)
+    monkeypatch.setattr(history_mod.shutil, "rmtree", no_rmtree)
+    out = adopt({"doc": str(renamed), "store": str(old_store)}).result
+    monkeypatch.undo()
+    assert out["adopted"] is True and not old_store.exists()
+    assert not _ours(open_({"doc": str(renamed)}).result.get("adoptable", []), tmp_path)
+    assert not _ours(history_mod.adoptable_stores(renamed, anything=True), tmp_path)
+    undo({"doc": str(renamed)})
+    assert renamed.read_bytes() == first
+
+
+def test_scan_error_does_not_fail_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = formatted_docx(tmp_path / "Old.docx")
+    edited_twice(doc)
+    renamed = tmp_path / "New.docx"
+    doc.rename(renamed)
+
+    def denied(*_a: Any, **_k: Any) -> list[dict[str, Any]]:
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(history_mod, "adoptable_stores", denied)
+    out = open_({"doc": str(renamed)}).result
+    assert out["backup"] and "adoptable" not in out

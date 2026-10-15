@@ -187,7 +187,7 @@ Recompute the results of the body's TOC, page, page-count, sequence and referenc
 
 ## `history.adopt` (write)
 
-Re-attach a moved or renamed document to its old history: finds the orphaned store whose last recorded state is this file's sha256 (next to it, in neighbouring folders, app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to where the document's store lives now, keeping backups and log, so history.undo and history.restore work again. A file that differs from the store's last state needs `force`; a document that already has history is never overwritten. `dry_run` moves nothing.
+Re-attach a moved or renamed document to its old history: finds the orphaned store whose last recorded state is this file's sha256 (next to it, in neighbouring folders, app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to where the document's store lives now, keeping backups and log, so history.undo and history.restore work again. A file that differs from the store's last state needs `force`, as does a store whose document still exists; a document that already has history is never overwritten. `dry_run` moves nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

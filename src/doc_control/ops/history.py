@@ -81,6 +81,15 @@ def _short(text: str) -> str:
 # -- open -----------------------------------------------------------------------------------
 
 
+def _adoptable(path: Path, sha: str) -> list[dict[str, Any]]:
+    """The orphan stores ``doc.open`` offers; a scan that cannot read a folder offers none
+    rather than failing the open."""
+    try:
+        return history.adoptable_stores(path, sha=sha)
+    except (OSError, DocControlError):
+        return []
+
+
 @operation(
     "doc.open",
     "write",
@@ -98,7 +107,7 @@ def open_(request: dict[str, Any]) -> Reply:
     if not path.is_file():
         raise DocControlError(ErrorCode.DOC_NOT_FOUND, f"no such file: {path}", path=str(path))
     sha = Package(path).sha256  # NOT_A_DOCX for anything else, before a store is made
-    adoptable = [] if log_path_for(path).is_file() else history.adoptable_stores(path)
+    adoptable = [] if log_path_for(path).is_file() else _adoptable(path, sha)
     copy = backup(path)
     seen = [e for e in read_log(log_path_for(path)).entries if e.get("kind") != "purge"]
     op_id: str | None = None
@@ -535,8 +544,8 @@ def history_orphans(request: dict[str, Any]) -> Reply:
         "app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to "
         "where the document's store lives now, keeping backups and log, so history.undo and "
         "history.restore work again. A file that differs from the store's last state needs "
-        "`force`; a document that already has history is never overwritten. `dry_run` moves "
-        "nothing."
+        "`force`, as does a store whose document still exists; a document that already has "
+        "history is never overwritten. `dry_run` moves nothing."
     ),
     {
         "type": "object",
