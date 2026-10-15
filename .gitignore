@@ -39,3 +39,6 @@ arsenal/session/rescue_refs
 .claude/skills/*/findings.md
 tmp/*-notes.md
 tmp/.arsenal-sessions/
+
+# winget manifests, generated per release by scripts/build_winget.py (PACKAGE T12)
+/packaging/winget/out/
