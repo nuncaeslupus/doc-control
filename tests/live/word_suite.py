@@ -3,6 +3,10 @@
 Each scenario takes the adapter and a working directory and returns what went wrong, so
 ``tests/live/test_word_com.py`` and ``scripts/live_word_check.py`` run the same checks.
 Word is a hidden instance of its own: a window the writer has open is never touched.
+
+Every doc-control call goes through a :class:`Runner`: :class:`InProcess` by default, or
+:class:`McpExe`, a ``doc-control mcp`` process spoken to over stdio (PACKAGE T5,
+``scripts/live_word_frozen_check.py``). The adapter stays the writer's hands either way.
 """
 
 from __future__ import annotations
@@ -10,10 +14,12 @@ from __future__ import annotations
 import contextlib
 import importlib
 import importlib.util
+import json
+import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
@@ -21,6 +27,7 @@ from doc_control.live import word_com
 from doc_control.live.dispatch import using
 from doc_control.live.protocol import Span
 from doc_control.live.word_com import Word
+from doc_control.mcp import PROTOCOL_VERSIONS, tool_name
 from doc_control.model.address import fingerprint
 from doc_control.ooxml.zipio import sha256_file
 from tests.corpus.generator import KINDS, generate
@@ -76,14 +83,106 @@ class Failures(list[str]):
             self.append(f"{what}: not refused")
 
 
+class Runner(Protocol):
+    def run(self, op: str, request: dict[str, Any]) -> dict[str, Any]:
+        """The whole result of ``op``; a refusal raises :class:`DocControlError`.
+
+        Over MCP, pages are joined by extending top-level lists: right for the ops that
+        page one list (every op this suite calls), not for ``para.get`` or ``diff``.
+        """
+        ...
+
+
+class InProcess:
+    """doc-control in this process, uncapped."""
+
+    def run(self, op: str, request: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = api.run(op, request).result
+        return result
+
+
+class McpExe:
+    """A ``doc-control mcp`` process: one ``tools/call`` per operation, pages joined, and
+    an error envelope raised again as the :class:`DocControlError` it was."""
+
+    def __init__(self, command: list[str]) -> None:
+        self.proc = subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+        self._id = 0
+        self._call("initialize", {"protocolVersion": PROTOCOL_VERSIONS[0], "capabilities": {}})
+        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _send(self, message: dict[str, Any]) -> None:
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(json.dumps(message, ensure_ascii=False).encode() + b"\n")
+        self.proc.stdin.flush()
+
+    def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        self._id += 1
+        self._send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params})
+        assert self.proc.stdout is not None
+        line = self.proc.stdout.readline()
+        if not line:
+            raise RuntimeError(f"doc-control mcp exited ({self.proc.poll()}) during {method}")
+        reply: dict[str, Any] = json.loads(line)
+        if "error" in reply:
+            raise RuntimeError(f"{method}: {reply['error']}")
+        result: dict[str, Any] = reply["result"]
+        return result
+
+    def run(self, op: str, request: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] | None = None
+        while True:
+            called = self._call("tools/call", {"name": tool_name(op), "arguments": request})
+            envelope = json.loads(called["content"][0]["text"])
+            if not envelope["ok"]:
+                error = envelope["error"]
+                raise DocControlError(
+                    ErrorCode(error["code"]), error["message"], **error.get("details", {})
+                )
+            page: dict[str, Any] = envelope["result"]
+            if result is None:
+                result = page
+            else:  # a capped list goes on where it stopped
+                for key, value in page.items():
+                    if isinstance(value, list) and isinstance(result.get(key), list):
+                        result[key] = result[key] + value
+            if not envelope.get("next"):
+                return result
+            request = {**request, "cursor": envelope["next"]}
+
+    def close(self) -> None:
+        if self.proc.stdin is not None:
+            self.proc.stdin.close()
+        try:
+            self.proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        if self.proc.stdout is not None:
+            self.proc.stdout.close()
+
+
+_runner: list[Runner] = [InProcess()]
+
+
+@contextlib.contextmanager
+def through(runner: Runner) -> Iterator[None]:
+    """Make every doc-control call of the scenarios through ``runner``."""
+    _runner.append(runner)
+    try:
+        yield
+    finally:
+        _runner.pop()
+
+
 def _run(op: str, request: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = api.run(op, request).result
-    return result
+    return _runner[-1].run(op, request)
 
 
 def _read(doc: Path) -> list[dict[str, Any]]:
-    with api.open(doc) as handle:
-        paragraphs: list[dict[str, Any]] = handle.paragraphs()
+    paragraphs: list[dict[str, Any]] = _run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
     return paragraphs
 
 
@@ -268,12 +367,11 @@ def deletions(word: Word, home: Path) -> list[str]:
         "Zed alpha charlie end.",
         "Quiet hidden unicorn tail.",
     )
-    with api.open(doc) as handle:
-        at = [p["at"] for p in handle.paragraphs()]
-        cuts = [(0, 5, 11), (2, 3, 17), (3, 5, 20)]
-        ops = [{"op": "text.replace", "at": f"{at[n]}:{a}-{b}", "text": ""} for n, a, b in cuts]
-        handle.run("batch", {"ops": ops})
-        rows = handle.run("locate", {})["paragraphs"]
+    at = [p["at"] for p in _read(doc)]
+    cuts = [(0, 5, 11), (2, 3, 17), (3, 5, 20)]
+    ops = [{"op": "text.replace", "at": f"{at[n]}:{a}-{b}", "text": ""} for n, a, b in cuts]
+    _run("batch", {"doc": str(doc), "ops": ops})
+    rows = _run("locate", {"doc": str(doc)})["paragraphs"]
     with _opened(doc) as base:
         for markup in (ALL_MARKUP, SIMPLE_MARKUP):
             _markup(word, doc, markup)
@@ -303,11 +401,10 @@ def deletions(word: Word, home: Path) -> list[str]:
         "unicorn head stays two.",
         "Third unicorn here.",
     )
-    with api.open(doc) as handle:
-        at = [p["at"] for p in handle.paragraphs()]
-        cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[2]}:13", "text": ""}
-        handle.run("batch", {"ops": [cut]})
-        found = handle.paragraphs()
+    at = [p["at"] for p in _read(doc)]
+    cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[2]}:13", "text": ""}
+    _run("batch", {"doc": str(doc), "ops": [cut]})
+    found = _read(doc)
     original = doc.read_bytes()
     for markup in (ALL_MARKUP, SIMPLE_MARKUP):
         with _opened(doc) as base:
@@ -320,6 +417,7 @@ def deletions(word: Word, home: Path) -> list[str]:
                 ({"at": found[1]["at"]}, 1, "Keep one"),
             ]:
                 got = _run("live.select", {**base, **ask, "front": False})
+                got.pop("match_level", None)  # a find phrase says how it matched
                 bad.check(got == {"text": text, "at": found[n]["at"]}, f"{where}: {ask}", got)
                 chosen = _run("live.selection", base)
                 bad.check(chosen["paragraph"] == got, f"{where}: selection of {ask}", chosen)
@@ -490,11 +588,10 @@ def buried(word: Word, home: Path) -> list[str]:
         "unicorn head stays two.",
         "Third unicorn here.",
     )
-    with api.open(doc) as handle:
-        at = [p["at"] for p in handle.paragraphs()]
-        cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
-        handle.run("batch", {"ops": [cut]})
-        rows = handle.paragraphs()
+    at = [p["at"] for p in _read(doc)]
+    cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
+    _run("batch", {"doc": str(doc), "ops": [cut]})
+    rows = _read(doc)
     with _opened(doc) as base:
         for markup in (ALL_MARKUP, SIMPLE_MARKUP):
             _markup(word, doc, markup)
