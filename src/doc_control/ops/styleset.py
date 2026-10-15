@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -48,14 +49,43 @@ def style_entry(style: Style) -> dict[str, Any]:
     return entry
 
 
+_EXPORT_OUTPUT = outputs.result(
+    ("styleset", "count"),
+    styleset=outputs.obj(
+        "The style set (styleset.install takes it as is).",
+        styleset=outputs.string("Its name."),
+        version=outputs.integer("Format version."),
+        styles=outputs.arr(
+            "The styles.",
+            outputs.obj(
+                "A style.",
+                id=outputs.string("Style id."),
+                name=outputs.string("Display name."),
+                type=outputs.string("paragraph, character, table or numbering."),
+                based_on=outputs.string("Parent style id."),
+                next=outputs.string("Style of the next paragraph."),
+                link=outputs.string("Linked style."),
+                default=outputs.boolean("Default style of its type."),
+                custom=outputs.boolean("User-defined."),
+                quick=outputs.boolean("In the quick gallery."),
+                run=outputs.mapping("Run properties."),
+                paragraph=outputs.mapping("Paragraph properties."),
+            ),
+        ),
+    ),
+    count=outputs.integer("Styles exported."),
+    path=outputs.string("With out: the file written."),
+)
+
+
 @operation(
     "styleset.export",
     "read",
     (
-        "Export the document's styles (all, the ones named, or custom ones only) as a "
-        "JSON style set, returned and optionally also written to `out`. Feed it to "
-        "styleset.install on another document; styleset.export_dotx writes a Word "
-        "template instead. The document is not changed."
+        "Export the document's style definitions (all, the `styles` named, or custom_only) as "
+        "a JSON style set, returned and also written to `out` when given (never overwrites an "
+        "existing file). Feed it to styleset.install on another document to copy the look; "
+        "styleset.export_dotx writes a Word template instead. The document is not changed."
     ),
     {
         "type": "object",
@@ -73,6 +103,7 @@ def style_entry(style: Style) -> dict[str, Any]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_EXPORT_OUTPUT,
 )
 def styleset_export(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -220,11 +251,31 @@ def _install(
     return out
 
 
+_INSTALL_OUTPUT = outputs.result(
+    ("applied", "dry_run", "tracked", "changed_parts"),
+    applied=outputs.arr(
+        "One entry per style in the set.",
+        outputs.obj(
+            "What happened to a style.",
+            style=outputs.string("Style id."),
+            action=outputs.string("created, replaced or skipped."),
+        ),
+    ),
+    **outputs.STYLE_WRITE_FIELDS,
+)
+
+
 @operation(
     "styleset.install",
     "write",
-    "Install a JSON style set into the document: new styles are added, existing ones "
-    "replaced (or skipped); dry_run previews.",
+    (
+        "Install a JSON style set (inline `styleset`, or a file at `path`, as styleset.export "
+        "writes it) into the document: new styles are added, existing ids replaced (on_conflict "
+        "replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles "
+        "between documents; styleset.import_dotx reads a Word template, style.create adds one "
+        "style. Not a tracked change and not in the undo log: the file is backed up first "
+        "(`backup`); dry_run previews."
+    ),
     {
         "type": "object",
         "properties": {
@@ -237,6 +288,10 @@ def _install(
             },
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
@@ -245,6 +300,7 @@ def _install(
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_INSTALL_OUTPUT,
 )
 def styleset_install(request: dict[str, Any]) -> Reply:
     if ("styleset" in request) == ("path" in request):

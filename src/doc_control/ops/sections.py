@@ -10,6 +10,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.parts import W, parse_part
@@ -30,14 +31,45 @@ def flag(parent: ET.Element, tag: str) -> bool:
     return child is not None and (child.get(W + "val") or "1").lower() not in ("0", "false", "off")
 
 
+_KINDS = outputs.obj(
+    "Header or footer story per kind (null: inherited from the previous section).",
+    default=outputs.nullable("string", "Story key of the default one, e.g. hdr1.default."),
+    first=outputs.nullable("string", "Story key of the first-page one."),
+    even=outputs.nullable("string", "Story key of the even-page one."),
+)
+_OUTPUT = outputs.result(
+    ("sections",),
+    sections=outputs.arr(
+        "Each section, in order.",
+        outputs.obj(
+            "A section's page setup.",
+            section=outputs.integer("Section number (1-based)."),
+            title_page=outputs.boolean("Different first page."),
+            even_and_odd=outputs.boolean("Different even and odd headers (document-wide)."),
+            page_numbers=outputs.obj(
+                "Page numbering.",
+                start=outputs.nullable("integer", "Restart value, or null to continue."),
+                format=outputs.string("Number format (decimal, lowerRoman...)."),
+            ),
+            headers=_KINDS,
+            footers=_KINDS,
+            **{
+                "break": outputs.string("Section break: nextPage, oddPage, evenPage or continuous.")
+            },
+        ),
+    ),
+)
+
+
 @operation(
     "section.list",
     "read",
     (
-        "List each section's page setup: break type, title page, even/odd headers, "
-        "page-number start and format, and the header and footer part address per kind "
-        "(default, first, even). Use layout.get for the same plan with the header and "
-        "footer text, in the form layout.apply takes back. Read-only."
+        "List each section's page setup: break type, title page, even/odd headers, page-number "
+        "start and format, and which header and footer story (hdr1.default, ftr2.first...) it "
+        "uses per kind; null means inherited. Use the story keys to read header text with "
+        "para.list (stories headers) or para.get; layout.get gives the same setup with the "
+        "header and footer text, in the form layout.apply takes. Read-only."
     ),
     {
         "type": "object",
@@ -47,6 +79,7 @@ def flag(parent: ET.Element, tag: str) -> bool:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def sections_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

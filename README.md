@@ -181,7 +181,9 @@ serve `literary-critic` as its first downstream consumer.
 
 `doc-control mcp` serves every operation as an MCP tool over stdio, one tool per
 operation (`para.move` becomes `para_move`), with the same JSON Schemas and the
-same response envelope as the CLI. It needs nothing beyond the package itself:
+same response envelope as the CLI. Every tool also declares an `outputSchema`, and a
+successful call returns the envelope as `structuredContent` too (an error has none). It
+needs nothing beyond the package itself:
 
 ```json
 {

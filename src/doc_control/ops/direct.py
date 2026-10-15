@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.ops.batch import ALL_SCHEMAS, BATCH_SCHEMA, batch
 from doc_control.ops.live import LIVE_KINDS
@@ -22,44 +23,62 @@ from doc_control.registry import Handler, operation
 
 _ENVELOPE = ("doc", "expect", "dry_run", "tracked", "author", "tag", "engine")
 _PLAIN_KINDS = ("text.replace", "para.insert", "para.delete")
-_ONE = "Use doc.batch to apply several edits all or nothing."
-_TRACKED = (
-    "A tracked change: on the file engine the file is backed up first, history.undo takes "
-    "it back, dry_run previews and expect.sha256 refuses a file changed since. "
-    "tracked: false writes it plainly instead (a change the writer already approved; no "
-    "revision marks; text.replace and para.insert live too)."
-)
-_RESOLVES = (
-    "Not itself tracked: on the file engine the file is backed up first and the write is "
-    "logged for history.undo, dry_run previews and expect.sha256 refuses a file changed since."
-)
 
 #: Each direct write tool: the ``doc.batch`` kind it applies, and its summary.
 DIRECT: dict[str, str] = {
     "text.replace": (
-        "Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) "
-        f"with new text; empty text deletes it. {_TRACKED} {_ONE}"
+        "Replace one range with new text, as a tracked change: part of a paragraph "
+        "(p3#a1b2c3d4:10-15, code-point offsets), a whole paragraph (p3#a1b2c3d4) or a span "
+        "across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); empty `text` deletes it. Get "
+        "ranges from text.find or para.get. File engine: backed up first, logged for "
+        "history.undo, dry_run previews, expect.sha256 refuses a changed file. tracked: false "
+        "writes plainly, on either engine. engine live edits the open app. STALE_ADDRESS if "
+        "the paragraph changed since read. Use term.rename for a name everywhere, doc.batch "
+        "for several edits."
     ),
     "para.insert": (
-        "Insert one new paragraph after or before a paragraph (give one of them), as a "
-        f"tracked insertion. {_TRACKED} {_ONE}"
+        "Insert one new paragraph with `text` after or before an existing one (give `after` or "
+        "`before`, e.g. p3#a1b2c3d4), as a tracked insertion (style it with style.apply in "
+        "doc.batch). File engine: backed up first, logged for history.undo, dry_run previews, "
+        "expect.sha256 refuses a changed file. tracked: false inserts plainly, on either "
+        "engine. engine live inserts in the open Word/LibreOffice window (after live.open). "
+        "Use doc.batch for several edits all or nothing. Returns the address_map of shifted "
+        "paragraphs."
     ),
     "para.delete": (
-        "Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked "
-        f"deletion. {_TRACKED} {_ONE}"
+        "Delete a paragraph (p3#a1b2c3d4) or a run of paragraphs (p3#a1b2c3d4..p5#e5f6a7b8), "
+        "as a tracked deletion the writer can reject. File engine: backed up first, logged for "
+        "history.undo, dry_run previews, expect.sha256 refuses a file changed since; tracked: "
+        "false deletes plainly (a change the writer approved). STALE_ADDRESS if the paragraph "
+        "changed since it was read. Use text.replace to delete part of a paragraph, doc.batch "
+        "for several edits all or nothing. Returns the address_map of shifted paragraphs."
     ),
     "comment.add": (
-        "Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the "
-        "author. On the file engine the file is backed up first, dry_run previews and "
-        f"expect.sha256 refuses a file changed since. {_ONE}"
+        "Add one comment on a range: `at` is a paragraph (p3#a1b2c3d4), part of one "
+        "(p3#a1b2c3d4:10-15) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); a "
+        "newline in `text` starts a new comment paragraph. Author defaults to "
+        "DOC_CONTROL_AUTHOR. File engine: backed up first, dry_run previews, expect.sha256 "
+        "refuses a file changed since; history.undo cannot take a comment back. engine live "
+        "adds it in the open Word/LibreOffice window (after live.open). Use doc.batch to add "
+        "several, or with comment.reply/comment.resolve, all or nothing. Returns the new "
+        "comment id."
     ),
     "revision.accept": (
-        "Accept tracked changes: by ids (from revision.list), by revision author, in a "
-        f"paragraph or run (at), or all of them. {_RESOLVES} {_ONE}"
+        "Accept tracked changes, making them plain text: by `ids` (from revision.list), by "
+        "revision `author`, in a paragraph or run (`at`, p3#a1b2c3d4..p9#e5f6a7b8), or `all`. "
+        "Not itself a tracked change: on the file engine the file is backed up first and the "
+        "write is logged for history.undo; dry_run previews counts; expect.sha256 refuses a "
+        "changed file. Use revision.reject to drop changes instead, doc.batch to accept and "
+        "reject in one write. Returns counts and the revisions resolved."
     ),
     "revision.reject": (
-        "Reject tracked changes: by ids (from revision.list), by revision author, in a "
-        f"paragraph or run (at), or all of them. {_RESOLVES} {_ONE}"
+        "Reject tracked changes, undoing them in the text (insertions removed, deletions "
+        "restored): by `ids` (from revision.list), by revision `author`, in a paragraph or run "
+        "(`at`, p3#a1b2c3d4..p9#e5f6a7b8), or `all`. Not itself a tracked change: on the file "
+        "engine the file is backed up first and the write is logged for history.undo; dry_run "
+        "previews counts; expect.sha256 refuses a changed file. Use revision.accept to keep "
+        "changes instead, doc.batch to accept and reject in one write. Returns counts and the "
+        "revisions resolved."
     ),
 }
 
@@ -105,4 +124,5 @@ for _kind, _summary in DIRECT.items():
         direct_schema(_kind),
         # A revision kind's `author` picks whose revisions to resolve: never a default.
         fills_author=not _kind.startswith("revision."),
+        output=outputs.direct_output(_kind, live=_kind in LIVE_KINDS),
     )(_handler(_kind))

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -96,3 +98,66 @@ def gate_mode(request: pytest.FixtureRequest) -> bool:
     it. A benchmark that cannot measure must then fail rather than skip: a skip exits 0,
     so the gate would pass with no number behind it."""
     return _named_on_command_line(request.config, request.node)
+
+
+def strict(schema: Any) -> Any:
+    """``schema`` with ``additionalProperties: false`` wherever it lists ``properties`` and
+    says nothing about others, so a result key its output schema does not name fails."""
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: strict(v) if k in ("items",) else v for k, v in schema.items()}
+    if "properties" in schema:
+        out["properties"] = {k: strict(v) for k, v in schema["properties"].items()}
+        out.setdefault("additionalProperties", False)
+    return out
+
+
+def check_result(name: str, out: Any) -> list[str]:
+    """Every way a handler's return value (as JSON) strays from the output schema of
+    operation ``name``, and its ``doc`` block from the envelope's."""
+    from doc_control.envelope import Reply
+    from doc_control.errors import DocControlError
+    from doc_control.outputs import DOC_BLOCK
+    from doc_control.registry import REGISTRY
+    from doc_control.schema import validate
+
+    output = REGISTRY[name].output
+    if output is None:
+        return [f"{name} declares no output schema"]
+    reply = out if isinstance(out, Reply) else Reply(out)
+    checks = [("result", reply.result, output)]
+    if reply.doc is not None:
+        checks.append(("doc", reply.doc, DOC_BLOCK))
+    problems = []
+    for label, value, schema in checks:
+        try:
+            validate(json.loads(json.dumps(value, default=str)), strict(schema))
+        except DocControlError as err:
+            problems.append(f"{name}: {label} {err.message}")
+    return problems
+
+
+@pytest.fixture(autouse=True)
+def _results_match_output_schemas(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Every result any operation returns during a test conforms to its declared output
+    schema (strictly: no undeclared keys). The whole suite thereby proves the schemas.
+    Benchmarks are left out: validation would count against their time budgets."""
+    from doc_control import registry
+
+    if "bench" in request.node.path.parts:
+        yield
+        return
+
+    problems: list[str] = []
+
+    def check(name: str, out: Any) -> None:
+        problems.extend(check_result(name, out))
+
+    previous, registry.RESULT_CHECK = registry.RESULT_CHECK, check
+    try:
+        yield
+    finally:
+        registry.RESULT_CHECK = previous
+    assert not problems, "results that break their output schema:\n" + "\n".join(
+        sorted(set(problems))
+    )

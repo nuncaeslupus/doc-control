@@ -3,11 +3,11 @@
 
 # Operation reference
 
-Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). `doc-control server.help <op>` prints the full JSON Schema.
+Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). Returns lists the keys of `result` (Always: present in every success). `doc-control server.help <op>` prints the full JSON Schemas of the request and the result; MCP lists the result's as the tool's `outputSchema`.
 
 ## `anchor.create` (read)
 
-Make an anchor (quote with context) for a range, to find the passage again after edits.
+Make an anchor for a passage so it can be found again after edits shift or change addresses: the quoted text, `context` characters before and after (default 32, max 200), and the paragraph's number and fingerprint then. `at` is a range in one paragraph (p142#a7b2a7b2:10-15), a whole paragraph (p142#a7b2a7b2) or a sentence (p142#a7b2a7b2.s3). Use it to bookmark passages you will come back to; find them later with anchor.resolve (text.find searches for any text instead). Read-only; STALE_ADDRESS when `at` is outdated, SCHEMA_INVALID for a range across paragraphs.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -15,9 +15,15 @@ Make an anchor (quote with context) for a range, to find the passage again after
 | `at` | string | yes | Range inside one paragraph, e.g. p142#a7b2a7b2:10-15, or a whole paragraph or sentence (p142#a7b2a7b2.s3). |
 | `context` | integer |  | Characters of prefix and of suffix to keep. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `anchor` | object | yes | The anchor: pass it whole to anchor.resolve later. |
+
 ## `anchor.resolve` (read)
 
-Find an anchor's passage now: its range, score and match kind (exact, normalized or fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match. match_level says how far the quote is folded when it is not found verbatim.
+Find an anchor's passage in the document as it is now: its current range, a 0-1 score and the match kind (exact, normalized or fuzzy). Pass the `anchor` object anchor.create returned, or just {exact, prefix, suffix}. mode best (default) falls back to a fuzzy match scoring at least 0.80; mode exact accepts only verbatim, normalised or folded (match_level, default `default`: case, accents, punctuation) matches. Fails with ANCHOR_NOT_FOUND, or ANCHOR_AMBIGUOUS listing up to 5 tied candidates. Use it to re-address a passage after edits; doc.diff maps addresses between two files instead. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -26,14 +32,25 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 | `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalize) or at a fold level of match_level; anything else is ANCHOR_NOT_FOUND. |
 | `match_level` | `exact` \| `default` \| `loose` |  | How far the quote is folded when neither it nor its normalised text occurs. exact: today's rule (verbatim, then normalised, then fuzzy in mode best). default: then ignoring case, accents and punctuation (case, then default level), and failing that symbols too (loose). loose: the same ladder. The reply's match_level is the strictest level at which the quote equals the matched text (exact: character for character; case: normalised text with case ignored), with matched_text when it is not exact; a fuzzy match has neither. Not the reply's match kind `match` (exact, normalized, fuzzy), which keeps its meaning. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Range address, p<n>#<fp>:<start>-<end> (code points). |
+| `score` | number | yes | Match score, 0-1. |
+| `match` | string | yes | exact, normalized or fuzzy. |
+| `match_level` | string |  | Strictest fold level at which the quote equals the matched text. |
+| `matched_text` | string |  | The text matched, when not character for character. |
+| `sentence` | string |  | Sentence address, for a sentence anchor. |
+
 ## `caption.add` (write)
 
-Add a caption paragraph above or below a body paragraph, as tracked insertions: the label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a hidden bookmark around the label and number for cross-references. The number is refreshed by field.update. Returns the address of the caption.
+Add a numbered caption next to a body paragraph (a table, figure or equation), as tracked insertions: label, a SEQ field with the number, and `text` (e.g. label Table, text "Results" gives "Table 3 Results"). position defaults to above for Table, below for Figure and Equation. A hidden bookmark wraps label and number so xref.add can point at it; field.update renumbers after later inserts. Backed up and undoable (history.undo); dry_run previews; expect.sha256 refuses a changed file. Returns the caption's address; UNSUPPORTED_CONTENT for a paragraph in a text box.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
@@ -42,14 +59,32 @@ Add a caption paragraph above or below a body paragraph, as tracked insertions: 
 | `text` | string | yes | Caption text after the number; may be empty. |
 | `position` | `above` \| `below` |  | Default: above for a Table, below for a Figure or Equation. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `label` | string | yes | Table, Figure or Equation. |
+| `position` | string | yes | above or below. |
+| `number` | integer | yes | The number its SEQ field shows now. |
+| `bookmark` | string | yes | Hidden bookmark around label and number (xref.add points at it). |
+| `at` | string | yes | Address of the caption paragraph. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `comment.add` (write)
 
-Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the author. On the file engine the file is backed up first, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Add one comment on a range: `at` is a paragraph (p3#a1b2c3d4), part of one (p3#a1b2c3d4:10-15) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); a newline in `text` starts a new comment paragraph. Author defaults to DOC_CONTROL_AUTHOR. File engine: backed up first, dry_run previews, expect.sha256 refuses a file changed since; history.undo cannot take a comment back. engine live adds it in the open Word/LibreOffice window (after live.open). Use doc.batch to add several, or with comment.reply/comment.resolve, all or nothing. Returns the new comment id.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
@@ -57,9 +92,30 @@ Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the autho
 | `at` | string | yes | Range to comment on: p3#fp, p3#fp:10-15 or across. |
 | `text` | string | yes | Comment text; a newline starts a new paragraph. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `comment.list` (read)
 
-List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, paged.
+List the comments in thread order (each root comment, then its replies) with id, author, date, text (clipped at 1,000 characters), resolved state and the address where each starts, including comments in notes and headers. Filter with `resolved` (true or false) and `author` (exact). Use the ids to reply or resolve with doc.batch (comment.reply, comment.resolve); use revision.list for tracked changes instead. Read-only; paged: a reply is capped at about 8,000 bytes (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -69,24 +125,60 @@ List the document's comments in thread order (each root, then its replies) with 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `comments` | array | yes | This page of comments, each root then its replies. |
+
 ## `doc.batch` (write)
 
-The main editing tool: apply several edits as tracked changes, all or nothing on the file engine; tracked: false writes a change the writer already approved plainly, without revision marks. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; on the file engine, expect.sha256 refuses a file changed since, dry_run previews, the file is backed up first and history.undo takes the batch back. engine live edits the app's open document instead: no dry_run, expect, backup or all-or-nothing.
+The main editing tool: apply several edits in one verified write, as tracked changes, all or nothing. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add/reply/resolve; or table.row.insert/delete; or style.create/update/rename/merge; or revision.accept/reject. Example ops: [{"op": "text.replace", "at": "p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run previews, expect.sha256 refuses a changed file, history.undo takes text, row and revision batches back. tracked: false writes approved text plainly, on either engine. engine live edits the open app (comment.add, text.replace, para.insert only; no dry_run or rollback). server.help <kind> gives each kind's fields.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
 | `ops` | array | yes | Operations, applied together. Every address refers to the document as read; an operation placed relative to a paragraph another operation deletes or moves is a BATCH_CONFLICT. Kinds: text.replace ['at', 'text']; para.insert ['after', 'before', 'text']; para.delete ['at']; para.move ['after', 'at', 'before']; style.apply ['at', 'style']; format.apply ['align', 'at', 'bold', 'font', 'indent_first_line_cm', 'indent_left_cm', 'indent_right_cm', 'italic', 'line_spacing', 'size_pt', 'small_caps', 'spacing_after_pt', 'spacing_before_pt', 'underline']; comment.add ['at', 'text']; comment.reply ['comment', 'text']; comment.resolve ['comment', 'resolved']; style.create ['based_on', 'custom', 'default', 'id', 'link', 'name', 'next', 'paragraph', 'quick', 'run', 'type']; style.update ['based_on', 'link', 'next', 'paragraph', 'quick', 'run', 'style']; style.rename ['id', 'name', 'style']; style.merge ['from', 'into']; revision.accept ['all', 'at', 'author', 'ids']; revision.reject ['all', 'at', 'author', 'ids']; table.row.insert ['after_row', 'cells', 'table']; table.row.delete ['row', 'table']. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations). engine live: the app's change tracking is off for the edit and put back after; text.replace and para.insert, refused (UNSUPPORTED_CONTENT) next to another unresolved tracked change; the app's undo takes it back. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `changed_parts` | array |  | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `doc.compare` (read)
 
-Write a new redline .docx from two versions: every difference a tracked change; the inputs are never modified.
+Write a redline: a new .docx at `output` (which must not exist) holding the `new` version with every difference from `old` as a tracked change (author default Claude, `date` ISO 8601 with time zone, default now), so a writer reviews and accepts or rejects them in Word. The input files are never modified; the redline is verified (accepting every change gives the new text) or removed (VERIFY_FAILED_RESTORED). Use doc.diff for the alignment as data without writing a file. Returns the output path and hash, per-kind paragraph counts and the revision count.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -97,9 +189,21 @@ Write a new redline .docx from two versions: every difference a tracked change; 
 | `tag` | string |  | Appended to the author as `author (tag)`. |
 | `date` | string |  | Revision date, ISO 8601 with time zone. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `old` | object | yes | The earlier version. |
+| `new` | object | yes | The later version. |
+| `output` | object | yes | The redline written. |
+| `summary` | object | yes | Paragraphs per alignment kind. |
+| `revisions` | integer | yes | Tracked changes in the redline. |
+| `author` | string | yes | Revision author stamped on the changes. |
+| `date` | string | yes | Revision date (UTC, ISO 8601). |
+
 ## `doc.diff` (read)
 
-Align the paragraphs of two versions of a .docx (old and new): which are unchanged, modified, inserted, deleted, moved or split, with a map from old addresses to new ones. Use it to carry addresses across versions; use doc.compare to write a redline .docx instead. Read-only: neither file is changed.
+Align the paragraphs of two versions (`old`, `new`; .docx, or .txt/.md/.odt): which are unchanged, modified, moved, split, merged, inserted or deleted, with a map from old addresses to new ones (null for deleted). Use it to carry addresses read from an older version over to the current one, or to see what changed; doc.compare writes the same differences as a redline .docx instead. collapse_runs folds runs of shifted unchanged paragraphs into one record. Read-only; paged at about 8,000 bytes with limit and `cursor` (the `next` of the previous reply).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -109,25 +213,58 @@ Align the paragraphs of two versions of a .docx (old and new): which are unchang
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `old` | object | yes | The earlier version. |
+| `new` | object | yes | The later version. |
+| `summary` | object | yes | Paragraphs per alignment kind. |
+| `total` | integer | yes | Change records in all pages. |
+| `changes` | array | yes | This page of change records (unchanged paragraphs that kept their address are left out). |
+| `address_map` | object | yes | Old address -> new address (null if deleted) for this page. |
+
 ## `doc.info` (read)
 
-File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a write is refused if the file changed meanwhile), paragraph count, core properties and which parts exist (comments, notes, headers). A cheap first call on a document; doc.stats gives word and element counts. Read-only.
+Cheap first look at a file: size, sha256 (pass it as expect.sha256 to a later write so it is refused if the file changed meanwhile), core properties (title, author, dates), whether Track Changes is on, whether Word holds it open (a ~$ lock file) and which parts exist (comments, notes, headers). The envelope's `doc` gives the paragraph count. Use doc.stats for word, heading and revision counts, doc.outline for the headings. Read-only; DOC_NOT_FOUND or NOT_A_DOCX for a bad path.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `size_bytes` | integer | yes | File size in bytes. |
+| `parts` | integer | yes | Parts in the package. |
+| `properties` | object | yes | Core properties present (docProps/core.xml). |
+| `application` | object | yes | Application properties present (docProps/app.xml). |
+| `tracked_changes_on` | boolean | yes | Whether Track Changes is switched on in the document. |
+| `word_lock` | boolean | yes | Whether a Word lock file (~$name) is next to it: open in Word. |
+| `has` | object | yes | Which parts exist. |
 
 ## `doc.open` (write)
 
-Back up the document into its store (retention applies) and note it in the history; call it when a session starts. The document is not changed.
+Start a session on a document: back it up into its store (.doc-control/<file name>/ next to it; the newest 20 backups or 30 days are kept) and note it in the undo log if it changed since the last logged write. Call it once before editing; the document itself is not changed. If the document has no history yet, `adoptable` lists orphaned stores (it was moved or renamed) that history.adopt can re-attach. Returns the backup path, the log entry and the store folder.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `backup` | string | yes | Path of the backup just taken. |
+| `op_id` | string \| null | yes | Log entry noting the open, or null if the file is as last logged. |
+| `store` | string | yes | The document's store folder (backups and log). |
+| `adoptable` | array |  | Orphan stores whose history this document could take back (history.adopt). |
+| `hint` | string |  | What to do with adoptable. |
+
 ## `doc.outline` (read)
 
-List the document's headings (levels 1-9) in order, each with its style and paragraph address: the table-of-contents view. Use doc.segment for chapters that are not styled as headings, para.list for every paragraph. Read-only, paged with limit and cursor.
+List the headings (levels 1-9, by style or outline level) in document order, each with its address, level, style and text: the table-of-contents view. max_level 2 keeps levels 1-2; stories ["body", "notes"] adds headings in notes. Use doc.segment for chapters that are not styled as headings, para.list for every paragraph, para.get to read one heading in full. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -137,9 +274,16 @@ List the document's headings (levels 1-9) in order, each with its style and para
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `headings` | array | yes | This page of headings, in document order. |
+
 ## `doc.segment` (read)
 
-Split the document into chapters, parts or scenes, with stable ids and the signals that detected them, or split a range into sentences or dialogue lines. Use it to work chapter by chapter or to get sentence addresses (p142#a7b2a7b2.s3); doc.outline lists only styled headings. Detection is tuned with profile and overrides. Read-only.
+Split a manuscript into units with stable ids: unit chapters (default), parts or scenes (detected from headings, numerals, centring, scene markers; signals say which), or sentences or dialogue lines within `range` (an address, p24#a1b2c3d4..p60#e5f6a7b8, or a unit id such as ch-d5a3930d). `chapter` limits scenes to one chapter; language (default es) sets sentence rules; profile and overrides tune detection. Use it to work chapter by chapter or to get sentence addresses (p142#a7b2a7b2.s3); doc.outline lists only styled headings. Read-only; paged at about 8,000 bytes with `cursor`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -153,18 +297,51 @@ Split the document into chapters, parts or scenes, with stable ids and the signa
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `unit` | string |  | chapters, parts or scenes. |
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `front` | object \| null |  | chapters/parts: front matter before the first one (at, first, last, words). |
+| `chapters` | array |  | unit chapters: this page of chapters. |
+| `parts` | array |  | unit parts: this page of parts. |
+| `scenes` | array |  | unit scenes: this page of scenes. |
+| `sentences` | array |  | unit sentences: this page of sentences. |
+| `dialogue` | array |  | unit dialogue: this page of dialogue lines. |
+| `unmatched_overrides` | array |  | Overrides that matched no paragraph. |
+| `suppressed_total` | integer |  | Breaks suppressed (by an override or rule). |
+| `suppressed` | array |  | Suppressed breaks (capped). |
+
 ## `doc.stats` (read)
 
-Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.
+Count what the body holds: paragraphs (and empty ones), words, characters, headings, tables, comments, footnotes, tracked changes by type, styles in use and the 20 most used fonts. stories ["notes", "headers"] adds separate counts for notes and for headers/footers (the body counts stay the body's). Use it to size a document or check for leftover revisions; doc.info gives file facts and the hash, revision.list the changes themselves. Read-only; one reply, not paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `paragraphs` | integer | yes | Body paragraphs. |
+| `empty_paragraphs` | integer | yes | Body paragraphs with no visible text. |
+| `words` | integer | yes | Words in the body (whitespace-separated). |
+| `characters` | integer | yes | Characters in the body. |
+| `headings` | integer | yes | Heading paragraphs. |
+| `tables` | integer | yes | Tables (w:tbl), nested included. |
+| `comments` | integer | yes | Comments. |
+| `revisions` | object | yes | Tracked changes in the body. |
+| `footnotes` | integer | yes | Footnotes. |
+| `styles_in_use` | integer | yes | Distinct styles used. |
+| `fonts` | array | yes | Fonts named in the body and styles, most used first (top 20). |
+| `stories` | object |  | With stories: the same counts for notes and for headers/footers. |
+
 ## `field.list` (read)
 
-Every field of the document, by story: its address, instruction code, type (PAGE, TOC, REF, ADDIN ZOTERO_ITEM, CITATION, ...), result text and whether the result is stale. Covers complex fields (also nested, or split across runs), simple fields and fields in text boxes.
+List every field (PAGE, TOC, REF, SEQ, XE, citations such as ADDIN ZOTERO_ITEM...) with its address, story, code, type, shown result and whether it is stale (needs updating). stories defaults to all: body, notes, headers and comments; `type` keeps one type ("TOC"). Covers nested, split and simple fields and fields in text boxes. Use it before field.update to see what is stale, or to find citations; it never changes anything. Read-only; one reply, not paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -172,22 +349,48 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 | `stories` | array |  | Stories to read (default all): "body", "notes", "headers" and "comments". |
 | `type` | string |  | Only fields of this type, e.g. "TOC" or "ADDIN ZOTERO_ITEM". |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `fields` | array | yes | Every field, story by story, in document order. |
+| `count` | integer | yes | Fields listed. |
+
 ## `field.update` (write)
 
-Recompute the results of the body's TOC, page, page-count, sequence and reference fields through headless LibreOffice and write only those result runs, as tracked changes (the old result is struck, the new one inserted). Without LibreOffice it refuses with ENGINE_UNAVAILABLE naming the stale fields; set_update_on_open sets w:updateFields instead, so Word updates the fields when it opens the file. Citation fields are never changed. SECTIONPAGES, SECTION and NOTEREF are not recomputed (LibreOffice keeps their cached results) and are listed under skipped. INDEX is never recomputed (LibreOffice ignores its switches and flattens sub-entries): every index is left as it is and listed under skipped; rebuild it in Word (F9). A REF that LibreOffice resolves to an error (a missing bookmark) or to nothing (a number of an unnumbered paragraph) keeps its result and is listed under skipped. Fields it could not pair with LibreOffice's are listed under skipped.
+Recompute the body's TOC, PAGE, NUMPAGES, SEQ and REF/PAGEREF results with headless LibreOffice and write only those result runs, as tracked changes (old result struck, new inserted). Needs LibreOffice (soffice): without it, ENGINE_UNAVAILABLE names the stale fields; set_update_on_open instead sets w:updateFields so Word updates them on opening. Citations are never changed; INDEX, SECTIONPAGES, SECTION, NOTEREF and unresolvable REFs are left and listed under `skipped`. Run after toc.insert, caption.add or xref.add. Backed up and undoable; dry_run previews; slow (seconds).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `set_update_on_open` | boolean |  | Only set w:updateFields in settings.xml (no LibreOffice). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `updated` | array | yes | Fields whose result changed. |
+| `unchanged` | integer |  | Fields whose result was already right. |
+| `skipped` | array | yes | Fields left as they are, with why: SECTIONPAGES, SECTION and NOTEREF (LibreOffice keeps their cached results), every INDEX (rebuild it in Word, F9), a REF that resolves to an error or to nothing, and fields not paired with LibreOffice's. |
+| `written` | boolean |  | Whether the document was written. |
+| `set_update_on_open` | boolean |  | True when w:updateFields was set instead. |
+| `changed` | boolean |  | set_update_on_open: whether the setting changed. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `history.adopt` (write)
 
-Re-attach a moved or renamed document to its old history: finds the orphaned store whose last recorded state is this file's sha256 (next to it, in neighbouring folders, app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to where the document's store lives now, keeping backups and log, so history.undo and history.restore work again. A file that differs from the store's last state needs `force`, as does a store whose document still exists; a document that already has history is never overwritten. `dry_run` moves nothing.
+Re-attach a moved or renamed document to its old undo history, so history.undo and history.restore work again. It finds the orphaned store whose last recorded state is this file's sha256 (doc.open lists them as `adoptable`, history.orphans lists all) and moves it, backups and log, to where this document's store lives now. Pass `store` when several match (the reply lists `candidates`); `force` adopts a file edited since; a document that already has history is never overwritten (BATCH_CONFLICT). dry_run moves nothing.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -196,29 +399,59 @@ Re-attach a moved or renamed document to its old history: finds the orphaned sto
 | `force` | boolean |  | Adopt although the document's sha256 is not the store's last. |
 | `dry_run` | boolean |  | Say what would move; move nothing. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `adopted` | boolean | yes | Whether the store was moved to the document. |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `sha_matched` | boolean |  | The file is the store's last recorded state. |
+| `store` | string |  | Where the store lives now (or would). |
+| `entries` | integer |  | Log entries it holds. |
+| `op_id` | string \| null |  | Log entry noting the adoption. |
+| `would_move` | string |  | dry_run: the store that would move. |
+| `candidates` | array |  | When several stores match: pass one as `store`; nothing moved. |
+| `from` | string |  | The orphan store adopted. |
+
 ## `history.list` (read)
 
-List a document's undo log, newest first: each write's op_id, what it changed, whether it was undone, and the deleted paragraphs history.restore can bring back. Use it to find the op_id for history.undo or history.restore; history.search finds a quote in the log. Read-only, paged.
+List the document's undo log, newest first: each write's op_id, kind, time, author, the operations it ran, whether it was undone, and the deleted paragraphs history.restore can bring back (change numbers). Filter with `kind` (batch, restore, undo, open, purge, adopt); `store` reads an orphaned store instead. Use it to find the op_id for history.undo or history.restore; history.search finds a quote in the log. Read-only; paged with limit (default 20) and `cursor` (the reply's `next`).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string |  | Path to the .docx. |
 | `store` | string |  | A store folder (see history.orphans) to read instead of the document's own. |
-| `limit` | integer |  |  |
+| `limit` | integer |  | Most entries per page (default 20). |
 | `cursor` | string |  | The `next` of the previous response. |
-| `kind` | `batch` \| `restore` \| `undo` \| `open` \| `purge` \| `adopt` |  |  |
+| `kind` | `batch` \| `restore` \| `undo` \| `open` \| `purge` \| `adopt` |  | Only entries of this kind (batch: every logged edit). |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `entries` | array | yes | This page of log entries, newest first. |
+| `total` | integer | yes | Entries in the log (after the kind filter). |
+| `unreadable_lines` | integer |  | Log lines that could not be read. |
 
 ## `history.orphans` (read)
 
-List stores whose document is gone (app-data stores, and `dir`/.doc-control). Their history is never deleted automatically: restore from it with `store`, or purge it.
+List undo stores whose document is gone (moved, renamed or deleted): the app-data stores, plus `dir`/.doc-control when `dir` is given, each with its folder, last document path, entry count and last time; `unknown` holds stores that name no document. Their history is never deleted automatically. Use history.adopt to re-attach one to a moved document, history.list or history.restore with `store` to read from it, history.purge with `store` to delete it. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `dir` | string |  | Also scan this folder. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `orphans` | array | yes | Stores whose document is gone. |
+| `unknown` | array | yes | Stores that name no document. |
+| `total` | integer | yes | Orphans found. |
+
 ## `history.purge` (write)
 
-Remove undo history (all, or before a date) for privacy, leaving a tombstone. Run with dry_run first, then repeat with its `confirm`.
+Delete undo history for privacy: the whole log (`all`) or entries before a date (`before`, ISO 8601, UTC), of the document or of an orphaned `store`. Two steps: run with dry_run to see what would go and get a `confirm` token, then repeat with `confirm`; a log that changed in between is refused. Leaves a tombstone entry; backups are not removed by it. Destructive: purged entries can no longer be undone or restored. Use history.list first to check what you remove.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -229,9 +462,22 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 | `dry_run` | boolean |  | List what would go; returns confirm. |
 | `confirm` | string |  | From the dry run. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `scope` | string | yes | What is removed: all, or before <time>. |
+| `removed` | integer | yes | Entries removed (0 on a dry run). |
+| `would_remove` | integer | yes | Entries the scope covers. |
+| `first_op_id` | string \| null |  | Oldest entry removed. |
+| `last_op_id` | string \| null |  | Newest entry removed. |
+| `confirm` | string | yes | Token to pass as confirm to really purge. |
+| `tombstone` | string |  | Op id of the purge entry left in the log. |
+
 ## `history.restore` (write)
 
-Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, without revision marks) after the paragraph that holds its place now. Without `change`, every paragraph the op deleted.
+Bring back paragraphs a logged write deleted or changed, as a tracked insertion (tracked: false: plainly, for a change the writer approved). Give the `op_id` (from history.list or history.search); without `change`, every paragraph that op deleted comes back after the paragraph now holding its old place; `change` picks one (also an edited one) and `after` (p12#a1b2c3d4) places it when that place was edited (BATCH_CONFLICT otherwise). Use history.undo to revert a whole write instead. Backed up, logged, undoable; dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -240,90 +486,184 @@ Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, w
 | `op_id` | string | yes | The logged op the paragraph was changed by. |
 | `change` | integer |  | Index of one change of the op (history.list shows them). |
 | `after` | string |  | Insert after this paragraph address instead of the old place (needed when that place was edited, or the history comes from `store`). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `tracked` | boolean |  | false: a plain write for a change the writer already approved: the paragraph comes back without revision marks (this call's own insertion accepted in the same verified write). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `restored` | array | yes | The paragraphs brought back. |
+| `from` | string | yes | The logged op restored from. |
+
 ## `history.search` (read)
 
-Search a document's undo log for a quote: in the requests, and in the text of every paragraph before and after each write. Use it to find when a passage was changed or deleted, and the op_id for history.undo or history.restore. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at. Read-only.
+Search the undo log for a quote: in each logged request and in the text of every paragraph before and after each write, newest first. Use it to find when a passage was changed or deleted, and the op_id for history.undo or history.restore; text.find searches the current document instead. Exact by default (ignore_case, ignore_accents loosen it); match_level default or loose folds case, accents and punctuation and returns each hit's offsets and level. Works on an orphaned `store` too. Read-only; limit (default 20) caps hits, `total` counts all.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string |  | Path to the .docx. |
 | `store` | string |  | A store folder (see history.orphans) to read instead of the document's own. |
 | `query` | string | yes | Text to find. |
-| `ignore_case` | boolean |  |  |
-| `ignore_accents` | boolean |  |  |
+| `ignore_case` | boolean |  | Ignore case. |
+| `ignore_accents` | boolean |  | Ignore accents: `maria` finds `María`. |
 | `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `text.find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` keeps the flags. When passed, Word's Find codes in `query` are read as their characters, every hit in a text is returned (not only the first, `exact` included), each with `start` and `end` (its offsets in that text: the request's JSON or the paragraph before or after the write, as `in` names it; not offsets into the cut `text`), `match_level` (the strictest level it meets) and `text` cut around it, and the reply gains `matches_by_level`, adding up to `total`. Without it, the first hit per text, with no `start`, `end` or level. Not with `ignore_case` or `ignore_accents` false at a folded level. |
-| `limit` | integer |  |  |
+| `limit` | integer |  | Most hits to return (default 20); `total` counts them all. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `matches` | array | yes | Hits, newest entry first (up to limit). |
+| `total` | integer | yes | Hits in the whole log. |
+| `matches_by_level` | object |  | With match_level: hits per level. |
 
 ## `history.undo` (write)
 
-Take back a logged doc.batch or history.restore (the latest one that is still in effect by default), returning its paragraphs to their prior state. Refused if they were edited since.
+Take back one logged write (doc.batch, text.replace and the other direct writes, term.rename, field and note inserts, layout.apply, history.restore), returning its paragraphs to their state before it: by default the latest one still in effect, or the `op_id` from history.list. Comment and style writes cannot be undone. Refused with BATCH_CONFLICT if a paragraph it changed was edited since (undo the later write first). Use history.restore to bring back single deleted paragraphs, revision.reject to drop tracked changes by author or id. The undo is itself logged; dry_run checks without writing; expect.sha256 refuses a changed file.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `op_id` | string |  | The op to undo (default: the latest in effect). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Check and preview; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `undid` | string | yes | Op id taken back. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `paragraphs` | integer | yes | Paragraphs returned to their prior state. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 ## `index.insert` (write)
 
-Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The field is marked dirty: Word builds the entries and page numbers from the index.mark marks (F9); field.update leaves it alone. Returns the address of the field's paragraph.
+Insert an index (an INDEX field) after a body paragraph `after` (p40#a1b2c3d4), as tracked insertions: a title (default "Index", "" for none), the field with a placeholder result, and a closing paragraph. Mark entries first with index.mark; Word builds the entries and page numbers when the field is updated there (F9), since field.update leaves indexes alone. Backed up and undoable (history.undo); dry_run previews; expect.sha256 refuses a changed file. Returns the field paragraph's address.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `after` | string | yes | Address of the body paragraph it goes after. |
 | `title` | string |  | Title paragraph above it (default "Index"); "" for none. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the field's paragraph. |
+| `after` | string | yes | Address of the paragraph it went after. |
+| `code` | string | yes | The field code. |
+| `title` | string \| null | yes | The title paragraph's text, or null for none. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `index.mark` (write)
 
-Mark an index entry: an XE field, as a tracked insertion, right after a range. The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, which Word builds from the marks.
+Mark an index entry: insert an XE field, as a tracked insertion, right after a range (p8#a1b2c3d4:10-15) so that word or phrase is indexed on its page. `entry` is "Term", or "Term:Sub" / "Term:Sub:Detail" for sub-entries. Mark every occurrence you want listed, then insert the index once with index.insert. Backed up and undoable (history.undo); dry_run previews; expect.sha256 refuses a changed file. Returns the paragraph address and field code.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | A range inside one paragraph; the mark goes after it. |
 | `entry` | string | yes | The index entry, e.g. "Term" or "Term:Sub". |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the paragraph that holds the mark. |
+| `entry` | string | yes | The entry, levels joined with a colon. |
+| `code` | string | yes | The XE field code, e.g. XE "Term:Sub". |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `layout.apply` (write)
 
-Bring the document to a page plan (as layout.get returns it): where each section starts (from), its break (nextPage, oddPage for a right-hand start, evenPage, continuous), the page-number start and format, a different first page, the header and footer text per kind (default, first, even; {PAGE}, {NUMPAGES} and {chapter} become fields; null drops the section's own, so it inherits the previous section's; asking the text a section already prints changes nothing; a new part or a dropped reference that would change what a later section inheriting it prints is refused, as changing a header or footer that later sections inherit is not supported yet), two_sided (even and odd headers) and mirror_margins. Keys left out stay as they are; shown is checked, not set. Breaks, numbering and the text of a header or footer part are tracked changes; a part is rewritten only when every section using it asks the same text, else the section gets a new part. A new part, a dropped reference and two_sided or mirror_margins cannot be tracked and need untracked: true (LAYOUT D-L2). Sections already in the document must all be kept. A section that still holds an unaccepted tracked change of its setup (say from an earlier layout.apply) cannot take another, so a second apply that changes it is refused (UNSUPPORTED_CONTENT) until that change is accepted or rejected. A split-off section keeps the number format of the section it came from unless the plan states one. All or nothing: the plan read back from the result must equal the request, else nothing is written (UNSUPPORTED_CONTENT). dry_run lists the changes and the plan that would result.
+Bring the document to a page plan, the shape layout.get returns: per section its start (`from` address), break, page-number start and format, first-page difference, and header/footer text per kind ({PAGE}, {NUMPAGES}, {chapter} become fields; null inherits). Keys left out stay as they are. Edit the layout.get result and send it back. Breaks, numbering and header text are tracked changes; a new header part, a dropped reference, two_sided or mirror_margins need untracked: true. All or nothing: UNSUPPORTED_CONTENT if the result would differ from the plan or a section has a pending setup change. dry_run lists the changes.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `plan` | object | yes | The page plan: version 1 and sections, each with a from address. |
+| `plan` | object | yes | The page plan, as layout.get returns it: version 1, two_sided, mirror_margins and sections, each with a `from` address; keys left out stay as they are, and numbering.shown is checked, not set. Every section already in the document must be kept. A header/footer text a section already prints changes nothing; a shared part is rewritten only when every section using it asks the same text, else the section gets a new part. Changing a header or footer that a later section inherits is refused. A split-off section keeps the number format of the one it came from unless the plan states one. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `untracked` | boolean |  | Allow a change Word cannot track (LAYOUT D-L2). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `changes` | array | yes | What changed (or would): section properties, breaks, header/footer text, settings. |
+| `plan` | object | yes | The page plan after the write (as layout.get returns it). |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `layout.get` (read)
 
-The document's page plan: per section where it starts, its break, page numbering, title page, and the header and footer text per kind (default, first, even), with PAGE, NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the section does not define is null (inherited). The plan carries "version": 1.
+Read the page plan: per section where it starts (`from` address), its break, page numbering (shown, start, format), first-page difference, and header/footer text per kind (default, first, even) with fields as {PAGE}, {NUMPAGES} and {chapter}; null means inherited from the previous section. Edit it and pass it to layout.apply to change the layout; section.list gives the same setup with header/footer part names instead of text. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `version` | integer | yes | Plan format version (1). |
+| `two_sided` | boolean | yes | Different even and odd headers. |
+| `mirror_margins` | boolean | yes | Mirrored margins. |
+| `sections` | array | yes | Each section, in order. |
+
 ## `live.close` (write)
 
-Close the open document; with unsaved changes it needs `save` or `discard`.
+Close the document in its Word or LibreOffice window (attached with live.open). With unsaved changes it is refused (UNSAVED_CHANGES) unless `save` (save, then close) or `discard` (drop them) is given; nothing unsaved is ever lost silently. Use live.save to keep the window open. Returns whether it saved.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -332,18 +672,32 @@ Close the open document; with unsaved changes it needs `save` or `discard`.
 | `save` | boolean |  | Save, then close. |
 | `discard` | boolean |  | Close and drop the unsaved changes. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `closed` | boolean | yes | Always true. |
+| `saved` | boolean | yes | Whether it was saved first. |
+
 ## `live.get_selection` (read)
 
-Read what the user has selected in Word or LibreOffice right now, and the paragraph (with its address) the cursor is in. Use it when the user points at text ("this paragraph", "here"). Read-only; the document must be attached with live.open.
+Read what the user has selected in Word or LibreOffice right now, and the paragraph the selection starts in with its address (p12#a1b2c3d4), to edit with doc.batch or text.replace. Use it when the user points at text ("this paragraph", "here"); live.select moves the selection instead. The document must be attached with live.open (ENGINE_UNAVAILABLE otherwise). Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `text` | string | yes | The selected text (empty for a bare cursor). |
+| `paragraph` | object | yes | The paragraph the selection starts in. |
+
 ## `live.open` (write)
 
-Attach to Word or LibreOffice for live editing: find the app window already holding the document, or open it in the app (`app`). Call it before the other live operations (engine live). It opens or focuses a window but does not change the document.
+Attach to Word or LibreOffice for live editing: find the window already holding the document, or open it in `app` (word or libreoffice; default the one reachable, see live.status) and bring it to the front (front: false keeps it behind). Call it before live.select, live.get_selection, live.save, live.close and doc.batch with engine live. Opens or focuses a window; never changes the document. ENGINE_UNAVAILABLE when no app can be driven, DOC_AMBIGUOUS when a file name matches several open documents.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -352,9 +706,18 @@ Attach to Word or LibreOffice for live editing: find the app window already hold
 | `app` | string |  | `word` or `libreoffice`. |
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `app` | string | yes | The app now attached (word or libreoffice). |
+| `path` | string | yes | Full path of the document. |
+| `dirty` | boolean | yes | It has unsaved changes. |
+| `front` | boolean |  | With front: whether its window was brought to the front. |
+
 ## `live.places` (read)
 
-Show a list of places in the document as buttons; in a client that renders MCP Apps, a click calls `live.select` on that place directly, with no assistant turn.
+Show the user a list of places as clickable buttons: in a client that renders MCP Apps, a click moves Word's or LibreOffice's cursor there (mode cursor) or selects the paragraph (mode select) by calling live.select, with no assistant turn. Each place has a `label` and an `at` address and/or a `find_phrase` from para.locate. Use it to walk a writer through findings; live.select jumps to one place directly. Other clients just get the list back. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -363,18 +726,32 @@ Show a list of places in the document as buttons; in a client that renders MCP A
 | `places` | array | yes | The buttons, in order: a `label` and `at` or `find_phrase` each (with both, `find_phrase` is tried when `at` fails). |
 | `mode` | `cursor` \| `select` |  | What a click does: `cursor` (default) puts the cursor at the place's start; `select` selects its paragraph. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | The document, as given. |
+| `mode` | string | yes | cursor or select: what a click does. |
+| `places` | array | yes | The places, as given. |
+
 ## `live.save` (write)
 
-Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (doc.batch with engine live) to keep them; live.close with save: true saves and closes in one call.
+Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (doc.batch with engine live) to keep them; live.close with save: true saves and closes in one call. Overwrites the file on disk with the app's version; no backup is taken.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `saved` | boolean | yes | Always true: the app saved the file. |
+
 ## `live.select` (write)
 
-Show the user a place: select a paragraph (or put the cursor at it) in the Word or LibreOffice window, by address (`at`) or by a para.locate find phrase, and return its text and address. Changes only the selection, never the text; the document must be attached with live.open.
+Show the user a place in Word or LibreOffice: select a paragraph, or with mode cursor only put the cursor at its start, by address (`at`, p142#a7b2a7b2) or by a `find_phrase` from para.locate (matched loosely per match_level). paragraphs_after moves on that many paragraphs. Use it to point at a passage you are discussing; live.places offers several as buttons. Changes only the selection; needs live.open. STALE_ADDRESS when `at` no longer matches, ANCHOR_NOT_FOUND or ANCHOR_AMBIGUOUS for a phrase.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -388,33 +765,70 @@ Show the user a place: select a paragraph (or put the cursor at it) in the Word 
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 | `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `text` | string | yes | Text of the paragraph selected. |
+| `at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `match_level` | string |  | By find_phrase: the level it matched at. |
+| `matched_text` | string |  | By find_phrase: the text matched, when not exact. |
+| `front` | boolean |  | With front: whether the window was brought to the front. |
+
 ## `live.status` (read)
 
-Check which live apps (Word, LibreOffice) are running and reachable and which documents they have open; with `doc`, which app holds it, its full path and whether it has unsaved changes. Call it before live.open. Read-only.
+Check the live apps: which of Word and LibreOffice are installed and reachable, and which documents they have open; with `doc`, which app holds it, whether that app is driven by this server or only a lock file says so, its full path and whether it has unsaved changes. Call it before live.open, or to decide between live editing and the file engine (a file open in Word should be edited live or closed first). Read-only; never fails for a missing app.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string |  | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `apps` | array | yes | Every live app, running or not. |
+| `open_in` | object \| null | yes | With doc: the app holding it {app, controlled, stale}; controlled false means only a lock file says so. Null when no app has it open. |
+| `dirty` | boolean | yes | With doc: it has unsaved changes. |
+| `path` | string |  | With doc: its full path. |
+| `documents` | array |  | Without doc: the documents the apps have open. |
+| `update` | object |  | Opt-in update notice (DOC_CONTROL_UPDATE_CHECK): the newest release. |
+
 ## `note.add` (write)
 
-Add a footnote or endnote at a body offset: the reference mark and the note text are both tracked insertions, so rejecting them removes the note. Creates the notes part when the document has none. Returns the note's id, displayed number and address.
+Add a footnote or endnote: the reference mark goes at a body point (p3#a1b2c3d4:10-10, after offset 10), after a range, or at the end of a paragraph (p3#a1b2c3d4); `text` is the note's one line. Mark and note are tracked insertions, so rejecting them removes the note; the notes part is created when missing. Backed up and undoable (history.undo); dry_run previews; expect.sha256 refuses a changed file. Returns the note's id, displayed number and address (fn5/p1#…).
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `at` | string | yes | Body point p3#fp:10-10 (the mark goes after the offset), a range inside one paragraph (after it) or a paragraph (at its end). |
-| `kind` | `footnote` \| `endnote` | yes |  |
+| `kind` | `footnote` \| `endnote` | yes | footnote (bottom of the page) or endnote (end of the document). |
 | `text` | string | yes | The note text, one line. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `note` | object | yes | The new note. |
+| `mark_at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `created_part` | boolean | yes | Whether the footnotes/endnotes part was created. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `page.estimate` (read)
 
-Estimated page of each paragraph (or of one): rendered page marks and explicit breaks first, a word-count model otherwise. Always `estimated: true`.
+Estimate the page each paragraph starts on (and ends on when it spans pages): from Word's rendered page marks and explicit breaks where present, else a words-per-page model; always flagged `estimated`. `at` (p142#a7b2a7b2) gives one paragraph; by "page" lists pages with their first and last paragraph instead. Use it to tell a user roughly where text is; para.locate adds chapter, scene and a find phrase. Read-only; paged at about 8,000 bytes with `cursor`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -424,23 +838,62 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `estimated` | boolean | yes | Always true: pages are estimates. |
+| `page_count` | integer | yes | Estimated page count. |
+| `basis` | string | yes | model, or rendered+model when Word's page marks are used. |
+| `words_per_page` | integer | yes | Words per page the model assumes. |
+| `rendered_marks` | integer | yes | Rendered page-break marks found. |
+| `model` | object | yes | The model's constants. |
+| `notes` | array | yes | Caveats about the estimate. |
+| `total` | integer |  | Items in the whole list, across pages. |
+| `paragraphs` | array |  | by paragraph: this page of rows. |
+| `pages` | array |  | by page: this page of rows. |
+| `at` | string |  | With at: the paragraph. |
+| `page` | integer |  | Estimated page (1-based). |
+| `page_label` | integer \| string |  | Page number as printed. |
+| `source` | string |  | rendered (Word's page marks), break (explicit break) or model. |
+| `end_page` | integer |  | Page it ends on, when it runs onto another page. |
+| `end_page_label` | integer \| string |  | Page number as printed. |
+
 ## `para.delete` (write)
 
-Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked deletion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; text.replace and para.insert live too). Use doc.batch to apply several edits all or nothing.
+Delete a paragraph (p3#a1b2c3d4) or a run of paragraphs (p3#a1b2c3d4..p5#e5f6a7b8), as a tracked deletion the writer can reject. File engine: backed up first, logged for history.undo, dry_run previews, expect.sha256 refuses a file changed since; tracked: false deletes plainly (a change the writer approved). STALE_ADDRESS if the paragraph changed since it was read. Use text.replace to delete part of a paragraph, doc.batch for several edits all or nothing. Returns the address_map of shifted paragraphs.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations). engine live: the app's change tracking is off for the edit and put back after; text.replace and para.insert, refused (UNSUPPORTED_CONTENT) next to another unresolved tracked change; the app's undo takes it back. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | Paragraph p3#fp or run p3#fp..p5#fp. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `para.get` (read)
 
-Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; para.list reads many at once. Read-only; a long text is paged.
+Read one paragraph in full by address (p142#a7b2a7b2, or fn3/p1#… in a note): text, style, direct paragraph formatting, character-formatted spans (bold, italic, font...) and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph or to check its formatting; para.list reads many paragraphs, style.get a style. Read-only; a very long text is paged (limit characters, `cursor` from the reply's `next`). STALE_ADDRESS if it changed since read.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -449,26 +902,70 @@ Read one paragraph by address in full: text, style, direct formatting and format
 | `limit` | integer |  | Most characters of text to return. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `number` | integer | yes | Paragraph number (1-based) in its story. |
+| `length` | integer | yes | Length of the whole text, in code points. |
+| `style` | string \| null | yes | Paragraph style id. |
+| `style_name` | string \| null | yes | Paragraph style display name. |
+| `format` | object | yes | Direct paragraph formatting (alignment, indent, spacing...). |
+| `empty` | boolean |  | No visible text. |
+| `blank_before` | integer |  | Empty paragraphs right before it. |
+| `heading_level` | integer \| null |  | 1-9 for a heading, null for a body paragraph. |
+| `centred` | boolean |  | Whether it is centred. |
+| `page_break_before` | boolean |  | Whether it starts a page. |
+| `story` | string |  | Story kind outside the body: footnote, endnote, header or footer. |
+| `note` | object \| null |  | A note's id, displayed number and the body paragraph holding its mark. |
+| `section` | integer |  | Section (1-based) whose header or footer this is. |
+| `kind` | string |  | Header/footer kind: default, first or even. |
+| `used_by_sections` | array |  | Sections that show this header or footer. |
+| `offset` | integer | yes | Where this page of text starts in the paragraph. |
+| `text` | string | yes | This page of the text. |
+| `runs` | array | yes | Spans of the text with direct character formatting. |
+
 ## `para.insert` (write)
 
-Insert one new paragraph after or before a paragraph (give one of them), as a tracked insertion. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; text.replace and para.insert live too). Use doc.batch to apply several edits all or nothing.
+Insert one new paragraph with `text` after or before an existing one (give `after` or `before`, e.g. p3#a1b2c3d4), as a tracked insertion (style it with style.apply in doc.batch). File engine: backed up first, logged for history.undo, dry_run previews, expect.sha256 refuses a changed file. tracked: false inserts plainly, on either engine. engine live inserts in the open Word/LibreOffice window (after live.open). Use doc.batch for several edits all or nothing. Returns the address_map of shifted paragraphs.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations). engine live: the app's change tracking is off for the edit and put back after; text.replace and para.insert, refused (UNSUPPORTED_CONTENT) next to another unresolved tracked change; the app's undo takes it back. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
-| `text` | string | yes |  |
+| `text` | string | yes | Text of the new paragraph. |
 | `after` | string |  | Insert after this paragraph (or before). |
 | `before` | string |  | Insert before this paragraph (or after). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `para.list` (read)
 
-Every paragraph with its address, text, style and layout facts (optionally the normalised text and the estimated page), in document order. heading_level is null for a body paragraph.
+List every paragraph in document order with its address, text, style, heading level and layout facts (centred, page break before, blank paragraphs before, empty, table cell); heading_level is null for a body paragraph. normalized adds normalised text, pages the estimated page, stories notes or headers. Use it to index or scan a whole document; para.get reads one paragraph with formatting, doc.outline only headings, text.find searches. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -479,9 +976,19 @@ Every paragraph with its address, text, style and layout facts (optionally the n
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `paragraphs` | array | yes | This page of paragraphs, in document order. |
+| `page_basis` | string |  | With pages: model, or rendered+model when Word's page marks are used. |
+| `rendered_marks` | integer |  | With pages: rendered page-break marks found. |
+| `page_count` | integer |  | With pages: estimated page count. |
+
 ## `para.locate` (read)
 
-Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Either phrase can be null (empty, duplicate or no unique phrase), with a reason saying why. Use it to tell a user where a passage is, or to get a find phrase for live.select; doc.outline lists only headings, text.find searches text, page.estimate gives only pages. Read-only.
+Say where paragraphs are, in terms a person can follow: for one paragraph, a range (p40#a1b2c3d4:0..p45#e5f6a7b8:0, offsets ignored) or the whole document, each one's chapter, scene, estimated page, shortest unique first … last words phrase, and a phrase Word's Find meets exactly once (for Ctrl+F or live.select). A phrase can be null with a `reason` (empty, duplicate). structure: false skips chapter detection for speed. Use it to tell a writer where a passage is; page.estimate gives only pages. Read-only; paged at about 8,000 bytes with `cursor`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -493,13 +1000,30 @@ Say where paragraphs are, for a person: for one paragraph, a range or the whole 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `estimated` | boolean | yes | Always true: pages are estimates. |
+| `page_count` | integer |  | Estimated page count. |
+| `basis` | string |  | Page basis: model or rendered+model. |
+| `total` | integer |  | Items in the whole list, across pages. |
+| `paragraphs` | array | yes | This page of paragraphs. |
+
 ## `recipe.list` (read)
 
-List the bundled and user recipes, and any recipe files that are invalid.
+List the cleanup recipes recipe.run can apply: the bundled ones and the user's own, each with name, version, description and source, plus any recipe files that failed validation and why. Call it to pick a recipe before recipe.run. Read-only; needs no document.
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `recipes` | array | yes | Every usable recipe, by name. |
+| `invalid` | array | yes | Recipe files that could not be loaded. |
 
 ## `recipe.run` (write)
 
-Run a recipe and return a batch proposal (repeated until stable); apply it with doc.batch.
+Run a cleanup recipe (a name from recipe.list, or an inline `definition`) over the document and return the edits it proposes as a ready doc.batch request (`batch`, guarded by expect.sha256), repeating until the text is stable. Writes nothing itself: review the proposal, then apply it with doc.batch (dry_run there to preview). RECIPE_INVALID for an unknown or invalid recipe; edits that would touch unsupported content are listed under skipped. Refused for .txt/.md/.odt sources, which cannot be written.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -508,23 +1032,54 @@ Run a recipe and return a batch proposal (repeated until stable); apply it with 
 | `definition` | object |  | An inline declarative recipe (same schema as a stored one). |
 | `dry_run` | boolean |  | Accepted for symmetry; recipe.run never writes. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `recipe` | string | yes | The recipe's name. |
+| `applied` | boolean | yes | Always false: nothing is written. |
+| `matches` | integer | yes | Matches found. |
+| `passes` | integer | yes | Passes run until the text stopped changing. |
+| `stable` | boolean | yes | Whether it reached a fixed point. |
+| `skipped` | array | yes | Proposed edits left out, with why. |
+| `batch` | object | yes | The doc.batch request to apply: pass it as is. |
+
 ## `revision.accept` (write)
 
-Accept tracked changes: by ids (from revision.list), by revision author, in a paragraph or run (at), or all of them. Not itself tracked: on the file engine the file is backed up first and the write is logged for history.undo, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Accept tracked changes, making them plain text: by `ids` (from revision.list), by revision `author`, in a paragraph or run (`at`, p3#a1b2c3d4..p9#e5f6a7b8), or `all`. Not itself a tracked change: on the file engine the file is backed up first and the write is logged for history.undo; dry_run previews counts; expect.sha256 refuses a changed file. Use revision.reject to drop changes instead, doc.batch to accept and reject in one write. Returns counts and the revisions resolved.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `ids` | array |  | Accept the revisions with these ids (from revision.list). |
 | `author` | string |  | Exact revision author. |
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `revision.list` (read)
 
-List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with doc.batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
+List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, type, author, date, paragraph address and text (clipped at 200 characters). Filter by `author` or `type`; stories notes or headers adds their changes. Use the ids with revision.accept or revision.reject; doc.stats counts changes by type. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -535,43 +1090,96 @@ List the tracked changes (insertions, deletions, moves, formatting, table rows a
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `revisions` | array | yes | This page of tracked changes, in document order. |
+
 ## `revision.reject` (write)
 
-Reject tracked changes: by ids (from revision.list), by revision author, in a paragraph or run (at), or all of them. Not itself tracked: on the file engine the file is backed up first and the write is logged for history.undo, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
+Reject tracked changes, undoing them in the text (insertions removed, deletions restored): by `ids` (from revision.list), by revision `author`, in a paragraph or run (`at`, p3#a1b2c3d4..p9#e5f6a7b8), or `all`. Not itself a tracked change: on the file engine the file is backed up first and the write is logged for history.undo; dry_run previews counts; expect.sha256 refuses a changed file. Use revision.accept to keep changes instead, doc.batch to accept and reject in one write. Returns counts and the revisions resolved.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `ids` | array |  | Reject the revisions with these ids (from revision.list). |
 | `author` | string |  | Exact revision author. |
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `section.list` (read)
 
-List each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer part address per kind (default, first, even). Use layout.get for the same plan with the header and footer text, in the form layout.apply takes back. Read-only.
+List each section's page setup: break type, title page, even/odd headers, page-number start and format, and which header and footer story (hdr1.default, ftr2.first...) it uses per kind; null means inherited. Use the story keys to read header text with para.list (stories headers) or para.get; layout.get gives the same setup with the header and footer text, in the form layout.apply takes. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `sections` | array | yes | Each section, in order. |
+
 ## `server.capabilities` (read)
 
-Describe this doc-control server: API version, engines (file, live), whether it is a frozen build, and every operation it offers. Call it once at the start; server.help gives one operation's full schema. Read-only; needs no document.
+Describe this doc-control server: API and package version, engines (file, live), which live apps are reachable, feature support per engine, every operation with its kind and summary, every error code, and whether it is a frozen build. Call it once at the start of a session; server.help gives one operation's full request and result schemas. Read-only; needs no document.
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `api` | string | yes | API version of the envelope. |
+| `version` | string | yes | doc-control version. |
+| `engines` | array | yes | Engines: file, live. |
+| `live` | object | yes | The live engine. |
+| `features` | object | yes | Feature support per engine. |
+| `operations` | array | yes | Every operation. |
+| `errors` | array | yes | Every error code. |
+| `build` | object | yes | How this copy was built. |
+| `update` | object |  | Opt-in update notice (DOC_CONTROL_UPDATE_CHECK): the newest release. |
 
 ## `server.help` (read)
 
-JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in `ops` (text.replace, comment.add…), listed under batch_operations; a name that is both gets both. An operation's old name (before 0.7.0) gives the operation it was renamed to.
+Get the JSON Schemas of one operation (`op`, e.g. "para.get": its request schema and its result's output_schema), or of every operation when `op` is left out. A doc.batch kind ("comment.reply", "para.move"...) gives the fields it takes inside `ops`, under batch_operations; a name that is both gets both. Old names (before 0.7.0) give the renamed operation. Call it before using an operation whose fields you are unsure of; server.capabilities lists the operations. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | string |  | Operation or batch operation kind. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `operations` | object |  | Name -> {kind, summary, schema (JSON Schema of the request), and output_schema (of the result) when one operation is asked}. |
+| `batch_operations` | object |  | doc.batch kind -> {kind, summary, schema}. |
+
 ## `style.create` (write)
 
-Add a new paragraph, character, table or numbering style to the document, with its parent, next and linked styles and its run and paragraph formatting. Refused when the id or name already exists: use style.update to change a style, style.rename to rename one, styleset.install to add many at once. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
+Add a new paragraph, character, table or numbering style with its parent (based_on), next and linked styles and run and paragraph formatting (e.g. run {"bold": true, "size_pt": 14}; paragraph in twips). `id` defaults from `name`. Refused (STYLE_CONFLICT) when the id or name exists: use style.update to change a style, style.rename to rename one, styleset.install to add many. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -587,21 +1195,53 @@ Add a new paragraph, character, table or numbering style to the document, with i
 | `custom` | boolean |  | A user-defined (not built-in) style. |
 | `run` | object |  | Character formatting: bold, italic, small_caps, strike, underline, font, size_pt, color, highlight, vertical_align; null removes a key. |
 | `paragraph` | object |  | Paragraph formatting (twips): alignment, indent{left,right,first_line,hanging}, spacing{before,after,line,line_rule}, keep_next, keep_lines, page_break_before, outline_level; null removes a key. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `style.get` (read)
 
-One style by id or name: its own formatting, inherited formatting and heading level.
+Read one style by id or name ("Heading1" or "heading 1"): its type, parent chain, next and linked styles, how often it is used, heading level, the formatting it sets itself and its effective formatting after inheritance. Use it before style.update, or to see why text looks as it does; style.list lists all styles, para.get a paragraph's direct formatting. Read-only; STYLE_NOT_FOUND for an unknown style.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `style` | string | yes | Style id or name. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Style id (w:styleId). |
+| `name` | string | yes | Display name. |
+| `type` | string | yes | paragraph, character, table or numbering. |
+| `based_on` | string |  | Parent style id. |
+| `default` | boolean |  | True for the default style of its type. |
+| `custom` | boolean |  | True for a user-defined style. |
+| `used` | integer | yes | Uses in the body. |
+| `next` | string |  | Style of the paragraph after this one. |
+| `link` | string |  | Linked paragraph/character style. |
+| `quick` | boolean | yes | Shown in the quick style gallery. |
+| `heading_level` | integer \| null | yes | 1-9 for a heading style, else null. |
+| `chain` | array | yes | The style and its ancestors, nearest first. |
+| `own` | object | yes | Formatting the style sets itself. |
+| `effective` | object | yes | Formatting after inheritance. |
+
 ## `style.list` (read)
 
-List the styles defined in the document and how many times each is used; filter by type or to used styles only. Use style.get for one style's full and inherited formatting. Read-only, paged.
+List the styles defined in the document with id, name, type, parent and how many times each is used in the body. `type` keeps one kind (paragraph, character, table, numbering); used_only drops unused ones. Use it to find styles to clean up or reuse; style.get gives one style's full and inherited formatting. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -611,21 +1251,41 @@ List the styles defined in the document and how many times each is used; filter 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `styles` | array | yes | This page of styles. |
+
 ## `style.merge` (write)
 
-Merge styles: re-point every use of the `from` styles to `into`, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames. Not a tracked change: the file is backed up first and the write is logged for undo; check with dry_run first.
+Merge styles: re-point every use of the `from` style or styles (ids or names) to `into` in the body, notes, headers and other styles, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames, style.update changes formatting. Not a tracked change and not in the undo log, and it removes style definitions: the file is backed up first (`backup`); check with dry_run first. STYLE_NOT_FOUND for an unknown style.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `from` | any | yes | Style id or name, or a list of them (they are removed). |
 | `into` | string | yes | Style id or name. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `style.rename` (write)
 
-Rename a style's display name and/or id; every reference follows (paragraphs, headers, notes, numbering, and based_on, next and link in other styles). Use style.merge to fold one style into another instead. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
+Rename a style's display `name` and/or `id` (id defaults from the name); every reference follows: paragraphs, runs, headers, notes, numbering, and based_on, next and link in other styles. STYLE_CONFLICT if the new name or id is taken. Use style.merge to fold one style into another instead. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -633,12 +1293,25 @@ Rename a style's display name and/or id; every reference follows (paragraphs, he
 | `style` | string | yes | Style id or name. |
 | `name` | string |  | Display name. |
 | `id` | string |  | Style id (default: from the name). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `style.update` (write)
 
-Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (null removes a key). Every paragraph using the style changes with it; to format one paragraph, use format.apply in doc.batch. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
+Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (e.g. run {"italic": true, "font": "Garamond"}; null removes a key; other keys stay). Every paragraph using the style changes with it; to format one paragraph use format.apply in doc.batch. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews. STYLE_NOT_FOUND for an unknown style.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -650,12 +1323,25 @@ Change an existing style: its parent (based_on), next or linked style, quick-gal
 | `quick` | boolean |  | Show in the quick-style gallery. |
 | `run` | object |  | Character formatting: bold, italic, small_caps, strike, underline, font, size_pt, color, highlight, vertical_align; null removes a key. |
 | `paragraph` | object |  | Paragraph formatting (twips): alignment, indent{left,right,first_line,hanging}, spacing{before,after,line,line_rule}, keep_next, keep_lines, page_break_before, outline_level; null removes a key. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `styleset.export` (read)
 
-Export the document's styles (all, the ones named, or custom ones only) as a JSON style set, returned and optionally also written to `out`. Feed it to styleset.install on another document; styleset.export_dotx writes a Word template instead. The document is not changed.
+Export the document's style definitions (all, the `styles` named, or custom_only) as a JSON style set, returned and also written to `out` when given (never overwrites an existing file). Feed it to styleset.install on another document to copy the look; styleset.export_dotx writes a Word template instead. The document is not changed.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -665,9 +1351,17 @@ Export the document's styles (all, the ones named, or custom ones only) as a JSO
 | `custom_only` | boolean |  | Only user-defined styles. |
 | `out` | string |  | Also write the JSON here. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `styleset` | object | yes | The style set (styleset.install takes it as is). |
+| `count` | integer | yes | Styles exported. |
+| `path` | string |  | With out: the file written. |
+
 ## `styleset.export_dotx` (write)
 
-Write the document's styles (all, the ones named, or custom ones only) to a new .dotx Word template at `out`; the document itself is never changed. styleset.import_dotx brings a template's styles into a document; styleset.export gives a JSON style set instead.
+Write the document's style definitions (all, the `styles` named, or custom_only) to a new .dotx Word template at `out` (must not exist), for Word users to attach or base documents on. The document itself is never changed. styleset.import_dotx brings a template's styles into a document; styleset.export gives a JSON style set instead. Returns the path, style count and size.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -677,21 +1371,42 @@ Write the document's styles (all, the ones named, or custom ones only) to a new 
 | `styles` | array |  | Only these styles (ids or names). |
 | `custom_only` | boolean |  | Only user-defined styles. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The template written. |
+| `count` | integer | yes | Styles in it. |
+| `bytes` | integer | yes | Its size. |
+
 ## `styleset.import_dotx` (write)
 
-Install the styles of a .dotx template into the document: new styles are added, existing ones replaced (or skipped); dry_run previews.
+Install the styles of a .dotx Word template (`path`) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to apply a house template; styleset.install takes a JSON style set, style.create adds one style. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `path` | string | yes | The .dotx to read. |
 | `on_conflict` | `replace` \| `skip` \| `error` |  | A style id already in the document (default replace). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style in the template. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `styleset.install` (write)
 
-Install a JSON style set into the document: new styles are added, existing ones replaced (or skipped); dry_run previews.
+Install a JSON style set (inline `styleset`, or a file at `path`, as styleset.export writes it) into the document: new styles are added, existing ids replaced (on_conflict replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles between documents; styleset.import_dotx reads a Word template, style.create adds one style. Not a tracked change and not in the undo log: the file is backed up first (`backup`); dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -699,12 +1414,25 @@ Install a JSON style set into the document: new styles are added, existing ones 
 | `styleset` | object |  | The style set (inline). |
 | `path` | string |  | Or a style set file. |
 | `on_conflict` | `replace` \| `skip` \| `error` |  | A style id already in the document (default replace). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style in the set. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `table.get` (read)
 
-One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it; an empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` works in any story (a footnote's table is numbered within that footnote's story).
+Read one table's grid: rows of cells, each with its first grid column, span, vertical merge (null, restart, continue) and the addresses of its paragraphs (read their text with para.get or para.list). Name it by `table` (1-based, body only, the `cell.table` para.list shows) or by `at`, any paragraph address in it, also in notes and headers. Use it before table.row.insert/delete or to edit cells with text.replace. Read-only; ANCHOR_NOT_FOUND for no such table.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -712,23 +1440,47 @@ One table's grid: its rows of cells, each with its first grid column (`col`), `s
 | `table` | integer |  | Table number in the main story, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. Tables of notes, headers and footers are reached with `at`. |
 | `at` | string |  | Instead of `table`: any paragraph address in the table, in any story (`fn3/p1#…`, `hdr1.default/p1#…`); the reply's `table` is then numbered within that story. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `table` | integer | yes | Table number (in its story). |
+| `rows` | array | yes | Rows, each a list of cells. |
+
 ## `table.row.delete` (write)
 
-Delete a row of a body table as a tracked change (w:trPr/w:del, tracked deleted runs). Refused for a row with a vertical merge (w:vMerge) cell.
+Delete one row of a body table (`table` as table.get numbers it, `row` 1-based) as a tracked change the writer can reject. Refused (UNSUPPORTED_CONTENT) for a row with a vertically merged cell. Backed up and logged for history.undo; dry_run previews; expect.sha256 refuses a changed file. Use doc.batch to change several rows at once, para.delete for paragraphs outside tables.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
 | `row` | integer | yes | The row, 1-based. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array | yes | One entry per edit: what changes where. |
+| `address_map` | object | yes | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `table.row.insert` (write)
 
-Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text), after row `after_row`, one text per cell. Refused between two rows that a vertical merge spans.
+Insert a row into a body table as a tracked change: after row `after_row` (0: before the first), with one text per cell in `cells` (e.g. ["2024", "12.5"]), matching the row it follows (SCHEMA_INVALID otherwise). Refused (UNSUPPORTED_CONTENT) between two rows a vertical merge spans. Backed up and logged for history.undo; dry_run previews; expect.sha256 refuses a changed file. Use doc.batch for several rows at once.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -736,14 +1488,31 @@ Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text),
 | `table` | integer | yes | Table number as `table.get` numbers it: 1-based, in document order, main story only (a table in a note, header or footer cannot be named here). |
 | `after_row` | integer | yes | Insert after this row (1-based); 0 inserts before the first row. |
 | `cells` | array | yes | One text per cell of the row it follows (the first row for after_row 0); a horizontally merged cell is one cell. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array | yes | One entry per edit: what changes where. |
+| `address_map` | object | yes | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `term.rename` (write)
 
-Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch (tracked: false writes it plainly): whole word, case, preserve case and inflections. Use it instead of many text.replace edits; run dry_run first to check the counts. Exact unless `match_level` folds it; then each change says the level it matched at.
+Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch: whole words by default, case-insensitive with case preserved (LUCÍA becomes ELENA), with optional inflections (["s"] also renames Lucías) and ignore_accents. match_level default/loose folds case, accents and punctuation. Matches inside fields or links are left and counted. Run dry_run first to check counts and the preview, then the same request without it. Use it instead of many text.replace edits. Backed up, undoable; tracked: false writes plainly.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -756,16 +1525,36 @@ Rename a term or a character's name everywhere (Lucía to Elena) as one tracked 
 | `ignore_accents` | boolean |  | `Lucia` also matches `Lucía`. |
 | `inflections` | array |  | Suffixes that follow the term: "s" renames Lucías to Elenas; {"from": "o", "to": "a"} renames Lucíao to Elenaa. |
 | `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `text.find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` is the rename as without it. When passed, Word's Find codes in `from` are read as their characters, each `preview` change and `skipped` row gains `match_level` (the strictest level it meets) and the reply gains `matches_by_level`, adding up to `counts.matches`. No retry at a looser level. Two meanings of exact: without `match_level` the rename is today's, with ^ codes literal and no levels; `match_level: "exact"` keeps that rule but reads the ^ codes and tags each change (`exact` there: character for character). Not with `case_sensitive` or `ignore_accents: false` at a folded level. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Plan and preview only; write nothing. |
 | `preview_limit` | integer |  | Most changes echoed back in `preview`. |
 | `tracked` | boolean |  | false: a plain write for a change the writer already approved: the same edits, with this call's own revisions accepted in the same verified write (no revision marks; undo works). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `to` | string | yes | The new name. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `counts` | object | yes | Counts. |
+| `skipped` | array | yes | Matches left alone (capped). |
+| `preview` | array | yes | The changes (capped). |
+| `matches_by_level` | object |  | With match_level: matches per level. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `from` | string | yes | The name replaced. |
+
 ## `text.find` (read)
 
-Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex; null at a folded `match_level`), with `query_word_options` (match_case, whole_words) to tick there.
+Find text or a Python regex (`regex`) in the document; each match comes back as a range (p8#b72009e4:0-8) with context, ready for text.replace or anchor.create. ignore_case, ignore_accents (maria finds María), whole_word and match_level (default: also ignores punctuation) loosen it; stories adds notes or headers. The first page gives `total`, and query_word, the query as typed in Word's Find box. Use para.locate to describe where a paragraph is, history.search for removed text. Read-only; limit (default 20) per page, `cursor` continues; stops after 10 s with `more`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -781,9 +1570,20 @@ Find text or a regex; matches come back as paragraph ranges, capped, with a curs
 | `cursor` | string |  | The `next` value of the previous page. |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `matches` | array | yes | This page of matches, in document order. |
+| `total` | integer |  | First page only: matches in the whole document. |
+| `total_at_least` | integer |  | First page, time budget hit: matches counted so far. |
+| `more` | boolean |  | First page, time budget hit: true (more matches may follow). |
+| `query_word` | string \| null |  | The query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^ codes); null past 255 characters, with ignore_accents, with a soft or no-break hyphen, or at a folded match_level. Absent for a regex. |
+| `query_word_options` | object |  | Find options to tick in Word for the same matches. |
+
 ## `text.normalize` (read)
 
-Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) with a two-way offset map to the original code points, for a document (whole, or the paragraph/range `at`) or for a `text` string.
+Normalise text (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) and return a two-way offset map to the original code points, for the whole document, one paragraph or range (`at`, p142#a7b2a7b2:10-15), or a `text` string (give `doc` or `text`). Use it to compare or search text robustly and map found offsets back to addresses for text.replace; para.list normalized adds just the text. Read-only; paged at about 8,000 bytes with `cursor`; a very long paragraph comes in parts.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -793,14 +1593,21 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Paragraphs (or text strings) in the selection. |
+| `paragraphs` | array | yes | This page of entries. |
+
 ## `text.replace` (write)
 
-Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) with new text; empty text deletes it. A tracked change: on the file engine the file is backed up first, history.undo takes it back, dry_run previews and expect.sha256 refuses a file changed since. tracked: false writes it plainly instead (a change the writer already approved; no revision marks; text.replace and para.insert live too). Use doc.batch to apply several edits all or nothing.
+Replace one range with new text, as a tracked change: part of a paragraph (p3#a1b2c3d4:10-15, code-point offsets), a whole paragraph (p3#a1b2c3d4) or a span across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); empty `text` deletes it. Get ranges from text.find or para.get. File engine: backed up first, logged for history.undo, dry_run previews, expect.sha256 refuses a changed file. tracked: false writes plainly, on either engine. engine live edits the open app. STALE_ADDRESS if the paragraph changed since read. Use term.rename for a name everywhere, doc.batch for several edits.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx (live: or the file name of one open in a live app). |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `tracked` | boolean |  | true (default): edits are tracked changes. false: a plain write, for a change the writer already approved: built as the tracked edit, then this call's own revisions are accepted in the same verified write (no revision marks; the log has it, and undo takes it back from the backup, only while the document is exactly as the write left it: no out-of-order undo). Refused (UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved tracked change. Text, paragraph and style/format edits only (refused with revision, row and comment operations). engine live: the app's change tracking is off for the edit and put back after; text.replace and para.insert, refused (UNSUPPORTED_CONTENT) next to another unresolved tracked change; the app's undo takes it back. A plain edit inside a tracked-inserted table row is allowed: rejecting that row later removes the plain text too. |
 | `author` | string |  | Revision author. |
@@ -809,9 +1616,29 @@ Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) w
 | `at` | string | yes | Range p3#fp:10-15, p3#fp or p3#fp:10..p5#fp:2. |
 | `text` | string | yes | New text; empty deletes the range. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `toc.insert` (write)
 
-Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The result text is filled by field.update; until then field.list shows the field as stale. Returns the address of the field's paragraph.
+Insert a table of contents (a TOC field) after a body paragraph `after` (p1#a1b2c3d4), as tracked insertions: a title (default "Contents", "" for none), the field listing heading levels `levels` (default "1-3") with a placeholder result, and a closing paragraph. Run field.update next to fill in the entries and page numbers (until then field.list shows it stale). Backed up and undoable (history.undo); dry_run previews. Returns the field paragraph's address.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -819,25 +1646,60 @@ Insert a table of contents (a TOC field) after a body paragraph, as tracked inse
 | `after` | string | yes | Address of the body paragraph it goes after. |
 | `levels` | string |  | Heading levels it lists, e.g. "1-3" (default) or "2". |
 | `title` | string |  | Title paragraph above it (default "Contents"); "" for none. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the field's paragraph. |
+| `after` | string | yes | Address of the paragraph it went after. |
+| `code` | string | yes | The field code. |
+| `title` | string \| null | yes | The title paragraph's text, or null for none. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `xref.add` (write)
 
-Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, as a tracked insertion, pointing at a caption or another body paragraph. The target gets a hidden bookmark when it has none that fits. field.update fills in the shown number, text or page.
+Insert a cross-reference field at an insertion point (`at`: p14#a1b2c3d4:20-20, or a paragraph address for its end), pointing `to` a caption or another body paragraph. show number (default: "Table 3" for a caption), page (a PAGEREF) or text. The target gets a hidden bookmark when it has none; run field.update afterwards to fill in the shown value. A tracked insertion; backed up and undoable (history.undo); dry_run previews. Add captions with caption.add first.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
-| `expect` | object |  |  |
+| `expect` | object |  | Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK. |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | Insertion point: p<n>#<fp>:<k>-<k>, or a paragraph address for its end. |
 | `to` | string | yes | Address of the caption or heading it points at. |
 | `show` | `number` \| `page` \| `text` |  | number (default): a caption's label and number, or a paragraph's number; page: the page it is on; text: the caption or paragraph text. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the paragraph that holds the field. |
+| `to` | string | yes | Address of the target paragraph. |
+| `show` | string | yes | number, page or text. |
+| `code` | string | yes | The field code, e.g. REF _Ref100000001 \h. |
+| `bookmark` | string | yes | The target's bookmark. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 # Batch operation kinds
 
@@ -899,7 +1761,7 @@ The kinds `doc.batch` takes in `ops`, each applied as a tracked change.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | `para.insert` | yes |  |
-| `text` | string | yes |  |
+| `text` | string | yes | Text of the new paragraph. |
 | `after` | string |  | Insert after this paragraph (or before). |
 | `before` | string |  | Insert before this paragraph (or after). |
 

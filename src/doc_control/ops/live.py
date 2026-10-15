@@ -23,6 +23,7 @@ from math import inf
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
@@ -150,15 +151,42 @@ def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
     return adapter, path
 
 
+_STATUS_OUTPUT = outputs.result(
+    ("apps", "open_in", "dirty"),
+    apps=outputs.arr("Every live app, running or not.", outputs.LIVE_APP),
+    open_in=outputs.nullable(
+        "object",
+        "With doc: the app holding it {app, controlled, stale}; controlled false means "
+        "only a lock file says so. Null when no app has it open.",
+    ),
+    dirty=outputs.boolean("With doc: it has unsaved changes."),
+    path=outputs.string("With doc: its full path."),
+    documents=outputs.arr(
+        "Without doc: the documents the apps have open.",
+        outputs.obj(
+            "An open document.",
+            app=outputs.string("App."),
+            path=outputs.string("Full path."),
+            name=outputs.string("File name."),
+        ),
+    ),
+    update=outputs.UPDATE,
+)
+
+
 @operation(
     "live.status",
     "read",
     (
-        "Check which live apps (Word, LibreOffice) are running and reachable and which "
-        "documents they have open; with `doc`, which app holds it, its full path and "
-        "whether it has unsaved changes. Call it before live.open. Read-only."
+        "Check the live apps: which of Word and LibreOffice are installed and reachable, and "
+        "which documents they have open; with `doc`, which app holds it, whether that app is "
+        "driven by this server or only a lock file says so, its full path and whether it has "
+        "unsaved changes. Call it before live.open, or to decide between live editing and the "
+        "file engine (a file open in Word should be edited live or closed first). Read-only; "
+        "never fails for a missing app."
     ),
     _schema(required=False),
+    output=_STATUS_OUTPUT,
 )
 def status(request: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"apps": apps(), "open_in": None, "dirty": False}
@@ -183,19 +211,31 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
     return attach(out)
 
 
+_OPEN_OUTPUT = outputs.result(
+    ("app", "path", "dirty"),
+    app=outputs.string("The app now attached (word or libreoffice)."),
+    path=outputs.string("Full path of the document."),
+    dirty=outputs.boolean("It has unsaved changes."),
+    front=outputs.boolean("With front: whether its window was brought to the front."),
+)
+
+
 @operation(
     "live.open",
     "write",
     (
-        "Attach to Word or LibreOffice for live editing: find the app window already "
-        "holding the document, or open it in the app (`app`). Call it before the other "
-        "live operations (engine live). It opens or focuses a window but does not change "
-        "the document."
+        "Attach to Word or LibreOffice for live editing: find the window already holding the "
+        "document, or open it in `app` (word or libreoffice; default the one reachable, see "
+        "live.status) and bring it to the front (front: false keeps it behind). Call it before "
+        "live.select, live.get_selection, live.save, live.close and doc.batch with engine "
+        "live. Opens or focuses a window; never changes the document. ENGINE_UNAVAILABLE when "
+        "no app can be driven, DOC_AMBIGUOUS when a file name matches several open documents."
     ),
     _schema(
         app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."},
         front=_FRONT,
     ),
+    output=_OPEN_OUTPUT,
 )
 def open_(request: dict[str, Any]) -> dict[str, Any]:
     path = _named(request["doc"])
@@ -209,15 +249,22 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_SAVE_OUTPUT = outputs.result(
+    ("saved",), saved=outputs.boolean("Always true: the app saved the file.")
+)
+
+
 @operation(
     "live.save",
     "write",
     (
-        "Save the document open in Word or LibreOffice (attached with live.open) to its "
-        "file, from inside the app. Call it after live edits (doc.batch with engine live) to "
-        "keep them; live.close with save: true saves and closes in one call."
+        "Save the document open in Word or LibreOffice (attached with live.open) to its file, "
+        "from inside the app. Call it after live edits (doc.batch with engine live) to keep "
+        "them; live.close with save: true saves and closes in one call. Overwrites the file on "
+        "disk with the app's version; no backup is taken."
     ),
     _schema(),
+    output=_SAVE_OUTPUT,
 )
 def save(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
@@ -225,14 +272,27 @@ def save(request: dict[str, Any]) -> dict[str, Any]:
     return {"saved": True}
 
 
+_CLOSE_OUTPUT = outputs.result(
+    ("closed", "saved"),
+    closed=outputs.boolean("Always true."),
+    saved=outputs.boolean("Whether it was saved first."),
+)
+
+
 @operation(
     "live.close",
     "write",
-    "Close the open document; with unsaved changes it needs `save` or `discard`.",
+    (
+        "Close the document in its Word or LibreOffice window (attached with live.open). With "
+        "unsaved changes it is refused (UNSAVED_CHANGES) unless `save` (save, then close) or "
+        "`discard` (drop them) is given; nothing unsaved is ever lost silently. Use live.save to "
+        "keep the window open. Returns whether it saved."
+    ),
     _schema(
         save={"type": "boolean", "description": "Save, then close."},
         discard={"type": "boolean", "description": "Close and drop the unsaved changes."},
     ),
+    output=_CLOSE_OUTPUT,
 )
 def close(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
@@ -390,14 +450,27 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
     return spans
 
 
+_SELECT_OUTPUT = outputs.result(
+    ("text", "at"),
+    text=outputs.string("Text of the paragraph selected."),
+    at=outputs.ADDRESS,
+    match_level=outputs.string("By find_phrase: the level it matched at."),
+    matched_text=outputs.string("By find_phrase: the text matched, when not exact."),
+    front=outputs.boolean("With front: whether the window was brought to the front."),
+)
+
+
 @operation(
     "live.select",
     "write",
     (
-        "Show the user a place: select a paragraph (or put the cursor at it) in the Word "
-        "or LibreOffice window, by address (`at`) or by a para.locate find phrase, and return "
-        "its text and address. Changes only the selection, never the text; the document "
-        "must be attached with live.open."
+        "Show the user a place in Word or LibreOffice: select a paragraph, or with mode cursor "
+        "only put the cursor at its start, by address (`at`, p142#a7b2a7b2) or by a "
+        "`find_phrase` from para.locate (matched loosely per match_level). paragraphs_after "
+        "moves on that many paragraphs. Use it to point at a passage you are discussing; "
+        "live.places offers several as buttons. Changes only the selection; needs live.open. "
+        "STALE_ADDRESS when `at` no longer matches, ANCHOR_NOT_FOUND or ANCHOR_AMBIGUOUS for a "
+        "phrase."
     ),
     _schema(
         at={"type": "string", "description": "Paragraph address, e.g. `p142#a7b2a7b2`."},
@@ -435,6 +508,7 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
             "description": "Select the paragraph this many after the one named.",
         },
     ),
+    output=_SELECT_OUTPUT,
 )
 def select(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
@@ -490,11 +564,34 @@ _PLACE = {
 }
 
 
+_PLACES_OUTPUT = outputs.result(
+    ("doc", "mode", "places"),
+    doc=outputs.string("The document, as given."),
+    mode=outputs.string("cursor or select: what a click does."),
+    places=outputs.arr(
+        "The places, as given.",
+        outputs.obj(
+            "A place.",
+            label=outputs.string("Button label."),
+            at=outputs.ADDRESS,
+            find_phrase=outputs.string("Find phrase from para.locate."),
+            find_phrase_across=outputs.string("previous or next, from para.locate."),
+        ),
+    ),
+)
+
+
 @operation(
     "live.places",
     "read",
-    "Show a list of places in the document as buttons; in a client that renders MCP Apps, "
-    "a click calls `live.select` on that place directly, with no assistant turn.",
+    (
+        "Show the user a list of places as clickable buttons: in a client that renders MCP Apps, a "
+        "click moves Word's or LibreOffice's cursor there (mode cursor) or selects the paragraph "
+        "(mode select) by calling live.select, with no assistant turn. Each place has a `label` "
+        "and an `at` address and/or a `find_phrase` from para.locate. Use it to walk a writer "
+        "through findings; live.select jumps to one place directly. Other clients just get the "
+        "list back. Read-only."
+    ),
     _schema(
         places={
             "type": "array",
@@ -509,6 +606,7 @@ _PLACE = {
         },
     )
     | {"required": ["doc", "places"]},
+    output=_PLACES_OUTPUT,
 )
 def places(request: dict[str, Any]) -> dict[str, Any]:
     if not request["places"]:
@@ -529,16 +627,29 @@ def places(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_SELECTION_OUTPUT = outputs.result(
+    ("text", "paragraph"),
+    text=outputs.string("The selected text (empty for a bare cursor)."),
+    paragraph=outputs.obj(
+        "The paragraph the selection starts in.",
+        at=outputs.ADDRESS,
+        text=outputs.string("Its text."),
+    ),
+)
+
+
 @operation(
     "live.get_selection",
     "read",
     (
-        "Read what the user has selected in Word or LibreOffice right now, and the "
-        "paragraph (with its address) the cursor is in. Use it when the user points at "
-        'text ("this paragraph", "here"). Read-only; the document must be attached with '
-        "live.open."
+        "Read what the user has selected in Word or LibreOffice right now, and the paragraph "
+        "the selection starts in with its address (p12#a1b2c3d4), to edit with doc.batch or "
+        'text.replace. Use it when the user points at text ("this paragraph", "here"); '
+        "live.select moves the selection instead. The document must be attached with live.open "
+        "(ENGINE_UNAVAILABLE otherwise). Read-only."
     ),
     _schema(),
+    output=_SELECTION_OUTPUT,
 )
 def selection(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)

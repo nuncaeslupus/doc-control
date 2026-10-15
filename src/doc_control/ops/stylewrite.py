@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -75,11 +76,12 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
         _FIELDS,
         ["name"],
         (
-            "Add a new paragraph, character, table or numbering style to the document, with "
-            "its parent, next and linked styles and its run and paragraph formatting. Refused"
-            " when the id or name already exists: use style.update to change a style, "
-            "style.rename to rename one, styleset.install to add many at once. Not a tracked "
-            "change: the file is backed up first and the write is logged for undo; dry_run "
+            "Add a new paragraph, character, table or numbering style with its parent "
+            "(based_on), next and linked styles and run and paragraph formatting (e.g. run "
+            '{"bold": true, "size_pt": 14}; paragraph in twips). `id` defaults from `name`. '
+            "Refused (STYLE_CONFLICT) when the id or name exists: use style.update to change a "
+            "style, style.rename to rename one, styleset.install to add many. Not a tracked "
+            "change and not in the undo log: the file is backed up first (`backup`); dry_run "
             "previews."
         ),
     ),
@@ -92,11 +94,12 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
         },
         ["style"],
         (
-            "Change an existing style: its parent (based_on), next or linked style, quick-"
-            "gallery flag, or run and paragraph formatting (null removes a key). Every "
-            "paragraph using the style changes with it; to format one paragraph, use "
-            "format.apply in doc.batch. Not a tracked change: the file is backed up first and the"
-            " write is logged for undo; dry_run previews."
+            "Change an existing style: its parent (based_on), next or linked style, "
+            'quick-gallery flag, or run and paragraph formatting (e.g. run {"italic": true, '
+            '"font": "Garamond"}; null removes a key; other keys stay). Every paragraph using '
+            "the style changes with it; to format one paragraph use format.apply in doc.batch. "
+            "Not a tracked change and not in the undo log: the file is backed up first "
+            "(`backup`); dry_run previews. STYLE_NOT_FOUND for an unknown style."
         ),
     ),
     "style.rename": (
@@ -107,10 +110,11 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
         },
         ["style"],
         (
-            "Rename a style's display name and/or id; every reference follows (paragraphs, "
-            "headers, notes, numbering, and based_on, next and link in other styles). Use "
-            "style.merge to fold one style into another instead. Not a tracked change: the "
-            "file is backed up first and the write is logged for undo; dry_run previews."
+            "Rename a style's display `name` and/or `id` (id defaults from the name); every "
+            "reference follows: paragraphs, runs, headers, notes, numbering, and based_on, "
+            "next and link in other styles. STYLE_CONFLICT if the new name or id is taken. Use "
+            "style.merge to fold one style into another instead. Not a tracked change and not "
+            "in the undo log: the file is backed up first (`backup`); dry_run previews."
         ),
     ),
     "style.merge": (
@@ -122,10 +126,12 @@ _OPS: dict[str, tuple[dict[str, dict[str, Any]], list[str], str]] = {
         },
         ["from", "into"],
         (
-            "Merge styles: re-point every use of the `from` styles to `into`, then delete the"
-            " `from` styles. Use it to clean up duplicate styles; style.rename only renames. "
-            "Not a tracked change: the file is backed up first and the write is logged for "
-            "undo; check with dry_run first."
+            "Merge styles: re-point every use of the `from` style or styles (ids or names) to "
+            "`into` in the body, notes, headers and other styles, then delete the `from` "
+            "styles. Use it to clean up duplicate styles; style.rename only renames, "
+            "style.update changes formatting. Not a tracked change and not in the undo log, "
+            "and it removes style definitions: the file is backed up first (`backup`); check "
+            "with dry_run first. STYLE_NOT_FOUND for an unknown style."
         ),
     ),
 }
@@ -566,6 +572,13 @@ def apply_style_ops(
     )
 
 
+_OUTPUT = outputs.result(
+    ("applied", "dry_run", "tracked", "changed_parts"),
+    applied=outputs.STYLE_APPLIED,
+    **outputs.STYLE_WRITE_FIELDS,
+)
+
+
 def _register(kind: str) -> None:
     fields, required, summary = _OPS[kind]
     schema = {
@@ -575,6 +588,10 @@ def _register(kind: str) -> None:
             **fields,
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
@@ -594,7 +611,7 @@ def _register(kind: str) -> None:
         )
         return Reply(result, doc=Document(request["doc"]).envelope_doc())
 
-    operation(kind, "write", summary, schema)(handler)
+    operation(kind, "write", summary, schema, output=_OUTPUT)(handler)
 
 
 for _kind in STYLE_KINDS:
