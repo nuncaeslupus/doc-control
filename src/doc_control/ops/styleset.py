@@ -273,7 +273,7 @@ _INSTALL_OUTPUT = outputs.result(
         "writes it) into the document: new styles are added, existing ids replaced (on_conflict "
         "replace, default), kept (skip) or refused (error: STYLE_CONFLICT). Use it to copy styles "
         "between documents; styleset.import_dotx reads a Word template, style.create adds one "
-        "style. Not a tracked change and not in the undo log: the file is backed up first "
+        "style. Not a tracked change, but history.undo takes it back: the file is backed up first "
         "(`backup`); dry_run previews."
     ),
     {
@@ -319,5 +319,6 @@ def styleset_install(request: dict[str, Any]) -> Reply:
         lambda session: _install(session, entries, mode),
         expect_sha256=request.get("expect", {}).get("sha256"),
         dry_run=request.get("dry_run", False),
+        request=[{"op": "styleset.install", **{k: v for k, v in request.items() if k != "doc"}}],
     )
     return Reply(result, doc=Document(request["doc"]).envelope_doc())

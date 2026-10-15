@@ -518,8 +518,11 @@ def test_undo_restores_a_format_apply_batch_exactly(tmp_path: Path) -> None:
     assert snapshot(path) == original  # pPr, rPr and the whole document.xml, byte for byte
 
 
-def test_comment_batch_is_logged_and_its_undo_is_refused(tmp_path: Path) -> None:
+def test_comment_batch_is_logged_and_undone_exactly(tmp_path: Path) -> None:
     path = formatted_docx(tmp_path / "d.docx")
+    original = path.read_bytes()
+    with zipfile.ZipFile(path) as zf:
+        before = {n: zf.read(n) for n in zf.namelist()}
     a = addresses(path)
     result = run_batch(
         path,
@@ -532,12 +535,9 @@ def test_comment_batch_is_logged_and_its_undo_is_refused(tmp_path: Path) -> None
     entry = read_log(tmp_path / ".doc-control" / "d.docx" / "log.jsonl").entries[0]
     assert [r["op"] for r in entry["request"]] == ["comment.add", "text.replace"]
     assert entry["parts"] and len(entry["changes"]) == 2  # the commented and the edited paragraph
+    assert entry["saved_parts"]["word/comments.xml"]["before"] is None  # the write created it
     assert history_search({"doc": str(path), "query": "Revisar"}).result["total"] >= 1
-    written = path.read_bytes()
-    with pytest.raises(DocControlError) as err:
-        undo({"doc": str(path)})
-    assert err.value.code is ErrorCode.UNSUPPORTED_CONTENT
-    assert "comments" in err.value.message and path.read_bytes() == written
-    # a later text-only batch is still undoable on its own
-    run_batch(path, [{"op": "text.replace", "at": addresses(path)[6], "text": "x"}])
-    assert undo({"doc": str(path)}).result["undid"] == "h-000002"
+    assert path.read_bytes() != original
+    assert "word/comments.xml" in undo({"doc": str(path)}).result["parts"]
+    with zipfile.ZipFile(path) as zf:
+        assert {n: zf.read(n) for n in zf.namelist()} == before

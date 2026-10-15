@@ -2,7 +2,7 @@
 
 Each write appends one JSON line (``"log_version": 1``; readers ignore unknown keys):
 ``op_id`` (``h-000123``, increasing, never reused, not even after a purge), ``time``,
-``kind`` (``batch``, ``restore``, ``undo``, ``open``, ``purge``), author, tag, the
+``kind`` (``batch``, ``restore``, ``style``, ``undo``, ``open``, ``purge``), author, tag, the
 request, the sha256 of the document before and after, the backup taken for it and
 ``changes``: the exact bytes of every touched paragraph before and after, as text
 (``surrogateescape``, so any byte string round-trips through JSON).
@@ -25,10 +25,18 @@ swaps the one place the ``after`` row still stands in ``word/document.xml``.
 A change in a note, header or footer carries ``part`` and ``story`` (its address prefix,
 see :mod:`doc_control.model.stories`); undo finds its paragraph in that story and
 restores every part an entry touched in one verified write.
+
+A write that also rewrites whole parts (a comment write: ``word/comments.xml`` and its
+companions; a style write: ``word/styles.xml`` and the parts naming a renamed style) logs
+``saved_parts``: for each part, its bytes before (zlib, base64; null for a part the write
+created) and the sha256 of the bytes it wrote. Undo puts those bytes back (or removes a
+created part) only while each part still holds exactly what that write left, or refuses with
+``BATCH_CONFLICT`` naming the parts.
 """
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import itertools
@@ -37,6 +45,7 @@ import os
 import re
 import shutil
 import unicodedata
+import zlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -62,7 +71,7 @@ from doc_control.safety.store import (
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, StoryFootprint, write_verified
 
 LOG_VERSION = 1
-UNDOABLE_KINDS = ("batch", "restore")
+UNDOABLE_KINDS = ("batch", "restore", "style")
 _ID = re.compile(r"h-(\d{6,})")
 _LIVE_TEXT = re.compile(rb"<(?:[\w.-]+:)?t[\s>]")
 _XML_TEXT = re.compile(r"<(?:[\w.-]+:)?(t|delText)(?:\s[^>]*)?>([^<]*)</(?:[\w.-]+:)?\1>")
@@ -229,6 +238,19 @@ def record(
     return str(append_entry(store, fields, now)["op_id"])
 
 
+def saved_parts(pkg: Package, replacements: Mapping[str, bytes]) -> dict[str, dict[str, Any]]:
+    """The ``saved_parts`` of a write that replaces ``replacements`` in ``pkg`` (see above)."""
+    return {
+        name: {
+            "before": base64.b64encode(zlib.compress(pkg.read(name), 9)).decode("ascii")
+            if name in pkg
+            else None,
+            "after_sha256": hashlib.sha256(data).hexdigest(),
+        }
+        for name, data in sorted(replacements.items())
+    }
+
+
 # -- undo -----------------------------------------------------------------------------------
 
 
@@ -260,6 +282,7 @@ class UndoOutcome:
     after_sha256: str | None
     backup: Path | None
     reverted: list[dict[str, Any]] = field(default_factory=list)
+    parts: list[str] = field(default_factory=list)  # whole parts put back or removed
 
 
 def _conflict(entry: Mapping[str, Any], missing: list[int], why: str) -> DocControlError:
@@ -281,17 +304,19 @@ def undo_entry(
     env: Mapping[str, str] | None = None,
     stage: Callable[[str], None] | None = None,
 ) -> UndoOutcome:
-    """Put every paragraph ``entry`` changed back as it was, in one verified write.
+    """Put every paragraph and part ``entry`` changed back as it was, in one verified write.
 
-    Entries that also wrote other parts (comments) are refused: only paragraphs are logged.
-    An entry marked ``undo_by_backup`` (``note.add``, which may create a part) is undone by
-    putting its backup back, but only while the file is exactly what that entry wrote.
+    Entries that wrote other parts without logging them (comment writes before
+    ``saved_parts``) are refused. An entry marked ``undo_by_backup`` (``note.add``, which may
+    create a part) is undone by putting its backup back, but only while the file is exactly
+    what that entry wrote.
     """
     if entry.get("undo_by_backup"):
         return _undo_by_backup(
             doc_path, entry, expect_sha256=expect_sha256, dry_run=dry_run, now=now, env=env
         )
-    if entry.get("parts"):
+    saved: Mapping[str, Mapping[str, Any]] = entry.get("saved_parts") or {}
+    if entry.get("parts") and not saved:
         raise DocControlError(
             ErrorCode.UNSUPPORTED_CONTENT,
             f"{entry['op_id']} also changed {', '.join(entry['parts'])}, which the history "
@@ -369,7 +394,22 @@ def undo_entry(
         )
     if missing:
         raise _conflict(entry, missing, "a paragraph it changed was edited since or is gone")
-    if not any(swaps.values()) and not row_cuts:
+    whole: dict[str, bytes] = {}
+    removed: set[str] = set()
+    for name, state in saved.items():
+        if name not in pkg or hashlib.sha256(pkg.read(name)).hexdigest() != state["after_sha256"]:
+            raise DocControlError(
+                ErrorCode.BATCH_CONFLICT,
+                f"cannot undo {entry['op_id']}: {name} was changed since; undo later "
+                "operations first (history.list)",
+                op_id=entry["op_id"],
+                parts=[name],
+            )
+        if state["before"] is None:
+            removed.add(name)
+        else:
+            whole[name] = zlib.decompress(base64.b64decode(state["before"]))
+    if not any(swaps.values()) and not row_cuts and not saved:
         raise DocControlError(
             ErrorCode.HISTORY_NOT_FOUND,
             f"{entry['op_id']} changed no paragraph",
@@ -384,7 +424,7 @@ def undo_entry(
         )
     if row_cuts:
         by_part.setdefault(DOCUMENT_PART, []).extend(row_cuts)
-    replacements: dict[str, bytes] = {}
+    replacements: dict[str, bytes] = dict(whole)
     for part, cuts in by_part.items():
         cuts.sort()
         for (_, end, _), (start, _, _) in itertools.pairwise(cuts):
@@ -407,9 +447,11 @@ def undo_entry(
             for (part, story), own in swaps.items()
             if story
         ),
+        parts=frozenset(whole),
+        removed=frozenset(removed),
     )
     if dry_run:
-        return UndoOutcome(pkg.sha256, None, None, reverted)
+        return UndoOutcome(pkg.sha256, None, None, reverted, sorted(saved))
     written = write_verified(
         doc_path,
         replacements,
@@ -419,7 +461,9 @@ def undo_entry(
         env=env,
         stage=stage,
     )
-    return UndoOutcome(written.before_sha256, written.after_sha256, written.backup, reverted)
+    return UndoOutcome(
+        written.before_sha256, written.after_sha256, written.backup, reverted, sorted(saved)
+    )
 
 
 def _undo_by_backup(

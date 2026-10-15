@@ -162,6 +162,8 @@ STYLE_WRITE_FIELDS: dict[str, Schema] = {
     "references_rewritten": integer("Style references rewritten (renames, merges)."),
     "sha256": SHA256,
     "backup": BACKUP,
+    "op_id": OP_ID,
+    "warnings": WARNINGS,
 }
 
 STYLE_APPLIED = arr(

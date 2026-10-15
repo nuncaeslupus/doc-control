@@ -1,14 +1,15 @@
 """History operations: ``doc.open``, ``history.undo``, ``history.restore`` and ``history.*``.
 
 Everything here reads or writes the document's store (see :mod:`doc_control.safety.history`
-for the log format). ``history.undo`` takes back a logged ``doc.batch`` or
-``history.restore`` exactly (the paragraphs it changed return byte for byte, so text and
-paragraph properties are as they were) and is itself logged; it is untracked, since it
-removes the tool's own tracked changes. ``history.restore`` brings a logged paragraph back
-as a *tracked insertion* after the paragraph that holds its place now, so the writer sees it
-and can reject it. ``history.purge`` removes history only after a dry run, and leaves a
-tombstone. Reading history never creates a store, and works for a document that no longer
-exists (or, with ``store``, straight from a store folder listed by ``history.orphans``).
+for the log format). ``history.undo`` takes back a logged ``doc.batch``, style write or
+``history.restore`` exactly (the paragraphs and parts it changed return byte for byte,
+so text, paragraph properties, comments and styles are as they were) and is itself
+logged; it is untracked, since it removes the tool's own tracked changes.
+``history.restore`` brings a logged paragraph back as a *tracked insertion* after the
+paragraph that holds its place now, so the writer sees it and can reject it.
+``history.purge`` removes history only after a dry run, and leaves a tombstone. Reading
+history never creates a store, and works for a document that no longer exists (or, with
+``store``, straight from a store folder listed by ``history.orphans``).
 """
 
 from __future__ import annotations
@@ -165,7 +166,9 @@ def open_(request: dict[str, Any]) -> Reply:
 
 
 def _undoable(entry: dict[str, Any]) -> bool:
-    return entry.get("kind") in UNDOABLE_KINDS and bool(entry.get("changes"))
+    return entry.get("kind") in UNDOABLE_KINDS and bool(
+        entry.get("changes") or entry.get("saved_parts")
+    )
 
 
 _UNDO_OUTPUT = outputs.result(
@@ -173,6 +176,7 @@ _UNDO_OUTPUT = outputs.result(
     undid=outputs.string("Op id taken back."),
     dry_run=outputs.DRY_RUN,
     paragraphs=outputs.integer("Paragraphs returned to their prior state."),
+    parts=outputs.strings("Whole parts put back (comments, styles); absent if none."),
     **outputs.COMMIT,
 )
 
@@ -182,10 +186,11 @@ _UNDO_OUTPUT = outputs.result(
     "write",
     (
         "Take back one logged write (doc.batch, text.replace and the other direct writes, "
-        "term.rename, field and note inserts, layout.apply, history.restore), returning its "
-        "paragraphs to their state before it: by default the latest one still in effect, or the "
-        "`op_id` from history.list. Comment and style writes cannot be undone. Refused with "
-        "BATCH_CONFLICT if a paragraph it changed was edited since (undo the later write first). "
+        "comment and style writes, styleset.install, term.rename, field and note inserts, "
+        "layout.apply, history.restore), returning its paragraphs and parts to their state "
+        "before it: by default the latest one still in effect, or the `op_id` from "
+        "history.list. Refused with BATCH_CONFLICT if a paragraph or part it changed was "
+        "edited since (undo the later write first). "
         "Use history.restore to bring back single deleted paragraphs, revision.reject to drop "
         "tracked changes by author or id. The undo is itself logged; dry_run checks without "
         "writing; expect.sha256 refuses a changed file."
@@ -218,7 +223,8 @@ def undo(request: dict[str, Any]) -> Reply:
         if not _undoable(entry):
             raise DocControlError(
                 ErrorCode.HISTORY_NOT_FOUND,
-                f"{op_id} is a {entry.get('kind')} entry; only batch and restore can be undone",
+                f"{op_id} is a {entry.get('kind')} entry; only batch, restore and style "
+                "entries can be undone",
                 op_id=op_id,
             )
         if op_id in undone:
@@ -239,6 +245,8 @@ def undo(request: dict[str, Any]) -> Reply:
         "dry_run": dry_run,
         "paragraphs": len(outcome.reverted),
     }
+    if outcome.parts:
+        result["parts"] = outcome.parts
     if not dry_run:
         assert outcome.after_sha256 is not None
         try:
@@ -453,7 +461,7 @@ _LIST_OUTPUT = outputs.result(
         outputs.obj(
             "A logged write.",
             op_id=outputs.string("Op id (history.undo / history.restore)."),
-            kind=outputs.nullable("string", "batch, restore, undo, open, purge or adopt."),
+            kind=outputs.nullable("string", "batch, restore, style, undo, open, purge or adopt."),
             time=outputs.nullable("string", "When (ISO 8601)."),
             author=outputs.nullable("string", "Revision author."),
             tag=outputs.nullable("string", "Author tag."),

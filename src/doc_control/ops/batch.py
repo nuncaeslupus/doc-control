@@ -159,8 +159,8 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
         'revision.accept/reject. Example ops: [{"op": "text.replace", "at": '
         '"p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are '
         "BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run "
-        "previews, expect.sha256 refuses a changed file, history.undo takes text, row and "
-        "revision batches back. tracked: false writes approved text plainly, on either engine. "
+        "previews, expect.sha256 refuses a changed file, history.undo takes the batch "
+        "back. tracked: false writes approved text plainly, on either engine. "
         "engine live edits the open app (comment.add, text.replace, para.insert only; no "
         "dry_run or rollback). "
         "server.help <kind> gives each kind's fields."

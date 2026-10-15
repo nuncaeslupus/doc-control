@@ -103,6 +103,9 @@ class Footprint:
     #: whole (``start == end``: something is inserted there): a table row, which is not a
     #: paragraph. Every byte outside them and the paragraphs must stay.
     spans: frozenset[tuple[int, int]] = frozenset()
+    #: Members the write takes out of the package (``history.undo`` of a write that created
+    #: them); every other member keeps its place.
+    removed: frozenset[str] = frozenset()
 
     @property
     def story_parts(self) -> frozenset[str]:
@@ -125,8 +128,9 @@ class _FootprintViolation(Exception):
 def verify_footprint(original: Package, result: Package, footprint: Footprint) -> list[str]:
     """Problems found comparing ``result`` with ``original``; empty means all is as declared."""
     problems: list[str] = []
-    before, after = original.names, result.names
-    if after[: len(before)] != before:
+    before = [n for n in original.names if n not in footprint.removed]
+    after = result.names
+    if after[: len(before)] != before or any(n in result for n in footprint.removed):
         problems.append("zip member names or order changed")
     added = [n for n in after[len(before) :] if n not in footprint.parts]
     if added:
@@ -348,7 +352,7 @@ def write_verified(
                 path=str(doc_path),
             )
         original_sha = pkg.sha256
-        payload = build_package(pkg, replacements)
+        payload = build_package(pkg, replacements, footprint.removed)
         after_sha = hashlib.sha256(payload).hexdigest()
         commit_bytes(payload, doc_path, mark)
         mark("verify")
