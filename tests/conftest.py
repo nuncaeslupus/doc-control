@@ -138,10 +138,15 @@ def check_result(name: str, out: Any) -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-def _results_match_output_schemas() -> Iterator[None]:
+def _results_match_output_schemas(request: pytest.FixtureRequest) -> Iterator[None]:
     """Every result any operation returns during a test conforms to its declared output
-    schema (strictly: no undeclared keys). The whole suite thereby proves the schemas."""
+    schema (strictly: no undeclared keys). The whole suite thereby proves the schemas.
+    Benchmarks are left out: validation would count against their time budgets."""
     from doc_control import registry
+
+    if "bench" in request.node.path.parts:
+        yield
+        return
 
     problems: list[str] = []
 
