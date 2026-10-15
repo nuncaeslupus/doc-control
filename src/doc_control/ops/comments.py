@@ -62,7 +62,7 @@ from doc_control.ops.tracked import (
     prepare_edits,
     story_of,
 )
-from doc_control.safety.history import record
+from doc_control.safety.history import record, saved_parts
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, write_verified
 from doc_control.schema import validate
@@ -504,8 +504,8 @@ def apply_batch(
             author=result.author,
             tag=tag,
             footprint={DOCUMENT_PART: result.footprint, **result.parts},
-            # Comment parts are not logged, so `history.undo` refuses this entry (safety.history).
-            extra={"parts": sorted(part_bytes)},
+            # The comment parts are logged whole, so `history.undo` can put them back.
+            extra={"parts": sorted(part_bytes), "saved_parts": saved_parts(pkg, part_bytes)},
             now=now,
             env=env,
         )

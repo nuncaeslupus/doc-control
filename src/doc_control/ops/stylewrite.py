@@ -6,8 +6,9 @@ every other part: the document's paragraphs, headers, footers, footnotes, endnot
 comments and numbering. ``basedOn``, ``next`` and ``link`` inside the styles part follow.
 Each operation is also a ``doc.batch`` kind, but a style batch holds only style operations
 and its definition changes are not tracked changes (they are covered by the dry run, the
-backup and the undo log). Latent styles are left alone: they are defaults for built-in
-styles that are not instantiated, keyed by name.
+backup and the undo log: ``history.undo`` puts the parts and paragraphs back). Latent
+styles are left alone: they are defaults for built-in styles that are not instantiated,
+keyed by name.
 
 A style is named by its id or by its display name wherever a request says ``style``,
 ``from`` or ``into``; the stored references always use ids.
@@ -39,6 +40,7 @@ from doc_control.ooxml.styledef import (
 from doc_control.ooxml.xmltext import escape, unescape
 from doc_control.ooxml.zipio import Package
 from doc_control.registry import operation
+from doc_control.safety.history import record, saved_parts, to_text
 from doc_control.safety.lock import check_changed, check_unlocked
 from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 
@@ -384,8 +386,9 @@ def _rewriter(remap: Mapping[str, str]) -> Callable[[bytes], bytes]:
 
 def _rewrite_parts(
     pkg: Package, styles_part: str | None, remap: dict[str, str]
-) -> tuple[dict[str, bytes], frozenset[int], int]:
-    """New bytes for every part that references a remapped style, and the paragraphs changed."""
+) -> tuple[dict[str, bytes], dict[int, tuple[bytes, bytes]], int]:
+    """New bytes for every part that references a remapped style, and the paragraphs changed
+    (index: bytes before and after)."""
     rewrite = _rewriter(remap)
     replacements: dict[str, bytes] = {}
     count = 0
@@ -403,12 +406,12 @@ def _rewrite_parts(
             count += _hits(data, remap)
     data = pkg.read(DOCUMENT_PART)
     if b"Style" not in data:
-        return replacements, frozenset(), count
+        return replacements, {}, count
     wanted = _hits(data, remap)
     if not wanted:
-        return replacements, frozenset(), count
+        return replacements, {}, count
     spans = build_index(data).spans.paragraphs
-    changed: set[int] = set()
+    changed: dict[int, tuple[bytes, bytes]] = {}
     pieces: list[bytes] = []
     pos = 0
     done = 0
@@ -418,7 +421,7 @@ def _rewrite_parts(
         chunk = data[span.start : span.end]
         new = rewrite(chunk)
         if new != chunk:
-            changed.add(i)
+            changed[i] = (chunk, new)
             done += _hits(chunk, remap)
             pieces.append(data[pos : span.start])
             pieces.append(new)
@@ -431,7 +434,7 @@ def _rewrite_parts(
         )
     pieces.append(data[pos:])
     replacements[DOCUMENT_PART] = b"".join(pieces)
-    return replacements, frozenset(changed), count + done
+    return replacements, changed, count + done
 
 
 def _hits(data: bytes, remap: Mapping[str, str]) -> int:
@@ -496,9 +499,10 @@ def commit_styles(
     now: datetime | None = None,
     env: Mapping[str, str] | None = None,
     stage: Callable[[str], None] | None = None,
+    request: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run ``prepare`` on a session over ``doc_path`` and write the result in one "
-    "verified write."""
+    """Run ``prepare`` on a session over ``doc_path`` and write the result in one verified
+    write, logged (``request``) so that ``history.undo`` can take it back."""
     if not doc_path.is_file():
         raise DocControlError(
             ErrorCode.DOC_NOT_FOUND, f"no such file: {doc_path}", path=str(doc_path)
@@ -511,7 +515,7 @@ def commit_styles(
     applied = prepare(session)
     session.check()
     replacements: dict[str, bytes] = {}
-    changed_paras: frozenset[int] = frozenset()
+    changed_paras: dict[int, tuple[bytes, bytes]] = {}
     references = 0
     if session.remap:
         replacements, changed_paras, references = _rewrite_parts(
@@ -537,7 +541,7 @@ def commit_styles(
     written = write_verified(
         doc_path,
         replacements,
-        Footprint(replaced=changed_paras, parts=frozenset(replacements)),
+        Footprint(replaced=frozenset(changed_paras), parts=frozenset(replacements)),
         pkg.sha256,
         now=now,
         env=env,
@@ -545,6 +549,31 @@ def commit_styles(
     )
     result["sha256"] = written.after_sha256
     result["backup"] = str(written.backup)
+    try:
+        result["op_id"] = record(
+            doc_path,
+            "style",
+            before_sha256=written.before_sha256,
+            after_sha256=written.after_sha256,
+            backup=written.backup,
+            changes=[
+                {"kind": "replace", "index": i, "before": to_text(old), "after": to_text(new)}
+                for i, (old, new) in sorted(changed_paras.items())
+            ],
+            request=request,
+            extra={
+                "saved_parts": saved_parts(
+                    pkg, {k: v for k, v in replacements.items() if k != DOCUMENT_PART}
+                )
+            },
+            now=now,
+            env=env,
+        )
+    except (DocControlError, OSError) as exc:
+        result["op_id"] = None
+        result["warnings"] = [
+            f"HISTORY_NOT_RECORDED: the write succeeded but could not be logged: {exc}"
+        ]
     return result
 
 
@@ -569,6 +598,7 @@ def apply_style_ops(
         now=now,
         env=env,
         stage=stage,
+        request=ops,
     )
 
 

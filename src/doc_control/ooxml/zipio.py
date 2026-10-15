@@ -26,7 +26,7 @@ import time
 import zipfile
 import zlib
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from pathlib import Path
 
 from doc_control.errors import DocControlError, ErrorCode
@@ -224,9 +224,12 @@ def write_package(
     return hashlib.sha256(payload).hexdigest()
 
 
-def build_package(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
-    """The bytes ``write_package`` would write, without touching any file."""
-    return _build(pkg, replacements)
+def build_package(
+    pkg: Package, replacements: Mapping[str, bytes], removed: Collection[str] = ()
+) -> bytes:
+    """The bytes ``write_package`` would write, without touching any file; the members named
+    in ``removed`` are left out."""
+    return _build(pkg, replacements, removed)
 
 
 def restore_file(src: Path, dest: Path) -> None:
@@ -318,7 +321,7 @@ def _odt_package(path: Path, raw: bytes) -> tuple[bytes, dict[str, str]]:
         ) from exc
 
 
-def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
+def _build(pkg: Package, replacements: Mapping[str, bytes], removed: Collection[str] = ()) -> bytes:
     out = bytearray()
     central = bytearray()
     count = 0
@@ -381,6 +384,8 @@ def _build(pkg: Package, replacements: Mapping[str, bytes]) -> bytes:
         count += 1
 
     for info in pkg.infos:
+        if info.filename in removed:
+            continue
         member = pkg._members[info.filename]
         flags = info.flag_bits & ~_FLAG_DATA_DESCRIPTOR
         if info.filename in replacements:

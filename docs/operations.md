@@ -537,7 +537,7 @@ Returns (`result`):
 
 ## `history.undo` (write)
 
-Take back one logged write (doc.batch, text.replace and the other direct writes, term.rename, field and note inserts, layout.apply, history.restore), returning its paragraphs to their state before it: by default the latest one still in effect, or the `op_id` from history.list. Comment and style writes cannot be undone. Refused with BATCH_CONFLICT if a paragraph it changed was edited since (undo the later write first). Use history.restore to bring back single deleted paragraphs, revision.reject to drop tracked changes by author or id. The undo is itself logged; dry_run checks without writing; expect.sha256 refuses a changed file.
+Take back one logged write (doc.batch, text.replace and the other direct writes, comment and style writes, styleset.install, term.rename, field and note inserts, layout.apply, history.restore), returning its paragraphs and parts to their state before it: by default the latest one still in effect, or the `op_id` from history.list. Refused with BATCH_CONFLICT if a paragraph or part it changed was edited since (undo the later write first). Use history.restore to bring back single deleted paragraphs, revision.reject to drop tracked changes by author or id. The undo is itself logged; dry_run checks without writing; expect.sha256 refuses a changed file.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -553,6 +553,7 @@ Returns (`result`):
 | `undid` | string | yes | Op id taken back. |
 | `dry_run` | boolean | yes | True when nothing was written (a preview). |
 | `paragraphs` | integer | yes | Paragraphs returned to their prior state. |
+| `parts` | array |  | Whole parts put back (comments, styles); absent if none. |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
 | `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
@@ -1210,6 +1211,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `style.get` (read)
 
@@ -1282,6 +1285,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `style.rename` (write)
 
@@ -1308,6 +1313,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `style.update` (write)
 
@@ -1338,6 +1345,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `styleset.export` (read)
 
@@ -1403,6 +1412,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `styleset.install` (write)
 
@@ -1429,6 +1440,8 @@ Returns (`result`):
 | `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
 | `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
 | `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
 
 ## `table.get` (read)
 

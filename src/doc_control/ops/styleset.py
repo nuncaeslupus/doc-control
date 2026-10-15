@@ -319,5 +319,6 @@ def styleset_install(request: dict[str, Any]) -> Reply:
         lambda session: _install(session, entries, mode),
         expect_sha256=request.get("expect", {}).get("sha256"),
         dry_run=request.get("dry_run", False),
+        request=[{"op": "styleset.install", **{k: v for k, v in request.items() if k != "doc"}}],
     )
     return Reply(result, doc=Document(request["doc"]).envelope_doc())
