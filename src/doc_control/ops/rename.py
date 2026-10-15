@@ -45,6 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -362,6 +363,53 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
     return kept
 
 
+_OUTPUT = outputs.result(
+    ("from", "to", "dry_run", "counts", "skipped", "preview"),
+    to=outputs.string("The new name."),
+    dry_run=outputs.DRY_RUN,
+    counts=outputs.obj(
+        "Counts.",
+        matches=outputs.integer("Matches found."),
+        replaced=outputs.integer("Replaced (or would be)."),
+        unchanged=outputs.integer("Matches already right."),
+        paragraphs=outputs.integer("Paragraphs changed."),
+        skipped_unsupported=outputs.integer("Left alone inside a field, link or other structure."),
+        skipped_boundary=outputs.integer("Left alone: would split a character from its marks."),
+    ),
+    skipped=outputs.arr(
+        "Matches left alone (capped).",
+        outputs.obj(
+            "A skipped match.",
+            at=outputs.RANGE,
+            text=outputs.string("The text."),
+            reason=outputs.string("Why."),
+            match_level=outputs.string("Level it matched at."),
+        ),
+    ),
+    preview=outputs.arr(
+        "The changes (capped).",
+        outputs.obj(
+            "A change.",
+            at=outputs.RANGE,
+            before=outputs.string("Text before."),
+            after=outputs.string("Text after (case kept)."),
+            context=outputs.string("The text around it."),
+            match_level=outputs.string("Level it matched at."),
+        ),
+    ),
+    matches_by_level=outputs.mapping("With match_level: matches per level."),
+    address_map=outputs.ADDRESS_MAP,
+    footprint=outputs.FOOTPRINT,
+    revision_ids=outputs.REVISION_IDS,
+    author=outputs.AUTHOR,
+    date=outputs.DATE,
+    tracked=outputs.TRACKED,
+    sha256=outputs.SHA256,
+    backup=outputs.BACKUP,
+    **{"from": outputs.string("The name replaced.")},
+)
+
+
 @operation(
     "term.rename",
     "write",
@@ -373,6 +421,7 @@ def _drop_unsupported(pkg: Package, index: DocumentIndex, plan: RenamePlan) -> R
         "`match_level` folds it; then each change says the level it matched at."
     ),
     _SCHEMA,
+    output=_OUTPUT,
 )
 def term_rename(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

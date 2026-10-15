@@ -2,13 +2,15 @@
 
 A thin wrapper over the operation registry (decision D-8): one tool per operation, the
 operation's JSON Schema as the tool's input schema, and the usual response envelope as
-the tool result. The transport is newline-delimited JSON-RPC 2.0 on stdin/stdout, which
+the tool result: as JSON text, and on success also as ``structuredContent``, which the
+tool's ``outputSchema`` (the envelope with the operation's output schema as ``result``)
+describes. The transport is newline-delimited JSON-RPC 2.0 on stdin/stdout, which
 is all a tools-only MCP server needs, so this stays standard library only.
 
 One tool also has a UI (the MCP Apps extension, ``io.modelcontextprotocol/ui``):
 ``live_places`` names the page ``app/places.html`` as a ``ui://`` resource, and a client
 that renders MCP Apps shows it with the tool's result; its buttons call ``live_select``
-through the client. Other clients just get the envelope as text.
+through the client.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from typing import IO, Any
 
 from doc_control import __version__
 from doc_control.cli import execute
+from doc_control.outputs import envelope_schema
 from doc_control.registry import ALIASES, Operation, load_operations
 
 # Protocol revisions this server speaks; the newest is offered to a client that asks for another.
@@ -87,6 +90,8 @@ def _tools(registry: dict[str, Operation]) -> list[dict[str, Any]]:
             "inputSchema": op.schema,
             "annotations": _annotations(op),
         }
+        if op.output is not None:
+            tool["outputSchema"] = envelope_schema(op.output)
         if tool["name"] in APPS:
             tool["_meta"] = {
                 "ui": {"resourceUri": _app(tool["name"])[0], "visibility": ["model", "app"]}
@@ -149,9 +154,11 @@ def handle(registry: dict[str, Operation], message: Any) -> dict[str, Any] | Non
             "content": [{"type": "text", "text": json.dumps(envelope, ensure_ascii=False)}],
             "isError": not envelope["ok"],
         }
-        if name in APPS and envelope["ok"]:
-            result["structuredContent"] = envelope["result"]
-            result["_meta"] = {"ui": {"resourceUri": _app(name)[0]}}
+        if envelope["ok"]:
+            # The envelope, as the text holds it; an error reply has none (it is not a result).
+            result["structuredContent"] = envelope
+            if name in APPS:
+                result["_meta"] = {"ui": {"resourceUri": _app(name)[0]}}
     else:
         return _error(msg_id, -32601, f"method not found: {method}")
     return {"jsonrpc": "2.0", "id": msg_id, "result": result}

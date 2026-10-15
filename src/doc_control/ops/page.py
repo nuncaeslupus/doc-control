@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.pages import CONSTANTS, NOTES, PageEstimate, estimate_pages
@@ -36,6 +37,43 @@ def _page_rows(est: PageEstimate) -> list[dict[str, Any]]:
     return rows
 
 
+_PAGE_ROW = {
+    "page": outputs.integer("Estimated page (1-based)."),
+    "page_label": outputs.PAGE_LABEL,
+    "source": outputs.string("rendered (Word's page marks), break (explicit break) or model."),
+    "end_page": outputs.integer("Page it ends on, when it runs onto another page."),
+    "end_page_label": outputs.PAGE_LABEL,
+}
+_OUTPUT = outputs.result(
+    ("estimated", "page_count", "basis", "words_per_page", "rendered_marks", "model", "notes"),
+    estimated=outputs.boolean("Always true: pages are estimates."),
+    page_count=outputs.integer("Estimated page count."),
+    basis=outputs.string("model, or rendered+model when Word's page marks are used."),
+    words_per_page=outputs.integer("Words per page the model assumes."),
+    rendered_marks=outputs.integer("Rendered page-break marks found."),
+    model=outputs.mapping("The model's constants."),
+    notes=outputs.strings("Caveats about the estimate."),
+    total=outputs.TOTAL,
+    paragraphs=outputs.arr(
+        "by paragraph: this page of rows.",
+        outputs.obj("A paragraph.", at=outputs.ADDRESS, **_PAGE_ROW),
+    ),
+    pages=outputs.arr(
+        "by page: this page of rows.",
+        outputs.obj(
+            "A page.",
+            page=outputs.integer("Page."),
+            page_label=outputs.PAGE_LABEL,
+            to=outputs.integer("Last paragraph number on it."),
+            paragraphs=outputs.integer("Paragraphs starting on it."),
+            **{"from": outputs.integer("First paragraph number on it.")},
+        ),
+    ),
+    at=outputs.string("With at: the paragraph."),
+    **_PAGE_ROW,
+)
+
+
 @operation(
     "page.estimate",
     "read",
@@ -60,6 +98,7 @@ def _page_rows(est: PageEstimate) -> list[dict[str, Any]]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def page_estimate(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

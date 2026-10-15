@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.layout import blank_before, centred, is_empty, page_break_before
@@ -18,6 +19,44 @@ from doc_control.model.pages import estimate_pages
 from doc_control.model.storyorder import STORIES_PROPERTY, kinds_of, rows
 from doc_control.ops.paging import PAGING_PROPERTIES, paged
 from doc_control.registry import operation
+
+_OUTPUT = outputs.result(
+    ("total", "paragraphs"),
+    total=outputs.TOTAL,
+    paragraphs=outputs.arr(
+        "This page of paragraphs, in document order.",
+        outputs.obj(
+            "A paragraph.",
+            at=outputs.ADDRESS,
+            number=outputs.integer("Paragraph number (1-based) in its story."),
+            text=outputs.string("Full text."),
+            normalized=outputs.string("With normalized: the text as text.normalize gives it."),
+            style=outputs.nullable("string", "Paragraph style id."),
+            style_name=outputs.nullable("string", "Paragraph style display name."),
+            heading_level=outputs.nullable(
+                "integer", "1-9 for a heading, null for a body paragraph."
+            ),
+            centred=outputs.boolean("Whether it is centred."),
+            page_break_before=outputs.boolean("Whether it starts a page."),
+            blank_before=outputs.integer("Empty paragraphs right before it."),
+            empty=outputs.boolean("No visible text."),
+            **outputs.STORY_FIELDS,
+            cell=outputs.obj(
+                "Inside a table: where.",
+                table=outputs.integer("Table number."),
+                row=outputs.integer("Row (0-based)."),
+                col=outputs.integer("Grid column (0-based)."),
+            ),
+            page=outputs.integer("With pages: estimated page (body paragraphs)."),
+            page_label=outputs.PAGE_LABEL,
+        ),
+    ),
+    page_basis=outputs.string(
+        "With pages: model, or rendered+model when Word's page marks are used."
+    ),
+    rendered_marks=outputs.integer("With pages: rendered page-break marks found."),
+    page_count=outputs.integer("With pages: estimated page count."),
+)
 
 
 @operation(
@@ -47,6 +86,7 @@ from doc_control.registry import operation
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def paragraphs_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

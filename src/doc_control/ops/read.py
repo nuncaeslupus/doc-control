@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import budget
@@ -105,6 +106,40 @@ def _doc_props(doc: Document, part: str, fields: dict[str, str]) -> dict[str, An
     return out
 
 
+_INFO_OUTPUT = outputs.result(
+    ("size_bytes", "parts", "properties", "application", "tracked_changes_on", "word_lock", "has"),
+    size_bytes=outputs.integer("File size in bytes."),
+    parts=outputs.integer("Parts in the package."),
+    properties=outputs.obj(
+        "Core properties present (docProps/core.xml).",
+        title=outputs.string("Title."),
+        subject=outputs.string("Subject."),
+        creator=outputs.string("Author."),
+        last_modified_by=outputs.string("Last modified by."),
+        created=outputs.string("Created (ISO 8601)."),
+        modified=outputs.string("Modified (ISO 8601)."),
+        revision={"type": ["integer", "string"], "description": "Revision number."},
+    ),
+    application=outputs.obj(
+        "Application properties present (docProps/app.xml).",
+        application={"type": ["string", "integer"], "description": "Program that wrote it."},
+        pages={"type": ["integer", "string"], "description": "Page count Word saved."},
+        words={"type": ["integer", "string"], "description": "Word count Word saved."},
+    ),
+    tracked_changes_on=outputs.boolean("Whether Track Changes is switched on in the document."),
+    word_lock=outputs.boolean("Whether a Word lock file (~$name) is next to it: open in Word."),
+    has=outputs.obj(
+        "Which parts exist.",
+        styles=outputs.boolean("A styles part."),
+        comments=outputs.boolean("A comments part."),
+        footnotes=outputs.boolean("A footnotes part."),
+        endnotes=outputs.boolean("An endnotes part."),
+        headers=outputs.integer("Header parts."),
+        footers=outputs.integer("Footer parts."),
+    ),
+)
+
+
 @operation(
     "doc.info",
     "read",
@@ -120,6 +155,7 @@ def _doc_props(doc: Document, part: str, fields: dict[str, str]) -> dict[str, An
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_INFO_OUTPUT,
 )
 def info(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -148,6 +184,32 @@ def info(request: dict[str, Any]) -> Reply:
 # -- outline ---------------------------------------------------------------
 
 
+_OUTLINE_OUTPUT = outputs.result(
+    ("total", "headings"),
+    total=outputs.TOTAL,
+    headings=outputs.arr(
+        "This page of headings, in document order.",
+        outputs.extensible(
+            outputs.obj(
+                "A heading (layout facts may add keys).",
+                at=outputs.ADDRESS,
+                level=outputs.integer("Heading level, 1-9."),
+                style=outputs.nullable("string", "Paragraph style id."),
+                style_name=outputs.nullable("string", "Paragraph style display name."),
+                text=outputs.string(
+                    "Heading text, whitespace collapsed, clipped at 160 characters."
+                ),
+                truncated=outputs.boolean("True when text was clipped."),
+                blank_before=outputs.integer("Empty paragraphs right before it."),
+                centred=outputs.boolean("Whether it is centred."),
+                page_break_before=outputs.boolean("Whether it starts a page."),
+                **outputs.STORY_FIELDS,
+            )
+        ),
+    ),
+)
+
+
 @operation(
     "doc.outline",
     "read",
@@ -166,6 +228,7 @@ def info(request: dict[str, Any]) -> Reply:
         },
         stories=STORIES_PROPERTY,
     ),
+    output=_OUTLINE_OUTPUT,
 )
 def outline(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -264,6 +327,55 @@ def _footnote_count(doc: Document) -> int:
     return sum(1 for n in notes if n.get(W + "type", "normal") == "normal")
 
 
+_STORY_COUNTS = outputs.obj(
+    "Counts for one story kind.",
+    stories=outputs.integer("Stories (notes, or header/footer parts)."),
+    paragraphs=outputs.integer("Paragraphs."),
+    words=outputs.integer("Words."),
+    characters=outputs.integer("Characters."),
+)
+_STATS_OUTPUT = outputs.result(
+    (
+        "paragraphs",
+        "empty_paragraphs",
+        "words",
+        "characters",
+        "headings",
+        "tables",
+        "comments",
+        "revisions",
+        "footnotes",
+        "styles_in_use",
+        "fonts",
+    ),
+    paragraphs=outputs.integer("Body paragraphs."),
+    empty_paragraphs=outputs.integer("Body paragraphs with no visible text."),
+    words=outputs.integer("Words in the body (whitespace-separated)."),
+    characters=outputs.integer("Characters in the body."),
+    headings=outputs.integer("Heading paragraphs."),
+    tables=outputs.integer("Tables (w:tbl), nested included."),
+    comments=outputs.integer("Comments."),
+    revisions=outputs.obj(
+        "Tracked changes in the body.",
+        total=outputs.integer("All of them."),
+        by_type=outputs.mapping("Revision type -> count."),
+    ),
+    footnotes=outputs.integer("Footnotes."),
+    styles_in_use=outputs.integer("Distinct styles used."),
+    fonts=outputs.arr(
+        "Fonts named in the body and styles, most used first (top 20).",
+        outputs.obj(
+            "A font.", font=outputs.string("Font name."), uses=outputs.integer("References.")
+        ),
+    ),
+    stories=outputs.obj(
+        "With stories: the same counts for notes and for headers/footers.",
+        notes=_STORY_COUNTS,
+        headers=_STORY_COUNTS,
+    ),
+)
+
+
 @operation(
     "doc.stats",
     "read",
@@ -274,6 +386,7 @@ def _footnote_count(doc: Document) -> int:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_STATS_OUTPUT,
 )
 def stats(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -342,6 +455,38 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
     ]
 
 
+_PARA_GET_OUTPUT = outputs.result(
+    ("at", "number", "length", "style", "style_name", "format", "offset", "text", "runs"),
+    at=outputs.ADDRESS,
+    number=outputs.integer("Paragraph number (1-based) in its story."),
+    length=outputs.integer("Length of the whole text, in code points."),
+    style=outputs.nullable("string", "Paragraph style id."),
+    style_name=outputs.nullable("string", "Paragraph style display name."),
+    format=outputs.mapping("Direct paragraph formatting (alignment, indent, spacing...)."),
+    empty=outputs.boolean("No visible text."),
+    blank_before=outputs.integer("Empty paragraphs right before it."),
+    heading_level=outputs.nullable("integer", "1-9 for a heading, null for a body paragraph."),
+    centred=outputs.boolean("Whether it is centred."),
+    page_break_before=outputs.boolean("Whether it starts a page."),
+    **outputs.STORY_FIELDS,
+    offset=outputs.integer("Where this page of text starts in the paragraph."),
+    text=outputs.string("This page of the text."),
+    runs=outputs.arr(
+        "Spans of the text with direct character formatting.",
+        outputs.extensible(
+            outputs.obj(
+                "A span: start/end offsets plus its formatting (bold, italic, font...).",
+                ("start", "end"),
+                start=outputs.integer("Start offset."),
+                end=outputs.integer("End offset."),
+            )
+        ),
+    ),
+)
+# Layout facts (PARA_FACTS) may add keys.
+_PARA_GET_OUTPUT = outputs.extensible(_PARA_GET_OUTPUT)
+
+
 @operation(
     "para.get",
     "read",
@@ -371,6 +516,7 @@ def _clip_spans(spans: list[dict[str, Any]], start: int, end: int) -> list[dict[
         "required": ["doc", "at"],
         "additionalProperties": False,
     },
+    output=_PARA_GET_OUTPUT,
 )
 def para_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -425,6 +571,22 @@ def _style_row(style: Style, used: int) -> dict[str, Any]:
     return row
 
 
+_STYLE_ROW: dict[str, Any] = {
+    "id": outputs.string("Style id (w:styleId)."),
+    "name": outputs.string("Display name."),
+    "type": outputs.string("paragraph, character, table or numbering."),
+    "based_on": outputs.string("Parent style id."),
+    "default": outputs.boolean("True for the default style of its type."),
+    "custom": outputs.boolean("True for a user-defined style."),
+    "used": outputs.integer("Uses in the body."),
+}
+_STYLE_LIST_OUTPUT = outputs.result(
+    ("total", "styles"),
+    total=outputs.TOTAL,
+    styles=outputs.arr("This page of styles.", outputs.obj("A style.", **_STYLE_ROW)),
+)
+
+
 @operation(
     "style.list",
     "read",
@@ -437,6 +599,7 @@ def _style_row(style: Style, used: int) -> dict[str, Any]:
         type={"type": "string", "enum": _STYLE_TYPES, "description": "Only this kind of style."},
         used_only={"type": "boolean", "description": "Only styles used at least once."},
     ),
+    output=_STYLE_LIST_OUTPUT,
 )
 def styles_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -452,6 +615,24 @@ def styles_list(request: dict[str, Any]) -> Reply:
     return paged("style.list", doc, request, "styles", rows)
 
 
+_FORMATTING = outputs.obj(
+    "Formatting.",
+    paragraph=outputs.mapping("Paragraph properties."),
+    run=outputs.mapping("Run (character) properties."),
+)
+_STYLE_GET_OUTPUT = outputs.result(
+    ("id", "name", "type", "used", "quick", "heading_level", "chain", "own", "effective"),
+    **_STYLE_ROW,
+    next=outputs.string("Style of the paragraph after this one."),
+    link=outputs.string("Linked paragraph/character style."),
+    quick=outputs.boolean("Shown in the quick style gallery."),
+    heading_level=outputs.nullable("integer", "1-9 for a heading style, else null."),
+    chain=outputs.strings("The style and its ancestors, nearest first."),
+    own={**_FORMATTING, "description": "Formatting the style sets itself."},
+    effective={**_FORMATTING, "description": "Formatting after inheritance."},
+)
+
+
 @operation(
     "style.get",
     "read",
@@ -465,6 +646,7 @@ def styles_list(request: dict[str, Any]) -> Reply:
         "required": ["doc", "style"],
         "additionalProperties": False,
     },
+    output=_STYLE_GET_OUTPUT,
 )
 def style_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -489,6 +671,27 @@ def style_get(request: dict[str, Any]) -> Reply:
 # -- comments and revisions ------------------------------------------------
 
 
+_COMMENT_LIST_OUTPUT = outputs.result(
+    ("total", "comments"),
+    total=outputs.TOTAL,
+    comments=outputs.arr(
+        "This page of comments, each root then its replies.",
+        outputs.obj(
+            "A comment.",
+            id=outputs.string("Comment id."),
+            author=outputs.string("Author."),
+            date=outputs.nullable("string", "Date (ISO 8601)."),
+            text=outputs.string("Text, clipped at 1,000 characters."),
+            truncated=outputs.boolean("True when text was clipped."),
+            resolved=outputs.boolean("Marked done."),
+            reply_to=outputs.string("Id of the comment it answers."),
+            at=outputs.string("Address of the paragraph where its range starts."),
+            story=outputs.string("footnote, endnote, header or footer when not in the body."),
+        ),
+    ),
+)
+
+
 @operation(
     "comment.list",
     "read",
@@ -502,6 +705,7 @@ def style_get(request: dict[str, Any]) -> Reply:
         resolved={"type": "boolean", "description": "Only resolved (true) or open (false)."},
         author={"type": "string", "minLength": 1, "description": "Only this author."},
     ),
+    output=_COMMENT_LIST_OUTPUT,
 )
 def comments_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -531,6 +735,26 @@ def comments_list(request: dict[str, Any]) -> Reply:
     return paged("comment.list", doc, request, "comments", rows)
 
 
+_REVISION_LIST_OUTPUT = outputs.result(
+    ("total", "revisions"),
+    total=outputs.TOTAL,
+    revisions=outputs.arr(
+        "This page of tracked changes, in document order.",
+        outputs.obj(
+            "A tracked change.",
+            id=outputs.string("Revision id (for revision.accept / revision.reject)."),
+            type=outputs.string("insert, delete, move_from, move_to, format, row_insert..."),
+            author=outputs.string("Author."),
+            date=outputs.nullable("string", "Date (ISO 8601)."),
+            at=outputs.string("Address of its paragraph."),
+            text=outputs.string("Text it inserts or deletes, clipped at 200 characters."),
+            truncated=outputs.boolean("True when text was clipped."),
+            story=outputs.string("footnote, endnote, header or footer when not in the body."),
+        ),
+    ),
+)
+
+
 @operation(
     "revision.list",
     "read",
@@ -551,6 +775,7 @@ def comments_list(request: dict[str, Any]) -> Reply:
             "revisions are listed for the body's tables only.",
         },
     ),
+    output=_REVISION_LIST_OUTPUT,
 )
 def revisions_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

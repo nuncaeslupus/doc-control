@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.anchor import (
@@ -47,6 +48,22 @@ ANCHOR_SCHEMA: dict[str, Any] = {
 }
 
 
+_CREATE_OUTPUT = outputs.result(
+    ("anchor",),
+    anchor=outputs.obj(
+        "The anchor: pass it whole to anchor.resolve later.",
+        ("exact", "prefix", "suffix"),
+        exact=outputs.string("The quoted text."),
+        prefix=outputs.string("Text just before it."),
+        suffix=outputs.string("Text just after it."),
+        hint=outputs.string("Paragraph number then, as p<n>."),
+        fingerprint=outputs.string("That paragraph's fingerprint then."),
+        at=outputs.RANGE,
+        sentence=outputs.string("Sentence address when the range was a sentence."),
+    ),
+)
+
+
 @operation(
     "anchor.create",
     "read",
@@ -72,11 +89,23 @@ ANCHOR_SCHEMA: dict[str, Any] = {
         "required": ["doc", "at"],
         "additionalProperties": False,
     },
+    output=_CREATE_OUTPUT,
 )
 def anchor_create(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
     anchor = create(doc.index, request["at"], request.get("context", CONTEXT_CHARS))
     return Reply({"anchor": anchor.to_dict()}, doc=doc.envelope_doc())
+
+
+_RESOLVE_OUTPUT = outputs.result(
+    ("at", "score", "match"),
+    at=outputs.RANGE,
+    score=outputs.number("Match score, 0-1."),
+    match=outputs.string("exact, normalized or fuzzy."),
+    match_level=outputs.string("Strictest fold level at which the quote equals the matched text."),
+    matched_text=outputs.string("The text matched, when not character for character."),
+    sentence=outputs.string("Sentence address, for a sentence anchor."),
+)
 
 
 @operation(
@@ -119,6 +148,7 @@ def anchor_create(request: dict[str, Any]) -> Reply:
         "required": ["doc", "anchor"],
         "additionalProperties": False,
     },
+    output=_RESOLVE_OUTPUT,
 )
 def anchor_resolve(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

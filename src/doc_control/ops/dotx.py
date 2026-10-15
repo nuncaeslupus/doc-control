@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.styles import load_styles
@@ -128,6 +129,14 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
     return _zip(parts)
 
 
+_EXPORT_OUTPUT = outputs.result(
+    ("path", "count", "bytes"),
+    path=outputs.string("The template written."),
+    count=outputs.integer("Styles in it."),
+    bytes=outputs.integer("Its size."),
+)
+
+
 @operation(
     "styleset.export_dotx",
     "write",
@@ -153,6 +162,7 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
         "required": ["doc", "out"],
         "additionalProperties": False,
     },
+    output=_EXPORT_OUTPUT,
 )
 def styleset_export_dotx(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -166,6 +176,20 @@ def styleset_export_dotx(request: dict[str, Any]) -> Reply:
 def read_dotx(path: Path) -> list[dict[str, Any]]:
     """The style entries of a .dotx (or any Word package) as style set entries."""
     return [style_entry(s) for s in load_styles(Package(path)).styles]
+
+
+_IMPORT_OUTPUT = outputs.result(
+    ("applied", "dry_run", "tracked", "changed_parts"),
+    applied=outputs.arr(
+        "One entry per style in the template.",
+        outputs.obj(
+            "What happened to a style.",
+            style=outputs.string("Style id."),
+            action=outputs.string("created, replaced or skipped."),
+        ),
+    ),
+    **outputs.STYLE_WRITE_FIELDS,
+)
 
 
 @operation(
@@ -192,6 +216,7 @@ def read_dotx(path: Path) -> list[dict[str, Any]]:
         "required": ["doc", "path"],
         "additionalProperties": False,
     },
+    output=_IMPORT_OUTPUT,
 )
 def styleset_import_dotx(request: dict[str, Any]) -> Reply:
     source, target = Path(request["path"]), Path(request["doc"])

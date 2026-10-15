@@ -20,6 +20,7 @@ import re
 import time
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
@@ -100,6 +101,31 @@ SCHEMA: dict[str, Any] = {
 }
 
 
+_OUTPUT = outputs.result(
+    ("matches",),
+    matches=outputs.arr(
+        "This page of matches, in document order.",
+        outputs.obj(
+            "A match.",
+            at=outputs.RANGE,
+            text=outputs.string("The matched text (clipped when very long)."),
+            text_truncated=outputs.boolean("True when text was clipped."),
+            context=outputs.string("The match with some text around it (… marks a cut)."),
+            match_level=outputs.string("With match_level: the level it matched at."),
+        ),
+    ),
+    total=outputs.integer("First page only: matches in the whole document."),
+    total_at_least=outputs.integer("First page, time budget hit: matches counted so far."),
+    more=outputs.boolean("First page, time budget hit: true (more matches may follow)."),
+    query_word=outputs.nullable("string", "The query as typed in Word's Find box, or null."),
+    query_word_options=outputs.obj(
+        "Find options to tick in Word for the same matches.",
+        match_case=outputs.boolean("Match case."),
+        whole_words=outputs.boolean("Find whole words only."),
+    ),
+)
+
+
 @operation(
     "text.find",
     "read",
@@ -110,6 +136,7 @@ SCHEMA: dict[str, Any] = {
     "hyphen in the query; not for a regex; null at a folded `match_level`), "
     "with `query_word_options` (match_case, whole_words) to tick there.",
     SCHEMA,
+    output=_OUTPUT,
 )
 def find(request: dict[str, Any]) -> Reply:
     level: Level | None = request.get("match_level")

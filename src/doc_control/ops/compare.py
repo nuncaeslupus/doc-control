@@ -43,6 +43,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.align import (
@@ -592,6 +593,31 @@ def _parse_date(value: str) -> datetime:
     return moment
 
 
+_OUTPUT = outputs.result(
+    ("old", "new", "output", "summary", "revisions", "author", "date"),
+    old={**outputs.DOC_BLOCK, "description": "The earlier version."},
+    new={**outputs.DOC_BLOCK, "description": "The later version."},
+    output=outputs.obj(
+        "The redline written.",
+        path=outputs.string("Its path."),
+        sha256=outputs.string("Its sha256."),
+    ),
+    summary=outputs.obj(
+        "Paragraphs per alignment kind.",
+        unchanged=outputs.integer("Unchanged."),
+        modified=outputs.integer("Edited in place."),
+        moved=outputs.integer("Moved."),
+        split=outputs.integer("Split in two or more."),
+        merged=outputs.integer("Joined."),
+        deleted=outputs.integer("Deleted."),
+        inserted=outputs.integer("Inserted."),
+    ),
+    revisions=outputs.integer("Tracked changes in the redline."),
+    author=outputs.AUTHOR,
+    date=outputs.DATE,
+)
+
+
 @operation(
     "doc.compare",
     "read",
@@ -613,6 +639,7 @@ def _parse_date(value: str) -> datetime:
         "required": ["old", "new", "output"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def compare(request: dict[str, Any]) -> Reply:
     done = compare_documents(

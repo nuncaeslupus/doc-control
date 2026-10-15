@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.ops.batch import ALL_SCHEMAS, BATCH_SCHEMA, batch
 from doc_control.ops.live import LIVE_KINDS
@@ -105,4 +106,5 @@ for _kind, _summary in DIRECT.items():
         direct_schema(_kind),
         # A revision kind's `author` picks whose revisions to resolve: never a default.
         fills_author=not _kind.startswith("revision."),
+        output=outputs.direct_output(_kind, live=_kind in LIVE_KINDS),
     )(_handler(_kind))

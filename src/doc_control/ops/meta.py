@@ -5,13 +5,46 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from doc_control import API_VERSION, __version__
+from doc_control import API_VERSION, __version__, outputs
 from doc_control.errors import HINTS, DocControlError, ErrorCode
 from doc_control.live.dispatch import apps
 from doc_control.registry import REGISTRY, canonical, load_operations, operation
 from doc_control.update_check import attach
 
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
+
+
+_CAPABILITIES_OUTPUT = outputs.result(
+    ("api", "version", "engines", "live", "features", "operations", "errors", "build"),
+    api=outputs.string("API version of the envelope."),
+    version=outputs.string("doc-control version."),
+    engines=outputs.strings("Engines: file, live."),
+    live=outputs.obj("The live engine.", apps=outputs.arr("Every live app.", outputs.LIVE_APP)),
+    features=outputs.obj(
+        "Feature support per engine.",
+        plain_writes=outputs.obj(
+            "tracked: false writes.",
+            file=outputs.boolean("File engine."),
+            live=outputs.boolean("Live."),
+        ),
+    ),
+    operations=outputs.arr(
+        "Every operation.",
+        outputs.obj(
+            "An operation.",
+            name=outputs.string("Its name (MCP tool: dots as underscores)."),
+            kind=outputs.string("read or write."),
+            summary=outputs.string("What it does."),
+        ),
+    ),
+    errors=outputs.strings("Every error code."),
+    build=outputs.obj(
+        "How this copy was built.",
+        frozen=outputs.boolean("A frozen binary."),
+        freezer=outputs.string("Its freezer (pyinstaller)."),
+    ),
+    update=outputs.UPDATE,
+)
 
 
 @operation(
@@ -23,6 +56,7 @@ _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalPropert
         "server.help gives one operation's full schema. Read-only; needs no document."
     ),
     _EMPTY,
+    output=_CAPABILITIES_OUTPUT,
 )
 def capabilities(_: dict[str, Any]) -> dict[str, Any]:
     load_operations()
@@ -50,6 +84,16 @@ def _build() -> dict[str, Any]:
     return {"frozen": True, "freezer": "pyinstaller" if hasattr(sys, "_MEIPASS") else "unknown"}
 
 
+_DESCRIBED = outputs.mapping(
+    "Name -> {kind, summary, schema (JSON Schema of the request)"
+    ", and output_schema (of the result) when one operation is asked}."
+)
+_HELP_OUTPUT = outputs.result(
+    operations=_DESCRIBED,
+    batch_operations={**_DESCRIBED, "description": "doc.batch kind -> {kind, summary, schema}."},
+)
+
+
 @operation(
     "server.help",
     "read",
@@ -64,6 +108,7 @@ def _build() -> dict[str, Any]:
         },
         "additionalProperties": False,
     },
+    output=_HELP_OUTPUT,
 )
 def help_(request: dict[str, Any]) -> dict[str, Any]:
     load_operations()
@@ -80,7 +125,7 @@ def help_(request: dict[str, Any]) -> dict[str, Any]:
     # A name can be both (text.replace is a direct write tool and a doc.batch kind): both.
     out: dict[str, Any] = {}
     if name in REGISTRY:
-        out["operations"] = {name: _describe(name)}
+        out["operations"] = {name: {**_describe(name), "output_schema": REGISTRY[name].output}}
     if name in kinds:
         out["batch_operations"] = {name: _describe_kind(name, kinds[name])}
     return out

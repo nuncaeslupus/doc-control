@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import limit as list_limit
@@ -90,6 +91,33 @@ def _adoptable(path: Path, sha: str) -> list[dict[str, Any]]:
         return []
 
 
+_STORE_ROW: dict[str, Any] = {
+    "store": outputs.string("Store folder."),
+    "doc": outputs.nullable("string", "Path of the document it last recorded."),
+    "doc_id": outputs.string("Id of that document's history."),
+    "entries": outputs.integer("Log entries."),
+    "last_time": outputs.nullable("string", "Time of the last entry (ISO 8601)."),
+}
+_ADOPTABLE = outputs.arr(
+    "Orphan stores whose history this document could take back (history.adopt).",
+    outputs.obj(
+        "An orphan store.",
+        **_STORE_ROW,
+        sha_matched=outputs.boolean("Its last recorded state is this file."),
+    ),
+)
+_OPEN_OUTPUT = outputs.result(
+    ("backup", "op_id", "store"),
+    backup=outputs.string("Path of the backup just taken."),
+    op_id=outputs.nullable(
+        "string", "Log entry noting the open, or null if the file is as last logged."
+    ),
+    store=outputs.string("The document's store folder (backups and log)."),
+    adoptable=_ADOPTABLE,
+    hint=outputs.string("What to do with adoptable."),
+)
+
+
 @operation(
     "doc.open",
     "write",
@@ -101,6 +129,7 @@ def _adoptable(path: Path, sha: str) -> list[dict[str, Any]]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OPEN_OUTPUT,
 )
 def open_(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -129,6 +158,15 @@ def _undoable(entry: dict[str, Any]) -> bool:
     return entry.get("kind") in UNDOABLE_KINDS and bool(entry.get("changes"))
 
 
+_UNDO_OUTPUT = outputs.result(
+    ("undid", "dry_run", "paragraphs"),
+    undid=outputs.string("Op id taken back."),
+    dry_run=outputs.DRY_RUN,
+    paragraphs=outputs.integer("Paragraphs returned to their prior state."),
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "history.undo",
     "write",
@@ -146,6 +184,7 @@ def _undoable(entry: dict[str, Any]) -> bool:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_UNDO_OUTPUT,
 )
 def undo(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -213,6 +252,22 @@ def _restorable(change: dict[str, Any]) -> bool:
     return change.get("kind") == "replace" and bool(change.get("text_before"))
 
 
+_RESTORE_OUTPUT = outputs.result(
+    ("applied", "dry_run", "restored", "from"),
+    **outputs.BATCH_FIELDS,
+    restored=outputs.arr(
+        "The paragraphs brought back.",
+        outputs.obj(
+            "A restored paragraph.",
+            change=outputs.integer("Change number in the logged op."),
+            after=outputs.string("Address it was inserted after."),
+            text=outputs.string("Its text (clipped)."),
+        ),
+    ),
+    **{"from": outputs.string("The logged op restored from.")},
+)
+
+
 @operation(
     "history.restore",
     "write",
@@ -251,6 +306,7 @@ def _restorable(change: dict[str, Any]) -> bool:
         "required": ["doc", "op_id"],
         "additionalProperties": False,
     },
+    output=_RESTORE_OUTPUT,
 )
 def restore(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -367,6 +423,44 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
     return out
 
 
+_LIST_OUTPUT = outputs.result(
+    ("entries", "total"),
+    entries=outputs.arr(
+        "This page of log entries, newest first.",
+        outputs.obj(
+            "A logged write.",
+            op_id=outputs.string("Op id (history.undo / history.restore)."),
+            kind=outputs.nullable("string", "batch, restore, undo, open, purge or adopt."),
+            time=outputs.nullable("string", "When (ISO 8601)."),
+            author=outputs.nullable("string", "Revision author."),
+            tag=outputs.nullable("string", "Author tag."),
+            paragraphs=outputs.integer("Paragraphs it changed."),
+            ops=outputs.strings("Operation kinds in the request."),
+            undone=outputs.boolean("Whether it was taken back."),
+            deleted=outputs.arr(
+                "Paragraphs it deleted that history.restore can bring back (first 5).",
+                outputs.obj(
+                    "A deleted paragraph.",
+                    change=outputs.integer("Change number."),
+                    text=outputs.string("Text (clipped)."),
+                ),
+            ),
+            undoes=outputs.string("Op id it undid."),
+            restores=outputs.string("Op id it restored from."),
+            sha256_after=outputs.string("File hash after it."),
+            backup=outputs.string("Backup taken before it."),
+            engine=outputs.string("live for a live-engine edit."),
+            tracked=outputs.boolean("False for a plain write."),
+            adopted_from=outputs.mapping("adopt: the store and document it came from."),
+            removed=outputs.nullable("integer", "purge: entries removed."),
+            scope=outputs.nullable("string", "purge: what was removed."),
+        ),
+    ),
+    total=outputs.integer("Entries in the log (after the kind filter)."),
+    unreadable_lines=outputs.integer("Log lines that could not be read."),
+)
+
+
 @operation(
     "history.list",
     "read",
@@ -386,6 +480,7 @@ def _summary(entry: dict[str, Any], undone: set[str]) -> dict[str, Any]:
         },
         "additionalProperties": False,
     },
+    output=_LIST_OUTPUT,
 )
 def history_list(request: dict[str, Any]) -> Reply:
     log = _log(request)
@@ -411,6 +506,25 @@ def history_list(request: dict[str, Any]) -> Reply:
         result["unreadable_lines"] = log.skipped
     more = len(rows) > limit
     return Reply(result, next_cursor=page[-1]["op_id"] if more and page else None)
+
+
+_SEARCH_OUTPUT = outputs.result(
+    ("matches", "total"),
+    matches=outputs.arr(
+        "Hits, newest entry first (up to limit).",
+        outputs.obj(
+            "A hit.",
+            op_id=outputs.string("The logged op it is in."),
+            text=outputs.string("The text around the hit."),
+            start=outputs.integer("With match_level: start of the hit in the text."),
+            end=outputs.integer("With match_level: end of the hit."),
+            match_level=outputs.string("With match_level: the level it matched at."),
+            **{"in": outputs.string("Where: request, or change <n> before/after.")},
+        ),
+    ),
+    total=outputs.integer("Hits in the whole log."),
+    matches_by_level=outputs.mapping("With match_level: hits per level."),
+)
 
 
 @operation(
@@ -450,6 +564,7 @@ def history_list(request: dict[str, Any]) -> Reply:
         "required": ["query"],
         "additionalProperties": False,
     },
+    output=_SEARCH_OUTPUT,
 )
 def history_search(request: dict[str, Any]) -> Reply:
     level: Level | None = request.get("match_level")
@@ -484,6 +599,19 @@ def history_search(request: dict[str, Any]) -> Reply:
     return Reply(result)
 
 
+_PURGE_OUTPUT = outputs.result(
+    ("dry_run", "scope", "removed", "would_remove", "confirm"),
+    dry_run=outputs.DRY_RUN,
+    scope=outputs.string("What is removed: all, or before <time>."),
+    removed=outputs.integer("Entries removed (0 on a dry run)."),
+    would_remove=outputs.integer("Entries the scope covers."),
+    first_op_id=outputs.nullable("string", "Oldest entry removed."),
+    last_op_id=outputs.nullable("string", "Newest entry removed."),
+    confirm=outputs.string("Token to pass as confirm to really purge."),
+    tombstone=outputs.string("Op id of the purge entry left in the log."),
+)
+
+
 @operation(
     "history.purge",
     "write",
@@ -504,6 +632,7 @@ def history_search(request: dict[str, Any]) -> Reply:
         },
         "additionalProperties": False,
     },
+    output=_PURGE_OUTPUT,
 )
 def history_purge(request: dict[str, Any]) -> Reply:
     if "store" in request:
@@ -533,6 +662,14 @@ def _parse_when(text: str) -> datetime:
     return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
+_ORPHANS_OUTPUT = outputs.result(
+    ("orphans", "unknown", "total"),
+    orphans=outputs.arr("Stores whose document is gone.", outputs.obj("A store.", **_STORE_ROW)),
+    unknown=outputs.arr("Stores that name no document.", outputs.obj("A store.", **_STORE_ROW)),
+    total=outputs.integer("Orphans found."),
+)
+
+
 @operation(
     "history.orphans",
     "read",
@@ -545,11 +682,29 @@ def _parse_when(text: str) -> datetime:
         },
         "additionalProperties": False,
     },
+    output=_ORPHANS_OUTPUT,
 )
 def history_orphans(request: dict[str, Any]) -> Reply:
     folder = Path(request["dir"]) if "dir" in request else None
     found = history.find_orphans(folder, os.environ)
     return Reply({**found, "total": len(found["orphans"])})
+
+
+_ADOPT_OUTPUT = outputs.result(
+    ("adopted",),
+    adopted=outputs.boolean("Whether the store was moved to the document."),
+    dry_run=outputs.DRY_RUN,
+    sha_matched=outputs.boolean("The file is the store's last recorded state."),
+    store=outputs.string("Where the store lives now (or would)."),
+    entries=outputs.integer("Log entries it holds."),
+    op_id=outputs.nullable("string", "Log entry noting the adoption."),
+    would_move=outputs.string("dry_run: the store that would move."),
+    candidates={
+        **_ADOPTABLE,
+        "description": "When several stores match: pass one as `store`; nothing moved.",
+    },
+    **{"from": outputs.string("The orphan store adopted.")},
+)
 
 
 @operation(
@@ -582,6 +737,7 @@ def history_orphans(request: dict[str, Any]) -> Reply:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_ADOPT_OUTPUT,
 )
 def history_adopt(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

@@ -32,6 +32,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -157,6 +158,7 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
         "app's open document instead: no dry_run, expect, backup or all-or-nothing."
     ),
     BATCH_SCHEMA,
+    output=outputs.BATCH_OUTPUT,
 )
 def batch(request: dict[str, Any]) -> Reply:
     plain = request.get("tracked", True) is False

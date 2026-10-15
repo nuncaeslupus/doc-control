@@ -23,6 +23,7 @@ from math import inf
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.live.dispatch import adapter_for, adapters, apps, guarded, unavailable
 from doc_control.live.protocol import LiveAdapter, LiveUnavailable, Span
@@ -150,6 +151,29 @@ def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
     return adapter, path
 
 
+_STATUS_OUTPUT = outputs.result(
+    ("apps", "open_in", "dirty"),
+    apps=outputs.arr("Every live app, running or not.", outputs.LIVE_APP),
+    open_in=outputs.nullable(
+        "object",
+        "With doc: the app holding it {app, controlled, stale}; controlled false means "
+        "only a lock file says so. Null when no app has it open.",
+    ),
+    dirty=outputs.boolean("With doc: it has unsaved changes."),
+    path=outputs.string("With doc: its full path."),
+    documents=outputs.arr(
+        "Without doc: the documents the apps have open.",
+        outputs.obj(
+            "An open document.",
+            app=outputs.string("App."),
+            path=outputs.string("Full path."),
+            name=outputs.string("File name."),
+        ),
+    ),
+    update=outputs.UPDATE,
+)
+
+
 @operation(
     "live.status",
     "read",
@@ -159,6 +183,7 @@ def held(request: dict[str, Any]) -> tuple[LiveAdapter, Path]:
         "whether it has unsaved changes. Call it before live.open. Read-only."
     ),
     _schema(required=False),
+    output=_STATUS_OUTPUT,
 )
 def status(request: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"apps": apps(), "open_in": None, "dirty": False}
@@ -183,6 +208,15 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
     return attach(out)
 
 
+_OPEN_OUTPUT = outputs.result(
+    ("app", "path", "dirty"),
+    app=outputs.string("The app now attached (word or libreoffice)."),
+    path=outputs.string("Full path of the document."),
+    dirty=outputs.boolean("It has unsaved changes."),
+    front=outputs.boolean("With front: whether its window was brought to the front."),
+)
+
+
 @operation(
     "live.open",
     "write",
@@ -196,6 +230,7 @@ def status(request: dict[str, Any]) -> dict[str, Any]:
         app={"type": "string", "minLength": 1, "description": "`word` or `libreoffice`."},
         front=_FRONT,
     ),
+    output=_OPEN_OUTPUT,
 )
 def open_(request: dict[str, Any]) -> dict[str, Any]:
     path = _named(request["doc"])
@@ -209,6 +244,11 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_SAVE_OUTPUT = outputs.result(
+    ("saved",), saved=outputs.boolean("Always true: the app saved the file.")
+)
+
+
 @operation(
     "live.save",
     "write",
@@ -218,11 +258,19 @@ def open_(request: dict[str, Any]) -> dict[str, Any]:
         "keep them; live.close with save: true saves and closes in one call."
     ),
     _schema(),
+    output=_SAVE_OUTPUT,
 )
 def save(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
     guarded(adapter.save, path)
     return {"saved": True}
+
+
+_CLOSE_OUTPUT = outputs.result(
+    ("closed", "saved"),
+    closed=outputs.boolean("Always true."),
+    saved=outputs.boolean("Whether it was saved first."),
+)
 
 
 @operation(
@@ -233,6 +281,7 @@ def save(request: dict[str, Any]) -> dict[str, Any]:
         save={"type": "boolean", "description": "Save, then close."},
         discard={"type": "boolean", "description": "Close and drop the unsaved changes."},
     ),
+    output=_CLOSE_OUTPUT,
 )
 def close(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
@@ -390,6 +439,16 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
     return spans
 
 
+_SELECT_OUTPUT = outputs.result(
+    ("text", "at"),
+    text=outputs.string("Text of the paragraph selected."),
+    at=outputs.ADDRESS,
+    match_level=outputs.string("By find_phrase: the level it matched at."),
+    matched_text=outputs.string("By find_phrase: the text matched, when not exact."),
+    front=outputs.boolean("With front: whether the window was brought to the front."),
+)
+
+
 @operation(
     "live.select",
     "write",
@@ -435,6 +494,7 @@ def _casefold_spans(texts: list[str], phrase: str, limit: int) -> list[tuple[int
             "description": "Select the paragraph this many after the one named.",
         },
     ),
+    output=_SELECT_OUTPUT,
 )
 def select(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)
@@ -490,6 +550,23 @@ _PLACE = {
 }
 
 
+_PLACES_OUTPUT = outputs.result(
+    ("doc", "mode", "places"),
+    doc=outputs.string("The document, as given."),
+    mode=outputs.string("cursor or select: what a click does."),
+    places=outputs.arr(
+        "The places, as given.",
+        outputs.obj(
+            "A place.",
+            label=outputs.string("Button label."),
+            at=outputs.ADDRESS,
+            find_phrase=outputs.string("Find phrase from para.locate."),
+            find_phrase_across=outputs.string("previous or next, from para.locate."),
+        ),
+    ),
+)
+
+
 @operation(
     "live.places",
     "read",
@@ -509,6 +586,7 @@ _PLACE = {
         },
     )
     | {"required": ["doc", "places"]},
+    output=_PLACES_OUTPUT,
 )
 def places(request: dict[str, Any]) -> dict[str, Any]:
     if not request["places"]:
@@ -529,6 +607,17 @@ def places(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_SELECTION_OUTPUT = outputs.result(
+    ("text", "paragraph"),
+    text=outputs.string("The selected text (empty for a bare cursor)."),
+    paragraph=outputs.obj(
+        "The paragraph the selection starts in.",
+        at=outputs.ADDRESS,
+        text=outputs.string("Its text."),
+    ),
+)
+
+
 @operation(
     "live.get_selection",
     "read",
@@ -539,6 +628,7 @@ def places(request: dict[str, Any]) -> dict[str, Any]:
         "live.open."
     ),
     _schema(),
+    output=_SELECTION_OUTPUT,
 )
 def selection(request: dict[str, Any]) -> dict[str, Any]:
     adapter, path = held(request)

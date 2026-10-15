@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -293,6 +294,25 @@ def add_note(
 _STR: dict[str, Any] = {"type": "string", "minLength": 1}
 
 
+_OUTPUT = outputs.result(
+    ("dry_run", "note", "mark_at", "created_part", "revision_ids"),
+    dry_run=outputs.DRY_RUN,
+    note=outputs.obj(
+        "The new note.",
+        id=outputs.integer("Note id (w:id)."),
+        number=outputs.nullable("string", "Displayed number (null on a dry run)."),
+        at=outputs.string("Address of its paragraph, e.g. fn5/p1#9447b777."),
+    ),
+    mark_at=outputs.ADDRESS,
+    created_part=outputs.boolean("Whether the footnotes/endnotes part was created."),
+    revision_ids=outputs.REVISION_IDS,
+    author=outputs.AUTHOR,
+    date=outputs.DATE,
+    footprint=outputs.FOOTPRINT,
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "note.add",
     "write",
@@ -322,6 +342,7 @@ _STR: dict[str, Any] = {"type": "string", "minLength": 1}
         "required": ["doc", "at", "kind", "text"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def note_add(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

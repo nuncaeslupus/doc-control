@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import parse_range
@@ -658,6 +659,17 @@ def _reply(path: Path, result: dict[str, Any]) -> Reply:
     return Reply(result, doc=Document(str(path)).envelope_doc(), warnings=warnings)
 
 
+_CAPTION_OUTPUT = outputs.result(
+    ("dry_run", "label", "position", "number", "bookmark", "at", "revision_ids"),
+    label=outputs.string("Table, Figure or Equation."),
+    position=outputs.string("above or below."),
+    number=outputs.integer("The number its SEQ field shows now."),
+    bookmark=outputs.string("Hidden bookmark around label and number (xref.add points at it)."),
+    at=outputs.string("Address of the caption paragraph."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "caption.add",
     "write",
@@ -675,6 +687,7 @@ def _reply(path: Path, result: dict[str, Any]) -> Reply:
             "description": "Default: above for a Table, below for a Figure or Equation.",
         },
     ),
+    output=_CAPTION_OUTPUT,
 )
 def caption_add(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -687,6 +700,17 @@ def caption_add(request: dict[str, Any]) -> Reply:
         **_common(request),
     )
     return _reply(path, result)
+
+
+_XREF_OUTPUT = outputs.result(
+    ("dry_run", "at", "to", "show", "code", "bookmark", "revision_ids"),
+    at=outputs.string("Address of the paragraph that holds the field."),
+    to=outputs.string("Address of the target paragraph."),
+    show=outputs.string("number, page or text."),
+    code=outputs.string("The field code, e.g. REF _Ref100000001 \\h."),
+    bookmark=outputs.string("The target's bookmark."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
 
 
 @operation(
@@ -710,6 +734,7 @@ def caption_add(request: dict[str, Any]) -> Reply:
             "number; page: the page it is on; text: the caption or paragraph text.",
         },
     ),
+    output=_XREF_OUTPUT,
 )
 def xref_add(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -717,6 +742,15 @@ def xref_add(request: dict[str, Any]) -> Reply:
         path, request["at"], request["to"], show=request.get("show", "number"), **_common(request)
     )
     return _reply(path, result)
+
+
+_MARK_OUTPUT = outputs.result(
+    ("dry_run", "at", "entry", "code", "revision_ids"),
+    at=outputs.string("Address of the paragraph that holds the mark."),
+    entry=outputs.string("The entry, levels joined with a colon."),
+    code=outputs.string('The XE field code, e.g. XE "Term:Sub".'),
+    **outputs.FIELD_WRITE_FIELDS,
+)
 
 
 @operation(
@@ -730,11 +764,22 @@ def xref_add(request: dict[str, Any]) -> Reply:
         at={**_STR, "description": "A range inside one paragraph; the mark goes after it."},
         entry={**_STR, "description": 'The index entry, e.g. "Term" or "Term:Sub".'},
     ),
+    output=_MARK_OUTPUT,
 )
 def index_mark(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
     result = mark_index(path, request["at"], request["entry"], **_common(request))
     return _reply(path, result)
+
+
+_INDEX_OUTPUT = outputs.result(
+    ("dry_run", "at", "after", "code", "title", "revision_ids"),
+    at=outputs.string("Address of the field's paragraph."),
+    after=outputs.string("Address of the paragraph it went after."),
+    code=outputs.string("The field code."),
+    title=outputs.nullable("string", "The title paragraph's text, or null for none."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
 
 
 @operation(
@@ -753,6 +798,7 @@ def index_mark(request: dict[str, Any]) -> Reply:
             "description": 'Title paragraph above it (default "Index"); "" for none.',
         },
     ),
+    output=_INDEX_OUTPUT,
 )
 def index_insert(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

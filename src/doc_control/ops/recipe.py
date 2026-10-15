@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.annotations import read_revisions
@@ -45,11 +46,36 @@ _RUN: dict[str, Any] = {
 }
 
 
+_LIST_OUTPUT = outputs.result(
+    ("recipes", "invalid"),
+    recipes=outputs.arr(
+        "Every usable recipe, by name.",
+        outputs.obj(
+            "A recipe.",
+            name=outputs.string("Name to pass to recipe.run."),
+            version=outputs.integer("Recipe format version."),
+            description=outputs.string("What it fixes."),
+            source=outputs.string("bundled or user."),
+        ),
+    ),
+    invalid=outputs.arr(
+        "Recipe files that could not be loaded.",
+        outputs.obj(
+            "An invalid file.",
+            file=outputs.string("File name."),
+            source=outputs.string("bundled or user."),
+            error=outputs.string("Why it is invalid."),
+        ),
+    ),
+)
+
+
 @operation(
     "recipe.list",
     "read",
     "List the bundled and user recipes, and any recipe files that are invalid.",
     _LIST,
+    output=_LIST_OUTPUT,
 )
 def recipe_list(_: dict[str, Any]) -> dict[str, Any]:
     cat = catalogue()
@@ -132,11 +158,37 @@ def _context(doc: Document) -> dict[int, Context]:
     return out
 
 
+_RUN_OUTPUT = outputs.result(
+    ("recipe", "applied", "matches", "passes", "stable", "skipped", "batch"),
+    recipe=outputs.string("The recipe's name."),
+    applied=outputs.boolean("Always false: nothing is written."),
+    matches=outputs.integer("Matches found."),
+    passes=outputs.integer("Passes run until the text stopped changing."),
+    stable=outputs.boolean("Whether it reached a fixed point."),
+    skipped=outputs.arr(
+        "Proposed edits left out, with why.",
+        outputs.obj(
+            "A skipped edit.",
+            op=outputs.string("Its kind."),
+            at=outputs.string("Its address."),
+            reason=outputs.string("Why."),
+        ),
+    ),
+    batch=outputs.obj(
+        "The doc.batch request to apply: pass it as is.",
+        doc=outputs.string("The document."),
+        ops=outputs.arr("The proposed edits.", {"type": "object"}),
+        expect=outputs.obj("Guards the batch.", sha256=outputs.string("The file hash read.")),
+    ),
+)
+
+
 @operation(
     "recipe.run",
     "write",
     "Run a recipe and return a batch proposal (repeated until stable); apply it with doc.batch.",
     _RUN,
+    output=_RUN_OUTPUT,
 )
 def recipe_run(request: dict[str, Any]) -> Reply:
     if ("recipe" in request) == ("definition" in request):

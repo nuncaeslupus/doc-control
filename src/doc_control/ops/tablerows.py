@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -579,6 +580,12 @@ def _check(doc: Document, plan: _Plan, new_data: bytes) -> dict[str, str]:
 # -- registration -------------------------------------------------------------------------
 
 
+_OUTPUT = outputs.result(
+    ("applied", "dry_run", "preview", "address_map", "footprint", "revision_ids"),
+    **{k: v for k, v in outputs.BATCH_FIELDS.items() if k not in ("comment_ids", "tracked")},
+)
+
+
 def _register(kind: str) -> None:
     fields = {k: v for k, v in ROW_SCHEMAS[kind]["properties"].items() if k != "op"}
     schema = {
@@ -611,7 +618,7 @@ def _register(kind: str) -> None:
         )
         return Reply(result.to_dict(), doc=Document(request["doc"]).envelope_doc())
 
-    operation(kind, "write", _SUMMARY[kind], schema)(handler)
+    operation(kind, "write", _SUMMARY[kind], schema, output=_OUTPUT)(handler)
 
 
 for _kind in ROW_SCHEMAS:

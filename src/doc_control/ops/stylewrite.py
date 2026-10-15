@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -566,6 +567,13 @@ def apply_style_ops(
     )
 
 
+_OUTPUT = outputs.result(
+    ("applied", "dry_run", "tracked", "changed_parts"),
+    applied=outputs.STYLE_APPLIED,
+    **outputs.STYLE_WRITE_FIELDS,
+)
+
+
 def _register(kind: str) -> None:
     fields, required, summary = _OPS[kind]
     schema = {
@@ -594,7 +602,7 @@ def _register(kind: str) -> None:
         )
         return Reply(result, doc=Document(request["doc"]).envelope_doc())
 
-    operation(kind, "write", summary, schema)(handler)
+    operation(kind, "write", summary, schema, output=_OUTPUT)(handler)
 
 
 for _kind in STYLE_KINDS:

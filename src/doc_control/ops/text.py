@@ -23,6 +23,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import budget, is_uncapped
@@ -189,6 +190,29 @@ _RESULT = (
 OP = "text.normalize"
 
 
+_OUTPUT = outputs.result(
+    ("total", "paragraphs"),
+    total=outputs.integer("Paragraphs (or text strings) in the selection."),
+    paragraphs=outputs.arr(
+        "This page of entries.",
+        outputs.obj(
+            "One paragraph, or one part of a very long one.",
+            at=outputs.string("Paragraph address (absent for `text`)."),
+            start=outputs.integer("Where the entry's text begins in the paragraph's visible text."),
+            text=outputs.string("Normalised text."),
+            offset_map=outputs.obj(
+                "Two-way offset map, as runs [index, value, count] or [index, value, count, 0].",
+                to_original=outputs.arr("Normalised -> original offsets.", {"type": "array"}),
+                to_normalized=outputs.arr("Original -> normalised offsets.", {"type": "array"}),
+            ),
+            part=outputs.integer("Part k of a split paragraph."),
+            parts=outputs.integer("Parts the paragraph was split into."),
+            **{"from": outputs.integer("Normalised offset where this entry's text begins.")},
+        ),
+    ),
+)
+
+
 @operation(
     OP,
     "read",
@@ -209,6 +233,7 @@ OP = "text.normalize"
         },
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def text_normalized(request: dict[str, Any]) -> dict[str, Any] | Reply:
     has_doc, has_text = "doc" in request, "text" in request

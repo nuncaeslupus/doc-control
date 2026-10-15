@@ -48,6 +48,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -400,6 +401,16 @@ _EXPECT: dict[str, Any] = {
 }
 
 
+_TOC_OUTPUT = outputs.result(
+    ("dry_run", "at", "after", "code", "title", "revision_ids"),
+    at=outputs.string("Address of the field's paragraph."),
+    after=outputs.string("Address of the paragraph it went after."),
+    code=outputs.string("The field code."),
+    title=outputs.nullable("string", "The title paragraph's text, or null for none."),
+    **outputs.FIELD_WRITE_FIELDS,
+)
+
+
 @operation(
     "toc.insert",
     "write",
@@ -428,6 +439,7 @@ _EXPECT: dict[str, Any] = {
         "required": ["doc", "after"],
         "additionalProperties": False,
     },
+    output=_TOC_OUTPUT,
 )
 def toc_insert(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])
@@ -1098,6 +1110,41 @@ def update_fields(
     return result
 
 
+_UPDATE_OUTPUT = outputs.result(
+    ("dry_run", "updated", "skipped", "footprint"),
+    dry_run=outputs.DRY_RUN,
+    updated=outputs.arr(
+        "Fields whose result changed.",
+        outputs.obj(
+            "An updated field.",
+            at=outputs.ADDRESS,
+            type=outputs.string("Field type (TOC, PAGE, REF...)."),
+            code=outputs.string("Field code."),
+            before=outputs.strings("Result paragraphs before."),
+            after=outputs.strings("Result paragraphs after."),
+        ),
+    ),
+    unchanged=outputs.integer("Fields whose result was already right."),
+    skipped=outputs.arr(
+        "Fields left as they are, with why.",
+        outputs.obj(
+            "A skipped field.",
+            at=outputs.string("Its address."),
+            type=outputs.string("Field type."),
+            reason=outputs.string("Why it was not recomputed."),
+        ),
+    ),
+    written=outputs.boolean("Whether the document was written."),
+    set_update_on_open=outputs.boolean("True when w:updateFields was set instead."),
+    changed=outputs.boolean("set_update_on_open: whether the setting changed."),
+    revision_ids=outputs.REVISION_IDS,
+    author=outputs.AUTHOR,
+    date=outputs.DATE,
+    footprint=outputs.FOOTPRINT,
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "field.update",
     "write",
@@ -1129,6 +1176,7 @@ def update_fields(
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_UPDATE_OUTPUT,
 )
 def fields_update(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

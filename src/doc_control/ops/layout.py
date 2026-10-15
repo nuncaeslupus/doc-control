@@ -13,6 +13,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -186,6 +187,41 @@ def _paragraph_starts(doc: Document, count: int) -> list[int]:
     return starts
 
 
+_HF_TEXT = outputs.obj(
+    "Text per kind; {PAGE}, {NUMPAGES} and {chapter} stand for fields; null: inherited.",
+    default=outputs.nullable("string", "Default (odd) pages."),
+    first=outputs.nullable("string", "First page."),
+    even=outputs.nullable("string", "Even pages."),
+)
+_PLAN_FIELDS: dict[str, Any] = {
+    "version": outputs.integer("Plan format version (1)."),
+    "two_sided": outputs.boolean("Different even and odd headers."),
+    "mirror_margins": outputs.boolean("Mirrored margins."),
+    "sections": outputs.arr(
+        "Each section, in order.",
+        outputs.obj(
+            "A section of the plan.",
+            numbering=outputs.obj(
+                "Page numbering.",
+                shown=outputs.boolean("A page number is printed (checked, not set)."),
+                start=outputs.nullable("integer", "Restart value, or null to continue."),
+                format=outputs.string(
+                    "decimal, lowerRoman, upperRoman, lowerLetter, upperLetter..."
+                ),
+            ),
+            header=_HF_TEXT,
+            footer=_HF_TEXT,
+            first_page_different=outputs.boolean("Different first page."),
+            **{
+                "from": outputs.ADDRESS,
+                "break": outputs.string("nextPage, oddPage, evenPage or continuous."),
+            },
+        ),
+    ),
+}
+_GET_OUTPUT = outputs.result(("version", "two_sided", "mirror_margins", "sections"), **_PLAN_FIELDS)
+
+
 @operation(
     "layout.get",
     "read",
@@ -201,6 +237,7 @@ def _paragraph_starts(doc: Document, count: int) -> list[int]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_GET_OUTPUT,
 )
 def layout_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -773,6 +810,29 @@ def apply_plan(
     return result, done.warnings
 
 
+_APPLY_OUTPUT = outputs.result(
+    ("dry_run", "changes", "plan"),
+    dry_run=outputs.DRY_RUN,
+    changes=outputs.arr(
+        "What changed (or would): section properties, breaks, header/footer text, settings.",
+        outputs.extensible(
+            outputs.obj(
+                "A change.",
+                kind=outputs.string(
+                    "section.props, section.break, settings, header/footer text..."
+                ),
+                at=outputs.string("Where: section <n> or a paragraph address."),
+                tracked=outputs.boolean("Whether it is a tracked change."),
+                revision_ids=outputs.REVISION_IDS,
+            )
+        ),
+    ),
+    plan=outputs.obj("The page plan after the write (as layout.get returns it).", **_PLAN_FIELDS),
+    revision_ids=outputs.REVISION_IDS,
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "layout.apply",
     "write",
@@ -821,6 +881,7 @@ def apply_plan(
         "required": ["doc", "plan"],
         "additionalProperties": False,
     },
+    output=_APPLY_OUTPUT,
 )
 def layout_apply(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

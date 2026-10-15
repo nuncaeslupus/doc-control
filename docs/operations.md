@@ -3,7 +3,7 @@
 
 # Operation reference
 
-Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). `doc-control server.help <op>` prints the full JSON Schema.
+Every operation takes a JSON request (`doc-control <op> --json '{…}'`, the MCP tool of the same name with `.` as `_`, or `doc_control.api`) and answers with the envelope `{api, ok, op, doc, result, warnings, next}` or an error from [errors.md](errors.md). Returns lists the keys of `result` (Always: present in every success). `doc-control server.help <op>` prints the full JSON Schemas of the request and the result; MCP lists the result's as the tool's `outputSchema`.
 
 ## `anchor.create` (read)
 
@@ -15,6 +15,12 @@ Make an anchor (quote with context) for a range, to find the passage again after
 | `at` | string | yes | Range inside one paragraph, e.g. p142#a7b2a7b2:10-15, or a whole paragraph or sentence (p142#a7b2a7b2.s3). |
 | `context` | integer |  | Characters of prefix and of suffix to keep. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `anchor` | object | yes | The anchor: pass it whole to anchor.resolve later. |
+
 ## `anchor.resolve` (read)
 
 Find an anchor's passage now: its range, score and match kind (exact, normalized or fuzzy), or the ambiguous candidates. mode exact never returns a fuzzy match. match_level says how far the quote is folded when it is not found verbatim.
@@ -25,6 +31,17 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 | `anchor` | object | yes | An anchor from anchor.create, or just {exact, prefix, suffix}. |
 | `mode` | `best` \| `exact` |  | best: verbatim matches first, then fuzzy ones (match says which). exact: only places holding the quote verbatim or, when none does, in the normalised text (soft hyphens and zero-width characters ignored, whitespace collapsed, as text.normalize) or at a fold level of match_level; anything else is ANCHOR_NOT_FOUND. |
 | `match_level` | `exact` \| `default` \| `loose` |  | How far the quote is folded when neither it nor its normalised text occurs. exact: today's rule (verbatim, then normalised, then fuzzy in mode best). default: then ignoring case, accents and punctuation (case, then default level), and failing that symbols too (loose). loose: the same ladder. The reply's match_level is the strictest level at which the quote equals the matched text (exact: character for character; case: normalised text with case ignored), with matched_text when it is not exact; a fuzzy match has neither. Not the reply's match kind `match` (exact, normalized, fuzzy), which keeps its meaning. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Range address, p<n>#<fp>:<start>-<end> (code points). |
+| `score` | number | yes | Match score, 0-1. |
+| `match` | string | yes | exact, normalized or fuzzy. |
+| `match_level` | string |  | Strictest fold level at which the quote equals the matched text. |
+| `matched_text` | string |  | The text matched, when not character for character. |
+| `sentence` | string |  | Sentence address, for a sentence anchor. |
 
 ## `caption.add` (write)
 
@@ -42,6 +59,24 @@ Add a caption paragraph above or below a body paragraph, as tracked insertions: 
 | `text` | string | yes | Caption text after the number; may be empty. |
 | `position` | `above` \| `below` |  | Default: above for a Table, below for a Figure or Equation. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `label` | string | yes | Table, Figure or Equation. |
+| `position` | string | yes | above or below. |
+| `number` | integer | yes | The number its SEQ field shows now. |
+| `bookmark` | string | yes | Hidden bookmark around label and number (xref.add points at it). |
+| `at` | string | yes | Address of the caption paragraph. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `comment.add` (write)
 
 Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the author. On the file engine the file is backed up first, dry_run previews and expect.sha256 refuses a file changed since. Use doc.batch to apply several edits all or nothing.
@@ -57,6 +92,27 @@ Add a comment on a range (p3#fp, p3#fp:10-15 or across paragraphs), by the autho
 | `at` | string | yes | Range to comment on: p3#fp, p3#fp:10-15 or across. |
 | `text` | string | yes | Comment text; a newline starts a new paragraph. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `comment.list` (read)
 
 List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with doc.batch (comment.reply, comment.resolve). Read-only, paged.
@@ -68,6 +124,13 @@ List the document's comments in thread order (each root, then its replies) with 
 | `author` | string |  | Only this author. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `comments` | array | yes | This page of comments, each root then its replies. |
 
 ## `doc.batch` (write)
 
@@ -84,6 +147,35 @@ The main editing tool: apply several edits as tracked changes, all or nothing on
 | `tag` | string |  | Appended to the author. |
 | `engine` | `file` \| `live` |  | `live` edits the document open in Word or LibreOffice (see live.open). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `changed_parts` | array |  | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `doc.compare` (read)
 
 Write a new redline .docx from two versions: every difference a tracked change; the inputs are never modified.
@@ -97,6 +189,18 @@ Write a new redline .docx from two versions: every difference a tracked change; 
 | `tag` | string |  | Appended to the author as `author (tag)`. |
 | `date` | string |  | Revision date, ISO 8601 with time zone. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `old` | object | yes | The earlier version. |
+| `new` | object | yes | The later version. |
+| `output` | object | yes | The redline written. |
+| `summary` | object | yes | Paragraphs per alignment kind. |
+| `revisions` | integer | yes | Tracked changes in the redline. |
+| `author` | string | yes | Revision author stamped on the changes. |
+| `date` | string | yes | Revision date (UTC, ISO 8601). |
+
 ## `doc.diff` (read)
 
 Align the paragraphs of two versions of a .docx (old and new): which are unchanged, modified, inserted, deleted, moved or split, with a map from old addresses to new ones. Use it to carry addresses across versions; use doc.compare to write a redline .docx instead. Read-only: neither file is changed.
@@ -109,6 +213,17 @@ Align the paragraphs of two versions of a .docx (old and new): which are unchang
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `old` | object | yes | The earlier version. |
+| `new` | object | yes | The later version. |
+| `summary` | object | yes | Paragraphs per alignment kind. |
+| `total` | integer | yes | Change records in all pages. |
+| `changes` | array | yes | This page of change records (unchanged paragraphs that kept their address are left out). |
+| `address_map` | object | yes | Old address -> new address (null if deleted) for this page. |
+
 ## `doc.info` (read)
 
 File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a write is refused if the file changed meanwhile), paragraph count, core properties and which parts exist (comments, notes, headers). A cheap first call on a document; doc.stats gives word and element counts. Read-only.
@@ -117,6 +232,18 @@ File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a w
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `size_bytes` | integer | yes | File size in bytes. |
+| `parts` | integer | yes | Parts in the package. |
+| `properties` | object | yes | Core properties present (docProps/core.xml). |
+| `application` | object | yes | Application properties present (docProps/app.xml). |
+| `tracked_changes_on` | boolean | yes | Whether Track Changes is switched on in the document. |
+| `word_lock` | boolean | yes | Whether a Word lock file (~$name) is next to it: open in Word. |
+| `has` | object | yes | Which parts exist. |
+
 ## `doc.open` (write)
 
 Back up the document into its store (retention applies) and note it in the history; call it when a session starts. The document is not changed.
@@ -124,6 +251,16 @@ Back up the document into its store (retention applies) and note it in the histo
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `backup` | string | yes | Path of the backup just taken. |
+| `op_id` | string \| null | yes | Log entry noting the open, or null if the file is as last logged. |
+| `store` | string | yes | The document's store folder (backups and log). |
+| `adoptable` | array |  | Orphan stores whose history this document could take back (history.adopt). |
+| `hint` | string |  | What to do with adoptable. |
 
 ## `doc.outline` (read)
 
@@ -136,6 +273,13 @@ List the document's headings (levels 1-9) in order, each with its style and para
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `headings` | array | yes | This page of headings, in document order. |
 
 ## `doc.segment` (read)
 
@@ -153,6 +297,22 @@ Split the document into chapters, parts or scenes, with stable ids and the signa
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `unit` | string |  | chapters, parts or scenes. |
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `front` | object \| null |  | chapters/parts: front matter before the first one (at, first, last, words). |
+| `chapters` | array |  | unit chapters: this page of chapters. |
+| `parts` | array |  | unit parts: this page of parts. |
+| `scenes` | array |  | unit scenes: this page of scenes. |
+| `sentences` | array |  | unit sentences: this page of sentences. |
+| `dialogue` | array |  | unit dialogue: this page of dialogue lines. |
+| `unmatched_overrides` | array |  | Overrides that matched no paragraph. |
+| `suppressed_total` | integer |  | Breaks suppressed (by an override or rule). |
+| `suppressed` | array |  | Suppressed breaks (capped). |
+
 ## `doc.stats` (read)
 
 Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styles in use.
@@ -161,6 +321,23 @@ Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styl
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `paragraphs` | integer | yes | Body paragraphs. |
+| `empty_paragraphs` | integer | yes | Body paragraphs with no visible text. |
+| `words` | integer | yes | Words in the body (whitespace-separated). |
+| `characters` | integer | yes | Characters in the body. |
+| `headings` | integer | yes | Heading paragraphs. |
+| `tables` | integer | yes | Tables (w:tbl), nested included. |
+| `comments` | integer | yes | Comments. |
+| `revisions` | object | yes | Tracked changes in the body. |
+| `footnotes` | integer | yes | Footnotes. |
+| `styles_in_use` | integer | yes | Distinct styles used. |
+| `fonts` | array | yes | Fonts named in the body and styles, most used first (top 20). |
+| `stories` | object |  | With stories: the same counts for notes and for headers/footers. |
 
 ## `field.list` (read)
 
@@ -171,6 +348,13 @@ Every field of the document, by story: its address, instruction code, type (PAGE
 | `doc` | string | yes | Path to the .docx. |
 | `stories` | array |  | Stories to read (default all): "body", "notes", "headers" and "comments". |
 | `type` | string |  | Only fields of this type, e.g. "TOC" or "ADDIN ZOTERO_ITEM". |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `fields` | array | yes | Every field, story by story, in document order. |
+| `count` | integer | yes | Fields listed. |
 
 ## `field.update` (write)
 
@@ -185,6 +369,25 @@ Recompute the results of the body's TOC, page, page-count, sequence and referenc
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `updated` | array | yes | Fields whose result changed. |
+| `unchanged` | integer |  | Fields whose result was already right. |
+| `skipped` | array | yes | Fields left as they are, with why. |
+| `written` | boolean |  | Whether the document was written. |
+| `set_update_on_open` | boolean |  | True when w:updateFields was set instead. |
+| `changed` | boolean |  | set_update_on_open: whether the setting changed. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `history.adopt` (write)
 
 Re-attach a moved or renamed document to its old history: finds the orphaned store whose last recorded state is this file's sha256 (next to it, in neighbouring folders, app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to where the document's store lives now, keeping backups and log, so history.undo and history.restore work again. A file that differs from the store's last state needs `force`, as does a store whose document still exists; a document that already has history is never overwritten. `dry_run` moves nothing.
@@ -195,6 +398,20 @@ Re-attach a moved or renamed document to its old history: finds the orphaned sto
 | `store` | string |  | The orphan store to adopt (see doc.open's `adoptable` or history.orphans); needed when several match or the old folder is far away. |
 | `force` | boolean |  | Adopt although the document's sha256 is not the store's last. |
 | `dry_run` | boolean |  | Say what would move; move nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `adopted` | boolean | yes | Whether the store was moved to the document. |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `sha_matched` | boolean |  | The file is the store's last recorded state. |
+| `store` | string |  | Where the store lives now (or would). |
+| `entries` | integer |  | Log entries it holds. |
+| `op_id` | string \| null |  | Log entry noting the adoption. |
+| `would_move` | string |  | dry_run: the store that would move. |
+| `candidates` | array |  | When several stores match: pass one as `store`; nothing moved. |
+| `from` | string |  | The orphan store adopted. |
 
 ## `history.list` (read)
 
@@ -208,6 +425,14 @@ List a document's undo log, newest first: each write's op_id, what it changed, w
 | `cursor` | string |  | The `next` of the previous response. |
 | `kind` | `batch` \| `restore` \| `undo` \| `open` \| `purge` \| `adopt` |  |  |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `entries` | array | yes | This page of log entries, newest first. |
+| `total` | integer | yes | Entries in the log (after the kind filter). |
+| `unreadable_lines` | integer |  | Log lines that could not be read. |
+
 ## `history.orphans` (read)
 
 List stores whose document is gone (app-data stores, and `dir`/.doc-control). Their history is never deleted automatically: restore from it with `store`, or purge it.
@@ -215,6 +440,14 @@ List stores whose document is gone (app-data stores, and `dir`/.doc-control). Th
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `dir` | string |  | Also scan this folder. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `orphans` | array | yes | Stores whose document is gone. |
+| `unknown` | array | yes | Stores that name no document. |
+| `total` | integer | yes | Orphans found. |
 
 ## `history.purge` (write)
 
@@ -228,6 +461,19 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 | `before` | string |  | Remove entries older than this ISO date or time (UTC). |
 | `dry_run` | boolean |  | List what would go; returns confirm. |
 | `confirm` | string |  | From the dry run. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `scope` | string | yes | What is removed: all, or before <time>. |
+| `removed` | integer | yes | Entries removed (0 on a dry run). |
+| `would_remove` | integer | yes | Entries the scope covers. |
+| `first_op_id` | string \| null |  | Oldest entry removed. |
+| `last_op_id` | string \| null |  | Newest entry removed. |
+| `confirm` | string | yes | Token to pass as confirm to really purge. |
+| `tombstone` | string |  | Op id of the purge entry left in the log. |
 
 ## `history.restore` (write)
 
@@ -246,6 +492,27 @@ Bring a logged paragraph back as a tracked insertion (tracked: false: plainly, w
 | `tag` | string |  | Appended to the author. |
 | `tracked` | boolean |  | false: a plain write for a change the writer already approved: the paragraph comes back without revision marks (this call's own insertion accepted in the same verified write). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `comment_ids` | array |  | Ids of the comments added. |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `restored` | array | yes | The paragraphs brought back. |
+| `from` | string | yes | The logged op restored from. |
+
 ## `history.search` (read)
 
 Search a document's undo log for a quote: in the requests, and in the text of every paragraph before and after each write. Use it to find when a passage was changed or deleted, and the op_id for history.undo or history.restore. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at. Read-only.
@@ -260,6 +527,14 @@ Search a document's undo log for a quote: in the requests, and in the text of ev
 | `match_level` | `exact` \| `default` \| `loose` |  | Fold the search as `text.find` does: `default` ignores case, accents and punctuation (symbols such as `$` still count), `loose` drops symbols too; `exact` keeps the flags. When passed, Word's Find codes in `query` are read as their characters, every hit in a text is returned (not only the first, `exact` included), each with `start` and `end` (its offsets in that text: the request's JSON or the paragraph before or after the write, as `in` names it; not offsets into the cut `text`), `match_level` (the strictest level it meets) and `text` cut around it, and the reply gains `matches_by_level`, adding up to `total`. Without it, the first hit per text, with no `start`, `end` or level. Not with `ignore_case` or `ignore_accents` false at a folded level. |
 | `limit` | integer |  |  |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `matches` | array | yes | Hits, newest entry first (up to limit). |
+| `total` | integer | yes | Hits in the whole log. |
+| `matches_by_level` | object |  | With match_level: hits per level. |
+
 ## `history.undo` (write)
 
 Take back a logged doc.batch or history.restore (the latest one that is still in effect by default), returning its paragraphs to their prior state. Refused if they were edited since.
@@ -270,6 +545,17 @@ Take back a logged doc.batch or history.restore (the latest one that is still in
 | `op_id` | string |  | The op to undo (default: the latest in effect). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Check and preview; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `undid` | string | yes | Op id taken back. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `paragraphs` | integer | yes | Paragraphs returned to their prior state. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 ## `index.insert` (write)
 
@@ -285,6 +571,23 @@ Insert an index (an INDEX field) after a body paragraph, as tracked insertions: 
 | `after` | string | yes | Address of the body paragraph it goes after. |
 | `title` | string |  | Title paragraph above it (default "Index"); "" for none. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the field's paragraph. |
+| `after` | string | yes | Address of the paragraph it went after. |
+| `code` | string | yes | The field code. |
+| `title` | string \| null | yes | The title paragraph's text, or null for none. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `index.mark` (write)
 
 Mark an index entry: an XE field, as a tracked insertion, right after a range. The entry is "Term" or "Term:Sub" (up to three levels). index.insert puts the index, which Word builds from the marks.
@@ -298,6 +601,22 @@ Mark an index entry: an XE field, as a tracked insertion, right after a range. T
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | A range inside one paragraph; the mark goes after it. |
 | `entry` | string | yes | The index entry, e.g. "Term" or "Term:Sub". |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the paragraph that holds the mark. |
+| `entry` | string | yes | The entry, levels joined with a colon. |
+| `code` | string | yes | The XE field code, e.g. XE "Term:Sub". |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 ## `layout.apply` (write)
 
@@ -313,6 +632,18 @@ Bring the document to a page plan (as layout.get returns it): where each section
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `changes` | array | yes | What changed (or would): section properties, breaks, header/footer text, settings. |
+| `plan` | object | yes | The page plan after the write (as layout.get returns it). |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `layout.get` (read)
 
 The document's page plan: per section where it starts, its break, page numbering, title page, and the header and footer text per kind (default, first, even), with PAGE, NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the section does not define is null (inherited). The plan carries "version": 1.
@@ -320,6 +651,15 @@ The document's page plan: per section where it starts, its break, page numbering
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `version` | integer | yes | Plan format version (1). |
+| `two_sided` | boolean | yes | Different even and odd headers. |
+| `mirror_margins` | boolean | yes | Mirrored margins. |
+| `sections` | array | yes | Each section, in order. |
 
 ## `live.close` (write)
 
@@ -332,6 +672,13 @@ Close the open document; with unsaved changes it needs `save` or `discard`.
 | `save` | boolean |  | Save, then close. |
 | `discard` | boolean |  | Close and drop the unsaved changes. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `closed` | boolean | yes | Always true. |
+| `saved` | boolean | yes | Whether it was saved first. |
+
 ## `live.get_selection` (read)
 
 Read what the user has selected in Word or LibreOffice right now, and the paragraph (with its address) the cursor is in. Use it when the user points at text ("this paragraph", "here"). Read-only; the document must be attached with live.open.
@@ -340,6 +687,13 @@ Read what the user has selected in Word or LibreOffice right now, and the paragr
 |---|---|---|---|
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `text` | string | yes | The selected text (empty for a bare cursor). |
+| `paragraph` | object | yes | The paragraph the selection starts in. |
 
 ## `live.open` (write)
 
@@ -352,6 +706,15 @@ Attach to Word or LibreOffice for live editing: find the app window already hold
 | `app` | string |  | `word` or `libreoffice`. |
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `app` | string | yes | The app now attached (word or libreoffice). |
+| `path` | string | yes | Full path of the document. |
+| `dirty` | boolean | yes | It has unsaved changes. |
+| `front` | boolean |  | With front: whether its window was brought to the front. |
+
 ## `live.places` (read)
 
 Show a list of places in the document as buttons; in a client that renders MCP Apps, a click calls `live.select` on that place directly, with no assistant turn.
@@ -363,6 +726,14 @@ Show a list of places in the document as buttons; in a client that renders MCP A
 | `places` | array | yes | The buttons, in order: a `label` and `at` or `find_phrase` each (with both, `find_phrase` is tried when `at` fails). |
 | `mode` | `cursor` \| `select` |  | What a click does: `cursor` (default) puts the cursor at the place's start; `select` selects its paragraph. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | The document, as given. |
+| `mode` | string | yes | cursor or select: what a click does. |
+| `places` | array | yes | The places, as given. |
+
 ## `live.save` (write)
 
 Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (doc.batch with engine live) to keep them; live.close with save: true saves and closes in one call.
@@ -371,6 +742,12 @@ Save the document open in Word or LibreOffice (attached with live.open) to its f
 |---|---|---|---|
 | `doc` | string | yes | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `saved` | boolean | yes | Always true: the app saved the file. |
 
 ## `live.select` (write)
 
@@ -388,6 +765,16 @@ Show the user a place: select a paragraph (or put the cursor at it) in the Word 
 | `front` | boolean |  | Bring the app's window to the front (default true); the reply's `front` says whether it came. |
 | `paragraphs_after` | integer |  | Select the paragraph this many after the one named. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `text` | string | yes | Text of the paragraph selected. |
+| `at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `match_level` | string |  | By find_phrase: the level it matched at. |
+| `matched_text` | string |  | By find_phrase: the text matched, when not exact. |
+| `front` | boolean |  | With front: whether the window was brought to the front. |
+
 ## `live.status` (read)
 
 Check which live apps (Word, LibreOffice) are running and reachable and which documents they have open; with `doc`, which app holds it, its full path and whether it has unsaved changes. Call it before live.open. Read-only.
@@ -396,6 +783,17 @@ Check which live apps (Word, LibreOffice) are running and reachable and which do
 |---|---|---|---|
 | `doc` | string |  | Path to the document, or the file name of one open in a live app. |
 | `engine` | `live` |  | Always the live engine; may be left out. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `apps` | array | yes | Every live app, running or not. |
+| `open_in` | object \| null | yes | With doc: the app holding it {app, controlled, stale}; controlled false means only a lock file says so. Null when no app has it open. |
+| `dirty` | boolean | yes | With doc: it has unsaved changes. |
+| `path` | string |  | With doc: its full path. |
+| `documents` | array |  | Without doc: the documents the apps have open. |
+| `update` | object |  | Opt-in update notice (DOC_CONTROL_UPDATE_CHECK): the newest release. |
 
 ## `note.add` (write)
 
@@ -412,6 +810,22 @@ Add a footnote or endnote at a body offset: the reference mark and the note text
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `note` | object | yes | The new note. |
+| `mark_at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `created_part` | boolean | yes | Whether the footnotes/endnotes part was created. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `page.estimate` (read)
 
 Estimated page of each paragraph (or of one): rendered page marks and explicit breaks first, a word-count model otherwise. Always `estimated: true`.
@@ -423,6 +837,27 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 | `by` | `paragraph` \| `page` |  | List one row per paragraph (default) or per page. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `estimated` | boolean | yes | Always true: pages are estimates. |
+| `page_count` | integer | yes | Estimated page count. |
+| `basis` | string | yes | model, or rendered+model when Word's page marks are used. |
+| `words_per_page` | integer | yes | Words per page the model assumes. |
+| `rendered_marks` | integer | yes | Rendered page-break marks found. |
+| `model` | object | yes | The model's constants. |
+| `notes` | array | yes | Caveats about the estimate. |
+| `total` | integer |  | Items in the whole list, across pages. |
+| `paragraphs` | array |  | by paragraph: this page of rows. |
+| `pages` | array |  | by page: this page of rows. |
+| `at` | string |  | With at: the paragraph. |
+| `page` | integer |  | Estimated page (1-based). |
+| `page_label` | integer \| string |  | Page number as printed. |
+| `source` | string |  | rendered (Word's page marks), break (explicit break) or model. |
+| `end_page` | integer |  | Page it ends on, when it runs onto another page. |
+| `end_page_label` | integer \| string |  | Page number as printed. |
 
 ## `para.delete` (write)
 
@@ -438,6 +873,24 @@ Delete a paragraph (p3#fp) or a run of paragraphs (p3#fp..p5#fp), as a tracked d
 | `tag` | string |  | Appended to the author. |
 | `at` | string | yes | Paragraph p3#fp or run p3#fp..p5#fp. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `para.get` (read)
 
 Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; para.list reads many at once. Read-only; a long text is paged.
@@ -448,6 +901,30 @@ Read one paragraph by address in full: text, style, direct formatting and format
 | `at` | string | yes | Paragraph address from a read result, e.g. p142#a7b2a7b2. |
 | `limit` | integer |  | Most characters of text to return. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Paragraph address, p<n>#<fingerprint> (story-prefixed in notes/headers). |
+| `number` | integer | yes | Paragraph number (1-based) in its story. |
+| `length` | integer | yes | Length of the whole text, in code points. |
+| `style` | string \| null | yes | Paragraph style id. |
+| `style_name` | string \| null | yes | Paragraph style display name. |
+| `format` | object | yes | Direct paragraph formatting (alignment, indent, spacing...). |
+| `empty` | boolean |  | No visible text. |
+| `blank_before` | integer |  | Empty paragraphs right before it. |
+| `heading_level` | integer \| null |  | 1-9 for a heading, null for a body paragraph. |
+| `centred` | boolean |  | Whether it is centred. |
+| `page_break_before` | boolean |  | Whether it starts a page. |
+| `story` | string |  | Story kind outside the body: footnote, endnote, header or footer. |
+| `note` | object \| null |  | A note's id, displayed number and the body paragraph holding its mark. |
+| `section` | integer |  | Section (1-based) whose header or footer this is. |
+| `kind` | string |  | Header/footer kind: default, first or even. |
+| `used_by_sections` | array |  | Sections that show this header or footer. |
+| `offset` | integer | yes | Where this page of text starts in the paragraph. |
+| `text` | string | yes | This page of the text. |
+| `runs` | array | yes | Spans of the text with direct character formatting. |
 
 ## `para.insert` (write)
 
@@ -466,6 +943,26 @@ Insert one new paragraph after or before a paragraph (give one of them), as a tr
 | `after` | string |  | Insert after this paragraph (or before). |
 | `before` | string |  | Insert before this paragraph (or after). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `para.list` (read)
 
 Every paragraph with its address, text, style and layout facts (optionally the normalised text and the estimated page), in document order. heading_level is null for a body paragraph.
@@ -478,6 +975,16 @@ Every paragraph with its address, text, style and layout facts (optionally the n
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `paragraphs` | array | yes | This page of paragraphs, in document order. |
+| `page_basis` | string |  | With pages: model, or rendered+model when Word's page marks are used. |
+| `rendered_marks` | integer |  | With pages: rendered page-break marks found. |
+| `page_count` | integer |  | With pages: estimated page count. |
 
 ## `para.locate` (read)
 
@@ -493,9 +1000,26 @@ Say where paragraphs are, for a person: for one paragraph, a range or the whole 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `estimated` | boolean | yes | Always true: pages are estimates. |
+| `page_count` | integer |  | Estimated page count. |
+| `basis` | string |  | Page basis: model or rendered+model. |
+| `total` | integer |  | Items in the whole list, across pages. |
+| `paragraphs` | array | yes | This page of paragraphs. |
+
 ## `recipe.list` (read)
 
 List the bundled and user recipes, and any recipe files that are invalid.
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `recipes` | array | yes | Every usable recipe, by name. |
+| `invalid` | array | yes | Recipe files that could not be loaded. |
 
 ## `recipe.run` (write)
 
@@ -507,6 +1031,18 @@ Run a recipe and return a batch proposal (repeated until stable); apply it with 
 | `recipe` | string |  | Name from recipe.list. |
 | `definition` | object |  | An inline declarative recipe (same schema as a stored one). |
 | `dry_run` | boolean |  | Accepted for symmetry; recipe.run never writes. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `recipe` | string | yes | The recipe's name. |
+| `applied` | boolean | yes | Always false: nothing is written. |
+| `matches` | integer | yes | Matches found. |
+| `passes` | integer | yes | Passes run until the text stopped changing. |
+| `stable` | boolean | yes | Whether it reached a fixed point. |
+| `skipped` | array | yes | Proposed edits left out, with why. |
+| `batch` | object | yes | The doc.batch request to apply: pass it as is. |
 
 ## `revision.accept` (write)
 
@@ -522,6 +1058,25 @@ Accept tracked changes: by ids (from revision.list), by revision author, in a pa
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `revision.list` (read)
 
 List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with doc.batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
@@ -534,6 +1089,13 @@ List the tracked changes (insertions, deletions, moves, formatting, table rows a
 | `stories` | array |  | Stories to list (default ["body"]): "notes" adds footnotes and endnotes, "headers" headers and footers, after the body's revisions; their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). Row and cell revisions are listed for the body's tables only. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `revisions` | array | yes | This page of tracked changes, in document order. |
 
 ## `revision.reject` (write)
 
@@ -549,6 +1111,25 @@ Reject tracked changes: by ids (from revision.list), by revision author, in a pa
 | `at` | string |  | Paragraph p3#fp or run p3#fp..p9#fp. |
 | `all` | boolean |  | true: every revision in the document. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `accepted` | integer |  | Revisions accepted. |
+| `rejected` | integer |  | Revisions rejected. |
+| `revisions` | array |  | The revisions resolved (capped; see revisions_omitted). |
+| `revisions_omitted` | integer |  | Resolved revisions left out of the list. |
+| `merged_paragraphs` | integer |  | Paragraphs joined by resolving paragraph marks. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `section.list` (read)
 
 List each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer part address per kind (default, first, even). Use layout.get for the same plan with the header and footer text, in the form layout.apply takes back. Read-only.
@@ -557,9 +1138,29 @@ List each section's page setup: break type, title page, even/odd headers, page-n
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `sections` | array | yes | Each section, in order. |
+
 ## `server.capabilities` (read)
 
 Describe this doc-control server: API version, engines (file, live), whether it is a frozen build, and every operation it offers. Call it once at the start; server.help gives one operation's full schema. Read-only; needs no document.
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `api` | string | yes | API version of the envelope. |
+| `version` | string | yes | doc-control version. |
+| `engines` | array | yes | Engines: file, live. |
+| `live` | object | yes | The live engine. |
+| `features` | object | yes | Feature support per engine. |
+| `operations` | array | yes | Every operation. |
+| `errors` | array | yes | Every error code. |
+| `build` | object | yes | How this copy was built. |
+| `update` | object |  | Opt-in update notice (DOC_CONTROL_UPDATE_CHECK): the newest release. |
 
 ## `server.help` (read)
 
@@ -568,6 +1169,13 @@ JSON Schema of one operation, or of all operations; also the kinds doc.batch tak
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | string |  | Operation or batch operation kind. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `operations` | object |  | Name -> {kind, summary, schema (JSON Schema of the request), and output_schema (of the result) when one operation is asked}. |
+| `batch_operations` | object |  | doc.batch kind -> {kind, summary, schema}. |
 
 ## `style.create` (write)
 
@@ -590,6 +1198,19 @@ Add a new paragraph, character, table or numbering style to the document, with i
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+
 ## `style.get` (read)
 
 One style by id or name: its own formatting, inherited formatting and heading level.
@@ -598,6 +1219,25 @@ One style by id or name: its own formatting, inherited formatting and heading le
 |---|---|---|---|
 | `doc` | string | yes | Path to the .docx. |
 | `style` | string | yes | Style id or name. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `id` | string | yes | Style id (w:styleId). |
+| `name` | string | yes | Display name. |
+| `type` | string | yes | paragraph, character, table or numbering. |
+| `based_on` | string |  | Parent style id. |
+| `default` | boolean |  | True for the default style of its type. |
+| `custom` | boolean |  | True for a user-defined style. |
+| `used` | integer | yes | Uses in the body. |
+| `next` | string |  | Style of the paragraph after this one. |
+| `link` | string |  | Linked paragraph/character style. |
+| `quick` | boolean | yes | Shown in the quick style gallery. |
+| `heading_level` | integer \| null | yes | 1-9 for a heading style, else null. |
+| `chain` | array | yes | The style and its ancestors, nearest first. |
+| `own` | object | yes | Formatting the style sets itself. |
+| `effective` | object | yes | Formatting after inheritance. |
 
 ## `style.list` (read)
 
@@ -611,6 +1251,13 @@ List the styles defined in the document and how many times each is used; filter 
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Items in the whole list, across pages. |
+| `styles` | array | yes | This page of styles. |
+
 ## `style.merge` (write)
 
 Merge styles: re-point every use of the `from` styles to `into`, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames. Not a tracked change: the file is backed up first and the write is logged for undo; check with dry_run first.
@@ -622,6 +1269,19 @@ Merge styles: re-point every use of the `from` styles to `into`, then delete the
 | `into` | string | yes | Style id or name. |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `style.rename` (write)
 
@@ -635,6 +1295,19 @@ Rename a style's display name and/or id; every reference follows (paragraphs, he
 | `id` | string |  | Style id (default: from the name). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `style.update` (write)
 
@@ -653,6 +1326,19 @@ Change an existing style: its parent (based_on), next or linked style, quick-gal
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style operation. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+
 ## `styleset.export` (read)
 
 Export the document's styles (all, the ones named, or custom ones only) as a JSON style set, returned and optionally also written to `out`. Feed it to styleset.install on another document; styleset.export_dotx writes a Word template instead. The document is not changed.
@@ -664,6 +1350,14 @@ Export the document's styles (all, the ones named, or custom ones only) as a JSO
 | `styles` | array |  | Only these styles (ids or names). |
 | `custom_only` | boolean |  | Only user-defined styles. |
 | `out` | string |  | Also write the JSON here. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `styleset` | object | yes | The style set (styleset.install takes it as is). |
+| `count` | integer | yes | Styles exported. |
+| `path` | string |  | With out: the file written. |
 
 ## `styleset.export_dotx` (write)
 
@@ -677,6 +1371,14 @@ Write the document's styles (all, the ones named, or custom ones only) to a new 
 | `styles` | array |  | Only these styles (ids or names). |
 | `custom_only` | boolean |  | Only user-defined styles. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `path` | string | yes | The template written. |
+| `count` | integer | yes | Styles in it. |
+| `bytes` | integer | yes | Its size. |
+
 ## `styleset.import_dotx` (write)
 
 Install the styles of a .dotx template into the document: new styles are added, existing ones replaced (or skipped); dry_run previews.
@@ -688,6 +1390,19 @@ Install the styles of a .dotx template into the document: new styles are added, 
 | `on_conflict` | `replace` \| `skip` \| `error` |  | A style id already in the document (default replace). |
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style in the template. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
 
 ## `styleset.install` (write)
 
@@ -702,6 +1417,19 @@ Install a JSON style set into the document: new styles are added, existing ones 
 | `expect` | object |  |  |
 | `dry_run` | boolean |  | Preview only; write nothing. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | array | yes | One entry per style in the set. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `tracked` | boolean | yes | Always false: style definitions are not tracked changes. |
+| `changed_parts` | array | yes | Package parts rewritten. |
+| `paragraphs_changed` | integer |  | Paragraphs whose style reference was rewritten. |
+| `references_rewritten` | integer |  | Style references rewritten (renames, merges). |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+
 ## `table.get` (read)
 
 One table's grid: its rows of cells, each with its first grid column (`col`), `span` (w:gridSpan), `vmerge` (null, "restart" or "continue") and the addresses of its own paragraphs. A nested table is a table of its own, numbered after the one holding it; an empty w:tbl takes a number and has no rows. `table` numbers the main story only; `at` works in any story (a footnote's table is numbered within that footnote's story).
@@ -711,6 +1439,13 @@ One table's grid: its rows of cells, each with its first grid column (`col`), `s
 | `doc` | string | yes | Path to the .docx. |
 | `table` | integer |  | Table number in the main story, 1-based in document order (the `cell.table` of a paragraph row); text-box and DrawingML tables are not counted. Tables of notes, headers and footers are reached with `at`. |
 | `at` | string |  | Instead of `table`: any paragraph address in the table, in any story (`fn3/p1#…`, `hdr1.default/p1#…`); the reply's `table` is then numbered within that story. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `table` | integer | yes | Table number (in its story). |
+| `rows` | array | yes | Rows, each a list of cells. |
 
 ## `table.row.delete` (write)
 
@@ -726,6 +1461,23 @@ Delete a row of a body table as a tracked change (w:trPr/w:del, tracked deleted 
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array | yes | One entry per edit: what changes where. |
+| `address_map` | object | yes | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `table.row.insert` (write)
 
 Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text), after row `after_row`, one text per cell. Refused between two rows that a vertical merge spans.
@@ -740,6 +1492,23 @@ Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text),
 | `dry_run` | boolean |  | Preview only; write nothing. |
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer \| array | yes | Edits applied (a count), or for style kinds one entry per style op. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `preview` | array | yes | One entry per edit: what changes where. |
+| `address_map` | object | yes | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object | yes | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 ## `term.rename` (write)
 
@@ -763,6 +1532,26 @@ Rename a term or a character's name everywhere (Lucía to Elena) as one tracked 
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `to` | string | yes | The new name. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `counts` | object | yes | Counts. |
+| `skipped` | array | yes | Matches left alone (capped). |
+| `preview` | array | yes | The changes (capped). |
+| `matches_by_level` | object |  | With match_level: matches per level. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `from` | string | yes | The name replaced. |
+
 ## `text.find` (read)
 
 Find text or a regex; matches come back as paragraph ranges, capped, with a cursor. The first page also gives `total` (or `total_at_least` and `more: true` when the time budget stopped the count). `query_word` is the query as typed in Word's Find box (^p, ^l, ^t, ^s, ^^; null past 255 characters, with ignore_accents or with a soft or no-break hyphen in the query; not for a regex; null at a folded `match_level`), with `query_word_options` (match_case, whole_words) to tick there.
@@ -781,6 +1570,17 @@ Find text or a regex; matches come back as paragraph ranges, capped, with a curs
 | `cursor` | string |  | The `next` value of the previous page. |
 | `stories` | array |  | Stories to read (default ["body"]): "notes" adds footnotes and endnotes, each after the paragraph holding its mark; "headers" adds headers and footers, after the body. Their addresses carry a prefix (fn3/p1#…, hdr1.default/p1#…). |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `matches` | array | yes | This page of matches, in document order. |
+| `total` | integer |  | First page only: matches in the whole document. |
+| `total_at_least` | integer |  | First page, time budget hit: matches counted so far. |
+| `more` | boolean |  | First page, time budget hit: true (more matches may follow). |
+| `query_word` | string \| null |  | The query as typed in Word's Find box, or null. |
+| `query_word_options` | object |  | Find options to tick in Word for the same matches. |
+
 ## `text.normalize` (read)
 
 Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace collapsed) with a two-way offset map to the original code points, for a document (whole, or the paragraph/range `at`) or for a `text` string.
@@ -792,6 +1592,13 @@ Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace
 | `at` | string |  | Paragraph address or range, e.g. p142#a7b2a7b2:10-15. |
 | `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
 | `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Paragraphs (or text strings) in the selection. |
+| `paragraphs` | array | yes | This page of entries. |
 
 ## `text.replace` (write)
 
@@ -809,6 +1616,26 @@ Replace one range (p3#fp:10-15, a whole paragraph p3#fp, or p3#fp:10..p5#fp:2) w
 | `at` | string | yes | Range p3#fp:10-15, p3#fp or p3#fp:10..p5#fp:2. |
 | `text` | string | yes | New text; empty deletes the range. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `applied` | integer | yes | Edits applied (1). |
+| `dry_run` | boolean |  | True when nothing was written (a preview). |
+| `preview` | array |  | One entry per edit: what changes where. |
+| `address_map` | object |  | Old address -> new address of every paragraph whose address changed. |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `revision_ids` | array |  | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `tracked` | boolean |  | False for a plain (untracked) write. |
+| `warnings` | array |  | Notes on what the write could not do as asked. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+| `engine` | string |  | live: edited in the open app; nothing backed up or verified. |
+| `op_ids` | array |  | Live: one log entry per edit, in request order. |
+
 ## `toc.insert` (write)
 
 Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: an optional title, the field with a placeholder result and the paragraph that closes it. The result text is filled by field.update; until then field.list shows the field as stale. Returns the address of the field's paragraph.
@@ -824,6 +1651,23 @@ Insert a table of contents (a TOC field) after a body paragraph, as tracked inse
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the field's paragraph. |
+| `after` | string | yes | Address of the paragraph it went after. |
+| `code` | string | yes | The field code. |
+| `title` | string \| null | yes | The title paragraph's text, or null for none. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
+
 ## `xref.add` (write)
 
 Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, as a tracked insertion, pointing at a caption or another body paragraph. The target gets a hidden bookmark when it has none that fits. field.update fills in the shown number, text or page.
@@ -838,6 +1682,24 @@ Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion po
 | `at` | string | yes | Insertion point: p<n>#<fp>:<k>-<k>, or a paragraph address for its end. |
 | `to` | string | yes | Address of the caption or heading it points at. |
 | `show` | `number` \| `page` \| `text` |  | number (default): a caption's label and number, or a paragraph's number; page: the page it is on; text: the caption or paragraph text. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `at` | string | yes | Address of the paragraph that holds the field. |
+| `to` | string | yes | Address of the target paragraph. |
+| `show` | string | yes | number, page or text. |
+| `code` | string | yes | The field code, e.g. REF _Ref100000001 \h. |
+| `bookmark` | string | yes | The target's bookmark. |
+| `dry_run` | boolean | yes | True when nothing was written (a preview). |
+| `revision_ids` | array | yes | w:id of every revision this write created. |
+| `author` | string |  | Revision author stamped on the changes. |
+| `date` | string |  | Revision date (UTC, ISO 8601). |
+| `footprint` | object |  | Part name -> the paragraphs or items it touched in that part. |
+| `sha256` | string \| null |  | sha256 of the file after the write (pass as expect.sha256 next). |
+| `backup` | string \| null |  | Path of the backup taken before the write. |
+| `op_id` | string \| null |  | Undo-log id of this write (history.undo / history.restore). |
 
 # Batch operation kinds
 

@@ -11,11 +11,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.address import parse_range
 from doc_control.model.document import Document
 from doc_control.registry import operation
+
+_OUTPUT = outputs.result(
+    ("table", "rows"),
+    table=outputs.integer("Table number (in its story)."),
+    rows=outputs.arr(
+        "Rows, each a list of cells.",
+        outputs.arr(
+            "A row.",
+            outputs.obj(
+                "A cell.",
+                col=outputs.integer("First grid column (0-based)."),
+                span=outputs.integer("Grid columns it spans (w:gridSpan)."),
+                vmerge=outputs.nullable("string", "Vertical merge: restart, continue or null."),
+                paragraphs=outputs.strings("Addresses of its own paragraphs."),
+            ),
+        ),
+    ),
+)
 
 
 @operation(
@@ -52,6 +71,7 @@ from doc_control.registry import operation
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def table_get(request: dict[str, Any]) -> Reply:
     if ("at" in request) == ("table" in request):

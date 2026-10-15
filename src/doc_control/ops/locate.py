@@ -70,6 +70,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any, TypeVar, overload
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.address import parse_range
 from doc_control.model.document import Document
@@ -764,6 +765,54 @@ class _Rows(Sequence[dict[str, Any]]):
         return self._build(self._numbers[item])
 
 
+_WHERE = {
+    "at": outputs.ADDRESS,
+    "chapter": outputs.nullable("object", "Its chapter: id, title, number, kind; null if none."),
+    "part": outputs.nullable("object", "Its part: id, title, number; null if none."),
+    "scene": outputs.nullable(
+        "object", "Its scene: id and ordinal within the chapter; null if none."
+    ),
+    "page": outputs.integer("Estimated page."),
+    "page_label": outputs.PAGE_LABEL,
+    "phrase": outputs.nullable("string", "Shortest unique first … last words phrase, or null."),
+    "head_words": outputs.integer("Words of the phrase's head."),
+    "tail_words": outputs.integer("Words of the phrase's tail."),
+    "complete": outputs.boolean("True when the phrase is the whole paragraph."),
+    "reason": outputs.string("Why phrase is null (empty, duplicate...)."),
+    "find_phrase": outputs.nullable("string", "Text Word's Find meets exactly once, or null."),
+    "find_phrase_word": outputs.string("find_phrase as typed in Word's Find box (^p, ^t...)."),
+    "find_phrase_words": outputs.integer("Words in find_phrase."),
+    "find_phrase_unique": outputs.boolean("Whether find_phrase is non-null."),
+    "find_phrase_across": outputs.string("previous or next: the phrase spans a paragraph break."),
+    "find_phrase_reason": outputs.string("Why find_phrase is null."),
+    "context": outputs.obj(
+        "When find_phrase is null: the nearest earlier paragraph with one.",
+        after=outputs.string("Its find phrase."),
+        after_word=outputs.string("As typed in Word's Find box."),
+        at=outputs.ADDRESS,
+        paragraphs_after=outputs.integer("Paragraphs from there to this one."),
+    ),
+}
+_OUTPUT = outputs.result(
+    ("estimated", "paragraphs"),
+    estimated=outputs.boolean("Always true: pages are estimates."),
+    page_count=outputs.integer("Estimated page count."),
+    basis=outputs.string("Page basis: model or rendered+model."),
+    total=outputs.TOTAL,
+    paragraphs=outputs.arr(
+        "This page of paragraphs.",
+        outputs.obj(
+            "Where one paragraph is.",
+            **_WHERE,
+            **outputs.STORY_FIELDS,
+            mark=outputs.nullable(
+                "object", "A note paragraph: where its mark is (a row like this one)."
+            ),
+        ),
+    ),
+)
+
+
 @operation(
     "para.locate",
     "read",
@@ -799,6 +848,7 @@ class _Rows(Sequence[dict[str, Any]]):
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def locate(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

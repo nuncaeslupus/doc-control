@@ -16,6 +16,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.document import Document
 from doc_control.model.parts import OFFICE_REL, W, parse_part, related_part
@@ -171,6 +172,28 @@ def collect_rows(doc: Document, kinds: Sequence[str]) -> list[dict[str, Any]]:
     return rows
 
 
+_OUTPUT = outputs.result(
+    ("fields", "count"),
+    fields=outputs.arr(
+        "Every field, story by story, in document order.",
+        outputs.obj(
+            "A field.",
+            at=outputs.string("Address of its paragraph (comment:<id> in a comment)."),
+            story=outputs.string("body, comments, or the story key (fn3, hdr1.default...)."),
+            code=outputs.string("Instruction code."),
+            type=outputs.string("Field type (PAGE, TOC, REF, ADDIN ZOTERO_ITEM, CITATION...)."),
+            result=outputs.string("Result text shown."),
+            stale=outputs.boolean("Marked dirty, or a placeholder result: needs updating."),
+            citation=outputs.boolean(
+                "A reference-manager citation (never changed by field.update)."
+            ),
+            **{"in": outputs.string("textbox when inside a text box.")},
+        ),
+    ),
+    count=outputs.integer("Fields listed."),
+)
+
+
 @operation(
     "field.list",
     "read",
@@ -197,6 +220,7 @@ def collect_rows(doc: Document, kinds: Sequence[str]) -> list[dict[str, Any]]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def fields_list(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
