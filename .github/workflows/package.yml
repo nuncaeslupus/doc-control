@@ -14,6 +14,9 @@ permissions:
 
 env:
   MAX_FROZEN_MB: "40"
+  # Inno Setup for the installer (T7). windows-latest ships it from Chocolatey, unpinned;
+  # the install step pins it to this exact version and checks ISCC.exe reports it.
+  INNO_VERSION: "6.7.1"
 
 jobs:
   windows:
@@ -101,5 +104,82 @@ jobs:
         with:
           name: windows-frozen
           path: build-out/doc-control
+          retention-days: 7
+          if-no-files-found: error
+      - name: Inno Setup, pinned
+        # A no-op when the image already has this version; --allow-downgrade when it moved on.
+        shell: pwsh
+        run: |
+          choco install innosetup --version $env:INNO_VERSION --allow-downgrade -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "no ISCC at $iscc" }
+          # ISCC.exe carries no file version (it reads 0.0.0.0); Chocolatey's record is the source.
+          $found = ((choco list --exact innosetup --limit-output) -split '\|')[1]
+          Write-Host "ISCC $found at $iscc"
+          if (-not $found.StartsWith($env:INNO_VERSION)) { throw "ISCC is $found, expected $env:INNO_VERSION" }
+          "ISCC=$iscc" >> $env:GITHUB_ENV
+      - name: Build the installer (AppVersion from pyproject.toml)
+        shell: pwsh
+        run: |
+          $version = (.venv/Scripts/python.exe packaging/installer/app_version.py).Trim()
+          & $env:ISCC "/DAppVersion=$version" packaging/installer/doc-control.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = "build-out/doc-control-$version-windows-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "ISCC did not write $setup" }
+          "SETUP_EXE=$((Resolve-Path $setup).Path)" >> $env:GITHUB_ENV
+      - name: Installer smoke (silent install, capabilities from a new shell, silent uninstall)
+        # The new shell takes PATH from the registry (machine + user), as a terminal opened
+        # after the install would, so `doc-control` must resolve to the installed exe.
+        shell: pwsh
+        run: |
+          $failures = 0
+          function Fail([string] $why) { Write-Host "FAIL: $why"; $script:failures++ }
+          function UserPathHas([string] $dir) {
+            $entries = ([Environment]::GetEnvironmentVariable('Path','User') -split ';') | ForEach-Object { $_.TrimEnd('\') }
+            return [bool]($entries -contains $dir)
+          }
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\doc-control'
+          $log = Join-Path $env:RUNNER_TEMP 'doc-control-setup.log'
+          $p = Start-Process -FilePath $env:SETUP_EXE -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/NORESTART', "/LOG=$log")
+          if ($p.ExitCode -ne 0) { Fail "setup exited $($p.ExitCode)"; Get-Content $log -ErrorAction SilentlyContinue }
+          if (-not (Test-Path (Join-Path $dir 'doc-control.exe'))) { Fail "no doc-control.exe in $dir" }
+          if (-not (UserPathHas $dir)) { Fail "$dir is not on the user PATH" }
+
+          $child = Join-Path $env:RUNNER_TEMP 'new-shell.ps1'
+          Set-Content -Path $child -Encoding utf8 -Value @'
+          param([string] $Dir)
+          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          $cmd = Get-Command doc-control -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          Write-Host "doc-control resolves to $($cmd.Source)"
+          if ((Split-Path $cmd.Source -Parent) -ne $Dir) { Write-Host "not the installed exe"; exit 2 }
+          $out = & doc-control capabilities
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $null = $out | Out-String | ConvertFrom-Json
+          Write-Host "capabilities answered JSON from the installed exe"
+          '@
+          pwsh -NoProfile -NonInteractive -File $child -Dir $dir
+          if ($LASTEXITCODE -ne 0) { Fail "doc-control capabilities from a new shell exited $LASTEXITCODE" }
+
+          $uninstaller = Join-Path $dir 'unins000.exe'
+          if (Test-Path $uninstaller) {
+            $u = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList @(
+              '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+            if ($u.ExitCode -ne 0) { Fail "uninstaller exited $($u.ExitCode)" }
+          } else { Fail "no uninstaller at $uninstaller" }
+          # The uninstaller finishes from a copy in %TEMP%; give it a moment to remove the folder.
+          for ($i = 0; $i -lt 30 -and (Test-Path $dir); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $dir) { Fail "$dir is still there after uninstall"; Get-ChildItem -Recurse $dir }
+          if (UserPathHas $dir) { Fail "$dir is still on the user PATH after uninstall" }
+
+          $line = "installer_smoke_failures == $failures"
+          Write-Host $line
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "``$line``"
+          if ($failures -gt 0) { exit 1 }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-installer
+          path: build-out/doc-control-*-windows-x64-setup.exe
           retention-days: 7
           if-no-files-found: error
