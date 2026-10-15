@@ -210,6 +210,7 @@ def test_cli_reads_request_from_stdin_only_with_json_dash() -> None:
         input='{"op": "server.help"}',
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
         check=True,
     ).stdout
@@ -229,6 +230,7 @@ def test_cli_does_not_block_on_open_stdin() -> None:
             stdin=read_end,
             stdout=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
         )
         os.close(read_end)
         read_end = -1

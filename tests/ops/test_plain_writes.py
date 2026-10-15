@@ -337,30 +337,23 @@ def test_tracked_stays_default(tmp_path: Path) -> None:
     assert marks(path2) > 0
 
 
-def test_plain_live_and_row_and_comment_edits_are_refused(tmp_path: Path) -> None:
+def test_plain_row_and_comment_edits_are_refused(tmp_path: Path) -> None:
+    # live plain writes: tests/ops/test_plain_live_dispatch.py
     path = make_docx(tmp_path / "d.docx", "Uno largo uno", "Dos largo dos")
     a = address(path, 0)
-    for extra, ops in (
-        ({"engine": "live"}, [{"op": "para.delete", "at": a}]),
-        ({}, [{"op": "comment.add", "at": a, "text": "x"}]),
-        ({}, [{"op": "table.row.delete", "at": a}]),
+    for ops in (
+        [{"op": "comment.add", "at": a, "text": "x"}],
+        [{"op": "table.row.delete", "at": a}],
     ):
         with pytest.raises(DocControlError) as caught:
-            run(path, ops, tracked=False, **extra)
+            run(path, ops, tracked=False)
         assert caught.value.code is ErrorCode.SCHEMA_INVALID
-    assert "live" in _live_message(path, a)
 
 
-def _live_message(path: Path, a: str) -> str:
-    with pytest.raises(DocControlError) as caught:
-        run(path, [{"op": "para.delete", "at": a}], tracked=False, engine="live")
-    return caught.value.message
-
-
-def test_capabilities_flag_plain_writes_for_the_file_engine_only() -> None:
+def test_capabilities_flag_plain_writes_for_both_engines() -> None:
     from doc_control.ops.meta import capabilities
 
-    assert result_of(capabilities({}))["features"]["plain_writes"] == {"file": True, "live": False}
+    assert result_of(capabilities({}))["features"]["plain_writes"] == {"file": True, "live": True}
 
 
 def test_unknown_parameters_are_still_rejected(tmp_path: Path) -> None:

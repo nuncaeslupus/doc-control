@@ -99,7 +99,7 @@ def _adoptable(path: Path, sha: str) -> list[dict[str, Any]]:
 _STORE_ROW: dict[str, Any] = {
     "store": outputs.string("Store folder."),
     "doc": outputs.nullable("string", "Path of the document it last recorded."),
-    "doc_id": outputs.string("Id of that document's history."),
+    "doc_id": outputs.nullable("string", "Id of that document's history, null when unknown."),
     "entries": outputs.integer("Log entries."),
     "last_time": outputs.nullable("string", "Time of the last entry (ISO 8601)."),
 }

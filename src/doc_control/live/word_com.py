@@ -771,7 +771,8 @@ class Word:
 
     @contextmanager
     def _as(self, doc: Any, author: str, track: bool = True) -> Iterator[None]:
-        """Tracked changes on and ``author`` as the user's name, all put back after.
+        """Tracked changes on (``track`` False: off, for a plain write) and ``author`` as
+        the user's name, all put back after, in ``finally``.
 
         Word signs a change with the Office account's name unless told to use its own
         user name always, so that option is set for the edit too.
@@ -823,24 +824,40 @@ class Word:
             doc.Comments.Add(rng, text)
 
     @_guard
-    def tracked_replace(self, path: Path, span: Span, text: str, author: str) -> None:
+    def unresolved(self, path: Path, span: Span) -> bool:
+        doc = self._doc(path)
+        model = self._model(doc)
+        if not 0 <= span.start <= span.end < len(model.texts):
+            raise LiveUnavailable(f"the open document has no paragraph {span.end + 1}")
+        low = self._gaps(doc, model, span.start)[0]
+        high = self._gaps(doc, model, span.end)[1]
+        around = doc.Range(low, max(low, high))
+        around.Expand(_PARAGRAPH)  # the whole paragraphs, marks included
+        return bool(int(around.Revisions.Count))
+
+    @_guard
+    def tracked_replace(
+        self, path: Path, span: Span, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
         rng = self._edited(doc, span, replace=True)
-        with self._as(doc, author):
+        with self._as(doc, author, track=tracked):
             if text:
                 rng.Text = text
             elif int(rng.End) > int(rng.Start):  # Delete on no text takes the next character
                 rng.Delete()
 
     @_guard
-    def tracked_insert(self, path: Path, after: int, text: str, author: str) -> None:
+    def tracked_insert(
+        self, path: Path, after: int, text: str, author: str, tracked: bool = True
+    ) -> None:
         doc = self._doc(path)
         model = self._model(doc)
         if not -1 <= after < len(model.texts):
             raise LiveUnavailable(f"the open document has no paragraph {after + 1}")
         self._range(doc, Span(max(after, 0), max(after, 0)))  # the model is the document's
         low, high, _ = self._gaps(doc, self._model(doc), max(after, 0))
-        with self._as(doc, author):
+        with self._as(doc, author, track=tracked):
             if after < 0:
                 doc.Range(low, low).InsertAfter(text + "\r")
             else:

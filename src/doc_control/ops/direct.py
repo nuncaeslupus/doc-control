@@ -31,18 +31,19 @@ DIRECT: dict[str, str] = {
         "(p3#a1b2c3d4:10-15, code-point offsets), a whole paragraph (p3#a1b2c3d4) or a span "
         "across paragraphs (p3#a1b2c3d4:10..p5#e5f6a7b8:2); empty `text` deletes it. Get "
         "ranges from text.find or para.get. File engine: backed up first, logged for "
-        "history.undo, dry_run previews, expect.sha256 refuses a changed file; tracked: false "
-        "writes plainly. engine live edits the open app. STALE_ADDRESS if the paragraph "
-        "changed since read. Use term.rename for a name everywhere, doc.batch for several "
-        "edits."
+        "history.undo, dry_run previews, expect.sha256 refuses a changed file. tracked: false "
+        "writes plainly, on either engine. engine live edits the open app. STALE_ADDRESS if "
+        "the paragraph changed since read. Use term.rename for a name everywhere, doc.batch "
+        "for several edits."
     ),
     "para.insert": (
         "Insert one new paragraph with `text` after or before an existing one (give `after` or "
         "`before`, e.g. p3#a1b2c3d4), as a tracked insertion (style it with style.apply in "
         "doc.batch). File engine: backed up first, logged for history.undo, dry_run previews, "
-        "expect.sha256 refuses a changed file; tracked: false inserts plainly. engine live "
-        "inserts in the open Word/LibreOffice window (after live.open). Use doc.batch for "
-        "several edits all or nothing. Returns the address_map of shifted paragraphs."
+        "expect.sha256 refuses a changed file. tracked: false inserts plainly, on either "
+        "engine. engine live inserts in the open Word/LibreOffice window (after live.open). "
+        "Use doc.batch for several edits all or nothing. Returns the address_map of shifted "
+        "paragraphs."
     ),
     "para.delete": (
         "Delete a paragraph (p3#a1b2c3d4) or a run of paragraphs (p3#a1b2c3d4..p5#e5f6a7b8), "

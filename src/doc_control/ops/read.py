@@ -94,6 +94,10 @@ _CORE_FIELDS = {
 _APP_FIELDS = {"Application": "application", "Pages": "pages", "Words": "words"}
 
 
+#: The counts among the document properties; every other property stays text ("1984").
+_NUMERIC_PROPS = ("revision", "pages", "words")
+
+
 def _doc_props(doc: Document, part: str, fields: dict[str, str]) -> dict[str, Any]:
     if part not in doc.pkg:
         return {}
@@ -102,7 +106,9 @@ def _doc_props(doc: Document, part: str, fields: dict[str, str]) -> dict[str, An
         name = child.tag.rsplit("}", 1)[-1] if isinstance(child.tag, str) else ""
         text = (child.text or "").strip()
         if name in fields and text:
-            out[fields[name]] = int(text) if text.isdigit() else text
+            out[fields[name]] = (
+                int(text) if text.isdigit() and fields[name] in _NUMERIC_PROPS else text
+            )
     return out
 
 
@@ -122,7 +128,7 @@ _INFO_OUTPUT = outputs.result(
     ),
     application=outputs.obj(
         "Application properties present (docProps/app.xml).",
-        application={"type": ["string", "integer"], "description": "Program that wrote it."},
+        application={"type": "string", "description": "Program that wrote it."},
         pages={"type": ["integer", "string"], "description": "Page count Word saved."},
         words={"type": ["integer", "string"], "description": "Word count Word saved."},
     ),

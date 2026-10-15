@@ -110,8 +110,11 @@ BATCH_SCHEMA: dict[str, Any] = {
                 "exactly as the write left it: no out-of-order undo). Refused "
                 "(UNSUPPORTED_CONTENT) when a paragraph it rewrites holds another unresolved "
                 "tracked change. Text, paragraph and style/"
-                "format edits only (refused with revision, row and comment operations); file "
-                "engine only for now. A plain edit inside a tracked-inserted table row is "
+                "format edits only (refused with revision, row and comment operations). "
+                "engine live: the app's change tracking is off for the edit and put back "
+                "after; text.replace and para.insert, refused (UNSUPPORTED_CONTENT) next to "
+                "another unresolved tracked change; the app's undo takes it back. A plain "
+                "edit inside a tracked-inserted table row is "
                 "allowed: rejecting that row later removes the plain text too."
             ),
         },
@@ -157,8 +160,9 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
         '"p3#a1b2c3d4:10-15", "text": "new"}]. Every address is as read; overlapping edits are '
         "BATCH_CONFLICT, outdated ones STALE_ADDRESS. File engine: backed up first, dry_run "
         "previews, expect.sha256 refuses a changed file, history.undo takes text, row and "
-        "revision batches back, tracked: false writes approved text plainly. engine live edits "
-        "the open app (comment.add, text.replace, para.insert only; no dry_run or rollback). "
+        "revision batches back. tracked: false writes approved text plainly, on either engine. "
+        "engine live edits the open app (comment.add, text.replace, para.insert only; no "
+        "dry_run or rollback). "
         "server.help <kind> gives each kind's fields."
     ),
     BATCH_SCHEMA,
@@ -166,12 +170,6 @@ def edits_from_request(ops: list[dict[str, Any]]) -> list[Any]:
 )
 def batch(request: dict[str, Any]) -> Reply:
     plain = request.get("tracked", True) is False
-    if plain and request.get("engine") == "live":
-        raise DocControlError(
-            ErrorCode.SCHEMA_INVALID,
-            "tracked: false is not available with engine live yet (live plain writes come "
-            "later); write tracked, or use the file engine",
-        )
     if request.get("engine") == "live":
         from doc_control.ops.live import live_batch
 
