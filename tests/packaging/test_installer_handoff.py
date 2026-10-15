@@ -239,7 +239,7 @@ def test_pause_waits_for_enter(tmp_path: Path) -> None:
     [
         ({"command": "uvx", "args": ["doc-control", "mcp"]}, True),
         ({"command": "uvx.exe", "args": ["doc-control==0.6.4", "mcp"]}, True),
-        ({"command": r"C:\Users\x\.local\bin\uvx.exe", "args": ["doc-control[live]", "mcp"]}, True),
+        ({"command": r"D:\tools\uv\uvx.exe", "args": ["doc-control[live]", "mcp"]}, True),
         ({"command": "uvx", "args": ["--from", "doc-control@latest", "doc-control", "mcp"]}, True),
         ({"command": "uv", "args": ["tool", "run", "doc-control", "mcp"]}, True),
         ({"command": "uvx", "args": ["other-server"]}, False),
