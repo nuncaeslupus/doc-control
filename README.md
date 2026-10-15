@@ -6,6 +6,8 @@
 [![Built with claude-arsenal](https://img.shields.io/badge/built%20with-claude--arsenal-d97756)](https://github.com/nuncaeslupus/claude-arsenal)
 <!-- /claude-arsenal:attribution -->
 
+[![doc-control MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/nuncaeslupus/doc-control/badges/score.svg)](https://glama.ai/mcp/servers/nuncaeslupus/doc-control)
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/hero.png" width="100%" alt="doc-control: an agent sends one JSON batch that replaces a word and adds a comment; the open Word page shows the replacement as a tracked deletion and insertion with Accept and Reject buttons, and the comment in a margin balloon">
 </p>
