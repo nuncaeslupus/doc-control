@@ -49,6 +49,36 @@ def test_registry_every_op_has_schema_and_appears_in_capabilities(
     assert len(listed) == len(set(listed))
 
 
+def test_every_operation_declares_a_well_formed_output_schema() -> None:
+    """Every operation says what its result holds (MCP outputSchema, server.help); the
+    suite checks each result an operation returns against it (tests/conftest.py)."""
+    registry = load_operations()
+    missing = [n for n, op in registry.items() if op.output is None]
+    assert missing == []
+    for name, op in registry.items():
+        assert op.output is not None
+        assert op.output["type"] == "object", name
+        assert check_schema(op.output) == [], name
+        assert op.output.get("properties"), name  # names its keys
+
+
+def test_registering_an_op_with_a_malformed_output_schema_fails() -> None:
+    with pytest.raises(ValueError, match="output schema"):
+        operation(
+            "test.bad_output", "read", "never registered", {"type": "object"}, output={"x": 1}
+        )(lambda r: r)
+    assert "test.bad_output" not in REGISTRY
+
+
+def test_server_help_gives_one_operation_its_output_schema(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, env = run_cli(capsys, "server.help", "para.get")
+    assert code == 0
+    described = env["result"]["operations"]["para.get"]
+    assert described["output_schema"] == REGISTRY["para.get"].output
+
+
 _MALFORMED: list[dict[str, Any]] = [
     {"type": "object", "propertes": {}},
     {"type": "object", "properties": {"a": "string"}},
@@ -180,6 +210,7 @@ def test_cli_reads_request_from_stdin_only_with_json_dash() -> None:
         input='{"op": "server.help"}',
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
         check=True,
     ).stdout
@@ -199,6 +230,7 @@ def test_cli_does_not_block_on_open_stdin() -> None:
             stdin=read_end,
             stdout=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
         )
         os.close(read_end)
         read_end = -1

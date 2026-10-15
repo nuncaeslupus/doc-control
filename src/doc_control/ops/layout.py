@@ -13,6 +13,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.model.document import Document
@@ -186,13 +187,52 @@ def _paragraph_starts(doc: Document, count: int) -> list[int]:
     return starts
 
 
+_HF_TEXT = outputs.obj(
+    "Text per kind; {PAGE}, {NUMPAGES} and {chapter} stand for fields; null: inherited.",
+    default=outputs.nullable("string", "Default (odd) pages."),
+    first=outputs.nullable("string", "First page."),
+    even=outputs.nullable("string", "Even pages."),
+)
+_PLAN_FIELDS: dict[str, Any] = {
+    "version": outputs.integer("Plan format version (1)."),
+    "two_sided": outputs.boolean("Different even and odd headers."),
+    "mirror_margins": outputs.boolean("Mirrored margins."),
+    "sections": outputs.arr(
+        "Each section, in order.",
+        outputs.obj(
+            "A section of the plan.",
+            numbering=outputs.obj(
+                "Page numbering.",
+                shown=outputs.boolean("A page number is printed (checked, not set)."),
+                start=outputs.nullable("integer", "Restart value, or null to continue."),
+                format=outputs.string(
+                    "decimal, lowerRoman, upperRoman, lowerLetter, upperLetter..."
+                ),
+            ),
+            header=_HF_TEXT,
+            footer=_HF_TEXT,
+            first_page_different=outputs.boolean("Different first page."),
+            **{
+                "from": outputs.ADDRESS,
+                "break": outputs.string("nextPage, oddPage, evenPage or continuous."),
+            },
+        ),
+    ),
+}
+_GET_OUTPUT = outputs.result(("version", "two_sided", "mirror_margins", "sections"), **_PLAN_FIELDS)
+
+
 @operation(
     "layout.get",
     "read",
-    "The document's page plan: per section where it starts, its break, page numbering, "
-    "title page, and the header and footer text per kind (default, first, even), with PAGE, "
-    "NUMPAGES and chapter (STYLEREF) fields as {PAGE}, {NUMPAGES} and {chapter}. A kind the "
-    'section does not define is null (inherited). The plan carries "version": 1.',
+    (
+        "Read the page plan: per section where it starts (`from` address), its break, page "
+        "numbering (shown, start, format), first-page difference, and header/footer text per kind "
+        "(default, first, even) with fields as {PAGE}, {NUMPAGES} and {chapter}; null means "
+        "inherited from the previous section. Edit it and pass it to layout.apply to change the "
+        "layout; section.list gives the same setup with header/footer part names instead of text. "
+        "Read-only."
+    ),
     {
         "type": "object",
         "properties": {
@@ -201,6 +241,7 @@ def _paragraph_starts(doc: Document, count: int) -> list[int]:
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_GET_OUTPUT,
 )
 def layout_get(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])
@@ -773,37 +814,59 @@ def apply_plan(
     return result, done.warnings
 
 
+_APPLY_OUTPUT = outputs.result(
+    ("dry_run", "changes", "plan"),
+    dry_run=outputs.DRY_RUN,
+    changes=outputs.arr(
+        "What changed (or would): section properties, breaks, header/footer text, settings.",
+        outputs.extensible(
+            outputs.obj(
+                "A change.",
+                kind=outputs.string(
+                    "section.props, section.break, settings, header/footer text..."
+                ),
+                at=outputs.string("Where: section <n> or a paragraph address."),
+                tracked=outputs.boolean("Whether it is a tracked change."),
+                revision_ids=outputs.REVISION_IDS,
+            )
+        ),
+    ),
+    plan=outputs.obj("The page plan after the write (as layout.get returns it).", **_PLAN_FIELDS),
+    revision_ids=outputs.REVISION_IDS,
+    **outputs.COMMIT,
+)
+
+
 @operation(
     "layout.apply",
     "write",
-    "Bring the document to a page plan (as layout.get returns it): where each section "
-    "starts (from), its break (nextPage, oddPage for a right-hand start, evenPage, "
-    "continuous), the page-number start and format, a different first page, the header and "
-    "footer text per kind (default, first, even; {PAGE}, {NUMPAGES} and {chapter} become "
-    "fields; null drops the section's own, so it inherits the previous section's; asking "
-    "the text a section already prints changes nothing; a new part or a dropped reference "
-    "that would change what a later section inheriting it prints is refused, as changing a "
-    "header or footer that later sections inherit is not supported yet), two_sided (even "
-    "and odd headers) and "
-    "mirror_margins. Keys left out stay as they are; shown is checked, not set. Breaks, "
-    "numbering and the text of a header or footer part are tracked changes; a part is "
-    "rewritten only when every section using it asks the same text, else the section gets "
-    "a new part. A new part, a dropped reference and two_sided or mirror_margins cannot be "
-    "tracked and need untracked: true (LAYOUT D-L2). Sections already in the document must "
-    "all be kept. A section that still holds an unaccepted tracked change of its setup (say "
-    "from an earlier layout.apply) cannot take another, so a second apply that changes it "
-    "is refused (UNSUPPORTED_CONTENT) until that change is accepted or rejected. A "
-    "split-off section keeps the number format of the section it came from unless the plan "
-    "states one. All or nothing: the plan read back from the result must equal the "
-    "request, else nothing is written (UNSUPPORTED_CONTENT). dry_run lists the changes and "
-    "the plan that would result.",
+    (
+        "Bring the document to a page plan, the shape layout.get returns: per section its start "
+        "(`from` address), break, page-number start and format, first-page difference, and "
+        "header/footer text per kind ({PAGE}, {NUMPAGES}, {chapter} become fields; null inherits). "
+        "Keys left out stay as they are. Edit the layout.get result and send it back. Breaks, "
+        "numbering and header text are tracked changes; a new header part, a dropped reference, "
+        "two_sided or mirror_margins need untracked: true. All or nothing: UNSUPPORTED_CONTENT if "
+        "the result would differ from the plan or a section has a pending setup change. dry_run "
+        "lists the changes."
+    ),
     {
         "type": "object",
         "properties": {
             "doc": {"type": "string", "minLength": 1, "description": "Path to the .docx."},
             "plan": {
                 "type": "object",
-                "description": "The page plan: version 1 and sections, each with a from address.",
+                "description": (
+                    "The page plan, as layout.get returns it: version 1, two_sided, "
+                    "mirror_margins and sections, each with a `from` address; keys left out "
+                    "stay as they are, and numbering.shown is checked, not set. Every section "
+                    "already in the document must be kept. A header/footer text a section "
+                    "already prints changes nothing; a shared part is rewritten only when "
+                    "every section using it asks the same text, else the section gets a new "
+                    "part. Changing a header or footer that a later section inherits is "
+                    "refused. A split-off section keeps the number format of the one it came "
+                    "from unless the plan states one."
+                ),
             },
             "dry_run": {"type": "boolean", "description": "Preview only; write nothing."},
             "untracked": {
@@ -812,6 +875,10 @@ def apply_plan(
             },
             "expect": {
                 "type": "object",
+                "description": (
+                    "Write guard: the sha256 read earlier (doc.info, or a reply's doc.sha256), "
+                    'e.g. {"sha256": "9f86d081…"}; a file changed since is DOC_CHANGED_ON_DISK.'
+                ),
                 "properties": {"sha256": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
@@ -821,6 +888,7 @@ def apply_plan(
         "required": ["doc", "plan"],
         "additionalProperties": False,
     },
+    output=_APPLY_OUTPUT,
 )
 def layout_apply(request: dict[str, Any]) -> Reply:
     path = Path(request["doc"])

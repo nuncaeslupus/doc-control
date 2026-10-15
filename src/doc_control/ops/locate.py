@@ -70,6 +70,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any, TypeVar, overload
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.model.address import parse_range
 from doc_control.model.document import Document
@@ -764,17 +765,65 @@ class _Rows(Sequence[dict[str, Any]]):
         return self._build(self._numbers[item])
 
 
+_WHERE = {
+    "at": outputs.ADDRESS,
+    "chapter": outputs.nullable("object", "Its chapter: id, title, number, kind; null if none."),
+    "part": outputs.nullable("object", "Its part: id, title, number; null if none."),
+    "scene": outputs.nullable(
+        "object", "Its scene: id and ordinal within the chapter; null if none."
+    ),
+    "page": outputs.integer("Estimated page."),
+    "page_label": outputs.PAGE_LABEL,
+    "phrase": outputs.nullable("string", "Shortest unique first … last words phrase, or null."),
+    "head_words": outputs.integer("Words of the phrase's head."),
+    "tail_words": outputs.integer("Words of the phrase's tail."),
+    "complete": outputs.boolean("True when the phrase is the whole paragraph."),
+    "reason": outputs.string("Why phrase is null (empty, duplicate...)."),
+    "find_phrase": outputs.nullable("string", "Text Word's Find meets exactly once, or null."),
+    "find_phrase_word": outputs.string("find_phrase as typed in Word's Find box (^p, ^t...)."),
+    "find_phrase_words": outputs.integer("Words in find_phrase."),
+    "find_phrase_unique": outputs.boolean("Whether find_phrase is non-null."),
+    "find_phrase_across": outputs.string("previous or next: the phrase spans a paragraph break."),
+    "find_phrase_reason": outputs.string("Why find_phrase is null."),
+    "context": outputs.obj(
+        "When find_phrase is null: the nearest earlier paragraph with one.",
+        after=outputs.string("Its find phrase."),
+        after_word=outputs.string("As typed in Word's Find box."),
+        at=outputs.ADDRESS,
+        paragraphs_after=outputs.integer("Paragraphs from there to this one."),
+    ),
+}
+_OUTPUT = outputs.result(
+    ("estimated", "paragraphs"),
+    estimated=outputs.boolean("Always true: pages are estimates."),
+    page_count=outputs.integer("Estimated page count."),
+    basis=outputs.string("Page basis: model or rendered+model."),
+    total=outputs.TOTAL,
+    paragraphs=outputs.arr(
+        "This page of paragraphs.",
+        outputs.obj(
+            "Where one paragraph is.",
+            **_WHERE,
+            **outputs.STORY_FIELDS,
+            mark=outputs.nullable(
+                "object", "A note paragraph: where its mark is (a row like this one)."
+            ),
+        ),
+    ),
+)
+
+
 @operation(
     "para.locate",
     "read",
     (
-        "Say where paragraphs are, for a person: for one paragraph, a range or the whole "
-        "document (paged), each paragraph's chapter, scene, estimated page and shortest "
-        "unique first-and-last-words phrase, plus a phrase Word's Find meets exactly "
-        "once. Either phrase can be null (empty, duplicate or no unique phrase), with a "
-        "reason saying why. Use it to tell a user where a passage is, or to get a find phrase for "
-        "live.select; doc.outline lists only headings, text.find searches text, page.estimate "
-        "gives only pages. Read-only."
+        "Say where paragraphs are, in terms a person can follow: for one paragraph, a range "
+        "(p40#a1b2c3d4:0..p45#e5f6a7b8:0, offsets ignored) or the whole document, each one's "
+        "chapter, scene, estimated page, shortest unique first … last words phrase, and a "
+        "phrase Word's Find meets exactly once (for Ctrl+F or live.select). A phrase can be "
+        "null with a `reason` (empty, duplicate). structure: false skips chapter detection "
+        "for speed. Use it to tell a writer where a passage is; page.estimate gives only "
+        "pages. Read-only; paged at about 8,000 bytes with `cursor`."
     ),
     {
         "type": "object",
@@ -799,6 +848,7 @@ class _Rows(Sequence[dict[str, Any]]):
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def locate(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import is_uncapped
@@ -163,15 +164,104 @@ PROFILE_SCHEMA: dict[str, Any] = {
 }
 
 
+_UNIT = {
+    "id": outputs.string("Stable id (ch-…, sc-…, pt-…), usable as `range`."),
+    "at": outputs.ADDRESS,
+    "first": outputs.integer("First paragraph number."),
+    "last": outputs.integer("Last paragraph number."),
+    "words": outputs.integer("Words in it."),
+    "signals": outputs.strings(
+        "What detected it (heading_style, numeral, centred, scene_marker...)."
+    ),
+}
+_HEADED = {
+    **_UNIT,
+    "kind": outputs.string("How its heading reads: chapter, numeral, ..."),
+    "number": outputs.nullable("integer", "Its number, when the heading has one."),
+    "text": outputs.string("Heading text (clipped)."),
+    "heading_last": outputs.nullable("integer", "Last paragraph number of its heading."),
+}
+_SPAN = {"start": outputs.integer("Start offset."), "end": outputs.integer("End offset.")}
+_OUTPUT = outputs.result(
+    ("total",),
+    unit=outputs.string("chapters, parts or scenes."),
+    total=outputs.TOTAL,
+    front=outputs.nullable(
+        "object", "chapters/parts: front matter before the first one (at, first, last, words)."
+    ),
+    chapters=outputs.arr(
+        "unit chapters: this page of chapters.",
+        outputs.obj(
+            "A chapter.",
+            **_HEADED,
+            scenes=outputs.integer("Scenes in it."),
+            part=outputs.nullable("string", "Id of the part holding it."),
+        ),
+    ),
+    parts=outputs.arr(
+        "unit parts: this page of parts.",
+        outputs.obj("A part.", **_HEADED, chapters=outputs.integer("Chapters in it.")),
+    ),
+    scenes=outputs.arr(
+        "unit scenes: this page of scenes.",
+        outputs.obj("A scene.", **_UNIT, chapter=outputs.nullable("string", "Id of its chapter.")),
+    ),
+    sentences=outputs.arr(
+        "unit sentences: this page of sentences.",
+        outputs.obj(
+            "A sentence.",
+            at=outputs.string("Sentence address, p<n>#<fp>.s<k>."),
+            **_SPAN,
+            text=outputs.string("Its text (clipped)."),
+        ),
+    ),
+    dialogue=outputs.arr(
+        "unit dialogue: this page of dialogue lines.",
+        outputs.obj(
+            "A dialogue line.",
+            at=outputs.ADDRESS,
+            **_SPAN,
+            parts=outputs.arr(
+                "Its speech and narration pieces.",
+                outputs.obj("A piece.", kind=outputs.string("speech or narration."), **_SPAN),
+            ),
+        ),
+    ),
+    unmatched_overrides=outputs.arr(
+        "Overrides that matched no paragraph.",
+        outputs.obj(
+            "An override.",
+            fp=outputs.string("Fingerprint."),
+            kind=outputs.string("chapter or scene."),
+            action=outputs.string("force or suppress."),
+            nth=outputs.integer("Which occurrence."),
+        ),
+    ),
+    suppressed_total=outputs.integer("Breaks suppressed (by an override or rule)."),
+    suppressed=outputs.arr(
+        "Suppressed breaks (capped).",
+        outputs.obj(
+            "A suppressed break.",
+            at=outputs.ADDRESS,
+            kind=outputs.string("chapter or scene."),
+            reason=outputs.string("Why."),
+        ),
+    ),
+)
+
+
 @operation(
     "doc.segment",
     "read",
     (
-        "Split the document into chapters, parts or scenes, with stable ids and the "
-        "signals that detected them, or split a range into sentences or dialogue lines. "
-        "Use it to work chapter by chapter or to get sentence addresses "
-        "(p142#a7b2a7b2.s3); doc.outline lists only styled headings. Detection is tuned with "
-        "profile and overrides. Read-only."
+        "Split a manuscript into units with stable ids: unit chapters (default), parts or "
+        "scenes (detected from headings, numerals, centring, scene markers; signals say "
+        "which), or sentences or dialogue lines within `range` (an address, "
+        "p24#a1b2c3d4..p60#e5f6a7b8, or a unit id such as ch-d5a3930d). `chapter` limits "
+        "scenes to one chapter; language (default es) sets sentence rules; profile and "
+        "overrides tune detection. Use it to work chapter by chapter or to get sentence "
+        "addresses (p142#a7b2a7b2.s3); doc.outline lists only styled headings. Read-only; "
+        "paged at about 8,000 bytes with `cursor`."
     ),
     {
         "type": "object",
@@ -208,6 +298,7 @@ PROFILE_SCHEMA: dict[str, Any] = {
         "required": ["doc"],
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def segment(request: dict[str, Any]) -> Reply:
     doc = Document(request["doc"])

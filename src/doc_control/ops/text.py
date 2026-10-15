@@ -23,6 +23,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from doc_control import outputs
 from doc_control.envelope import Reply, success
 from doc_control.errors import DocControlError, ErrorCode
 from doc_control.inprocess import budget, is_uncapped
@@ -189,12 +190,40 @@ _RESULT = (
 OP = "text.normalize"
 
 
+_OUTPUT = outputs.result(
+    ("total", "paragraphs"),
+    total=outputs.integer("Paragraphs (or text strings) in the selection."),
+    paragraphs=outputs.arr(
+        "This page of entries.",
+        outputs.obj(
+            "One paragraph, or one part of a very long one.",
+            at=outputs.string("Paragraph address (absent for `text`)."),
+            start=outputs.integer("Where the entry's text begins in the paragraph's visible text."),
+            text=outputs.string("Normalised text."),
+            offset_map=outputs.obj(
+                "Two-way offset map, as runs [index, value, count] or [index, value, count, 0].",
+                to_original=outputs.arr("Normalised -> original offsets.", {"type": "array"}),
+                to_normalized=outputs.arr("Original -> normalised offsets.", {"type": "array"}),
+            ),
+            part=outputs.integer("Part k of a split paragraph."),
+            parts=outputs.integer("Parts the paragraph was split into."),
+            **{"from": outputs.integer("Normalised offset where this entry's text begins.")},
+        ),
+    ),
+)
+
+
 @operation(
     OP,
     "read",
-    "Normalised text (NFC, soft hyphens and zero-width characters removed, whitespace "
-    "collapsed) with a two-way offset map to the original code points, for a document "
-    "(whole, or the paragraph/range `at`) or for a `text` string.",
+    (
+        "Normalise text (NFC, soft hyphens and zero-width characters removed, whitespace "
+        "collapsed) and return a two-way offset map to the original code points, for the whole "
+        "document, one paragraph or range (`at`, p142#a7b2a7b2:10-15), or a `text` string (give "
+        "`doc` or `text`). Use it to compare or search text robustly and map found offsets back to "
+        "addresses for text.replace; para.list normalized adds just the text. Read-only; paged at "
+        "about 8,000 bytes with `cursor`; a very long paragraph comes in parts."
+    ),
     {
         "type": "object",
         "description": _RESULT,
@@ -209,6 +238,7 @@ OP = "text.normalize"
         },
         "additionalProperties": False,
     },
+    output=_OUTPUT,
 )
 def text_normalized(request: dict[str, Any]) -> dict[str, Any] | Reply:
     has_doc, has_text = "doc" in request, "text" in request
