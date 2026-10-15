@@ -173,3 +173,16 @@ def test_live_places_refuses_a_place_with_no_address() -> None:
         assert "_meta" not in reply["result"]
         envelope = json.loads(reply["result"]["content"][0]["text"])
         assert envelope["error"]["code"] == "SCHEMA_INVALID"
+
+
+def test_server_json_matches_the_released_package() -> None:
+    """The MCP Registry publishes server.json as is, so it must name the PyPI version."""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    server = json.loads((root / "server.json").read_text())
+    assert server["version"] == version == __version__
+    assert {p["version"] for p in server["packages"]} == {version}
+    assert f"mcp-name: {server['name']}" in (root / "README.md").read_text(encoding="utf-8")

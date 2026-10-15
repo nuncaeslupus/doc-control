@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.nuncaeslupus/doc-control",
+  "title": "doc-control",
+  "description": "Edit Word documents by address: tracked changes, comments, anchors, with backups and undo.",
+  "repository": {
+    "url": "https://github.com/nuncaeslupus/doc-control",
+    "source": "github"
+  },
+  "version": "0.6.4",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "doc-control",
+      "version": "0.6.4",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
