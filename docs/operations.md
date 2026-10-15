@@ -185,6 +185,17 @@ Recompute the results of the body's TOC, page, page-count, sequence and referenc
 | `author` | string |  | Revision author. |
 | `tag` | string |  | Appended to the author. |
 
+## `history.adopt` (write)
+
+Re-attach a moved or renamed document to its old history: finds the orphaned store whose last recorded state is this file's sha256 (next to it, in neighbouring folders, app-data or the store root; `doc.open` lists them as `adoptable`) and moves it to where the document's store lives now, keeping backups and log, so history.undo and history.restore work again. A file that differs from the store's last state needs `force`; a document that already has history is never overwritten. `dry_run` moves nothing.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `store` | string |  | The orphan store to adopt (see doc.open's `adoptable` or history.orphans); needed when several match or the old folder is far away. |
+| `force` | boolean |  | Adopt although the document's sha256 is not the store's last. |
+| `dry_run` | boolean |  | Say what would move; move nothing. |
+
 ## `history.list` (read)
 
 List a document's undo log, newest first: each write's op_id, what it changed, whether it was undone, and the deleted paragraphs history.restore can bring back. Use it to find the op_id for history.undo or history.restore; history.search finds a quote in the log. Read-only, paged.
@@ -195,7 +206,7 @@ List a document's undo log, newest first: each write's op_id, what it changed, w
 | `store` | string |  | A store folder (see history.orphans) to read instead of the document's own. |
 | `limit` | integer |  |  |
 | `cursor` | string |  | The `next` of the previous response. |
-| `kind` | `batch` \| `restore` \| `undo` \| `open` \| `purge` |  |  |
+| `kind` | `batch` \| `restore` \| `undo` \| `open` \| `purge` \| `adopt` |  |  |
 
 ## `history.orphans` (read)
 

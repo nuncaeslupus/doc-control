@@ -35,6 +35,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -689,3 +690,178 @@ def find_orphans(
         elif not doc.exists():
             orphans.append({**info, "doc": str(doc)})
     return {"orphans": orphans, "unknown": unknown}
+
+
+# -- adopting a moved document's store (D-22) ------------------------------------------------
+
+TAIL_BYTES = 1 << 16
+
+
+def _tail_entry(root: Path) -> dict[str, Any] | None:
+    """The last real entry of the store at ``root``, read from the end of the log when it can."""
+    path = root / "log.jsonl"
+    try:
+        with path.open("rb") as fh:
+            size = fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, size - TAIL_BYTES))
+            tail = fh.read()
+    except OSError:
+        return None
+    lines = [ln for ln in tail.split(b"\n") if ln.strip()]
+    if lines and size > TAIL_BYTES:
+        lines = lines[1:]  # the first line of a cut read may be partial
+    for line in reversed(lines):
+        try:
+            value = json.loads(line.decode("utf-8"))
+        except ValueError:
+            continue
+        if isinstance(value, dict) and op_number(value.get("op_id")) is not None:
+            if value.get("kind") != "purge":
+                return value
+            break
+    real = [e for e in read_log(path).entries if e.get("kind") != "purge"]
+    return real[-1] if real else None
+
+
+def _store_folders(doc: Path, env: Mapping[str, str] | None) -> list[Path]:
+    """Folders whose subfolders may hold a store: the app-data and custom roots, the
+    document's folder and its neighbours (siblings, parent), and folders app-data logs name."""
+    parent = doc.resolve().parent
+    seen: dict[Path, None] = {}
+    roots: list[Path] = [user_home(env) / "stores"]
+    custom = custom_store_root(env)
+    if custom is not None:
+        roots.append(custom)
+    for base in roots:
+        seen.setdefault(base, None)
+    seen.setdefault(parent / STORE_DIRNAME, None)
+    seen.setdefault(parent.parent / STORE_DIRNAME, None)
+    for near in (parent, parent.parent):
+        for sub in _subdirs(near):
+            if not sub.name.startswith("."):
+                seen.setdefault(sub / STORE_DIRNAME, None)
+    for base in roots:
+        for root in _subdirs(base):
+            entry = _tail_entry(root)
+            named = entry.get("doc_path") if entry else None
+            if isinstance(named, str):
+                seen.setdefault(Path(named).parent / STORE_DIRNAME, None)
+    return list(seen)
+
+
+def _orphaned(root: Path, entry: dict[str, Any]) -> bool:
+    """Whether the document the store belonged to is gone."""
+    named = entry.get("doc_path")
+    if isinstance(named, str):
+        return not Path(named).exists()
+    return not (root.parent.parent / root.name).exists()
+
+
+def adoptable_stores(
+    doc: Path, env: Mapping[str, str] | None = None, *, anything: bool = False
+) -> list[dict[str, Any]]:
+    """Orphan stores the document could take over: last ``sha256_after`` equal to its sha256
+    (every orphan with ``anything``). Reads only the end of each log; nothing is changed."""
+    doc = doc.resolve()
+    sha = sha256_file(doc)
+    own = store_dir(doc, env).resolve()
+    found: list[dict[str, Any]] = []
+    done: set[Path] = set()
+    for folder in _store_folders(doc, env):
+        for root in _subdirs(folder):
+            key = root.resolve()
+            if key in done or key == own or not (root / "log.jsonl").is_file():
+                continue
+            done.add(key)
+            entry = _tail_entry(root)
+            if entry is None or not _orphaned(root, entry):
+                continue
+            matched = entry.get("sha256_after") == sha
+            if matched or anything:
+                found.append({**describe_store(root), "sha_matched": matched})
+    return found
+
+
+def _holds_history(root: Path) -> bool:
+    """Whether a store has entries other than the ``open`` notes a fresh store gets."""
+    return any(e.get("kind") != "open" for e in read_log(root / "log.jsonl").entries)
+
+
+def adopt_store(
+    doc: Path,
+    store: Path,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Move ``store`` to ``doc``'s store location and log an ``adopt`` entry."""
+    doc = doc.resolve()
+    store = store.resolve()
+    if not (store / "log.jsonl").is_file():
+        raise DocControlError(
+            ErrorCode.HISTORY_NOT_FOUND, f"not a store folder: {store}", path=str(store)
+        )
+    log = read_log(store / "log.jsonl")
+    real = [e for e in log.entries if e.get("kind") != "purge"]
+    last_sha = real[-1].get("sha256_after") if real else None
+    matched = last_sha is not None and last_sha == sha256_file(doc)
+    if not matched and not force:
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"{doc.name} differs from the store's last recorded state; pass `force` to adopt it",
+            store=str(store),
+        )
+    target = store_dir(doc, env)
+    if target.resolve() == store:
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            "that store already belongs to this document",
+            store=str(store),
+        )
+    if target.exists() and _holds_history(target):
+        raise DocControlError(
+            ErrorCode.BATCH_CONFLICT,
+            f"{doc.name} already has a store with history at {target}; nothing was moved",
+            store=str(target),
+        )
+    result: dict[str, Any] = {
+        "adopted": False,
+        "dry_run": dry_run,
+        "sha_matched": matched,
+        "from": str(store),
+        "store": str(target),
+        "entries": len(real),
+    }
+    if dry_run:
+        return {**result, "would_move": str(store)}
+    kept: list[tuple[str, bytes]] = []
+    if target.exists():  # a fresh store (`open` notes, a backup): its backups come along
+        kept = [(p.name, p.read_bytes()) for p in (target / "backups").glob("*") if p.is_file()]
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        store.rename(target)
+    except OSError:
+        shutil.copytree(store, target)
+        shutil.rmtree(store)
+    (target / "backups").mkdir(exist_ok=True)
+    for name, data in kept:
+        if not (target / "backups" / name).exists():
+            (target / "backups" / name).write_bytes(data)
+    sha = sha256_file(doc)
+    result["op_id"] = record(
+        doc,
+        "adopt",
+        before_sha256=sha,
+        after_sha256=sha,
+        backup=None,
+        changes=[],
+        request={"op": "history.adopt", "force": force},
+        extra={
+            "adopted_from": {"store": str(store), "doc": last_doc_path(log)},
+            "sha_matched": matched,
+        },
+        env=env,
+    )
+    return {**result, "adopted": True}

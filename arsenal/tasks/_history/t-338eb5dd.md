@@ -3,6 +3,7 @@ id: t-338eb5dd
 title: "history.adopt: re-attach a moved document's store"
 label: "history.adopt moved documents"
 priority: 5
+status: merged
 ---
 
 ## Acceptance gate
