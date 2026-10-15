@@ -167,6 +167,29 @@ jobs:
           pwsh -NoProfile -NonInteractive -File $child -Dir $dir
           if ($LASTEXITCODE -ne 0) { Fail "doc-control capabilities from a new shell exited $LASTEXITCODE" }
 
+          # The .mcpb handoff (T14): the installed bundle is the one CI built, and the installed
+          # exe runs the uvx-entry remover (dry run, on a scratch config, never the runner's own).
+          $handoff = 0
+          function HandoffFail([string] $why) { Write-Host "FAIL: $why"; $script:handoff++ }
+          $installedMcpb = Join-Path $dir (Split-Path $env:MCPB_FILE -Leaf)
+          if (-not (Test-Path $installedMcpb)) { HandoffFail "no $installedMcpb" }
+          elseif ((Get-FileHash $installedMcpb).Hash -ne (Get-FileHash $env:MCPB_FILE).Hash) {
+            HandoffFail "the installed .mcpb differs from $env:MCPB_FILE"
+          }
+          $fake = Join-Path $env:RUNNER_TEMP 'fake_claude_desktop_config.json'
+          Set-Content -Path $fake -Encoding utf8 -Value '{"mcpServers": {"doc-control": {"command": "uvx", "args": ["doc-control", "mcp"]}}}'
+          $before = (Get-FileHash $fake).Hash
+          $out = & (Join-Path $dir 'doc-control.exe') --remove-uvx-entry --dry-run --config $fake | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0) { HandoffFail "--remove-uvx-entry --dry-run exited $code" }
+          if ($out -notmatch 'Would remove') { HandoffFail "--remove-uvx-entry did not report the uvx entry" }
+          if ((Get-FileHash $fake).Hash -ne $before) { HandoffFail "--dry-run changed the config" }
+          $handoffLine = "installer_handoff_failures == $handoff"
+          Write-Host $handoffLine
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "``$handoffLine``"
+          $failures += $handoff
+
           $uninstaller = Join-Path $dir 'unins000.exe'
           if (Test-Path $uninstaller) {
             $u = Start-Process -FilePath $uninstaller -Wait -PassThru -ArgumentList @(

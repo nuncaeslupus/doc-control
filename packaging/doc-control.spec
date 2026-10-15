@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve().parent  # noqa: F821 - predefined by PyInstaller
 SRC = ROOT / "src"
+SCRIPTS = ROOT / "scripts"
 PACKAGE = SRC / "doc_control"
 
 # Imports a freezer cannot see. word_com loads pywin32 with importlib on the first live
@@ -28,6 +29,9 @@ OWN = sorted(
 OPS = [name for name in OWN if name.startswith("doc_control.ops.")]
 assert len(OPS) > 10, f"doc_control.ops.* modules not found under {PACKAGE}"
 
+# The installer's `doc-control.exe --remove-uvx-entry` (packaging/entry.py, PACKAGE T14).
+INSTALLER_HELPERS = ["remove_uvx_entry"]
+
 # Data files the package reads next to its modules.
 DATAS = [
     (str(PACKAGE / "recipes" / "bundled" / "*.json"), "doc_control/recipes/bundled"),
@@ -42,9 +46,9 @@ EXCLUDES = ["tkinter", "_tkinter", "tests", "pytest", "_pytest"]
 
 a = Analysis(  # noqa: F821
     [str(ROOT / "packaging" / "entry.py")],
-    pathex=[str(SRC)],
+    pathex=[str(SRC), str(SCRIPTS)],
     datas=DATAS,
-    hiddenimports=PYWIN32 + OWN,
+    hiddenimports=PYWIN32 + OWN + INSTALLER_HELPERS,
     excludes=EXCLUDES,
     noarchive=False,
 )
