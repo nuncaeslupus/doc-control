@@ -58,7 +58,7 @@
     - all four `live_places` buttons behaved (address, phrase, stale address falling back to phrase, missing place showing an error).
   - These findings are in the T9 task file (#310).
   - The owner's Claude Desktop config has no `mcpServers` left: the `uvx doc-control` and probe entries were removed. doc-control now comes from the extension.
-  - The literary-critic session asked for the in-app result. Its pipe was gone when sent, so tell it next time it runs: all four buttons worked.
+  - The in-app result, with its caveats, was sent to the literary-critic session for its evidence log.
   - The "arsenal queue" workflow on main fails on delete-ref 404s. This is a claude-arsenal quirk, already reported upstream.
   - Next PACKAGE tasks: T8 release assets wiring (t-b45708fd), then T9 install docs (t-3ccbc888), then directory listing readiness (t-3a9a949d).
 - **Item 4 of #196 (#213)**: closed as not planned (see above).
