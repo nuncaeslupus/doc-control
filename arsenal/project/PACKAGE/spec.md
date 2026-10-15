@@ -3,11 +3,12 @@
 **Date**: 2026-10-14
 **Ticket / PR**: — (workspace `PACKAGE`; answers literary-critic Q-2, unblocks their T6)
 **Author**: Claude (doc-control session), for the owner
-**Revision**: 2
-**Status**: approved (2026-10-14, revision 2) — without annotations
+**Revision**: 3
+**Status**: approved (2026-10-15, revision 3) — without annotations
 **Revision log**:
 - r1 — first draft; the owner answered "yes, write it" to literary-critic's Q-2
 - r2 — owner's answers of 2026-10-14 applied (chat; no notes export): Option B chosen, Windows only for the first release, unsigned, two channels (D-P1..D-P5)
+- r3 — owner's answers of 2026-10-15 (chat; no notes export): directory listing dropped (D-P5 amended), opt-in update notice (D-P7), winget channel (D-P8), installer hands the `.mcpb` to Claude Desktop (D-P9)
 
 > Review record. Each round of reviewer notes makes a new revision: bump
 > **Revision**, add a log line naming the export it applied, and commit that
@@ -41,7 +42,8 @@ Code signing is not required, and the first release ships unsigned (D-P3). The W
 - [ ] `frozen_exe_size_mb <= 40` for the Windows build (measured on the CI artifact).
 - [ ] `core_runtime_dependencies == 0`: `pyproject.toml` `dependencies` stays empty. Packaging tools appear only in a build dependency group and the workflow.
 - [ ] `release_artifacts_per_tag == expected`: a tagged release attaches the Windows exe, the installer and the `.mcpb` file, each with a SHA-256 in the release notes (GitHub Release assets, D-P5). Mac artifacts are not expected until their phase.
-- [ ] `directory_submission_ready == true`: the `.mcpb` passes the manifest validator, and the listing checklist in section 3 ("Claude Desktop directory listing") is complete: manifest fields, icon, privacy and tool descriptions, review submission. Whether the directory accepts it is judged at submission, not measured (D-P5).
+- [ ] `update_check_requests_when_off == 0` and `update_check_requests_per_day <= 1`: the update notice is off by default and makes no network request; switched on, it asks GitHub Releases at most once a day (D-P7).
+- [ ] `winget_manifest_errors == 0`: the winget manifest generated for a release validates (D-P8). Acceptance into `microsoft/winget-pkgs` is judged at submission, not measured.
 - [ ] `frozen_vs_python_result_diffs == 0` on the shared fixture corpus: `capabilities` and `find` output of the Windows binary equals the pip-installed version.
 - [ ] Judged, not measured: a writer with no Python installs it from the README alone and Claude Desktop lists the doc-control tools.
 
@@ -56,13 +58,13 @@ Code signing is not required, and the first release ships unsigned (D-P3). The W
 | `.github/workflows/` (new `package.yml`) | Infrastructure | Build, smoke test, attach artifacts | Yes | Runs on `windows-latest`; `macos-latest` joins in phase 2 | Med |
 | `release.yml` | Dependent | PyPI release on a version bump | Maybe | Packages build for the same tag | Low |
 | README, `docs/` | Docs | Install instructions | Yes | Screenshots-free numbered steps | Low |
-| Claude Desktop | Consumer | Installs `.mcpb`, runs the binary; extensions directory lists it | No | Type `binary` manifest; directory submission (D-P5) | Med |
+| Claude Desktop | Consumer | Installs `.mcpb` (dragged onto Settings > Extensions, or handed over by the installer), runs the binary | No | Type `binary` manifest; no directory listing (D-P5, D-P9) | Med |
 | literary-critic | Consumer | Task T6 waits on this | No | Unblocked at phase 1 | Med |
 | Word (Windows), LibreOffice (Mac) | Shared resources | The apps driven | No | Must be installed by the writer | Low |
 
 **Impact**:
 - **User**: a writer installs without Python. The first run shows an OS warning (unsigned).
-- **Operational**: one more CI job (a second for Mac in phase 2) and a release step. Binaries are rebuilt per release. A directory listing adds a review submission per release to confirm.
+- **Operational**: one more CI job (a second for Mac in phase 2) and a release step. Binaries are rebuilt per release. A winget submission per release is a pull request to `microsoft/winget-pkgs` (D-P8).
 - **Performance**: a one-file exe unpacks on start; expect 1–3 seconds of startup. A one-folder build avoids it.
 - **API and data**: none.
 - **Risk of inaction**: literary-critic's writers must install Python or use computer-use clicks. T6 stays blocked.
@@ -71,7 +73,7 @@ Code signing is not required, and the first release ships unsigned (D-P3). The W
 
 ### Phases (shared by the options)
 
-1. **Phase 1, Windows (the first release, in scope)**: frozen exe (PyInstaller or Nuitka) with `pywin32`, the `.mcpb` bundle (server type `binary`), a plain installer, CI smoke test, GitHub Release assets and the Claude Desktop directory listing.
+1. **Phase 1, Windows (the first release, in scope)**: frozen exe (PyInstaller or Nuitka) with `pywin32`, the `.mcpb` bundle (server type `binary`), a plain installer, CI smoke test, GitHub Release assets, an opt-in update notice and a winget manifest (D-P5, D-P7, D-P8).
 2. **Phase 2, Mac file engine (later, out of scope here)**: a frozen Mac binary (Apple silicon and Intel, or universal2), `.mcpb` for Mac, "Open Anyway" instructions. Live control is LibreOffice only, with the bridge below.
 3. **Phase 3, Mac Word (later, out of scope here)**: a new Word-for-Mac engine through AppleScript or JXA (`osascript`). It is a separate spec.
 
@@ -122,16 +124,14 @@ Not part of the first release (D-P3). Recorded so the choice can be made later w
 - **`signtool` in CI**: the workflow signs the exe (and the installer) after the build with `signtool sign` and a timestamp server, then verifies with `signtool verify`, before the smoke test and the release step. The `.mcpb` bundle may need its own signing step (to confirm).
 - **SmartScreen reputation builds over time**, even for signed OV binaries: a new signed file can still warn until enough downloads accumulate. Signing changes the warning from "unknown publisher" to a named publisher; it does not remove the warning on day one.
 
-### Claude Desktop directory listing (task-level requirement, D-P5)
+### Updates and channels without the directory listing (r3: D-P5, D-P7, D-P8, D-P9)
 
-Publishing to the Claude Desktop extensions directory, in addition to GitHub Release assets, needs the following. Anything the directory's own rules decide is marked "to confirm at submission"; this spec does not state exact policy.
+The Claude extensions directory no longer accepts local servers packaged as MCP Bundles (`.mcpb`), and a plugin's local server runs in Claude Code and Cowork but not in Chat, so neither route reaches a Claude Desktop Chat user. A `.mcpb` installed from a file never updates itself, and its manifest has no update URL. So:
 
-- A valid `manifest.json` in the `.mcpb`: name, display name, version, description, author, server type `binary` with `entry_point` and `mcp_config`, the tool list, and the compatibility platforms (`win32` only for now). Exact required fields: to confirm at submission against the current manifest schema.
-- An icon in the format and size the directory asks for (to confirm at submission).
-- A privacy statement: what the tool reads and writes (local Word documents, nothing sent off the machine by doc-control itself), and a privacy policy link if the directory requires one (to confirm at submission).
-- Tool descriptions: a plain-language description of each tool (read, edit, live control of Word) and whether it changes files, for the listing and the review.
-- The review submission: the submission route, its review criteria, turnaround and re-review on each new version are all to confirm at submission. Plan for a listing that lags the GitHub release.
-- The listing must not block the GitHub release: the release assets ship first (D-P5).
+- **Update notice (D-P7)**: off by default. Switched on (an `.mcpb` user setting, or `DOC_CONTROL_UPDATE_CHECK=1`), doc-control asks the GitHub Releases API for the latest version at most once a day, caches the answer in the user's local app data, and reports `{current, latest, mcpb_url, checked_at}` in `capabilities` and `live.status`. It never downloads or installs. Off, it makes no request; the privacy text in the manifest and README says both.
+- **winget (D-P8)**: a manifest for the per-user installer, generated per release from its asset URL and SHA-256, so `winget install` and `winget upgrade` work. Submitting it is a pull request to `microsoft/winget-pkgs`, made by hand with the owner's agreement; it waits for public release assets (T8).
+- **Installer handoff (D-P9)**: Claude Desktop registers no `.mcpb` file association on Windows, so double-clicking the file does not install it. The installer's last page offers to hand the `.mcpb` to Claude Desktop (by launching Claude Desktop with the file, which the owner's 2026-10-15 test showed opens its extension install dialog; Explorer with the file selected is the fallback when Claude Desktop's launcher is not found), and to remove an old `uvx doc-control` entry from `claude_desktop_config.json` after asking, with a backup.
+- **Clean uninstall**: a report-only check lists what an uninstall left behind (install folder, `PATH` entry, Claude Desktop extension folder and settings, config entries, the app-data store); it deletes nothing.
 
 ### Comparison
 
@@ -147,7 +147,7 @@ Publishing to the Claude Desktop extensions directory, in addition to GitHub Rel
 
 ## 4. Recommendation
 
-**Recommended option**: Option B, built in phases and chosen by the owner (D-P1). Phase 1 (Windows, Option A) is the whole first release: it delivers what literary-critic needs for T6, ships unsigned, and goes out as GitHub Release assets and a Claude Desktop directory listing. Phase 2 (the Mac binary and the LibreOffice bridge) and phase 3 (Word on Mac, a separate spec) come later and are out of scope here.
+**Recommended option**: Option B, built in phases and chosen by the owner (D-P1). Phase 1 (Windows, Option A) is the whole first release: it delivers what literary-critic needs for T6, ships unsigned, and goes out as GitHub Release assets, with winget and an opt-in update notice (r3). Phase 2 (the Mac binary and the LibreOffice bridge) and phase 3 (Word on Mac, a separate spec) come later and are out of scope here.
 
 **Immediate next action**: after approval, `design` the plan, starting with a throwaway PyInstaller build in CI on `windows-latest` that runs the smoke test (`capabilities`), to settle PyInstaller against Nuitka by measured size and startup.
 
@@ -156,7 +156,7 @@ Publishing to the Claude Desktop extensions directory, in addition to GitHub Rel
 - [x] Q2. Is Mac in scope for the first release? No: Windows only; Mac moves to later phases (D-P2).
 - [x] Q3. Is shipping unsigned acceptable for the first release? Yes; document SmartScreen "More info → Run anyway" (D-P3).
 - [x] Q4. Is the LibreOffice bridge on Mac part of this spec? Deferred with Mac to later phases; the analysis stays (D-P4).
-- [x] Q5. Distribution channel? Both: GitHub Release assets and a Claude Desktop directory listing (D-P5).
+- [x] Q5. Distribution channel? GitHub Release assets; the directory listing was dropped in r3 (D-P5), winget added (D-P8).
 
 **Decisions log**:
 
@@ -166,8 +166,11 @@ Publishing to the Claude Desktop extensions directory, in addition to GitHub Rel
 | D-P2 | Windows only for the first release. Mac (the LibreOffice bridge, and Word for Mac) moves to later phases and is out of scope; the analysis is kept | agreed | 2026-10-14 |
 | D-P3 | Ship unsigned; document the SmartScreen "More info → Run anyway" step. "What signing would need" is recorded for a future decision | agreed | 2026-10-14 |
 | D-P4 | The LibreOffice bridge follows Mac to a later phase (consequence of D-P2) | agreed | 2026-10-14 |
-| D-P5 | Publish as GitHub Release assets and as a listing in the Claude Desktop extensions directory; the listing requirements are a task-level requirement, policy details to confirm at submission | agreed | 2026-10-14 |
+| D-P5 | Publish as GitHub Release assets. r3 drops the Claude Desktop directory listing: the directory no longer accepts `.mcpb` local servers, and plugin local servers do not run in Chat | amended | 2026-10-15 |
 | D-P6 | Freeze with PyInstaller (one-folder). T1 measured it at 29.3 MB against Nuitka's 40.2 MB (over T2's 40 MB gate), a 0.2 min build against 7.7 min, and a start-up 25% slower on the run of record (307 ms against 245 ms, on separate CI runners; the 182 ms of the first run came from a build whose smokes failed), a gap accepted for the size and build-time margins; both passed both smokes on the run of record. Answers Q1 | agreed | 2026-10-14 |
+| D-P7 | Opt-in update notice: off by default, at most one GitHub Releases request a day when on, reported in `capabilities` and `live.status`, never downloads; the "sends nothing off the machine" text names the exception | agreed | 2026-10-15 |
+| D-P8 | Offer a winget manifest for the installer; submission to `microsoft/winget-pkgs` by hand, with the owner's agreement, after release assets are public | agreed | 2026-10-15 |
+| D-P9 | The installer hands the `.mcpb` to Claude Desktop and offers to remove an old `uvx` config entry, with a backup | agreed | 2026-10-15 |
 
 Constraints carried: no signing required; the core stays stdlib-only; the owner answered Q-2 with yes.
 
@@ -183,7 +186,7 @@ Everything here is additive and build-time. The runtime package keeps `dependenc
 |-------|----------|---------|
 | `doc-control-X.Y.Z-windows-x64.zip` | The one-folder build: `doc-control/doc-control.exe` plus its runtime files | CLI users who unzip anywhere |
 | `doc-control-X.Y.Z-windows-x64-setup.exe` | Inno Setup installer of the same folder: per-user install to `%LOCALAPPDATA%\Programs\doc-control`, adds that folder to the user `PATH`, shows the `claude_desktop_config.json` snippet on its last page, registers an uninstaller. No admin rights. | Writers who want the CLI or a hand-written Claude Desktop config |
-| `doc-control-X.Y.Z-windows-x64.mcpb` | Zip of `manifest.json`, `icon.png` and `server/` (the one-folder build) | Claude Desktop, by double-click, and the directory listing |
+| `doc-control-X.Y.Z-windows-x64.mcpb` | Zip of `manifest.json`, `icon.png` and `server/` (the one-folder build) | Claude Desktop: dragged onto Settings > Extensions, or handed over by the installer (D-P9) |
 | `SHA256SUMS.txt` | `sha256  filename` per asset | Anyone verifying a download |
 
 The release notes carry the same SHA-256 lines under a `## Checksums` heading.
@@ -204,11 +207,11 @@ The release notes carry the same SHA-256 lines under a `## Checksums` heading.
                            "args": ["mcp"]}},
  "tools": [{"name": "find", "description": "…"}],
  "compatibility": {"platforms": ["win32"]},
- "privacy_policies": ["<url, if the directory requires one>"]}
+ "user_config": {"update_check": {"type": "boolean", "default": false, "title": "Check for updates once a day"}}}
 ```
 
 - `tools` is generated from the registry (`mcp.tool_name` of every operation, with its `summary` as the description). It is never hand-listed, so it equals the binary's `tools/list`.
-- Field names follow the current `@anthropic-ai/mcpb` schema. `mcpb validate` in CI is the arbiter; the fields the directory requires on top are confirmed at submission (D-P5).
+- Field names follow the current `@anthropic-ai/mcpb` schema. `mcpb validate` in CI is the arbiter; there is no directory listing to add fields for (D-P5, r3).
 
 ### Frozen binary behaviour
 
@@ -268,6 +271,6 @@ Packaging is a reusable workflow called from `release.yml`, not a workflow of it
 | Antivirus or SmartScreen flags the unsigned exe; one-file PyInstaller is flagged most | Med | High | One-folder build; T1 measures both freezers; README documents "More info → Run anyway"; signing recorded for later (D-P3) | manual (clean machine); VirusTotal count noted in the evidence log, not gated |
 | Size over 40 MB (`pywin32` is the bulk) | Med | Low | Exclude `tkinter`, test modules and unused `win32` extensions; T1 measures both freezers against the budget | CI size check |
 | One-folder start-up time slows MCP start in Claude Desktop | Low | Med | T1 measures start-up; one-folder skips one-file's unpack step | CI (T1 numbers) |
-| The `.mcpb` manifest schema or the directory rules change before submission | Med | Med | Manifest generated and validated by the pinned `mcpb` CLI in CI; listing requirements kept as a checklist confirmed at submission; the GitHub release never waits on the listing (D-P5) | CI + submission |
+| The `.mcpb` manifest schema changes | Med | Med | Manifest generated and validated by the pinned `mcpb` CLI in CI | CI |
 | A frozen build changes what the PyPI package does | Low | High | Packaging lives in `packaging/`, a dependency group and workflows; the only source changes are frozen-only error text and the additive `capabilities.build`; `core_runtime_dependencies == 0` is tested | unit (`tests/test_package.py`) |
 | Windows Actions minutes grow (packaging on every PR) | Med | Low | The `ci.yml` call to `package.yml` runs only when `src/`, `packaging/`, `scripts/frozen_*`, `pyproject.toml` or the workflows change | CI usage |
