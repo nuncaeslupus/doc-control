@@ -537,8 +537,8 @@ class LibreOffice:
         name, tracking = (profile.givenname, profile.sn), doc.RecordChanges
         profile.givenname, profile.sn = author, ""
         profile.commitChanges()
-        doc.RecordChanges = track
         try:
+            doc.RecordChanges = track
             yield
         finally:
             doc.RecordChanges = tracking

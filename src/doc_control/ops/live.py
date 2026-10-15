@@ -598,6 +598,8 @@ def live_batch(request: dict[str, Any]) -> dict[str, Any]:
     # (start, end, index in the request, adapter call, where)
     plan: list[tuple[tuple[float, float], tuple[float, float], int, Any, Any]] = []
     revised: set[int] = set()  # paragraphs (from 0) a plain write may not touch
+    if plain and not hasattr(adapter, "unresolved"):
+        raise unavailable(f"plain writes are not supported in {adapter.app}")
     for i, edit in enumerate(edits_from_request(ops)):
         if isinstance(edit, InsertParagraph):
             if (edit.after is None) == (edit.before is None):

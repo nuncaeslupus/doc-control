@@ -133,3 +133,22 @@ def test_direct_text_replace_live_plain(doc: Path) -> None:
         api.run("text.replace", {**request, "at": at(2, ":0-5"), "text": "Tres"})
         assert state.writes == [("tracked_replace", False)]
         assert state.paragraphs[2] == "Tres long."
+
+
+class _PreD21Adapter(FakeAdapter):
+    """An adapter written before D-21: it has no ``unresolved``."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "unresolved":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
+def test_an_adapter_without_plain_support_answers_engine_unavailable(doc: Path) -> None:
+    fake = _PreD21Adapter({str(doc): TEXTS})
+    with using(fake):
+        state = opened(doc, fake)
+        with pytest.raises(DocControlError) as err:
+            live(doc, [{"op": "text.replace", "at": at(0, ":0-3"), "text": "Uno"}], tracked=False)
+        assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
+        assert state.paragraphs == TEXTS
