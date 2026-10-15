@@ -28,7 +28,7 @@ Find an anchor's passage now: its range, score and match kind (exact, normalized
 
 ## `batch` (write)
 
-Apply text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve together, all or nothing, or table.row.insert and table.row.delete (tracked table rows) together, or style.create/update/rename/merge together, or revision.accept and revision.reject to resolve revisions (by ids, author, address range or all); dry_run previews.
+The main editing tool: apply several edits as tracked changes, all or nothing. One family per batch: text.replace, para.insert, para.delete, para.move, style.apply, format.apply, comment.add, comment.reply and comment.resolve; or table.row.insert and table.row.delete (tracked table rows); or style.create/update/rename/merge; or revision.accept and revision.reject (by ids, author, address range or all). Addresses refer to the document as read; expect.sha256 refuses a file changed since; dry_run previews. The file is backed up first and undo takes the batch back.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -43,7 +43,7 @@ Apply text.replace, para.insert, para.delete, para.move, style.apply, format.app
 
 ## `capabilities` (read)
 
-API version, engines, the build (frozen or not) and the list of operations.
+Describe this doc-control server: API version, engines (file, live), whether it is a frozen build, and every operation it offers. Call it once at the start; help gives one operation's full schema. Read-only; needs no document.
 
 ## `caption.add` (write)
 
@@ -63,7 +63,7 @@ Add a caption paragraph above or below a body paragraph, as tracked insertions: 
 
 ## `comments.list` (read)
 
-Comments in thread order (each root then its replies) with resolved state and location.
+List the document's comments in thread order (each root, then its replies) with author, text, resolved state and location; filter by author or resolved. Reply to or resolve them with batch (comment.reply, comment.resolve). Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -88,7 +88,7 @@ Write a new redline .docx from two versions: every difference a tracked change; 
 
 ## `diff` (read)
 
-Paragraph alignment between two versions of a document, with a cross-version address map.
+Align the paragraphs of two versions of a .docx (old and new): which are unchanged, modified, inserted, deleted, moved or split, with a map from old addresses to new ones. Use it to carry addresses across versions; use compare to write a redline .docx instead. Read-only: neither file is changed.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -149,7 +149,7 @@ JSON Schema of one operation, or of all operations; also the kinds batch takes i
 
 ## `history.list` (read)
 
-The undo log, newest first: what each write changed, whether it was undone, and the deleted paragraphs `restore` can bring back.
+List a document's undo log, newest first: each write's op_id, what it changed, whether it was undone, and the deleted paragraphs restore can bring back. Use it to find the op_id for undo or restore; history.search finds a quote in the log. Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -182,7 +182,7 @@ Remove undo history (all, or before a date) for privacy, leaving a tombstone. Ru
 
 ## `history.search` (read)
 
-Find a quote in the undo log: in the requests, and in the text of every paragraph before and after each write. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at.
+Search a document's undo log for a quote: in the requests, and in the text of every paragraph before and after each write. Use it to find when a passage was changed or deleted, and the op_id to undo or restore it. Exact unless `match_level` folds it; then every hit, with its offsets and the level it matched at. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -224,7 +224,7 @@ Mark an index entry: an XE field, as a tracked insertion, right after a range. T
 
 ## `info` (read)
 
-File facts: size, hash, paragraph count, properties and which parts exist.
+File facts for a .docx: size, sha256 hash (pass it later as expect.sha256 so a write is refused if the file changed meanwhile), paragraph count, core properties and which parts exist (comments, notes, headers). A cheap first call on a document; stats gives word and element counts. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -265,7 +265,7 @@ Close the open document; with unsaved changes it needs `save` or `discard`.
 
 ## `live.open` (write)
 
-Attach to the app window holding the document, or open it in a live app.
+Attach to Word or LibreOffice for live editing: find the app window already holding the document, or open it in the app (`app`). Call it before the other live operations (engine live). It opens or focuses a window but does not change the document.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -287,7 +287,7 @@ Show a list of places in the document as buttons; in a client that renders MCP A
 
 ## `live.save` (write)
 
-Save the open document in its app.
+Save the document open in Word or LibreOffice (attached with live.open) to its file, from inside the app. Call it after live edits (batch with engine live) to keep them; live.close with save: true saves and closes in one call.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -296,7 +296,7 @@ Save the open document in its app.
 
 ## `live.select` (write)
 
-Select a paragraph in the app's window, by address (`at`) or by a `locate` find phrase, and return its text and address.
+Show the user a place: select a paragraph (or put the cursor at it) in the Word or LibreOffice window, by address (`at`) or by a locate find phrase, and return its text and address. Changes only the selection, never the text; the document must be attached with live.open.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -312,7 +312,7 @@ Select a paragraph in the app's window, by address (`at`) or by a `locate` find 
 
 ## `live.selection` (read)
 
-The text selected in the app's window, and the paragraph the cursor is in.
+Read what the user has selected in Word or LibreOffice right now, and the paragraph (with its address) the cursor is in. Use it when the user points at text ("this paragraph", "here"). Read-only; the document must be attached with live.open.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -321,7 +321,7 @@ The text selected in the app's window, and the paragraph the cursor is in.
 
 ## `live.status` (read)
 
-Live apps (Word, LibreOffice) found and reachable, and the documents they have open; with `doc`, which app has it open, its full path, and whether it has unsaved changes.
+Check which live apps (Word, LibreOffice) are running and reachable and which documents they have open; with `doc`, which app holds it, its full path and whether it has unsaved changes. Call it before live.open. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -330,7 +330,7 @@ Live apps (Word, LibreOffice) found and reachable, and the documents they have o
 
 ## `locate` (read)
 
-Chapter, scene, estimated page and the shortest unique first-and-last-words phrase of each paragraph, plus a phrase Word's Find meets once (one, a range, or the whole document, paged).
+Say where paragraphs are, for a person: for one paragraph, a range or the whole document (paged), each paragraph's chapter, scene, estimated page and shortest unique first-and-last-words phrase, plus a phrase Word's Find meets exactly once. Use it to tell a user where a passage is, or to get a find phrase for live.select; outline lists only headings, find searches text, page.estimate gives only pages. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -367,7 +367,7 @@ Back up the document into its store (retention applies) and note it in the histo
 
 ## `outline` (read)
 
-The headings of the document with level, style and address, in order.
+List the document's headings (levels 1-9) in order, each with its style and paragraph address: the table-of-contents view. Use segment for chapters that are not styled as headings, paragraphs.list for every paragraph. Read-only, paged with limit and cursor.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -391,7 +391,7 @@ Estimated page of each paragraph (or of one): rendered page marks and explicit b
 
 ## `para.get` (read)
 
-One paragraph by address: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading).
+Read one paragraph by address in full: text, style, direct formatting and formatted spans, and layout facts (heading_level is null for a body paragraph, 1-9 for a heading). Use it before editing a paragraph; paragraphs.list reads many at once. Read-only; a long text is paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -446,7 +446,7 @@ Bring a logged paragraph back as a tracked insertion after the paragraph that ho
 
 ## `revisions.list` (read)
 
-Tracked changes in document order with author, date, type, text and paragraph address.
+List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, author, date, type, text and paragraph address. Accept or reject them with batch (revision.accept, revision.reject by ids, author, range or all). Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -459,7 +459,7 @@ Tracked changes in document order with author, date, type, text and paragraph ad
 
 ## `sections.list` (read)
 
-Each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer address per kind (default, first, even).
+List each section's page setup: break type, title page, even/odd headers, page-number start and format, and the header and footer part address per kind (default, first, even). Use layout.get for the same plan with the header and footer text, in the form layout.apply takes back. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -467,7 +467,7 @@ Each section's page setup: break type, title page, even/odd headers, page-number
 
 ## `segment` (read)
 
-Chapters and scenes with stable ids and detection signals, or sentences and dialogue lines.
+Split the document into chapters, parts or scenes, with stable ids and the signals that detected them, or split a range into sentences or dialogue lines. Use it to work chapter by chapter or to get sentence addresses (p142#a7b2a7b2.s3); outline lists only styled headings. Detection is tuned with profile and overrides. Read-only.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -492,7 +492,7 @@ Counts: paragraphs, words, headings, tables, comments, revisions, fonts and styl
 
 ## `style.create` (write)
 
-Add a style.
+Add a new paragraph, character, table or numbering style to the document, with its parent, next and linked styles and its run and paragraph formatting. Refused when the id or name already exists: use style.update to change a style, style.rename to rename one, styleset.install to add many at once. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -522,7 +522,7 @@ One style by id or name: its own formatting, inherited formatting and heading le
 
 ## `style.merge` (write)
 
-Re-point every use of the 'from' styles to 'into' and delete them.
+Merge styles: re-point every use of the `from` styles to `into`, then delete the `from` styles. Use it to clean up duplicate styles; style.rename only renames. Not a tracked change: the file is backed up first and the write is logged for undo; check with dry_run first.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -534,7 +534,7 @@ Re-point every use of the 'from' styles to 'into' and delete them.
 
 ## `style.rename` (write)
 
-Change a style's display name and/or id; references follow.
+Rename a style's display name and/or id; every reference follows (paragraphs, headers, notes, numbering, and based_on, next and link in other styles). Use style.merge to fold one style into another instead. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -547,7 +547,7 @@ Change a style's display name and/or id; references follow.
 
 ## `style.update` (write)
 
-Change a style's parent, next/link styles, quick flag or formatting.
+Change an existing style: its parent (based_on), next or linked style, quick-gallery flag, or run and paragraph formatting (null removes a key). Every paragraph using the style changes with it; to format one paragraph, use format.apply in batch. Not a tracked change: the file is backed up first and the write is logged for undo; dry_run previews.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -564,7 +564,7 @@ Change a style's parent, next/link styles, quick flag or formatting.
 
 ## `styles.list` (read)
 
-Styles defined in the document with how many times each is used.
+List the styles defined in the document and how many times each is used; filter by type or to used styles only. Use style.get for one style's full and inherited formatting. Read-only, paged.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -576,7 +576,7 @@ Styles defined in the document with how many times each is used.
 
 ## `styleset.export` (read)
 
-The document's styles as a JSON style set; optionally also saved to a file.
+Export the document's styles (all, the ones named, or custom ones only) as a JSON style set, returned and optionally also written to `out`. Feed it to styleset.install on another document; styleset.export-dotx writes a Word template instead. The document is not changed.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -588,7 +588,7 @@ The document's styles as a JSON style set; optionally also saved to a file.
 
 ## `styleset.export-dotx` (write)
 
-Write the document's styles as a new .dotx template; never touches the document.
+Write the document's styles (all, the ones named, or custom ones only) to a new .dotx Word template at `out`; the document itself is never changed. styleset.import-dotx brings a template's styles into a document; styleset.export gives a JSON style set instead.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -664,7 +664,7 @@ Insert a row into a body table as a tracked change (w:trPr/w:ins, tracked text),
 
 ## `term.rename` (write)
 
-Rename a term everywhere as one tracked batch: whole word, case, preserve case and inflections; dry_run previews with counts. Exact unless `match_level` folds it; then each change says the level it matched at.
+Rename a term or a character's name everywhere (Lucía to Elena) as one tracked batch: whole word, case, preserve case and inflections. Use it instead of many text.replace edits; run dry_run first to check the counts. Exact unless `match_level` folds it; then each change says the level it matched at.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

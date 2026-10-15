@@ -124,7 +124,12 @@ def _page_map(records: list[dict[str, Any]]) -> dict[str, str | None]:
 @operation(
     "diff",
     "read",
-    "Paragraph alignment between two versions of a document, with a cross-version address map.",
+    (
+        "Align the paragraphs of two versions of a .docx (old and new): which are "
+        "unchanged, modified, inserted, deleted, moved or split, with a map from old "
+        "addresses to new ones. Use it to carry addresses across versions; use compare to "
+        "write a redline .docx instead. Read-only: neither file is changed."
+    ),
     {
         "type": "object",
         "properties": {

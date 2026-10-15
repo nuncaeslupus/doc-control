@@ -45,6 +45,7 @@ Ids
 from __future__ import annotations
 
 import copy
+import os
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
@@ -66,6 +67,7 @@ BR = W + "br"
 ID, AUTHOR, DATE = W + "id", W + "author", W + "date"
 
 DEFAULT_AUTHOR = "Claude"
+AUTHOR_ENV = "DOC_CONTROL_AUTHOR"
 MAX_ID = 2**31 - 1
 STORY_PART = re.compile(r"^word/(document|comments|footnotes|endnotes|header\d*|footer\d*)\.xml$")
 
@@ -1027,3 +1029,11 @@ def reject_revisions(p: ET.Element, ids: set[str]) -> None:
                 walk(sub)
 
     walk(p)
+
+
+def default_author() -> str:
+    """The revision author when a request names none: ``DOC_CONTROL_AUTHOR``, else ``Claude``.
+
+    A blank value counts as unset, so an empty setting in a client's form changes nothing.
+    """
+    return os.environ.get(AUTHOR_ENV, "").strip() or DEFAULT_AUTHOR

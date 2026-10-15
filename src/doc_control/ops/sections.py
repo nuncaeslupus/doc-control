@@ -33,8 +33,12 @@ def flag(parent: ET.Element, tag: str) -> bool:
 @operation(
     "sections.list",
     "read",
-    "Each section's page setup: break type, title page, even/odd headers, page-number "
-    "start and format, and the header and footer address per kind (default, first, even).",
+    (
+        "List each section's page setup: break type, title page, even/odd headers, "
+        "page-number start and format, and the header and footer part address per kind "
+        "(default, first, even). Use layout.get for the same plan with the header and "
+        "footer text, in the form layout.apply takes back. Read-only."
+    ),
     {
         "type": "object",
         "properties": {
