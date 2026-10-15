@@ -210,7 +210,7 @@ def test_out_of_range_offsets_raise() -> None:
 
 def test_text_normalized_operation_via_cli(capsys: pytest.CaptureFixture[str]) -> None:
     original = "Ca\u00adf\u0065\u0301  au\u00a0lait"
-    code = main(["text.normalized", "--json", json.dumps({"text": original})])
+    code = main(["text.normalize", "--json", json.dumps({"text": original})])
     env = json.loads(capsys.readouterr().out)
     assert code == 0
     (entry,) = env["result"]["paragraphs"]
@@ -225,12 +225,12 @@ def test_text_normalized_operation_via_cli(capsys: pytest.CaptureFixture[str]) -
 def test_text_normalized_is_registered_read_only_with_schema(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["help", "text.normalized"]) == 0
+    assert main(["server.help", "text.normalize"]) == 0
     env = json.loads(capsys.readouterr().out)
-    described = env["result"]["operations"]["text.normalized"]
+    described = env["result"]["operations"]["text.normalize"]
     assert described["kind"] == "read"
     assert set(described["schema"]["properties"]) >= {"doc", "text", "at"}
-    assert main(["text.normalized", "--json", "{}"]) == 2
+    assert main(["text.normalize", "--json", "{}"]) == 2
 
 
 def test_runs_that_never_stabilise_under_nfc_stay_linear() -> None:

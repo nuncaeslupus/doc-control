@@ -1,6 +1,6 @@
 """``term.rename``: rename a term everywhere, as one tracked batch of ``text.replace`` edits.
 
-The body text is searched with the same matcher as ``find`` (accent and case folding,
+The body text is searched with the same matcher as ``text.find`` (accent and case folding,
 whole word), every match becomes one ``text.replace`` and all of them go through
 :func:`doc_control.ops.tracked.apply_edits` in a single verified write. Matches that
 span several runs are replaced like any other range. ``dry_run`` plans everything and
@@ -20,14 +20,14 @@ Options
     to ``Elenas``; an object ``{"from": "o", "to": "a"}`` renames ``Lucíao`` to
     ``Elenaa``. Each form is matched as a whole word too. Where forms overlap, the
     longest wins.
-    ``match_level`` (no default: without it nothing changes): search with ``find``'s
+    ``match_level`` (no default: without it nothing changes): search with ``text.find``'s
     levelled matcher. ``default`` also ignores case, accents and punctuation, ``loose``
     symbols too, and ``exact`` keeps the options above; Word's Find codes in ``from`` are
     read as their characters. Every change in ``preview`` (and every ``skipped`` row)
     then carries ``match_level``, the strictest level it meets, and ``matches_by_level``
     counts ``counts.matches`` by level. It never widens to a looser level on its own.
 
-Deferred: a nested ``{"op": "term.rename"}`` inside ``batch`` (it needs the document to
+Deferred: a nested ``{"op": "term.rename"}`` inside ``doc.batch`` (it needs the document to
 expand); ``term.rename`` is its own write operation for now.
 
 Not renamed, never corrupted
@@ -102,7 +102,7 @@ _SCHEMA: dict[str, Any] = {
         "match_level": {
             "type": "string",
             "enum": ["exact", "default", "loose"],
-            "description": "Fold the search as `find` does: `default` ignores case, accents"
+            "description": "Fold the search as `text.find` does: `default` ignores case, accents"
             " and punctuation (symbols such as `$` still count), `loose` drops symbols too;"
             " `exact` is the rename as without it. When passed, Word's Find codes in `from`"
             " are read as their characters, each `preview` change and `skipped` row gains"
@@ -241,7 +241,7 @@ def plan_rename(
 ) -> RenamePlan:
     """Every match of ``old`` in the body as a ``text.replace``; nothing is written.
 
-    With ``match_level`` the search is ``find``'s :class:`LevelMatcher` at that level, and
+    With ``match_level`` the search is ``text.find``'s :class:`LevelMatcher` at that level, and
     each change and skip is tagged with the strictest level it meets.
     """
     folds = match_level in ("default", "loose")
@@ -450,7 +450,7 @@ def _preview(change: _Change) -> dict[str, Any]:
 
 
 def _check_level(request: dict[str, Any], level: Level) -> None:
-    """``find``'s check, and a folded level ignores case: no ``case_sensitive`` with it."""
+    """``text.find``'s check, and a folded level ignores case: no ``case_sensitive`` with it."""
     check_level(request, level)
     if level != "exact" and request.get("case_sensitive"):
         raise DocControlError(

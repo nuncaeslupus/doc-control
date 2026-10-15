@@ -137,18 +137,18 @@ def _novel(tmp_path: Path) -> Path:
 def test_read_ops_see_the_text_as_a_document(tmp_path: Path) -> None:
     path = _novel(tmp_path)
     with api.open(path) as d:
-        reply = d.reply("info")
+        reply = d.reply("doc.info")
         assert reply.doc is not None
         assert reply.doc["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
         rows = d.paragraphs()
         assert rows[0]["style_name"] == "heading 1"
         assert rows[0]["text"] == "Part One"  # the byte order mark is gone
-        result = d.run("segment", {"unit": "chapters", "profile": {"chapter_level": "auto"}})
+        result = d.run("doc.segment", {"unit": "chapters", "profile": {"chapter_level": "auto"}})
         chapters = result["chapters"]
         assert [c["text"] for c in chapters] == ["1", "2", "3"]
         assert chapters[0]["scenes"] == 2
         assert len({c["part"] for c in chapters}) == 2
-        hits = d.run("find", {"query": "Part Two"})["matches"]
+        hits = d.run("text.find", {"query": "Part Two"})["matches"]
         assert len(hits) == 1
         anchor = d.run("anchor.create", {"at": hits[0]["at"]})["anchor"]
         assert d.run("anchor.resolve", {"anchor": anchor})["match"] == "exact"
@@ -158,8 +158,8 @@ def test_read_ops_see_the_text_as_a_document(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("op", "request_"),
     [
-        ("open", {}),
-        ("batch", {"ops": [{"op": "para.delete", "at": "p1"}]}),
+        ("doc.open", {}),
+        ("doc.batch", {"ops": [{"op": "para.delete", "at": "p1"}]}),
         ("recipe.run", {"recipe": "empty-headings"}),
     ],
 )
@@ -181,7 +181,7 @@ def test_bomless_utf16_is_not_a_document(tmp_path: Path) -> None:
     path = tmp_path / "wide.txt"
     path.write_bytes("año".encode("utf-16-le"))
     with api.open(path) as d, pytest.raises(DocControlError) as err:
-        d.run("info")
+        d.run("doc.info")
     assert err.value.code is ErrorCode.NOT_A_DOCX
 
 
@@ -193,14 +193,14 @@ def test_text_source_gate(tmp_path: Path) -> None:
     checks: list[bool] = []
     with api.open(path) as d:
         rows = d.paragraphs()
-        chapters = d.run("segment", {"unit": "chapters", "profile": {"chapter_level": "auto"}})
+        chapters = d.run("doc.segment", {"unit": "chapters", "profile": {"chapter_level": "auto"}})
         checks += [
             rows[0]["text"] == "Part One" and rows[0]["heading_level"] == 1,
             rows[1]["heading_level"] == 2,
             [c["text"] for c in chapters["chapters"]] == ["1", "2", "3"],
             chapters["chapters"][0]["scenes"] == 2,
         ]
-        for op in ("open", "recipe.run"):
+        for op in ("doc.open", "recipe.run"):
             req = {"recipe": "empty-headings"} if op == "recipe.run" else {}
             try:
                 d.run(op, req)
@@ -209,8 +209,8 @@ def test_text_source_gate(tmp_path: Path) -> None:
                 checks.append(exc.code is ErrorCode.UNSUPPORTED_CONTENT)
     with api.open(txt) as d:
         texts = [r["text"] for r in d.paragraphs()]
-        found = d.run("segment", {"unit": "chapters", "profile": {"chapter_blank_lines": 2}})
-        doc = d.reply("info").doc or {}
+        found = d.run("doc.segment", {"unit": "chapters", "profile": {"chapter_blank_lines": 2}})
+        doc = d.reply("doc.info").doc or {}
         checks += [
             texts == [t for t, _ in paragraphs(_WRAPPED, markdown=False)[0]],
             texts[3] == "CHAPTER I" and texts[5].endswith("along the housetops."),
@@ -218,10 +218,12 @@ def test_text_source_gate(tmp_path: Path) -> None:
             doc.get("source") == {"format": "txt", "encoding": "utf-8", "mode": "blocks"},
         ]
     # compare reads text sources; its output is never a text file, and none is left behind.
-    api.run("compare", {"old": str(txt), "new": str(path), "output": str(tmp_path / "r.docx")})
+    api.run("doc.compare", {"old": str(txt), "new": str(path), "output": str(tmp_path / "r.docx")})
     checks.append((tmp_path / "r.docx").is_file())
     try:
-        api.run("compare", {"old": str(path), "new": str(txt), "output": str(tmp_path / "r.md")})
+        api.run(
+            "doc.compare", {"old": str(path), "new": str(txt), "output": str(tmp_path / "r.md")}
+        )
         checks.append(False)
     except DocControlError as exc:
         checks.append(exc.code is ErrorCode.UNSUPPORTED_CONTENT)

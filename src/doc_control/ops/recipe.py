@@ -1,8 +1,8 @@
 """`recipe.list` and `recipe.run`.
 
-``recipe.run`` never writes: it returns ``result.batch``, a ready-to-send ``batch``
+``recipe.run`` never writes: it returns ``result.batch``, a ready-to-send ``doc.batch``
 request (``doc``, ``ops`` and ``expect.sha256``), so applying a recipe is always a
-separate, reviewable ``batch`` call. ``dry_run`` is accepted for symmetry with ``batch``
+separate, reviewable ``doc.batch`` call. ``dry_run`` is accepted for symmetry with ``doc.batch``
 and changes nothing. A recipe is a stored one (``recipe``: name) or an inline
 ``definition``; both go through the same strict validation (``RECIPE_INVALID``).
 """
@@ -135,7 +135,7 @@ def _context(doc: Document) -> dict[int, Context]:
 @operation(
     "recipe.run",
     "write",
-    "Run a recipe and return a batch proposal (repeated until stable); apply it with batch.",
+    "Run a recipe and return a batch proposal (repeated until stable); apply it with doc.batch.",
     _RUN,
 )
 def recipe_run(request: dict[str, Any]) -> Reply:

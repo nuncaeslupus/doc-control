@@ -28,9 +28,9 @@ def _calls(doc: Path) -> list[tuple[str, dict[str, Any]]]:
         ("live.open", {**path, "engine": "live"}),
         ("live.select", {**path, "at": first}),
         ("live.select", {**path, "find_phrase": "two", "paragraphs_after": 1}),
-        ("live.selection", path),
-        ("batch", {**path, "engine": "live", "author": "Ana", "ops": [edit]}),
-        ("batch", {**path, "engine": "live", "ops": [{"op": "para.delete", "at": first}]}),
+        ("live.get_selection", path),
+        ("doc.batch", {**path, "engine": "live", "author": "Ana", "ops": [edit]}),
+        ("doc.batch", {**path, "engine": "live", "ops": [{"op": "para.delete", "at": first}]}),
         ("live.close", path),  # UNSAVED_CHANGES
         ("live.save", path),
         ("live.close", path),

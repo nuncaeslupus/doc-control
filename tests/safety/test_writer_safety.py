@@ -24,7 +24,7 @@ FIELD = (
 def _write(doc: Path, **open_args: Any) -> None:
     with api.open(doc, **open_args) as d:
         first = d.paragraphs()[0]["at"]
-        d.run("batch", {"ops": [{"op": "text.replace", "at": f"{first}:0-3", "text": "Uno"}]})
+        d.run("doc.batch", {"ops": [{"op": "text.replace", "at": f"{first}:0-3", "text": "Uno"}]})
 
 
 def _locked_writes(tmp: Path) -> int:

@@ -40,7 +40,7 @@ _REMOVES = frozenset({("row_insert", "reject"), ("row_delete", "accept")})
 
 @dataclass(eq=False)
 class RowRevision:
-    """One ``w:ins``/``w:del`` marker of a row; ``kind`` is the ``revisions.list`` type."""
+    """One ``w:ins``/``w:del`` marker of a row; ``kind`` is the ``revision.list`` type."""
 
     id: str
     kind: str
@@ -49,7 +49,7 @@ class RowRevision:
     table: int
     start: int  # byte span of the ``w:tr``
     end: int
-    first: int  # number of the row's first paragraph (where ``revisions.list`` reports it)
+    first: int  # number of the row's first paragraph (where ``revision.list`` reports it)
     paragraphs: frozenset[int] = field(default_factory=frozenset)
 
 

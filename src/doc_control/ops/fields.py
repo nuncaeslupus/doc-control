@@ -1,4 +1,4 @@
-"""`fields.list`: every field in every story, read-only (the write side is
+"""`field.list`: every field in every story, read-only (the write side is
 :mod:`doc_control.ops.fieldwrite`).
 
 Complex fields (``w:fldChar`` begin/separate/end, the code split across any number of
@@ -172,7 +172,7 @@ def collect_rows(doc: Document, kinds: Sequence[str]) -> list[dict[str, Any]]:
 
 
 @operation(
-    "fields.list",
+    "field.list",
     "read",
     "Every field of the document, by story: its address, instruction code, type (PAGE, TOC, "
     "REF, ADDIN ZOTERO_ITEM, CITATION, ...), result text and whether the result is stale. "

@@ -38,10 +38,10 @@ HINTS: dict[ErrorCode, str] = {
     ),
     ErrorCode.DOC_LOCKED: "An editor (Word, LibreOffice) has the file open: close it, then retry.",
     ErrorCode.DOC_CHANGED_ON_DISK: "The file changed since you read it: re-read, then retry.",
-    ErrorCode.SCHEMA_INVALID: "Run `doc-control help <op>` to see the request schema.",
+    ErrorCode.SCHEMA_INVALID: "Run `doc-control server.help <op>` to see the request schema.",
     ErrorCode.ADDRESS_INVALID: "Use an address from a read result, e.g. p142#a7b2c3d4.",
     ErrorCode.STALE_ADDRESS: "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
-    ErrorCode.ANCHOR_NOT_FOUND: "Widen the quote or its context, or search with find.",
+    ErrorCode.ANCHOR_NOT_FOUND: "Widen the quote or its context, or search with text.find.",
     ErrorCode.ANCHOR_AMBIGUOUS: "Pick one of the candidates, or add prefix/suffix context.",
     ErrorCode.UNSUPPORTED_CONTENT: (
         "Edit around fields, hyperlinks or controls; encrypted or ZIP64 packages are not"
@@ -49,8 +49,8 @@ HINTS: dict[ErrorCode, str] = {
     ),
     ErrorCode.BATCH_CONFLICT: "Split overlapping operations into separate batches.",
     ErrorCode.VERIFY_FAILED_RESTORED: "Nothing was changed; report the request that caused it.",
-    ErrorCode.COMMENT_NOT_FOUND: "List comments with comments.list and use an existing id.",
-    ErrorCode.STYLE_NOT_FOUND: "List styles with styles.list and use an existing id.",
+    ErrorCode.COMMENT_NOT_FOUND: "List comments with comment.list and use an existing id.",
+    ErrorCode.STYLE_NOT_FOUND: "List styles with style.list and use an existing id.",
     ErrorCode.STYLE_CONFLICT: "Rename the style or merge it with style.merge.",
     ErrorCode.RECIPE_INVALID: "Fix the recipe so it only uses the documented keys.",
     ErrorCode.HISTORY_NOT_FOUND: "List history with history.list and use an existing op id.",

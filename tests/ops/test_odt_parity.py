@@ -38,7 +38,7 @@ def _facts(path: Path) -> tuple[list[tuple[Any, ...]], list[str], int]:
             for r in doc.paragraphs()
             if r["text"]
         ]
-        chapters = [c["text"] for c in doc.run("segment", {"unit": "chapters"})["chapters"]]
+        chapters = [c["text"] for c in doc.run("doc.segment", {"unit": "chapters"})["chapters"]]
         pages = doc.run("page.estimate", {})["page_count"]
     return rows, chapters, pages
 

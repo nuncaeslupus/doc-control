@@ -1,4 +1,4 @@
-"""`find` with `match_level` (FIND T7): folded literal search, each hit tagged.
+"""`text.find` with `match_level` (FIND T7): folded literal search, each hit tagged.
 
 The gate ``symbol_fold_violations == 0`` counts symbol rows that fold where they must not
 (``5$`` meeting ``5`` at ``default``) or do not fold where they must (at ``loose``), and
@@ -75,7 +75,7 @@ def spanish_docx(path: Path) -> Path:
 
 
 def run(doc: Path, query: str, **options: Any) -> dict[str, Any]:
-    reply = REGISTRY["find"].run({"doc": str(doc), "query": query, **options})
+    reply = REGISTRY["text.find"].run({"doc": str(doc), "query": query, **options})
     assert isinstance(reply, Reply)
     return {**reply.result, "next": reply.next_cursor, "warnings": reply.warnings}
 

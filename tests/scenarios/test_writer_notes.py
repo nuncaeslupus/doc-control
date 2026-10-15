@@ -1,8 +1,8 @@
 """Writer-notes scenario: a marker paragraph ``========== Move this after chapter X``.
 
 The gate ``writer_note_scenario_failures == 0``. Applying the note uses only public
-operations, called through the CLI: ``find`` locates the marker, ``segment`` gives the
-chapters, and one tracked ``batch`` moves the passage after chapter X, deletes the marker
+operations, called through the CLI: ``text.find`` locates the marker, ``doc.segment`` gives the
+chapters, and one tracked ``doc.batch`` moves the passage after chapter X, deletes the marker
 paragraph and (optionally) comments on the chapter heading. Rejecting every revision gives
 the original back, accepting them gives the moved order, and every written package passes
 the validator.
@@ -75,7 +75,7 @@ def states(path: Path) -> tuple[list[str], list[str], list[str]]:
 
 def apply_note(capsys: Capsys, path: Path, passage_len: int, with_comment: bool) -> dict[str, Any]:
     """Find the marker, resolve chapter X and the passage, apply one tracked batch."""
-    found = cli(capsys, "find", doc=str(path), query=MARKER_QUERY, regex=True)
+    found = cli(capsys, "text.find", doc=str(path), query=MARKER_QUERY, regex=True)
     assert found["ok"] and len(found["result"]["matches"]) == 1
     match = found["result"]["matches"][0]
     marker_at = match["at"].split(":")[0]
@@ -83,7 +83,7 @@ def apply_note(capsys: Capsys, path: Path, passage_len: int, with_comment: bool)
     assert note is not None
     wanted = int(note.group(1))
 
-    chapters = cli(capsys, "segment", doc=str(path), unit="chapters")["result"]["chapters"]
+    chapters = cli(capsys, "doc.segment", doc=str(path), unit="chapters")["result"]["chapters"]
     target = next(c for c in chapters if c["number"] == wanted)
     doc = Document(str(path))
     marker = next(p for p in doc.index.paragraphs if str(p.address) == marker_at)
@@ -97,7 +97,7 @@ def apply_note(capsys: Capsys, path: Path, passage_len: int, with_comment: bool)
     ]
     if with_comment:
         ops.append({"op": "comment.add", "at": target["at"], "text": "Moved as the writer asked."})
-    return cli(capsys, "batch", doc=str(path), ops=ops, author=AUTHOR)
+    return cli(capsys, "doc.batch", doc=str(path), ops=ops, author=AUTHOR)
 
 
 def expected_after(texts: list[str], passage_len: int, wanted: int) -> list[str]:

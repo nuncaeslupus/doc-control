@@ -36,9 +36,9 @@ def test_mcp_runner_maps_error_envelope_to_doc_control_error(mcp: McpExe, tmp_pa
 def test_mcp_runner_joins_capped_pages(mcp: McpExe, tmp_path: Path) -> None:
     texts = [f"Paragraph {n}" + " word" * 60 for n in range(60)]
     doc = make_docx(tmp_path / "long.docx", *texts)
-    rows = mcp.run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
+    rows = mcp.run("para.list", {"doc": str(doc)})["paragraphs"]
     assert [r["text"] for r in rows] == texts
-    assert rows == word_suite.InProcess().run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
+    assert rows == word_suite.InProcess().run("para.list", {"doc": str(doc)})["paragraphs"]
 
 
 def _api_calls(node: ast.AST) -> list[int]:

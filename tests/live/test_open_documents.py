@@ -74,16 +74,16 @@ def test_a_bare_name_finds_the_one_open_document(two: tuple[Path, Path]) -> None
         assert found["open_in"] == {"app": "fake", "controlled": True}
         reply = _run("live.select", {"doc": "Novel.docx", "at": f"p2#{fingerprint('Two.')}"})
         assert reply["text"] == "Two."
-        assert _run("live.selection", {"doc": "Novel.docx"})["text"] == "Two."
+        assert _run("live.get_selection", {"doc": "Novel.docx"})["text"] == "Two."
         _run(
-            "batch",
+            "doc.batch",
             {
                 "doc": "Novel.docx",
                 "engine": "live",
                 "ops": [
                     {
                         "op": "comment.add",
-                        "at": _run("live.selection", {"doc": "Novel.docx"})["paragraph"]["at"],
+                        "at": _run("live.get_selection", {"doc": "Novel.docx"})["paragraph"]["at"],
                         "text": "Note.",
                     }
                 ],

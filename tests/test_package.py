@@ -61,10 +61,10 @@ def test_capabilities_reports_the_build(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`capabilities.build` says whether this is a frozen binary, and which freezer made it."""
-    assert main(["capabilities"]) == 0
+    assert main(["server.capabilities"]) == 0
     assert json.loads(capsys.readouterr().out)["result"]["build"] == {"frozen": False}
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", "C:/bundle", raising=False)
-    assert main(["capabilities"]) == 0
+    assert main(["server.capabilities"]) == 0
     build = json.loads(capsys.readouterr().out)["result"]["build"]
     assert build == {"frozen": True, "freezer": "pyinstaller"}

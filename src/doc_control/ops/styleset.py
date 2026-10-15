@@ -54,7 +54,7 @@ def style_entry(style: Style) -> dict[str, Any]:
     (
         "Export the document's styles (all, the ones named, or custom ones only) as a "
         "JSON style set, returned and optionally also written to `out`. Feed it to "
-        "styleset.install on another document; styleset.export-dotx writes a Word "
+        "styleset.install on another document; styleset.export_dotx writes a Word "
         "template instead. The document is not changed."
     ),
     {

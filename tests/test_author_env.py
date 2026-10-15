@@ -9,10 +9,10 @@ from tests.helpers import make_docx
 
 
 def _insert(doc: Path, **extra: str) -> list[str]:
-    (first,) = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    (first,) = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     op = {"op": "para.insert", "after": first["at"], "text": "Added."}
-    api.run("batch", {"doc": str(doc), "ops": [op], **extra})
-    revs = api.run("revisions.list", {"doc": str(doc)}).result["revisions"]
+    api.run("doc.batch", {"doc": str(doc), "ops": [op], **extra})
+    revs = api.run("revision.list", {"doc": str(doc)}).result["revisions"]
     return sorted({r["author"] for r in revs})
 
 
@@ -47,7 +47,7 @@ def test_the_environment_never_filters_a_read(
     doc = make_docx(tmp_path / "d.docx", "Hello world.")
     monkeypatch.delenv("DOC_CONTROL_AUTHOR", raising=False)
     _insert(doc)
-    before = api.run("revisions.list", {"doc": str(doc)}).result["revisions"]
+    before = api.run("revision.list", {"doc": str(doc)}).result["revisions"]
     monkeypatch.setenv("DOC_CONTROL_AUTHOR", "Someone Else")
-    assert api.run("revisions.list", {"doc": str(doc)}).result["revisions"] == before
+    assert api.run("revision.list", {"doc": str(doc)}).result["revisions"] == before
     assert before

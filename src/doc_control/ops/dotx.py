@@ -1,4 +1,4 @@
-"""``.dotx`` templates: ``styleset.export-dotx`` and ``styleset.import-dotx``.
+"""``.dotx`` templates: ``styleset.export_dotx`` and ``styleset.import_dotx``.
 
 Export writes a minimal, valid Word template package (template main content type, an
 empty body, ``styles.xml`` holding the exported definitions, the package and document
@@ -129,12 +129,12 @@ def build_dotx(styleset: dict[str, Any]) -> bytes:
 
 
 @operation(
-    "styleset.export-dotx",
+    "styleset.export_dotx",
     "write",
     (
         "Write the document's styles (all, the ones named, or custom ones only) to a new "
         ".dotx Word template at `out`; the document itself is never changed. "
-        "styleset.import-dotx brings a template's styles into a document; styleset.export "
+        "styleset.import_dotx brings a template's styles into a document; styleset.export "
         "gives a JSON style set instead."
     ),
     {
@@ -169,7 +169,7 @@ def read_dotx(path: Path) -> list[dict[str, Any]]:
 
 
 @operation(
-    "styleset.import-dotx",
+    "styleset.import_dotx",
     "write",
     "Install the styles of a .dotx template into the document: new styles are added, "
     "existing ones replaced (or skipped); dry_run previews.",

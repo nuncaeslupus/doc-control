@@ -1,4 +1,4 @@
-"""The `segment` read operation: chapters, scenes, sentences and dialogue lines.
+"""The `doc.segment` read operation: chapters, scenes, sentences and dialogue lines.
 
 ``unit`` picks the list. Chapters and scenes come from :mod:`doc_control.model.structure`
 (stable ids, the signals behind each detection, ``overrides`` and ``profile``);
@@ -164,13 +164,13 @@ PROFILE_SCHEMA: dict[str, Any] = {
 
 
 @operation(
-    "segment",
+    "doc.segment",
     "read",
     (
         "Split the document into chapters, parts or scenes, with stable ids and the "
         "signals that detected them, or split a range into sentences or dialogue lines. "
         "Use it to work chapter by chapter or to get sentence addresses "
-        "(p142#a7b2a7b2.s3); outline lists only styled headings. Detection is tuned with "
+        "(p142#a7b2a7b2.s3); doc.outline lists only styled headings. Detection is tuned with "
         "profile and overrides. Read-only."
     ),
     {
@@ -214,9 +214,9 @@ def segment(request: dict[str, Any]) -> Reply:
     unit = request.get("unit", "chapters")
     language = request.get("language", DEFAULT_LANGUAGE)
     if unit == "sentences":
-        return paged("segment", doc, request, "sentences", _sentences(doc, request, language))
+        return paged("doc.segment", doc, request, "sentences", _sentences(doc, request, language))
     if unit == "dialogue":
-        return paged("segment", doc, request, "dialogue", _dialogue(doc, request))
+        return paged("doc.segment", doc, request, "dialogue", _dialogue(doc, request))
     found = detect_in(doc, profile_of(request), overrides_of(request))
     base: dict[str, Any] = {"unit": unit}
     if unit in ("chapters", "parts"):
@@ -250,10 +250,10 @@ def segment(request: dict[str, Any]) -> Reply:
             for n, k, reason in (shown if is_uncapped() else shown[:_SUPPRESSED_LIMIT])
         ]
     if unit == "chapters":
-        return paged("segment", doc, request, "chapters", _chapters(doc, found), base)
+        return paged("doc.segment", doc, request, "chapters", _chapters(doc, found), base)
     if unit == "parts":
-        return paged("segment", doc, request, "parts", _parts(doc, found), base)
-    return paged("segment", doc, request, "scenes", _scenes(doc, request, found), base)
+        return paged("doc.segment", doc, request, "parts", _parts(doc, found), base)
+    return paged("doc.segment", doc, request, "scenes", _scenes(doc, request, found), base)
 
 
 def _address(doc: Document, number: int) -> Address:
@@ -371,7 +371,7 @@ def _paragraphs_in(doc: Document, request: dict[str, Any]) -> range:
                 return range(first_n, last_n + 1)
         raise DocControlError(
             ErrorCode.ADDRESS_INVALID,
-            f"no chapter, scene or part {value!r} in this document; list them with segment",
+            f"no chapter, scene or part {value!r} in this document; list them with doc.segment",
             address=value,
         )
     if ".." in value and ":" not in value:

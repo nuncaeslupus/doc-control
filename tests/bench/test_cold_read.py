@@ -53,7 +53,7 @@ def test_cold_bulk_read_same_rows_within_budget(
     factor = max(1.0, min(_reference_loop() for _ in range(3)) / REFERENCE_LOOP_SECONDS)
     path = tmp_path / "cold.docx"
     path.write_bytes(generate("novel", 1))
-    api.run("capabilities", {})  # imports the operations, as any first call does
+    api.run("server.capabilities", {})  # imports the operations, as any first call does
     start = time.perf_counter()
     _rows(path)
     took = time.perf_counter() - start

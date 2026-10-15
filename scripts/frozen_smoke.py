@@ -8,9 +8,9 @@ Usage::
 
 Checks, one line each (``ok NAME`` or ``FAIL NAME: why``):
 
-- ``capabilities`` answers one ok envelope (with ``--frozen``, its ``build`` must be
+- ``server.capabilities`` answers one ok envelope (with ``--frozen``, its ``build`` must be
   ``{"frozen": true, "freezer": "pyinstaller"}``);
-- a plain and a regex ``find`` on a corpus fixture (``tests/corpus/generator.py``); the
+- a plain and a regex ``text.find`` on a corpus fixture (``tests/corpus/generator.py``); the
   regex runs in a spawned worker, so a frozen exe without ``freeze_support`` fails it;
 - MCP over stdio: ``initialize``, ``tools/list``, then one ``tools/call`` per operation
   family (the ``doc_control.ops`` module the registry imports by name), each on a temp
@@ -54,44 +54,45 @@ UNICODE_NORMALIZED = "café ñandú — “smoke”"
 FAMILY_CALLS: dict[str, tuple[str, dict[str, Any]]] = {
     "anchor": ("anchor_create", {"doc": "{doc}", "at": "{at}"}),
     "batch": (
-        "batch",
+        "doc_batch",
         {
             "doc": "{doc}",
             "ops": [{"op": "para.insert", "after": "{at}", "text": "smoke"}],
             "dry_run": True,
         },
     ),
-    "bulk": ("paragraphs_list", {"doc": "{doc}", "limit": 3}),
-    "compare": ("compare", {"old": "{doc}", "new": "{doc}", "output": "{tmp}/compare.docx"}),
+    "bulk": ("para_list", {"doc": "{doc}", "limit": 3}),
+    "compare": ("doc_compare", {"old": "{doc}", "new": "{doc}", "output": "{tmp}/compare.docx"}),
     "crossref": (
         "caption_add",
         {"doc": "{doc}", "at": "{at}", "label": "Figure", "text": "smoke", "dry_run": True},
     ),
-    "diff": ("diff", {"old": "{doc}", "new": "{doc}"}),
-    "dotx": ("styleset_export-dotx", {"doc": "{doc}", "out": "{tmp}/styles.dotx"}),
-    "fields": ("fields_list", {"doc": "{doc}"}),
-    "fieldwrite": ("fields_update", {"doc": "{doc}", "set_update_on_open": True, "dry_run": True}),
-    "find": ("find", {"doc": "{doc}", "query": "[0-9]+", "regex": True, "limit": 3}),
+    "direct": ("text_replace", {"doc": "{doc}", "at": "{at}", "text": "smoke", "dry_run": True}),
+    "diff": ("doc_diff", {"old": "{doc}", "new": "{doc}"}),
+    "dotx": ("styleset_export_dotx", {"doc": "{doc}", "out": "{tmp}/styles.dotx"}),
+    "fields": ("field_list", {"doc": "{doc}"}),
+    "fieldwrite": ("field_update", {"doc": "{doc}", "set_update_on_open": True, "dry_run": True}),
+    "find": ("text_find", {"doc": "{doc}", "query": "[0-9]+", "regex": True, "limit": 3}),
     "history": ("history_list", {"doc": "{doc}"}),
     "layout": ("layout_get", {"doc": "{doc}"}),
     "live": ("live_status", {}),
-    "locate": ("locate", {"doc": "{doc}", "limit": 2}),
-    "meta": ("capabilities", {}),
+    "locate": ("para_locate", {"doc": "{doc}", "limit": 2}),
+    "meta": ("server_capabilities", {}),
     "notes": (
         "note_add",
         {"doc": "{doc}", "at": "{at}", "kind": "footnote", "text": "smoke", "dry_run": True},
     ),
     "page": ("page_estimate", {"doc": "{doc}", "limit": 2}),
-    "read": ("outline", {"doc": "{doc}"}),
+    "read": ("doc_outline", {"doc": "{doc}"}),
     "recipe": ("recipe_list", {}),
     "rename": ("term_rename", {"doc": "{doc}", "from": "the", "to": "teh", "dry_run": True}),
-    "sections": ("sections_list", {"doc": "{doc}"}),
-    "segment": ("segment", {"doc": "{doc}", "limit": 2}),
+    "sections": ("section_list", {"doc": "{doc}"}),
+    "segment": ("doc_segment", {"doc": "{doc}", "limit": 2}),
     "styleset": ("styleset_export", {"doc": "{doc}"}),
     "stylewrite": ("style_create", {"doc": "{doc}", "name": "Smoke", "dry_run": True}),
     "tablerows": ("table_row_delete", {"doc": "{doc}", "table": 1, "row": 2, "dry_run": True}),
     "tables": ("table_get", {"doc": "{doc}", "table": 1}),
-    "text": ("text_normalized", {"text": UNICODE_TEXT}),
+    "text": ("text_normalize", {"text": UNICODE_TEXT}),
 }
 
 
@@ -283,7 +284,7 @@ def _no_python(env: dict[str, str]) -> str:
 
 
 def _capabilities(smoke: Smoke, frozen: bool) -> str:
-    result = smoke.cli("capabilities")["result"]
+    result = smoke.cli("server.capabilities")["result"]
     build = result.get("build")
     if frozen and build != FROZEN:
         raise CheckFailed(f"build is {build}, expected {FROZEN}")
@@ -292,7 +293,7 @@ def _capabilities(smoke: Smoke, frozen: bool) -> str:
 
 def _find(smoke: Smoke, doc: Path, query: str, regex: bool) -> str:
     request = json.dumps({"doc": str(doc), "query": query, "regex": regex})
-    matches = smoke.cli("find", "--json", "-", stdin=request)["result"]["matches"]
+    matches = smoke.cli("text.find", "--json", "-", stdin=request)["result"]["matches"]
     want = (lambda t: t.isdigit()) if regex else (lambda t: t == query)
     if not matches or not all(want(m["text"]) for m in matches):
         raise CheckFailed(f"unexpected matches {[m['text'] for m in matches][:10]}")
@@ -351,7 +352,7 @@ def _family(
     session: McpSession, family: str, tool: str, template: dict[str, Any], names: dict[str, str]
 ) -> str | None:
     if "{at}" in json.dumps(template) and not names["at"]:
-        paragraphs = session.call("paragraphs_list", {"doc": names["doc"], "limit": 20})
+        paragraphs = session.call("para_list", {"doc": names["doc"], "limit": 20})
         body = [p for p in paragraphs["result"]["paragraphs"] if not p.get("heading_level")]
         if not body:
             raise CheckFailed("the fixture has no body paragraph to address")

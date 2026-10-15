@@ -67,14 +67,12 @@ def _run(name: str, request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _batch(doc: Path, ops: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
-    return _run("batch", {"doc": str(doc), "ops": ops, **extra})
+    return _run("doc.batch", {"doc": str(doc), "ops": ops, **extra})
 
 
 def _texts(doc: Path, table: int) -> list[list[str]]:
     rows = _run("table.get", {"doc": str(doc), "table": table})["rows"]
-    by_address = {
-        r["at"]: r["text"] for r in _run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
-    }
+    by_address = {r["at"]: r["text"] for r in _run("para.list", {"doc": str(doc)})["paragraphs"]}
     return [[" ".join(by_address[a] for a in cell["paragraphs"]) for cell in row] for row in rows]
 
 
@@ -112,9 +110,9 @@ def test_table_rows_tracked_round_trip(tmp_path: Path) -> None:
         )
         if result["applied"] != 2:
             failures.append(f"applied {result['applied']} operations")
-        types = {r["type"] for r in _run("revisions.list", {"doc": str(doc)})["revisions"]}
+        types = {r["type"] for r in _run("revision.list", {"doc": str(doc)})["revisions"]}
         if not {"row_insert", "row_delete", "insert", "delete"} <= types:
-            failures.append(f"revisions.list shows {sorted(types)}")
+            failures.append(f"revision.list shows {sorted(types)}")
         if _texts(doc, 1) != [before[0], new_row, [""] * len(before[0]), before[2]]:
             failures.append(f"table.get after the edit: {_texts(doc, 1)}")
 
@@ -140,11 +138,11 @@ def test_table_rows_tracked_round_trip(tmp_path: Path) -> None:
             failures.append("another table changed")
 
         # our own undo gives the file back byte for byte, and cannot be done twice
-        _run("undo", {"doc": str(doc)})
+        _run("history.undo", {"doc": str(doc)})
         if doc.read_bytes() != original:
             failures.append("undo did not restore the file")
         with pytest.raises(DocControlError) as again:
-            _run("undo", {"doc": str(doc)})
+            _run("history.undo", {"doc": str(doc)})
         if again.value.code is not ErrorCode.HISTORY_NOT_FOUND:
             failures.append(f"a second undo gave {again.value.code}")
     print(f"table_row_failures == {len(failures)}")
@@ -210,7 +208,7 @@ def test_rows_over_a_vertical_merge_are_refused_and_change_nothing(tmp_path: Pat
         assert doc.read_bytes() == before
     # a row the merge does not touch is fine, and so is a place it does not span
     _batch(doc, [{"op": "table.row.delete", "table": 1, "row": 3}])
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     _batch(doc, [{"op": "table.row.insert", "table": 1, "after_row": 2, "cells": ["x", "y", "z"]}])
     assert _texts(doc, 1)[2] == ["x", "y", "z"]
 
@@ -242,7 +240,7 @@ def test_standalone_ops_dry_run_and_row_properties(tmp_path: Path) -> None:
     assert _texts(doc, 1)[0] == ["x", "", "z"]
     _run("table.row.delete", {"doc": str(doc), "table": 1, "row": 3})
     assert _texts(doc, 1)[2] == ["", "", ""]  # deleted text is not visible text
-    rows = {r["type"] for r in _run("revisions.list", {"doc": str(doc)})["revisions"]}
+    rows = {r["type"] for r in _run("revision.list", {"doc": str(doc)})["revisions"]}
     assert {"row_insert", "row_delete"} <= rows
 
 
@@ -291,7 +289,7 @@ def test_two_inserts_at_one_place_keep_their_order_and_undo_together(tmp_path: P
         ],
     )
     assert [r[0] for r in _texts(doc, 1)] == ["0", "a", "1", "2"]
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == before
 
 
@@ -302,11 +300,11 @@ def test_undo_is_refused_once_a_tracked_row_was_edited_since(tmp_path: Path) -> 
     _batch(doc, [{"op": "table.row.delete", "table": 1, "row": 2}])  # deletes the new row
     after = doc.read_bytes()
     with pytest.raises(DocControlError) as err:
-        _run("undo", {"doc": str(doc), "op_id": first})
+        _run("history.undo", {"doc": str(doc), "op_id": first})
     assert err.value.code is ErrorCode.BATCH_CONFLICT
     assert doc.read_bytes() == after
-    _run("undo", {"doc": str(doc)})  # the latest one can be
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})  # the latest one can be
+    _run("history.undo", {"doc": str(doc)})
     assert _texts(doc, 1) == [["a", "b", "c"], ["d", "e", "f"]]
 
 

@@ -42,7 +42,7 @@ def test_live_roundtrip_matches_file_engine(live: LibreOffice, lo_home: Path) ->
             {"op": "text.replace", "at": f"{at[2]}:0-5", "text": "3rd"},
             {"op": "para.insert", "before": at[0], "text": "Title."},
         ]
-        done = _run("batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
+        done = _run("doc.batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
         assert done["applied"] == 4 and done["author"] == AUTHOR
         # The app's own settings are as the writer left them, also after a failure.
         assert (profile.givenname, profile.sn) == name
@@ -68,7 +68,7 @@ def test_live_roundtrip_matches_file_engine(live: LibreOffice, lo_home: Path) ->
         ]
         for bad, code in refused:
             with pytest.raises(DocControlError) as err:
-                _run("batch", {**base, "engine": "live", **bad})
+                _run("doc.batch", {**base, "engine": "live", **bad})
             assert err.value.code is code, bad
         _run("live.save", base)
     finally:
@@ -78,10 +78,10 @@ def test_live_roundtrip_matches_file_engine(live: LibreOffice, lo_home: Path) ->
     want = ["Title.", *TEXTS[:2], "Inserted line.", "3rd one to change.", TEXTS[3]]
     if [p["text"] for p in _read(doc)] != want:  # unintended_text_changes
         failures.append(("text", [p["text"] for p in _read(doc)]))
-    comments = _run("comments.list", base)["comments"]
+    comments = _run("comment.list", base)["comments"]
     if [(c["author"], c["text"]) for c in comments] != [(AUTHOR, "Why first?")]:
         failures.append(("comments", comments))
-    revisions = _run("revisions.list", base)["revisions"]
+    revisions = _run("revision.list", base)["revisions"]
     if {r["author"] for r in revisions} != {AUTHOR} or not {"insert", "delete"} <= {
         r["type"] for r in revisions
     }:
@@ -115,7 +115,7 @@ def test_a_batch_the_app_cannot_take_changes_nothing(live: LibreOffice, lo_home:
         ]
         for request, code in refused:
             with pytest.raises(DocControlError) as err:
-                _run("batch", {**base, **request})
+                _run("doc.batch", {**base, **request})
             assert err.value.code is code, request
             assert _run("live.status", base)["dirty"] is False
     finally:

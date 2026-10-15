@@ -178,7 +178,7 @@ def test_table_get_columns_addresses_and_numbering(tmp_path: Path) -> None:
         [(1, 2, "restart"), (3, 1, None), (4, 1, "continue")],
         [(1, 2, "continue"), (3, 1, None), (4, 1, None)],
     ]
-    listed = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    listed = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     by_text = {r["text"]: r for r in listed if "cell" in r}
     assert {r["cell"]["table"] for r in by_text.values()} == {1}
     assert rows[0][1]["paragraphs"] == [by_text["B"]["at"]]
@@ -216,7 +216,7 @@ def test_table_get_reads_default_namespace_tags(tmp_path: Path) -> None:
         [(1, 2, None, 1)],
         [(1, 1, "restart", 1), (2, 1, None, 1)],
     ]
-    listed = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    listed = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     assert [r.get("cell", {}).get("table") for r in listed] == [1, 1, 1, None]
 
 
@@ -249,7 +249,7 @@ def test_empty_table_takes_a_number_and_has_no_rows(tmp_path: Path) -> None:
     assert _grid(doc, 1) == []
     assert _grid(doc, 2) == []
     assert [len(r) for r in _grid(doc, 3)] == [1]
-    listed = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    listed = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     assert listed[0]["cell"]["table"] == 3
     with pytest.raises(DocControlError) as err:
         _grid(doc, 4)

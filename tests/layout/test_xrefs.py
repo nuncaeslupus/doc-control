@@ -1,7 +1,7 @@
 """`caption.add`, `xref.add`, `index.mark` and `index.insert` (LAYOUT T8).
 
 Captions, cross-references and index entries are tracked insertions whose results
-`fields.update` fills in from the layout LibreOffice renders; each field type it relies on is
+`field.update` fills in from the layout LibreOffice renders; each field type it relies on is
 recomputed from a wrong cached value.
 """
 
@@ -31,16 +31,16 @@ from tests.layout.test_toc import (
 
 
 def _texts(doc: Path) -> list[str]:
-    return [r["text"] for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]]
+    return [r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]]
 
 
 def _at(doc: Path, prefix: str) -> str:
-    rows = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    rows = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     return str(next(r["at"] for r in rows if r["text"].startswith(prefix)))
 
 
 def _fields(doc: Path, kind: str) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = api.run("fields.list", {"doc": str(doc), "type": kind}).result[
+    out: list[dict[str, Any]] = api.run("field.list", {"doc": str(doc), "type": kind}).result[
         "fields"
     ]
     return out
@@ -50,7 +50,7 @@ def _accept(doc: Path, tmp: Path) -> Path:
     """A copy of ``doc`` with every tracked change accepted, as Word shows it settled."""
     settled = tmp / "settled.docx"
     shutil.copyfile(doc, settled)
-    api.run("batch", {"doc": str(settled), "ops": [{"op": "revision.accept", "all": True}]})
+    api.run("doc.batch", {"doc": str(settled), "ops": [{"op": "revision.accept", "all": True}]})
     return settled
 
 
@@ -134,7 +134,7 @@ def test_captions_xrefs_and_index_resolve_after_update(tmp_path: Path) -> None:
     assert all(r["stale"] for r in _fields(doc, "INDEX"))
     index_xml = _index_xml(doc)
 
-    updated = add("fields.update")
+    updated = add("field.update")
     assert updated["written"] is True
     assert [(s["type"], "F9" in s["reason"]) for s in updated["skipped"]] == [("INDEX", True)]
     assert "INDEX" not in [u["type"] for u in updated["updated"]]
@@ -218,7 +218,7 @@ def test_update_recomputes_each_field_type_from_a_wrong_cached_value(tmp_path: P
     )
     doc = _build(tmp_path / "wrong.docx", body)
     index_xml = _index_xml(doc)
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert [s["type"] for s in out["skipped"]] == ["INDEX"]
     assert _index_xml(doc) == index_xml
     changed = {u["type"]: u for u in out["updated"]}
@@ -260,7 +260,7 @@ def test_update_leaves_every_index_alone(tmp_path: Path, code: str, marks: tuple
     doc = _build(tmp_path / "word.docx", body)
     before_xml = _index_xml(doc)
     (before,) = _fields(doc, "INDEX")
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert [u["type"] for u in out["updated"]] == ["SEQ"] and out["written"] is True
     (skipped,) = out["skipped"]
     assert skipped["type"] == "INDEX" and "F9" in skipped["reason"]
@@ -338,7 +338,7 @@ def test_caption_and_xref_are_tracked_insertions_with_a_bookmark(tmp_path: Path)
     assert inserted["code"] == "INDEX" and "Index" in _texts(doc)
     (row,) = _fields(doc, "INDEX")
     assert row["stale"]
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
     assert _texts(doc) == plain and not _fields(doc, "REF") + _fields(doc, "INDEX")
 
 
@@ -364,7 +364,7 @@ def test_dry_run_is_byte_identical(tmp_path: Path) -> None:
         assert dry["dry_run"] is True and doc.read_bytes() == before, op
         real = api.run(op, {"doc": str(doc), **request}).result
         assert real["footprint"] == dry["footprint"] and real["revision_ids"] == dry["revision_ids"]
-        api.run("undo", {"doc": str(doc)})
+        api.run("history.undo", {"doc": str(doc)})
         assert doc.read_bytes() == before, op
     assert not [p for p in tmp_path.iterdir() if p.suffix == ".lock"]
 
@@ -388,7 +388,7 @@ def test_every_write_is_undone_byte_for_byte(tmp_path: Path) -> None:
         seen.append(doc.read_bytes())
         assert seen[-1] != seen[-2]
     for want in reversed(seen[:-1]):
-        api.run("undo", {"doc": str(doc)})
+        api.run("history.undo", {"doc": str(doc)})
         assert doc.read_bytes() == want
 
 
@@ -444,7 +444,7 @@ def test_numbered_headings_are_referred_to_by_number(tmp_path: Path) -> None:
         {"doc": str(doc), "at": _at(doc, "To heading:"), "to": _at(doc, "Alpha")},
     ).result
     assert out["code"].endswith("\\r \\h") and out["bookmark"].startswith("_Ref")
-    assert api.run("fields.update", {"doc": str(doc)}).result["updated"][0]["after"] == ["3"]
+    assert api.run("field.update", {"doc": str(doc)}).result["updated"][0]["after"] == ["3"]
     (row,) = _fields(doc, "REF")
     assert row["result"] == "3" and not row["stale"]
 
@@ -499,6 +499,6 @@ def test_a_text_reference_to_a_caption_shows_the_whole_caption(tmp_path: Path) -
     ).result
     # the caption's own bookmark covers its label and number only: this one covers it all
     assert out["bookmark"] != cap["bookmark"]
-    api.run("fields.update", {"doc": str(doc)})
+    api.run("field.update", {"doc": str(doc)})
     (row,) = _fields(doc, "REF")
     assert row["result"] == "Table 1: Results" and not row["stale"]

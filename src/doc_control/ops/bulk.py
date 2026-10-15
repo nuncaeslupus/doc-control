@@ -1,8 +1,8 @@
-"""`paragraphs.list`: every paragraph with its layout facts in one list (T39).
+"""`para.list`: every paragraph with its layout facts in one list (T39).
 
 The bulk counterpart of ``para.get``'s facts, for indexers: address, text, style, heading
 level, centred, page break before, blank paragraphs before, empty; optionally the
-normalised text (``text.normalized``) and the estimated page (``page.estimate``). Paged
+normalised text (``text.normalize``) and the estimated page (``page.estimate``). Paged
 like the other lists on the CLI and MCP; whole in-process (:mod:`doc_control.api`).
 """
 
@@ -21,7 +21,7 @@ from doc_control.registry import operation
 
 
 @operation(
-    "paragraphs.list",
+    "para.list",
     "read",
     "Every paragraph with its address, text, style and layout facts (optionally the "
     "normalised text and the estimated page), in document order. heading_level is null for "
@@ -32,7 +32,7 @@ from doc_control.registry import operation
             "doc": {"type": "string", "minLength": 1, "description": "Path to the .docx."},
             "normalized": {
                 "type": "boolean",
-                "description": "Add `normalized`, the text as `text.normalized` gives it.",
+                "description": "Add `normalized`, the text as `text.normalize` gives it.",
             },
             "pages": {
                 "type": "boolean",
@@ -92,4 +92,4 @@ def paragraphs_list(request: dict[str, Any]) -> Reply:
             item["page"] = page.page
             item["page_label"] = page.label
         items.append(item)
-    return paged("paragraphs.list", doc, request, "paragraphs", items, head)
+    return paged("para.list", doc, request, "paragraphs", items, head)

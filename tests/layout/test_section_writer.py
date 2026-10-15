@@ -1,7 +1,7 @@
 """LAYOUT T3: the tracked section and settings writer.
 
 The gate ``layout_untracked_changes == 0``: every section property change is a
-``w:sectPrChange`` that ``revisions.list`` reports and ``revision.reject`` undoes, byte for
+``w:sectPrChange`` that ``revision.list`` reports and ``revision.reject`` undoes, byte for
 byte. The writer is :func:`doc_control.ops.sectionwrite.apply_layout_edits`.
 """
 
@@ -47,15 +47,15 @@ def props(number: int, **values: Any) -> dict[str, Any]:
 
 
 def revisions(path: Path) -> list[dict[str, Any]]:
-    return list(api.run("revisions.list", {"doc": str(path)}).result["revisions"])
+    return list(api.run("revision.list", {"doc": str(path)}).result["revisions"])
 
 
 def sections(path: Path) -> list[dict[str, Any]]:
-    return list(api.run("sections.list", {"doc": str(path)}).result["sections"])
+    return list(api.run("section.list", {"doc": str(path)}).result["sections"])
 
 
 def resolve(path: Path, action: str, **selection: Any) -> None:
-    api.run("batch", {"doc": str(path), "ops": [{"op": f"revision.{action}", **selection}]})
+    api.run("doc.batch", {"doc": str(path), "ops": [{"op": f"revision.{action}", **selection}]})
 
 
 def paragraph_count(path: Path) -> int:
@@ -99,7 +99,7 @@ def test_section_props_change_is_tracked_and_rejectable(
     [done] = out.changes
     assert done["kind"] == "section.props" and done["tracked"] is True
     assert part(path) != original
-    assert (sections(path)[number - 1] != before) == (change != "margins")  # not in sections.list
+    assert (sections(path)[number - 1] != before) == (change != "margins")  # not in section.list
     listed = [r for r in revisions(path) if r["type"] == "section_format"]
     assert [r["id"] for r in listed] == done["revision_ids"] == out.revision_ids
     assert listed[0]["author"].startswith("Claude")
@@ -154,7 +154,7 @@ def test_undo_restores_the_file_byte_for_byte(tmp_path: Path) -> None:
     original = path.read_bytes()
     out = edit(path, props(1, title_page=True), props(3, page_number_start=9))
     assert out.op_id is not None and path.read_bytes() != original
-    api.run("undo", {"doc": str(path)})
+    api.run("history.undo", {"doc": str(path)})
     assert path.read_bytes() == original
 
 
@@ -287,8 +287,8 @@ def test_settings_flags_are_untracked_and_undoable(tmp_path: Path) -> None:
     off = {"kind": "settings", "even_and_odd_headers": False, "mirror_margins": False}
     edit(path, off, untracked=True)
     assert part(path, SETTINGS) == part(original, SETTINGS)
-    api.run("undo", {"doc": str(path)})
-    api.run("undo", {"doc": str(path)})
+    api.run("history.undo", {"doc": str(path)})
+    api.run("history.undo", {"doc": str(path)})
     assert path.read_bytes() == original
 
 

@@ -32,7 +32,7 @@ def select_ms(word: Word, home: Path) -> list[float]:
     doc = home / "novel.docx"
     doc.write_bytes(generate("novel", 1))
     with api.open(doc) as handle:
-        rows = handle.run("locate", {"structure": False})["paragraphs"]
+        rows = handle.run("para.locate", {"structure": False})["paragraphs"]
     phrased = [r for r in rows if r.get("find_phrase")]
     picks = phrased[:: max(1, len(phrased) // SAMPLES)][:SAMPLES]
     base = {"doc": str(doc)}

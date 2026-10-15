@@ -1,4 +1,4 @@
-"""Cold single-paragraph path (T56): import, open, ``para.get``, ``locate`` and
+"""Cold single-paragraph path (T56): import, open, ``para.get``, ``para.locate`` and
 ``page.estimate`` on one paragraph, in a fresh process, as literary-critic runs them.
 
 Gate: ``cold_locate_path_regressions == 0``: the path on the 100k-word novel, with
@@ -29,7 +29,7 @@ from doc_control import api
 from doc_control.errors import DocControlError, ErrorCode
 with api.open(sys.argv[1]) as doc:
     para = doc.run("para.get", {"at": sys.argv[2]})
-    row = doc.run("locate", {"at": sys.argv[2], "structure": False})["paragraphs"][0]
+    row = doc.run("para.locate", {"at": sys.argv[2], "structure": False})["paragraphs"][0]
     page = doc.run("page.estimate", {"at": sys.argv[2]})
 took = time.perf_counter() - start
 loaded = sorted(m for m in sys.modules if m.startswith("doc_control.ops."))
@@ -60,7 +60,7 @@ def _regressions(path: Path, at: str) -> tuple[int, float]:
     assert isinstance(loaded, list)
     bad += "doc_control.ops.compare" in loaded or "doc_control.ops.recipe" in loaded
     with api.open(path) as doc:
-        whole = doc.run("locate", {"at": at})["paragraphs"][0]
+        whole = doc.run("para.locate", {"at": at})["paragraphs"][0]
     row = child["row"]
     assert isinstance(row, dict)
     structure = ("chapter", "part", "scene")
@@ -118,5 +118,5 @@ def test_structure_false_still_checks_the_profile(tmp_path: Path) -> None:
     path.write_bytes(generate("kitchen_sink", 1))
     at = _address(path, 3)
     with api.open(path) as doc, pytest.raises(DocControlError) as err:
-        doc.run("locate", {"at": at, "structure": False, "profile": {"chapter_level": 42}})
+        doc.run("para.locate", {"at": at, "structure": False, "profile": {"chapter_level": 42}})
     assert err.value.code is ErrorCode.SCHEMA_INVALID

@@ -27,7 +27,7 @@ def test_live_select_latency(live: LibreOffice, lo_home: Path) -> None:  # noqa:
     doc = lo_home / "novel.docx"
     doc.write_bytes(generate("novel", 1))
     with api.open(doc) as handle:
-        rows = handle.run("locate", {"structure": False})["paragraphs"]
+        rows = handle.run("para.locate", {"structure": False})["paragraphs"]
     phrased = [r for r in rows if r.get("find_phrase")]
     picks = phrased[:: max(1, len(phrased) // SAMPLES)][:SAMPLES]
     assert len(picks) == SAMPLES

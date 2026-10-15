@@ -1,4 +1,4 @@
-"""`toc.insert` and `fields.update` (LAYOUT T7): a table of contents filled through headless
+"""`toc.insert` and `field.update` (LAYOUT T7): a table of contents filled through headless
 LibreOffice lists the pages its headings render on; without LibreOffice the update is refused
 and the file is left alone."""
 
@@ -103,12 +103,12 @@ def _need_soffice() -> None:
 
 
 def _front(doc: Path) -> str:
-    rows = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    rows = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     return str(next(r["at"] for r in rows if r["text"] == "Front matter"))
 
 
 def _toc_rows(doc: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = api.run("fields.list", {"doc": str(doc), "type": "TOC"}).result[
+    rows: list[dict[str, Any]] = api.run("field.list", {"doc": str(doc), "type": "TOC"}).result[
         "fields"
     ]
     return rows
@@ -177,7 +177,7 @@ def test_toc_pages_match_rendered_pages(tmp_path: Path) -> None:
     doc = book(tmp_path / "book.docx")
     inserted = api.run("toc.insert", {"doc": str(doc), "after": _front(doc)}).result
     assert inserted["code"] == 'TOC \\o "1-3" \\h \\z \\u'
-    done = api.run("fields.update", {"doc": str(doc)}).result
+    done = api.run("field.update", {"doc": str(doc)}).result
     assert [u["type"] for u in done["updated"]] == ["TOC"] and done["skipped"] == []
     assert done["updated"][0]["after"] == [
         "Alpha\t2",
@@ -188,27 +188,27 @@ def test_toc_pages_match_rendered_pages(tmp_path: Path) -> None:
     ]
     assert toc_page_mismatches(render_pages(doc, tmp_path)) == []
     # the field is current: a second update changes nothing
-    again = api.run("fields.update", {"doc": str(doc)}).result
+    again = api.run("field.update", {"doc": str(doc)}).result
     assert again["updated"] == [] and again["unchanged"] == 1 and again["written"] is False
 
 
 def test_toc_insert_is_a_tracked_stale_field(tmp_path: Path) -> None:
     doc = book(tmp_path / "book.docx")
-    before = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    before = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     out = api.run("toc.insert", {"doc": str(doc), "after": _front(doc), "levels": "1-2"}).result
     assert out["code"] == 'TOC \\o "1-2" \\h \\z \\u' and out["op_id"]
     (row,) = _toc_rows(doc)
     assert row["at"] == out["at"] and row["stale"] and row["code"] == out["code"]
-    after = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    after = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     assert [r["text"] for r in after[:3]] == ["Front matter", "Contents", row["result"]]
     assert len(after) == len(before) + 3
-    kinds = {r["type"] for r in api.run("revisions.list", {"doc": str(doc)}).result["revisions"]}
+    kinds = {r["type"] for r in api.run("revision.list", {"doc": str(doc)}).result["revisions"]}
     assert kinds == {"insert", "mark_insert"}
     # rejecting the call's revisions takes the contents out again
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
-    assert [
-        r["text"] for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
-    ] == [r["text"] for r in before]
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "all": True}]})
+    assert [r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]] == [
+        r["text"] for r in before
+    ]
 
 
 def test_toc_insert_dry_run_and_refusals(tmp_path: Path) -> None:
@@ -233,9 +233,9 @@ def test_toc_insert_without_title_and_undo_restores_bytes(tmp_path: Path) -> Non
     original = doc.read_bytes()
     out = api.run("toc.insert", {"doc": str(doc), "after": _front(doc), "title": ""}).result
     assert out["title"] is None
-    texts = [r["text"] for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]]
+    texts = [r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]]
     assert "Contents" not in texts and doc.read_bytes() != original
-    api.run("undo", {"doc": str(doc)})
+    api.run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -247,28 +247,28 @@ def test_update_without_libreoffice_is_refused_and_leaves_the_file(
     before = doc.read_bytes()
     monkeypatch.setenv("DOC_CONTROL_NO_SOFFICE", "1")
     with pytest.raises(DocControlError) as err:
-        api.run("fields.update", {"doc": str(doc)})
+        api.run("field.update", {"doc": str(doc)})
     assert err.value.code is ErrorCode.ENGINE_UNAVAILABLE
     (stale,) = err.value.details["stale"]
     assert stale["type"] == "TOC" and stale["at"] in err.value.message
     assert doc.read_bytes() == before
     # no field to recompute: nothing to refuse
     plain = _build(tmp_path / "plain.docx", _para("No fields here."))
-    assert api.run("fields.update", {"doc": str(plain)}).result["updated"] == []
+    assert api.run("field.update", {"doc": str(plain)}).result["updated"] == []
 
 
 def test_set_update_on_open(tmp_path: Path) -> None:
     doc = book(tmp_path / "book.docx")
     original = doc.read_bytes()
-    out = api.run("fields.update", {"doc": str(doc), "set_update_on_open": True}).result
+    out = api.run("field.update", {"doc": str(doc), "set_update_on_open": True}).result
     assert out["changed"] is True and out["op_id"]
     with zipfile.ZipFile(doc) as zf:
         settings = zf.read("word/settings.xml").decode()
     # CT_Settings order: updateFields comes before compat
     assert '<w:updateFields w:val="true"/><w:compat/>' in settings
-    again = api.run("fields.update", {"doc": str(doc), "set_update_on_open": True}).result
+    again = api.run("field.update", {"doc": str(doc), "set_update_on_open": True}).result
     assert again["changed"] is False and "op_id" not in again
-    api.run("undo", {"doc": str(doc)})
+    api.run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -288,16 +288,16 @@ def test_update_rewrites_a_one_paragraph_result_and_undo_is_exact(tmp_path: Path
     _need_soffice()
     doc = _numpages_doc(tmp_path / "n.docx")
     original = doc.read_bytes()
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     (change,) = out["updated"]
     assert change["type"] == "NUMPAGES" and change["before"] == ["1"] and change["after"] == ["3"]
-    (row,) = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    (row,) = api.run("field.list", {"doc": str(doc)}).result["fields"]
     assert row["result"] == "3"  # the live result: the old one is a tracked deletion
     with zipfile.ZipFile(doc) as zf:
         xml = zf.read("word/document.xml").decode()
     assert "<w:delText>1</w:delText>" in xml and "<w:b />" in xml.replace("<w:b/>", "<w:b />")
     assert "Pages: " in xml and "w:dirty" not in xml
-    api.run("undo", {"doc": str(doc)})
+    api.run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -307,13 +307,13 @@ def test_update_then_undo_a_toc_is_byte_for_byte(tmp_path: Path) -> None:
     original = doc.read_bytes()
     api.run("toc.insert", {"doc": str(doc), "after": _front(doc)})
     inserted = doc.read_bytes()
-    api.run("fields.update", {"doc": str(doc)})
+    api.run("field.update", {"doc": str(doc)})
     assert doc.read_bytes() != inserted
     (row,) = _toc_rows(doc)
     assert row["result"] == "Alpha2Beta3Beta sub3Gamma5Delta6" and not row["stale"]
-    api.run("undo", {"doc": str(doc)})
+    api.run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == inserted
-    api.run("undo", {"doc": str(doc)})
+    api.run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -322,12 +322,11 @@ def test_update_touches_only_the_result(tmp_path: Path) -> None:
     doc = book(tmp_path / "book.docx")
     api.run("toc.insert", {"doc": str(doc), "after": _front(doc)})
     before = {
-        r["at"]: r["text"]
-        for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+        r["at"]: r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     }
     texts_before = [t for t in before.values() if t.startswith(("Alpha", "Beta", "Gamma"))]
-    api.run("fields.update", {"doc": str(doc)})
-    after = [r["text"] for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]]
+    api.run("field.update", {"doc": str(doc)})
+    after = [r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]]
     # every paragraph outside the contents survives as it was; the entries are new paragraphs
     for text in (
         "Front matter",
@@ -341,22 +340,22 @@ def test_update_touches_only_the_result(tmp_path: Path) -> None:
 
 
 def _texts(doc: Path) -> list[str]:
-    return [r["text"] for r in api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]]
+    return [r["text"] for r in api.run("para.list", {"doc": str(doc)}).result["paragraphs"]]
 
 
 def test_update_is_rejectable_and_accepting_leaves_the_new_result(tmp_path: Path) -> None:
     _need_soffice()
     doc = book(tmp_path / "book.docx")
     api.run("toc.insert", {"doc": str(doc), "after": _front(doc)})
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
     settled = _texts(doc)
-    api.run("fields.update", {"doc": str(doc), "author": "Updater"})
+    api.run("field.update", {"doc": str(doc), "author": "Updater"})
     assert _texts(doc) != settled
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "author": "Updater"}]})
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.reject", "author": "Updater"}]})
     assert _texts(doc) == settled
     assert _toc_rows(doc)[0]["result"].startswith("Update the field")
-    api.run("fields.update", {"doc": str(doc), "author": "Updater"})
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
+    api.run("field.update", {"doc": str(doc), "author": "Updater"})
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
     (row,) = _toc_rows(doc)
     assert row["result"] == "Alpha2Beta3Beta sub3Gamma5Delta6" and not row["stale"]
     assert _texts(doc)[:7] == [
@@ -398,13 +397,13 @@ def test_update_rewrites_a_word_style_multi_paragraph_toc(tmp_path: Path) -> Non
         f"<w:p>{_entry('Old three', '9')}{_end()}</w:p>"
     )
     doc = _build(tmp_path / "w.docx", _headings_after(toc))
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     (change,) = out["updated"]
     assert change["before"] == ["Old one\t9", "Old two\t9", "Old three\t9"]
     assert change["after"] == ["Alpha\t2", "Beta\t3"]
     (row,) = _toc_rows(doc)
     assert row["result"] == "Alpha2Beta3"
-    api.run("batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
+    api.run("doc.batch", {"doc": str(doc), "ops": [{"op": "revision.accept", "all": True}]})
     # the old entries are gone; one paragraph still holds the end of the field
     assert _texts(doc)[:4] == ["Alpha\t2", "Beta\t3", "", ""]
 
@@ -414,7 +413,7 @@ def test_update_skips_what_it_cannot_split(tmp_path: Path) -> None:
     one_paragraph = f"<w:p>{_toc_code()}{_entry('Old', '9')}{_end()}</w:p>"
     doc = _build(tmp_path / "s.docx", _headings_after(one_paragraph))
     before = doc.read_bytes()
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert out["updated"] == [] and out["written"] is False
     (skip,) = out["skipped"]
     assert skip["type"] == "TOC" and "several lines" in skip["reason"]
@@ -443,7 +442,7 @@ def test_update_skips_section_fields_it_cannot_recompute(
     before = doc.read_bytes()
     # needs no LibreOffice: nothing else is left to recompute
     monkeypatch.setenv("DOC_CONTROL_NO_SOFFICE", "1")
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert [s["type"] for s in out["skipped"]] == ["SECTIONPAGES", "SECTION", "NOTEREF"]
     assert all("not recomputed" in s["reason"] for s in out["skipped"])
     assert out["updated"] == [] and out["unchanged"] == 0
@@ -468,11 +467,11 @@ def test_update_clears_dirty_on_a_field_that_is_already_right(tmp_path: Path) ->
     with zipfile.ZipFile(doc, "w") as zf:
         for n, b in parts.items():
             zf.writestr(n, b)
-    (row,) = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    (row,) = api.run("field.list", {"doc": str(doc)}).result["fields"]
     assert row["stale"]
-    out = api.run("fields.update", {"doc": str(doc)}).result
+    out = api.run("field.update", {"doc": str(doc)}).result
     assert out["updated"] == [] and out["unchanged"] == 1
-    (row,) = api.run("fields.list", {"doc": str(doc)}).result["fields"]
+    (row,) = api.run("field.list", {"doc": str(doc)}).result["fields"]
     assert not row["stale"]
 
 
@@ -489,7 +488,7 @@ def test_set_update_on_open_replaces_a_non_self_closing_element(tmp_path: Path) 
     with zipfile.ZipFile(doc, "w") as zf:
         for n, b in parts.items():
             zf.writestr(n, b)
-    api.run("fields.update", {"doc": str(doc), "set_update_on_open": True})
+    api.run("field.update", {"doc": str(doc), "set_update_on_open": True})
     with zipfile.ZipFile(doc) as zf:
         settings = zf.read("word/settings.xml").decode()
     assert settings.count("updateFields") == 1

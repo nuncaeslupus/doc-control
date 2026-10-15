@@ -7,7 +7,7 @@ request, the sha256 of the document before and after, the backup taken for it an
 ``changes``: the exact bytes of every touched paragraph before and after, as text
 (``surrogateescape``, so any byte string round-trips through JSON).
 
-``undo`` swaps those bytes back: every logged "after" paragraph must still be in the
+``history.undo`` swaps those bytes back: every logged "after" paragraph must still be in the
 document exactly once, byte for byte, or the undo is refused (``BATCH_CONFLICT``, naming
 the changes), so it can never overwrite a later edit. The result goes through
 :func:`write_verified` like any other write.
@@ -493,7 +493,7 @@ def search_entry(
     """Where ``query`` occurs in one entry: its request, and each paragraph before and after.
 
     Without ``match_level``, the first hit in each source. With it, every hit, found by
-    ``find``'s :class:`~doc_control.model.search.LevelMatcher` (a folded level implies both
+    ``text.find``'s :class:`~doc_control.model.search.LevelMatcher` (a folded level implies both
     folds), each with its offsets in the source (``start``, ``end``), its ``match_level``
     and ``text`` cut around the hit itself.
     """

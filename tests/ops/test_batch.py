@@ -1,4 +1,4 @@
-"""The `batch` operation: all-or-nothing, dry run, conflicts, address map, stale addresses.
+"""The `doc.batch` operation: all-or-nothing, dry run, conflicts, address map, stale addresses.
 
 The gate ``edits_applied_to_wrong_paragraph == 0``: whenever a document changed between
 the read that produced the addresses and the write, a batch is either refused or lands
@@ -54,12 +54,14 @@ def doc(tmp_path: Path) -> Path:
     return make_docx(tmp_path / "d.docx", *TEXTS)
 
 
-def test_batch_is_registered_and_kinds_are_not_standalone() -> None:
+def test_batch_is_registered_and_only_the_direct_kinds_are_standalone() -> None:
     registry = load_operations()
-    assert registry["batch"].kind == "write"
-    for kind in ("text.replace", "para.insert", "para.delete", "para.move"):
+    assert registry["doc.batch"].kind == "write"
+    for kind in ("text.replace", "para.insert", "para.delete"):
+        assert registry[kind].kind == "write"  # direct write tools (ops/direct.py)
+    for kind in ("para.move", "style.apply", "format.apply", "comment.reply"):
         assert kind not in registry
-    assert "text.replace" in registry["batch"].schema["properties"]["ops"]["description"]
+    assert "text.replace" in registry["doc.batch"].schema["properties"]["ops"]["description"]
 
 
 def test_batch_applies_all_operations_in_one_write(doc: Path) -> None:
@@ -177,14 +179,14 @@ def test_untracked_is_refused(doc: Path) -> None:
 def test_cli_batch_envelope_and_error(doc: Path, capsys: pytest.CaptureFixture[str]) -> None:
     a = addresses(doc)
     req = {"doc": str(doc), "dry_run": True, "ops": [{"op": "para.delete", "at": a[2]}]}
-    assert main(["batch", "--json", json.dumps(req)]) == 0
+    assert main(["doc.batch", "--json", json.dumps(req)]) == 0
     env = json.loads(capsys.readouterr().out)
-    assert env["ok"] and env["op"] == "batch" and env["result"]["applied"] == 1
+    assert env["ok"] and env["op"] == "doc.batch" and env["result"]["applied"] == 1
     req["ops"] = [{"op": "para.delete", "at": "p3#deadbeef"}]
-    assert main(["batch", "--json", json.dumps(req)]) == 1
+    assert main(["doc.batch", "--json", json.dumps(req)]) == 1
     env = json.loads(capsys.readouterr().out)
     assert env["error"]["code"] == "STALE_ADDRESS"
-    assert "batch" in REGISTRY
+    assert "doc.batch" in REGISTRY
 
 
 def mutate(path: Path, rng: random.Random) -> None:

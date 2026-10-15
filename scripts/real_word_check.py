@@ -81,11 +81,11 @@ def build(out: Path) -> None:
     edited.write_bytes(generate("novel", 2))
     original = _texts(edited)
     with api.open(edited, store=store) as doc:
-        doc.run("batch", {"ops": _edits(edited), "author": AUTHOR})
+        doc.run("doc.batch", {"ops": _edits(edited), "author": AUTHOR})
     accepted = out / ".edits-accepted.docx"
     shutil.copyfile(edited, accepted)
     with api.open(accepted, store=store) as doc:
-        doc.run("batch", {"ops": [{"op": "revision.accept", "all": True}]})
+        doc.run("doc.batch", {"ops": [{"op": "revision.accept", "all": True}]})
     expected["edits"] = {"original": original, "accepted": _texts(accepted)}
     accepted.unlink()
 
@@ -93,8 +93,8 @@ def build(out: Path) -> None:
     commented = out / "commented.docx"
     commented.write_bytes(generate("novel", 3))
     with api.open(commented, store=store) as doc:
-        doc.run("batch", {"ops": _comments(commented), "author": AUTHOR})
-        threads = doc.run("comments.list")["comments"]
+        doc.run("doc.batch", {"ops": _comments(commented), "author": AUTHOR})
+        threads = doc.run("comment.list")["comments"]
     expected["commented"] = {"count": len(threads), "texts": [t["text"] for t in threads]}
     shutil.rmtree(store)
     (out / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1))
@@ -125,7 +125,7 @@ def verify(out: Path) -> int:
     for name, step in steps:
         if (out / name).exists():
             with api.open(out / name) as doc:
-                left = doc.run("revisions.list")["revisions"]
+                left = doc.run("revision.list")["revisions"]
             if left:
                 problems.append(f"{name}: {len(left)} tracked changes left; was {step} done?")
     replied = out / "commented-word.docx"
@@ -133,7 +133,7 @@ def verify(out: Path) -> int:
         problems.append("commented-word.docx: missing (save it from Word as described)")
     else:
         with api.open(replied) as doc:
-            threads = doc.run("comments.list")["comments"]
+            threads = doc.run("comment.list")["comments"]
         roots = {t["id"]: t for t in threads if "reply_to" not in t}
         first = next((t for t in roots.values() if t["text"].startswith("First")), None)
         second = next((t for t in roots.values() if t["text"].startswith("Second")), None)

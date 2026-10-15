@@ -1,4 +1,4 @@
-"""Paragraph alignment between two versions of a document (the engine of ``diff``).
+"""Paragraph alignment between two versions of a document (the engine of ``doc.diff``).
 
 :func:`align` takes the paragraphs of an old and a new version (anything with ``text``
 and ``fp``, e.g. :class:`doc_control.model.index.Paragraph`) and returns an

@@ -8,7 +8,7 @@ sections, tables and the table of contents too), with its text: spans, links and
 read through, ``text:s`` as its spaces, ``text:tab`` as a tab and ``text:line-break`` as a
 line break. A heading (``text:h``) keeps its outline level as style Heading 1-9; any other
 paragraph keeps the display name of its paragraph style (automatic styles resolved to
-their parent), so ``segment`` can match scene-break or chapter styles by name; a style the
+their parent), so ``doc.segment`` can match scene-break or chapter styles by name; a style the
 file does not define keeps its own name.
 
 Layout kept for the page estimate and structure detection: ``text:soft-page-break`` (the

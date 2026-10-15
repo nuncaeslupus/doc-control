@@ -1,9 +1,9 @@
 """``caption.add``, ``xref.add``, ``index.mark`` and ``index.insert`` (LAYOUT T8).
 
 All four write fields as tracked insertions and share :mod:`doc_control.ops.fieldwrite`'s
-field helpers; the results of the fields they write are filled by ``fields.update`` (the
+field helpers; the results of the fields they write are filled by ``field.update`` (the
 field is marked dirty until then, and its cached result is a best guess: the target's own
-text, or ``?``). The index is the exception: ``fields.update`` never recomputes an INDEX,
+text, or ``?``). The index is the exception: ``field.update`` never recomputes an INDEX,
 so it keeps its placeholder until Word rebuilds it (F9, or on open, as the field is dirty).
 
 * ``caption.add`` puts a new paragraph above or below a body paragraph: the label, a
@@ -170,7 +170,7 @@ def _bookmark(ctx: RevisionContext, name: str) -> tuple[ET.Element, ET.Element]:
 
 def _inline_field(ctx: RevisionContext, code: str, result: str | None) -> list[ET.Element]:
     """A complex field as tracked insertions: its opening, the result (none for a field
-    without one) and its closing. It is marked dirty, so Word or ``fields.update`` fills it."""
+    without one) and its closing. It is marked dirty, so Word or ``field.update`` fills it."""
     opening = [_field_char("begin", dirty=True), _code_run(code)]
     closing = _field_char("end")
     if result is not None:
@@ -664,7 +664,7 @@ def _reply(path: Path, result: dict[str, Any]) -> Reply:
     "Add a caption paragraph above or below a body paragraph, as tracked insertions: the "
     "label (Table, Figure or Equation), a SEQ field that numbers it, and the text, with a "
     "hidden bookmark around the label and number for cross-references. The number is "
-    "refreshed by fields.update. Returns the address of the caption.",
+    "refreshed by field.update. Returns the address of the caption.",
     _schema(
         ["at", "label", "text"],
         at={**_STR, "description": "Address of the body paragraph the caption goes next to."},
@@ -694,7 +694,7 @@ def caption_add(request: dict[str, Any]) -> Reply:
     "write",
     "Insert a cross-reference field (REF, or PAGEREF for the page) at an insertion point, "
     "as a tracked insertion, pointing at a caption or another body paragraph. The target "
-    "gets a hidden bookmark when it has none that fits. fields.update fills in the shown "
+    "gets a hidden bookmark when it has none that fits. field.update fills in the shown "
     "number, text or page.",
     _schema(
         ["at", "to"],
@@ -743,7 +743,7 @@ def index_mark(request: dict[str, Any]) -> Reply:
     "Insert an index (an INDEX field) after a body paragraph, as tracked insertions: an "
     "optional title, the field with a placeholder result and the paragraph that closes it. "
     "The field is marked dirty: Word builds the entries and page numbers "
-    "from the index.mark marks (F9); fields.update leaves it alone. "
+    "from the index.mark marks (F9); field.update leaves it alone. "
     "Returns the address of the field's paragraph.",
     _schema(
         ["after"],

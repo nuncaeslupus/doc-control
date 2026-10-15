@@ -1,12 +1,12 @@
-"""``toc.insert`` and ``fields.update``: the write side of fields (LAYOUT T7).
+"""``toc.insert`` and ``field.update``: the write side of fields (LAYOUT T7).
 
 ``toc.insert`` puts a table-of-contents field after a body paragraph as tracked
 insertions: an optional title paragraph, a paragraph with the field's code and a
 placeholder result, and a paragraph closing the field (the shape Word writes). The code is
-``TOC \\o "1-3" \\h \\z \\u`` and the field is marked dirty, so ``fields.list`` shows it as
-stale until ``fields.update`` fills it.
+``TOC \\o "1-3" \\h \\z \\u`` and the field is marked dirty, so ``field.list`` shows it as
+stale until ``field.update`` fills it.
 
-``fields.update`` recomputes the results of the body's TOC, page, page-count,
+``field.update`` recomputes the results of the body's TOC, page, page-count,
 word/character-count, sequence and reference fields (REF, PAGEREF; SEQ, which numbers
 captions). LibreOffice recomputes all of these from a wrong cached result (the layout tests
 check REF, PAGEREF and SEQ with deliberately wrong values). SECTIONPAGES, SECTION and
@@ -85,7 +85,7 @@ from doc_control.safety.verify import DOCUMENT_PART, Footprint, write_verified
 
 SETTINGS_PART = "word/settings.xml"
 PLACEHOLDER = "Update the field to build the table of contents."
-#: Field types ``fields.update`` recomputes (body story). Anything else keeps its result.
+#: Field types ``field.update`` recomputes (body story). Anything else keeps its result.
 UPDATABLE = frozenset(
     {
         "TOC",
@@ -405,7 +405,7 @@ _EXPECT: dict[str, Any] = {
     "write",
     "Insert a table of contents (a TOC field) after a body paragraph, as tracked insertions: "
     "an optional title, the field with a placeholder result and the paragraph that closes it. "
-    "The result text is filled by fields.update; until then fields.list shows the field as "
+    "The result text is filled by field.update; until then field.list shows the field as "
     "stale. Returns the address of the field's paragraph.",
     {
         "type": "object",
@@ -809,7 +809,7 @@ def _rewrite(
     return touched, added
 
 
-# --- fields.update ----------------------------------------------------------------------------
+# --- field.update ----------------------------------------------------------------------------
 
 
 def _set_update_on_open(
@@ -879,7 +879,7 @@ def _set_update_on_open(
                 "after": element,
             }
         ],
-        request={"op": "fields.update", "set_update_on_open": True},
+        request={"op": "field.update", "set_update_on_open": True},
         author=full_author,
         tag=tag,
         now=now,
@@ -1083,7 +1083,7 @@ def update_fields(
         {DOCUMENT_PART: data},
         footprint,
         changes=changes,
-        request={"op": "fields.update"},
+        request={"op": "field.update"},
         author=full_author,
         tag=tag,
         now=now,
@@ -1099,7 +1099,7 @@ def update_fields(
 
 
 @operation(
-    "fields.update",
+    "field.update",
     "write",
     "Recompute the results of the body's TOC, page, page-count, sequence and reference "
     "fields through headless LibreOffice and write only those result runs, as tracked "

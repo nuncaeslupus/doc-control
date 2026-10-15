@@ -7,7 +7,7 @@ Usage:
 For each candidate (a one-folder build) it records:
   dist_mb            size of the whole folder, in MiB
   startup_ms_median  median wall time of `<exe> capabilities` over --runs runs
-  smoke_failures     failing smokes among `capabilities` and MCP `tools/list` over stdio
+  smoke_failures     failing smokes among `server.capabilities` and MCP `tools/list` over stdio
   build_minutes      as passed with --build-minutes, else null
 
 Prints the JSON report on stdout and writes it to --out. Standard library only; runs on
@@ -46,7 +46,7 @@ def startup_ms_median(exe: Path, runs: int) -> float:
     for _ in range(runs):
         start = time.perf_counter()
         subprocess.run(
-            [str(exe), "capabilities"],
+            [str(exe), "server.capabilities"],
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=TIMEOUT_S,
@@ -57,9 +57,9 @@ def startup_ms_median(exe: Path, runs: int) -> float:
 
 
 def smoke_capabilities(exe: Path) -> str | None:
-    """None when `capabilities` prints an ok envelope and exits 0; else the reason."""
+    """None when `server.capabilities` prints an ok envelope and exits 0; else the reason."""
     proc = subprocess.run(
-        [str(exe), "capabilities"],
+        [str(exe), "server.capabilities"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=TIMEOUT_S,

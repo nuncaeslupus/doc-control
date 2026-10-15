@@ -35,7 +35,7 @@ def test_build_then_verify_a_simulated_word_run(
         target = out / f"{name}-accepted.docx"
         target.write_bytes((out / f"{name}.docx").read_bytes())
         with api.open(target, store=store) as doc:
-            doc.run("batch", {"ops": [{"op": "revision.accept", "all": True}]})
+            doc.run("doc.batch", {"ops": [{"op": "revision.accept", "all": True}]})
     # Word's Reject All drops the inserted section break with its paragraph mark;
     # doc-control's own reject keeps a break it has no history for, so the original stands
     # in for Word's result.

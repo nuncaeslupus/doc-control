@@ -25,6 +25,9 @@ class Operation:
     summary: str
     schema: dict[str, Any]
     handler: Handler
+    #: Whether a write's missing ``author`` is filled from DOC_CONTROL_AUTHOR (default);
+    #: off where ``author`` selects rather than stamps (revision.accept/reject).
+    fills_author: bool = True
 
     def run(self, request: dict[str, Any]) -> dict[str, Any] | Reply:
         if request.get("engine") == "live" and "engine" not in self.schema["properties"]:
@@ -36,6 +39,7 @@ class Operation:
         validate(request, self.schema)
         if (
             self.kind == "write"
+            and self.fills_author
             and "author" in self.schema["properties"]
             and "author" not in request
             and request.get("engine") != "live"
@@ -50,7 +54,12 @@ REGISTRY: dict[str, Operation] = {}
 
 
 def operation(
-    name: str, kind: Literal["read", "write"], summary: str, schema: dict[str, Any]
+    name: str,
+    kind: Literal["read", "write"],
+    summary: str,
+    schema: dict[str, Any],
+    *,
+    fills_author: bool = True,
 ) -> Callable[[Handler], Handler]:
     """Register a handler; the schema must be a well-formed object schema."""
 
@@ -62,7 +71,7 @@ def operation(
         problems = check_schema(schema)
         if problems:
             raise ValueError(f"schema for {name} is malformed: {'; '.join(problems)}")
-        REGISTRY[name] = Operation(name, kind, summary, schema, handler)
+        REGISTRY[name] = Operation(name, kind, summary, schema, handler, fills_author)
         return handler
 
     return wrap
@@ -73,69 +82,113 @@ def operation(
 OPERATION_MODULES: dict[str, str] = {
     "anchor.create": "anchor",
     "anchor.resolve": "anchor",
-    "batch": "batch",
-    "capabilities": "meta",
     "caption.add": "crossref",
-    "comments.list": "read",
-    "compare": "compare",
-    "diff": "diff",
-    "fields.list": "fields",
-    "fields.update": "fieldwrite",
-    "find": "find",
-    "help": "meta",
+    "comment.add": "direct",
+    "comment.list": "read",
+    "doc.batch": "batch",
+    "doc.compare": "compare",
+    "doc.diff": "diff",
+    "doc.info": "read",
+    "doc.open": "history",
+    "doc.outline": "read",
+    "doc.segment": "segment",
+    "doc.stats": "read",
+    "field.list": "fields",
+    "field.update": "fieldwrite",
     "history.list": "history",
     "history.orphans": "history",
     "history.purge": "history",
+    "history.restore": "history",
     "history.search": "history",
+    "history.undo": "history",
     "index.insert": "crossref",
     "index.mark": "crossref",
-    "info": "read",
     "layout.apply": "layout",
     "layout.get": "layout",
     "live.close": "live",
-    "live.select": "live",
-    "live.selection": "live",
+    "live.get_selection": "live",
     "live.open": "live",
     "live.places": "live",
     "live.save": "live",
+    "live.select": "live",
     "live.status": "live",
-    "locate": "locate",
     "note.add": "notes",
-    "open": "history",
-    "outline": "read",
     "page.estimate": "page",
+    "para.delete": "direct",
     "para.get": "read",
-    "paragraphs.list": "bulk",
+    "para.insert": "direct",
+    "para.list": "bulk",
+    "para.locate": "locate",
     "recipe.list": "recipe",
     "recipe.run": "recipe",
-    "restore": "history",
-    "revisions.list": "read",
-    "sections.list": "sections",
-    "segment": "segment",
-    "stats": "read",
+    "revision.accept": "direct",
+    "revision.list": "read",
+    "revision.reject": "direct",
+    "section.list": "sections",
+    "server.capabilities": "meta",
+    "server.help": "meta",
     "style.create": "stylewrite",
     "style.get": "read",
+    "style.list": "read",
     "style.merge": "stylewrite",
     "style.rename": "stylewrite",
     "style.update": "stylewrite",
-    "styles.list": "read",
     "styleset.export": "styleset",
-    "styleset.export-dotx": "dotx",
-    "styleset.import-dotx": "dotx",
+    "styleset.export_dotx": "dotx",
+    "styleset.import_dotx": "dotx",
     "styleset.install": "styleset",
     "table.get": "tables",
     "table.row.delete": "tablerows",
     "table.row.insert": "tablerows",
     "term.rename": "rename",
-    "text.normalized": "text",
+    "text.find": "find",
+    "text.normalize": "text",
+    "text.replace": "direct",
     "toc.insert": "fieldwrite",
-    "undo": "history",
     "xref.add": "crossref",
 }
 
 
+#: Names operations had before 0.7.0 (``resource.action``, singular resource). Still
+#: accepted wherever an operation is run by name; never listed (capabilities, MCP tools).
+ALIASES: dict[str, str] = {
+    "batch": "doc.batch",
+    "capabilities": "server.capabilities",
+    "comments.list": "comment.list",
+    "compare": "doc.compare",
+    "diff": "doc.diff",
+    "fields.list": "field.list",
+    "fields.update": "field.update",
+    "find": "text.find",
+    "help": "server.help",
+    "info": "doc.info",
+    "live.selection": "live.get_selection",
+    "locate": "para.locate",
+    "open": "doc.open",
+    "outline": "doc.outline",
+    "paragraphs.list": "para.list",
+    "restore": "history.restore",
+    "revisions.list": "revision.list",
+    "sections.list": "section.list",
+    "segment": "doc.segment",
+    "stats": "doc.stats",
+    "styles.list": "style.list",
+    "styleset.export-dotx": "styleset.export_dotx",
+    "styleset.import-dotx": "styleset.import_dotx",
+    "text.normalized": "text.normalize",
+    "undo": "history.undo",
+}
+
+
+def canonical(name: str) -> str:
+    """The current name of operation ``name``: itself, or what an old name was renamed to."""
+    return ALIASES.get(name, name)
+
+
 def get_operation(name: str) -> Operation | None:
-    """The operation ``name``, importing only the module that registers it; None if unknown."""
+    """The operation ``name`` (or an old name in ALIASES), importing only the module that
+    registers it; None if unknown."""
+    name = canonical(name)
     if name in OPERATION_MODULES:
         # Always import (a dict lookup once loaded): while another thread is still
         # importing the module, its operation may be registered before the module's

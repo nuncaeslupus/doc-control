@@ -29,7 +29,7 @@ def apply_recipe(doc: Path, recipe: str) -> int:
     """Apply the recipe's proposal as one tracked batch; the number of operations."""
     batch = proposal(doc, recipe)
     if batch["ops"]:
-        assert isinstance(REGISTRY["batch"].run(batch), Reply)
+        assert isinstance(REGISTRY["doc.batch"].run(batch), Reply)
     return len(batch["ops"])
 
 

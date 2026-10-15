@@ -16,7 +16,7 @@ source of truth.
     named ``heading N``; ``None`` for body text. (An outline entry's ``level``.)
 ``style`` / ``style_name``
     The paragraph's style id (explicit, else the default paragraph style) and its name;
-    ``para.get`` and ``outline`` already report them.
+    ``para.get`` and ``doc.outline`` already report them.
 ``centred``
     Centre alignment, direct (``w:jc``) or inherited through the style chain. Text
     "centred" with tabs or spaces is not detected: that is a recipe (T25).

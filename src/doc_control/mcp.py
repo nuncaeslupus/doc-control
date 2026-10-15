@@ -22,7 +22,7 @@ from typing import IO, Any
 
 from doc_control import __version__
 from doc_control.cli import execute
-from doc_control.registry import Operation, load_operations
+from doc_control.registry import ALIASES, Operation, load_operations
 
 # Protocol revisions this server speaks; the newest is offered to a client that asks for another.
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
@@ -63,7 +63,7 @@ def tool_name(op: str) -> str:
 # purged history, discarded unsaved edits, merged-away styles.
 DESTRUCTIVE = frozenset({"history.purge", "live.close", "style.merge"})
 # Reads of the document that still create a file: compare's redline, styleset.export's `out`.
-CREATES_FILES = frozenset({"compare", "styleset.export"})
+CREATES_FILES = frozenset({"doc.compare", "styleset.export"})
 
 
 def _annotations(op: Operation) -> dict[str, bool]:
@@ -139,7 +139,8 @@ def handle(registry: dict[str, Operation], message: Any) -> dict[str, Any] | Non
             ]
         }
     elif method == "tools/call":
-        ops = {tool_name(name): name for name in registry}
+        ops = {tool_name(old): new for old, new in ALIASES.items()}  # old names still run
+        ops.update({tool_name(name): name for name in registry})
         name, arguments = params.get("name"), params.get("arguments", {})
         if name not in ops or not isinstance(arguments, dict):
             return _error(msg_id, -32602, f"unknown tool or invalid arguments: {name}")

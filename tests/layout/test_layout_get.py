@@ -53,7 +53,7 @@ def test_on_off_values_read_as_off(tmp_path: Path) -> None:
                     b"<w:evenAndOddHeaders/>", b'<w:evenAndOddHeaders w:val="off"/>'
                 )
             dst.writestr(item, data)
-    rows = api.run("sections.list", {"doc": str(out)}).result["sections"]
+    rows = api.run("section.list", {"doc": str(out)}).result["sections"]
     assert rows[0]["title_page"] is False and rows[0]["even_and_odd"] is False
     assert _read(out)["two_sided"] is False
 

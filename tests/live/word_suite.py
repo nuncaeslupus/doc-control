@@ -88,7 +88,7 @@ class Runner(Protocol):
         """The whole result of ``op``; a refusal raises :class:`DocControlError`.
 
         Over MCP, pages are joined by extending top-level lists: right for the ops that
-        page one list (every op this suite calls), not for ``para.get`` or ``diff``.
+        page one list (every op this suite calls), not for ``para.get`` or ``doc.diff``.
         """
         ...
 
@@ -182,7 +182,7 @@ def _run(op: str, request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _read(doc: Path) -> list[dict[str, Any]]:
-    paragraphs: list[dict[str, Any]] = _run("paragraphs.list", {"doc": str(doc)})["paragraphs"]
+    paragraphs: list[dict[str, Any]] = _run("para.list", {"doc": str(doc)})["paragraphs"]
     return paragraphs
 
 
@@ -263,11 +263,11 @@ def session(word: Word, home: Path) -> list[str]:
 
 
 def _rows(doc: Path) -> list[dict[str, Any]]:
-    """The ``locate`` row and file-engine text of a sample of paragraphs."""
+    """The ``para.locate`` row and file-engine text of a sample of paragraphs."""
     paragraphs = _read(doc)
 
     def locate(at: str) -> dict[str, Any]:
-        row: dict[str, Any] = _run("locate", {"doc": str(doc), "at": at})["paragraphs"][0]
+        row: dict[str, Any] = _run("para.locate", {"doc": str(doc), "at": at})["paragraphs"][0]
         return row
 
     rows = []
@@ -315,7 +315,7 @@ def select(word: Word, home: Path) -> list[str]:
                     for how, ask in asks.items():
                         try:
                             got = _run("live.select", {**base, **ask, "front": False})
-                            seen = _run("live.selection", base)
+                            seen = _run("live.get_selection", base)
                         except DocControlError as err:
                             bad.append(f"{where}: {how} {row['at']}: {err.code.value}")
                             continue
@@ -370,8 +370,8 @@ def deletions(word: Word, home: Path) -> list[str]:
     at = [p["at"] for p in _read(doc)]
     cuts = [(0, 5, 11), (2, 3, 17), (3, 5, 20)]
     ops = [{"op": "text.replace", "at": f"{at[n]}:{a}-{b}", "text": ""} for n, a, b in cuts]
-    _run("batch", {"doc": str(doc), "ops": ops})
-    rows = _run("locate", {"doc": str(doc)})["paragraphs"]
+    _run("doc.batch", {"doc": str(doc), "ops": ops})
+    rows = _run("para.locate", {"doc": str(doc)})["paragraphs"]
     with _opened(doc) as base:
         for markup in (ALL_MARKUP, SIMPLE_MARKUP):
             _markup(word, doc, markup)
@@ -379,7 +379,7 @@ def deletions(word: Word, home: Path) -> list[str]:
             bad.check(got["at"] == rows[0]["at"], f"markup {markup}: past a deletion", got)
             got = _run("live.select", {**base, "find_phrase": "Quiet tail"})
             bad.check(got["text"] == "Quiet tail.", f"markup {markup}: deleted middle", got)
-            chosen = _run("live.selection", base)
+            chosen = _run("live.get_selection", base)
             bad.check(chosen["text"] == "Quiet tail.", f"markup {markup}: selection", chosen)
             for row in rows:
                 got = _run("live.select", {**base, "find_phrase": row["find_phrase"]})
@@ -403,7 +403,7 @@ def deletions(word: Word, home: Path) -> list[str]:
     )
     at = [p["at"] for p in _read(doc)]
     cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[2]}:13", "text": ""}
-    _run("batch", {"doc": str(doc), "ops": [cut]})
+    _run("doc.batch", {"doc": str(doc), "ops": [cut]})
     found = _read(doc)
     original = doc.read_bytes()
     for markup in (ALL_MARKUP, SIMPLE_MARKUP):
@@ -419,7 +419,7 @@ def deletions(word: Word, home: Path) -> list[str]:
                 got = _run("live.select", {**base, **ask, "front": False})
                 got.pop("match_level", None)  # a find phrase says how it matched
                 bad.check(got == {"text": text, "at": found[n]["at"]}, f"{where}: {ask}", got)
-                chosen = _run("live.selection", base)
+                chosen = _run("live.get_selection", base)
                 bad.check(chosen["paragraph"] == got, f"{where}: selection of {ask}", chosen)
             # Edits land where the address says, with deleted text before them.
             ops = [
@@ -427,11 +427,11 @@ def deletions(word: Word, home: Path) -> list[str]:
                 {"op": "comment.add", "at": f"{found[1]['at']}:5-8", "text": "Which?"},
                 {"op": "para.insert", "after": found[1]["at"], "text": "Between."},
             ]
-            _run("batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
+            _run("doc.batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
             _run("live.save", base)
         want = ["Lead.", "Keep one", "Between.", "stays 2.", "Third unicorn here."]
         bad.check(_texts(doc) == want, f"{where}: after edits", _texts(doc))
-        comments = _run("comments.list", {"doc": str(doc)})["comments"]
+        comments = _run("comment.list", {"doc": str(doc)})["comments"]
         signed = [(c["author"], c["text"]) for c in comments]
         bad.check(signed == [(AUTHOR, "Which?")], f"{where}: comments", comments)
         doc.write_bytes(original)
@@ -463,7 +463,7 @@ def roundtrip(word: Word, home: Path) -> list[str]:
             {"op": "text.replace", "at": f"{at[2]}:0-5", "text": "3rd"},
             {"op": "para.insert", "before": at[0], "text": "Title."},
         ]
-        done = _run("batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
+        done = _run("doc.batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
         bad.check(done["applied"] == 4 and done["author"] == AUTHOR, "batch", done)
         bad.check(settings() == before, "settings after a batch", settings(), before)
         try:
@@ -488,16 +488,18 @@ def roundtrip(word: Word, home: Path) -> list[str]:
             ),
         ]
         for request, code in refused:
-            bad.refused(f"batch {request}", "batch", {**base, "engine": "live", **request}, code)
+            bad.refused(
+                f"batch {request}", "doc.batch", {**base, "engine": "live", **request}, code
+            )
         _run("live.save", base)
 
     want = ["Title.", *texts[:2], "Inserted line.", "3rd one to change.", texts[3]]
     bad.check(_texts(doc) == want, "text", _texts(doc))  # unintended_text_changes
     base = {"doc": str(doc)}
-    comments = _run("comments.list", base)["comments"]
+    comments = _run("comment.list", base)["comments"]
     signed = [(c["author"], c["text"]) for c in comments]
     bad.check(signed == [(AUTHOR, "Why first?")], "comments", comments)
-    revisions = _run("revisions.list", base)["revisions"]
+    revisions = _run("revision.list", base)["revisions"]
     kinds = {r["type"] for r in revisions}
     bad.check({r["author"] for r in revisions} == {AUTHOR}, "revision authors", revisions)
     bad.check({"insert", "delete"} <= kinds, "revision kinds", kinds)
@@ -519,7 +521,7 @@ def marks(word: Word, home: Path) -> list[str]:
         bad.check(word.paragraphs(doc) == texts, "text with a note", word.paragraphs(doc))
         at = _run("live.select", {**base, "find_phrase": "Second"})["at"]
         ops = [{"op": "text.replace", "at": f"{at}:0-6", "text": "2nd"}]
-        _run("batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
+        _run("doc.batch", {**base, "engine": "live", "author": AUTHOR, "ops": ops})
         gone = "".join(str(r.Range.Text or "") for r in live.Revisions if int(r.Type) == 2)
         bad.check(gone == "Second", "what the edit deleted", gone)
         bad.check(int(live.Footnotes.Count) == 1, "the note", int(live.Footnotes.Count))
@@ -555,7 +557,9 @@ def refused_batch(word: Word, home: Path) -> list[str]:
             ({"ops": [comment], "expect": {"sha256": "0" * 64}}, ErrorCode.ENGINE_UNAVAILABLE),
         ]
         for request, code in refused:
-            bad.refused(f"batch {request}", "batch", {**base, "engine": "live", **request}, code)
+            bad.refused(
+                f"batch {request}", "doc.batch", {**base, "engine": "live", **request}, code
+            )
             bad.check(_run("live.status", base)["dirty"] is False, f"dirty after {request}")
     return bad
 
@@ -590,7 +594,7 @@ def buried(word: Word, home: Path) -> list[str]:
     )
     at = [p["at"] for p in _read(doc)]
     cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
-    _run("batch", {"doc": str(doc), "ops": [cut]})
+    _run("doc.batch", {"doc": str(doc), "ops": [cut]})
     rows = _read(doc)
     with _opened(doc) as base:
         for markup in (ALL_MARKUP, SIMPLE_MARKUP):
@@ -685,10 +689,10 @@ def cursor(word: Word, home: Path) -> list[str]:
         bad.check(got["front"] is False, "hidden Word not brought to the front", got)
         chosen = word._doc(doc).ActiveWindow.Selection
         bad.check(int(chosen.Start) == int(chosen.End), "collapsed", chosen.Text)
-        bad.check(_run("live.selection", base)["paragraph"]["at"] == at, "cursor paragraph")
+        bad.check(_run("live.get_selection", base)["paragraph"]["at"] == at, "cursor paragraph")
         got = _run("live.select", {**base, "at": at, "front": False})
         bad.check("front" not in got, "front: false skips it", got)
-        bad.check(_run("live.selection", base)["text"] == "Two words.", "select mode")
+        bad.check(_run("live.get_selection", base)["text"] == "Two words.", "select mode")
     return bad
 
 
@@ -700,18 +704,18 @@ def _same_edits(
     copy = doc.with_name(f"file-{doc.name}")
     copy.write_bytes(doc.read_bytes())
     try:
-        _run("batch", {"doc": str(copy), "author": AUTHOR, "ops": ops})
+        _run("doc.batch", {"doc": str(copy), "author": AUTHOR, "ops": ops})
         refused = None
     except DocControlError as err:
         refused = err.code
     with _opened(doc) as base:
         request = {**base, "engine": "live", "author": AUTHOR, "ops": ops}
         if refused is not None:
-            bad.refused(f"{where}: as the file engine", "batch", request, refused)
+            bad.refused(f"{where}: as the file engine", "doc.batch", request, refused)
             bad.check(_run("live.status", base)["dirty"] is False, f"{where}: dirty")
             return
         try:
-            _run("batch", request)
+            _run("doc.batch", request)
         except DocControlError as err:
             bad.append(f"{where}: the file engine made it, live: {err.code.value} {err}")
             return
@@ -719,7 +723,7 @@ def _same_edits(
         _as_file(bad, word, doc, f"{where}: after the batch")
     bad.check(_texts(doc) == _texts(copy), f"{where}: text", _texts(doc), _texts(copy))
     comments = [
-        [(c["author"], c["text"]) for c in _run("comments.list", {"doc": str(d)})["comments"]]
+        [(c["author"], c["text"]) for c in _run("comment.list", {"doc": str(d)})["comments"]]
         for d in (doc, copy)
     ]
     bad.check(comments[0] == comments[1], f"{where}: comments", *comments)
@@ -736,7 +740,7 @@ def cells(word: Word, home: Path) -> list[str]:
     with _opened(doc) as base:
         got = word.select(doc, Span(1, 2, 6, 6))
         bad.check(got == "line here.\nSecond", "select across the cell", got)
-        chosen = _run("live.selection", base)
+        chosen = _run("live.get_selection", base)
         bad.check(chosen["text"] == got, "selection across the cell", chosen)
     ops = [
         {"op": "text.replace", "at": f"{at[1]}:6..{at[2]}:6", "text": "and"},

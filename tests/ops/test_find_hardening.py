@@ -1,4 +1,4 @@
-"""`find` hardening: accent leaks, normalisation forms, expansions, slow regexes, cursors."""
+"""`text.find` hardening: accent leaks, normalisation forms, expansions, slow regexes, cursors."""
 
 from __future__ import annotations
 

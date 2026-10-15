@@ -11,16 +11,16 @@ An error answers with `ok: false` and `error: {code, message, hint, details}`. T
 | `NOT_A_DOCX` | Pass a Word .docx file (or .txt/.md/.odt, read operations only); .doc and other formats are not supported. |
 | `DOC_LOCKED` | An editor (Word, LibreOffice) has the file open: close it, then retry. |
 | `DOC_CHANGED_ON_DISK` | The file changed since you read it: re-read, then retry. |
-| `SCHEMA_INVALID` | Run `doc-control help <op>` to see the request schema. |
+| `SCHEMA_INVALID` | Run `doc-control server.help <op>` to see the request schema. |
 | `ADDRESS_INVALID` | Use an address from a read result, e.g. p142#a7b2c3d4. |
 | `STALE_ADDRESS` | Re-read the paragraph (para.get) or resolve its anchor, then retry. |
-| `ANCHOR_NOT_FOUND` | Widen the quote or its context, or search with find. |
+| `ANCHOR_NOT_FOUND` | Widen the quote or its context, or search with text.find. |
 | `ANCHOR_AMBIGUOUS` | Pick one of the candidates, or add prefix/suffix context. |
 | `UNSUPPORTED_CONTENT` | Edit around fields, hyperlinks or controls; encrypted or ZIP64 packages are not supported: save a normal copy in Word. |
 | `BATCH_CONFLICT` | Split overlapping operations into separate batches. |
 | `VERIFY_FAILED_RESTORED` | Nothing was changed; report the request that caused it. |
-| `COMMENT_NOT_FOUND` | List comments with comments.list and use an existing id. |
-| `STYLE_NOT_FOUND` | List styles with styles.list and use an existing id. |
+| `COMMENT_NOT_FOUND` | List comments with comment.list and use an existing id. |
+| `STYLE_NOT_FOUND` | List styles with style.list and use an existing id. |
 | `STYLE_CONFLICT` | Rename the style or merge it with style.merge. |
 | `RECIPE_INVALID` | Fix the recipe so it only uses the documented keys. |
 | `HISTORY_NOT_FOUND` | List history with history.list and use an existing op id. |

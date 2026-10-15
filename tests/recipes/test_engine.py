@@ -62,7 +62,9 @@ def run(doc: Path, **request: Any) -> Reply:
 
 
 def dry(doc: Path, ops: list[dict[str, Any]]) -> None:
-    assert isinstance(REGISTRY["batch"].run({"doc": str(doc), "ops": ops, "dry_run": True}), Reply)
+    assert isinstance(
+        REGISTRY["doc.batch"].run({"doc": str(doc), "ops": ops, "dry_run": True}), Reply
+    )
 
 
 def recipe_with(**changes: Any) -> dict[str, Any]:
@@ -155,10 +157,10 @@ def test_run_proposes_a_valid_batch_without_writing(tmp_path: Path) -> None:
     # the edit is narrowed to what changes: the eight leading spaces go, the text stays put
     assert batch["ops"][0]["text"] == "" and batch["ops"][0]["at"].endswith(":0-8")
 
-    preview = REGISTRY["batch"].run({**batch, "dry_run": True})
+    preview = REGISTRY["doc.batch"].run({**batch, "dry_run": True})
     assert isinstance(preview, Reply) and doc.read_bytes() == before
     assert preview.result["applied"] == 4
-    applied = REGISTRY["batch"].run(batch)
+    applied = REGISTRY["doc.batch"].run(batch)
     assert isinstance(applied, Reply) and doc.read_bytes() != before
     assert [p.text for p in Document(str(doc)).index.paragraphs][:2] == [
         "Chapter one",
@@ -175,7 +177,7 @@ def test_repeat_until_stable_terminates_and_merges_passes(tmp_path: Path) -> Non
     assert result["stable"] is True and 1 < result["passes"] <= 10
     ops = result["batch"]["ops"]
     assert len(ops) == 1 and ops[0]["op"] == "text.replace"  # one merged edit per paragraph
-    new = REGISTRY["batch"].run(result["batch"])
+    new = REGISTRY["doc.batch"].run(result["batch"])
     assert isinstance(new, Reply)
     text = Document(str(doc)).index.paragraphs[0].text
     assert "   " not in text and text.startswith("a ") and text.endswith(" b")
@@ -194,7 +196,7 @@ def test_repeat_is_capped_by_max_passes(tmp_path: Path) -> None:
     reply = run(doc, definition=growing)
     assert reply.result["passes"] == 3 and reply.result["stable"] is False
     assert any(w.startswith("NOT_STABLE") for w in reply.warnings)
-    assert isinstance(REGISTRY["batch"].run({**reply.result["batch"], "dry_run": True}), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run({**reply.result["batch"], "dry_run": True}), Reply)
 
 
 def test_single_pass_recipe_keeps_one_edit_per_match(tmp_path: Path) -> None:
@@ -207,7 +209,7 @@ def test_single_pass_recipe_keeps_one_edit_per_match(tmp_path: Path) -> None:
     }
     ops = run(doc, definition=recipe).result["batch"]["ops"]
     assert [o["at"].split(":")[1] for o in ops] == ["4-6", "11-13"]
-    assert isinstance(REGISTRY["batch"].run({"doc": str(doc), "ops": ops}), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run({"doc": str(doc), "ops": ops}), Reply)
 
 
 def test_substitutions_and_other_operations(tmp_path: Path) -> None:
@@ -345,7 +347,7 @@ def test_groups_match_in_both_unicode_forms(tmp_path: Path, form: Literal["NFC",
     ops = run(doc, definition=rx("(é)x", step)).result["batch"]["ops"]
     assert len(ops) == 1
     assert unicodedata.normalize("NFC", ops[0]["text"]) == "<é>"
-    assert isinstance(REGISTRY["batch"].run({"doc": str(doc), "ops": ops}), Reply)
+    assert isinstance(REGISTRY["doc.batch"].run({"doc": str(doc), "ops": ops}), Reply)
     para = Document(str(doc)).index.paragraphs[0].text
     assert unicodedata.normalize("NFC", para) == "caf<é> y"
 
@@ -425,7 +427,7 @@ def test_proposal_on_a_paragraph_with_a_field_and_hidden_run(tmp_path: Path) -> 
     ops = run(doc, definition=recipe).result["batch"]["ops"]
     assert len(ops) == 2
     try:
-        reply = REGISTRY["batch"].run({"doc": str(doc), "ops": ops})
+        reply = REGISTRY["doc.batch"].run({"doc": str(doc), "ops": ops})
     except DocControlError as err:  # refused cleanly is acceptable
         assert err.code is ErrorCode.UNSUPPORTED_CONTENT
     else:
@@ -493,7 +495,7 @@ def test_random_small_recipes_give_an_accepted_batch_with_the_plain_result(
             assert expected == line, (pattern, template, line)
             continue
         dry(doc, batch["ops"])
-        assert isinstance(REGISTRY["batch"].run(batch), Reply)
+        assert isinstance(REGISTRY["doc.batch"].run(batch), Reply)
         got = [p.text for p in Document(str(doc)).index.paragraphs]
         assert got == [expected], (pattern, template, line)
 

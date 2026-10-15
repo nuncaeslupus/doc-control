@@ -8,18 +8,18 @@ from typing import Any
 from doc_control import API_VERSION, __version__
 from doc_control.errors import HINTS, DocControlError, ErrorCode
 from doc_control.live.dispatch import apps
-from doc_control.registry import REGISTRY, load_operations, operation
+from doc_control.registry import REGISTRY, canonical, load_operations, operation
 
 _EMPTY: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": False}
 
 
 @operation(
-    "capabilities",
+    "server.capabilities",
     "read",
     (
         "Describe this doc-control server: API version, engines (file, live), whether it "
         "is a frozen build, and every operation it offers. Call it once at the start; "
-        "help gives one operation's full schema. Read-only; needs no document."
+        "server.help gives one operation's full schema. Read-only; needs no document."
     ),
     _EMPTY,
 )
@@ -47,10 +47,12 @@ def _build() -> dict[str, Any]:
 
 
 @operation(
-    "help",
+    "server.help",
     "read",
-    "JSON Schema of one operation, or of all operations; also the kinds batch takes in `ops` "
-    "(text.replace, comment.add…), listed under batch_operations.",
+    "JSON Schema of one operation, or of all operations; also the kinds doc.batch takes in "
+    "`ops` (text.replace, comment.add…), listed under batch_operations; a name that is "
+    "both gets both. An operation's old name (before 0.7.0) gives the operation it was "
+    "renamed to.",
     {
         "type": "object",
         "properties": {
@@ -62,21 +64,26 @@ def _build() -> dict[str, Any]:
 def help_(request: dict[str, Any]) -> dict[str, Any]:
     load_operations()
     name = request.get("op")
+    name = canonical(name) if name is not None else None
     kinds = _batch_kinds()
     if name is None:
         return {
             "operations": {n: _describe(n) for n in sorted(REGISTRY)},
             "batch_operations": {k: _describe_kind(k, s) for k, s in sorted(kinds.items())},
         }
-    if name in kinds and name not in REGISTRY:
-        return {"batch_operations": {name: _describe_kind(name, kinds[name])}}
-    if name not in REGISTRY:
+    if name not in REGISTRY and name not in kinds:
         raise DocControlError(ErrorCode.SCHEMA_INVALID, f"unknown operation: {name}", op=name)
-    return {"operations": {name: _describe(name)}}
+    # A name can be both (text.replace is a direct write tool and a doc.batch kind): both.
+    out: dict[str, Any] = {}
+    if name in REGISTRY:
+        out["operations"] = {name: _describe(name)}
+    if name in kinds:
+        out["batch_operations"] = {name: _describe_kind(name, kinds[name])}
+    return out
 
 
 def _batch_kinds() -> dict[str, dict[str, Any]]:
-    """The operation kinds a ``batch`` takes in ``ops`` (some are not operations of their own)."""
+    """The operation kinds ``doc.batch`` takes in ``ops`` (some are not operations of their own)."""
     from doc_control.ops.batch import ALL_SCHEMAS
 
     return dict(ALL_SCHEMAS)
@@ -85,7 +92,7 @@ def _batch_kinds() -> dict[str, dict[str, Any]]:
 def _describe_kind(name: str, schema: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": "batch",
-        "summary": schema.get("description", f"`{name}` inside batch ops; see its schema."),
+        "summary": schema.get("description", f"`{name}` inside doc.batch ops; see its schema."),
         "schema": schema,
     }
 

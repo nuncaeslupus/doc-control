@@ -1,4 +1,4 @@
-"""Headless LibreOffice, used to recompute field results (``fields.update``).
+"""Headless LibreOffice, used to recompute field results (``field.update``).
 
 LibreOffice does not rebuild a table of contents or refresh page references when it merely
 converts a file, so a one-off Basic macro does it: it lives in a throw-away user profile

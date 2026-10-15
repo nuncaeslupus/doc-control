@@ -1,4 +1,4 @@
-"""``find`` gives the query as typed in Word's Find box, and repeated paragraphs get a find
+"""``text.find`` gives the query as typed in Word's Find box, and repeated paragraphs get a find
 phrase across a mark (T58).
 
 The gate ``find_word_mismatches == 0``: for queries holding every character Word's Find box
@@ -29,22 +29,22 @@ def test_find_word_gate(tmp_path: Path) -> None:
     mismatches = checks = 0
     with api.open(path) as doc:
         for query in QUERIES:
-            result = doc.run("find", {"query": query})
+            result = doc.run("text.find", {"query": query})
             checks += 1
             word = result.get("query_word")
             mismatches += word is None or across.unword(word) != query
         for query in TWO_FORMS:
             checks += 1
-            mismatches += doc.run("find", {"query": query})["query_word"] is not None
+            mismatches += doc.run("text.find", {"query": query})["query_word"] is not None
         checks += 1
-        mismatches += "query_word" in doc.run("find", {"query": "a.b", "regex": True})
-        options = doc.run("find", {"query": "plain", "ignore_case": True, "whole_word": True})
+        mismatches += "query_word" in doc.run("text.find", {"query": "a.b", "regex": True})
+        options = doc.run("text.find", {"query": "plain", "ignore_case": True, "whole_word": True})
         checks += 1
         mismatches += options["query_word_options"] != {"match_case": False, "whole_words": True}
         checks += 1
-        accents = doc.run("find", {"query": "plain", "ignore_accents": True})
+        accents = doc.run("text.find", {"query": "plain", "ignore_accents": True})
         mismatches += accents["query_word"] is not None  # Word's Find cannot ignore accents
-        long = doc.run("find", {"query": "^" * 200})
+        long = doc.run("text.find", {"query": "^" * 200})
         checks += 1
         mismatches += long["query_word"] is not None  # 400 characters: past the box
     (tmp_path / "phrases").mkdir()

@@ -4,7 +4,7 @@
 now, and writes them in one verified step:
 
 ``{"kind": "section.props", "section": 2, "props": {...}}``
-    Change the page setup of section ``section`` (1-based, as ``sections.list`` numbers
+    Change the page setup of section ``section`` (1-based, as ``section.list`` numbers
     them) as a tracked ``w:sectPrChange``; ``props`` are those of
     :mod:`doc_control.ooxml.sections`. Several edits of one section are merged.
 ``{"kind": "section.break", "after": "p3#fp", "type": "oddPage"}``

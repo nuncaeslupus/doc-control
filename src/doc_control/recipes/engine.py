@@ -1,7 +1,7 @@
 """Run a validated recipe over paragraph texts and produce a batch proposal.
 
 The engine reads nothing but the texts it is given and returns operation dicts for
-``batch``; it writes nothing. Every address in the proposal refers to the document as
+``doc.batch``; it writes nothing. Every address in the proposal refers to the document as
 read, so the result is a valid batch. With ``repeat_until_stable`` the recipe is run again
 on the text its own replacements would leave, until a pass changes nothing or
 ``max_passes`` is reached. Every ``text.replace`` is narrowed to the characters that change
@@ -11,7 +11,7 @@ passes it took.
 
 A rule with ``match.where`` is run only on the paragraphs whose own style, heading status
 and emptiness, and whose neighbours, meet its conditions, all judged on the document as
-read. Neighbour text conditions are regexes and run isolated like ``find``.
+read. Neighbour text conditions are regexes and run isolated like ``text.find``.
 """
 
 from __future__ import annotations

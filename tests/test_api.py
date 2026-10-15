@@ -2,7 +2,7 @@
 
 The gate ``api_bulk_read_mismatches == 0``: for every paragraph of every corpus kind and of
 the 100k-word novel, the facts ``paragraphs()`` returns equal what the per-paragraph
-operations (``para.get``, ``text.normalized``, ``page.estimate``) say about it, and the
+operations (``para.get``, ``text.normalize``, ``page.estimate``) say about it, and the
 novel comes back in one call.
 """
 
@@ -39,7 +39,7 @@ def _mismatches(path: Path) -> tuple[int, int]:
     with api.open(path) as doc:
         rows = doc.paragraphs(normalized=True, pages=True)
         normalized: dict[str, str] = defaultdict(str)
-        for entry in doc.run("text.normalized")["paragraphs"]:
+        for entry in doc.run("text.normalize")["paragraphs"]:
             normalized[entry["at"]] += entry["text"]
         pages = {r["at"]: r for r in doc.run("page.estimate")["paragraphs"]}
         bad = 0
@@ -64,7 +64,7 @@ def test_bulk_read_matches_per_paragraph_ops(tmp_path: Path) -> None:
         path = tmp_path / f"{kind}.docx"
         path.write_bytes(generate_docx(kind, 1))
         if kind == "novel":
-            reply = api.run("paragraphs.list", {"doc": str(path), "normalized": True})
+            reply = api.run("para.list", {"doc": str(path), "normalized": True})
             assert reply.next_cursor is None
             assert len(reply.result["paragraphs"]) == reply.result["total"] > 1000
             continue  # the per-paragraph comparison below covers the shapes; this the size
@@ -87,12 +87,12 @@ def test_one_parse_serves_several_reads(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr(document_module, "build_index", counting)
     with api.open(path) as doc:
-        doc.run("outline")
-        doc.run("stats")
+        doc.run("doc.outline")
+        doc.run("doc.stats")
         doc.paragraphs()
         assert calls == 1
         doc.run(
-            "batch",
+            "doc.batch",
             {
                 "ops": [
                     {"op": "text.replace", "at": doc.paragraphs()[0]["at"] + ":0-3", "text": "Uno"}
@@ -106,12 +106,12 @@ def test_one_parse_serves_several_reads(tmp_path: Path, monkeypatch: pytest.Monk
 def test_results_are_whole_in_process(tmp_path: Path) -> None:
     load_operations()
     path = make_docx(tmp_path / "d.docx", *(f"Paragraph {n} " + "word " * 60 for n in range(400)))
-    capped = REGISTRY["paragraphs.list"].run({"doc": str(path)})
+    capped = REGISTRY["para.list"].run({"doc": str(path)})
     assert capped.next_cursor is not None  # type: ignore[union-attr]
     with api.open(path) as doc:
         assert len(doc.paragraphs()) == 400
-        assert len(doc.run("find", {"query": "word"})["matches"]) > 20
-        assert len(doc.run("text.normalized")["paragraphs"]) == 400
+        assert len(doc.run("text.find", {"query": "word"})["matches"]) > 20
+        assert len(doc.run("text.normalize")["paragraphs"]) == 400
 
 
 def test_a_changed_file_is_read_again(tmp_path: Path) -> None:
@@ -126,14 +126,23 @@ def test_a_changed_file_is_read_again(tmp_path: Path) -> None:
 def test_a_partial_result_says_where_to_continue(tmp_path: Path) -> None:
     path = make_docx(tmp_path / "d.docx", "a a a a a", "a a")
     with api.open(path) as doc:
-        first = doc.run("find", {"query": "a", "limit": 3})
+        first = doc.run("text.find", {"query": "a", "limit": 3})
         assert len(first["matches"]) == 3 and "next" in first
-        assert "next" not in doc.run("find", {"query": "a"})
+        assert "next" not in doc.run("text.find", {"query": "a"})
 
 
 def test_errors_raise(tmp_path: Path) -> None:
     with pytest.raises(DocControlError) as err:
-        api.open(tmp_path / "missing.docx").run("outline")
+        api.open(tmp_path / "missing.docx").run("doc.outline")
     assert err.value.code is ErrorCode.DOC_NOT_FOUND
     with pytest.raises(DocControlError):
         api.open(tmp_path / "missing.docx").run("no.such.op")
+
+
+def test_an_open_document_runs_operations_by_their_old_names(tmp_path: Path) -> None:
+    """Names from before 0.7.0 still run through the API, as the operation they became."""
+    path = make_docx(tmp_path / "d.docx", "One.", "Two.")
+    with api.open(path) as doc:
+        assert doc.run("paragraphs.list") == doc.run("para.list")
+        assert doc.run("info") == doc.run("doc.info")
+        assert doc.run("find", {"query": "Two"})["total"] == 1

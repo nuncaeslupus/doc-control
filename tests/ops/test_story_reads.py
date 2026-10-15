@@ -23,7 +23,7 @@ PAGE_AREAS = ("header", "header-left", "header-first", "footer", "footer-left", 
 
 
 def _rows(doc: Path) -> list[dict[str, Any]]:
-    result: dict[str, Any] = api.run("paragraphs.list", {"doc": str(doc), "stories": ALL}).result
+    result: dict[str, Any] = api.run("para.list", {"doc": str(doc), "stories": ALL}).result
     rows: list[dict[str, Any]] = result["paragraphs"]
     return rows
 
@@ -133,12 +133,12 @@ def test_story_reads_match_libreoffice(tmp_path: Path) -> None:
 def test_default_reads_stay_body_only(tmp_path: Path) -> None:
     doc = tmp_path / "notes.docx"
     doc.write_bytes(generate("notes", 0))
-    plain = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    plain = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     assert all("story" not in r for r in plain)
     assert [r["at"] for r in plain] == [r["at"] for r in _rows(doc) if "story" not in r]
-    found = api.run("find", {"doc": str(doc), "query": "Board"}).result
+    found = api.run("text.find", {"doc": str(doc), "query": "Board"}).result
     assert found["total"] == 0  # "Board" only starts a footnote paragraph
-    found = api.run("find", {"doc": str(doc), "query": "Board", "stories": ALL}).result
+    found = api.run("text.find", {"doc": str(doc), "query": "Board", "stories": ALL}).result
     assert [m["at"].split("/")[0] for m in found["matches"]] == ["fn2"]
     at = found["matches"][0]["at"].split(":")[0]
     got = api.run("para.get", {"doc": str(doc), "at": at}).result
@@ -148,7 +148,7 @@ def test_default_reads_stay_body_only(tmp_path: Path) -> None:
 def test_table_cells_and_story_aware_locate_outline_stats(tmp_path: Path) -> None:
     doc = tmp_path / "tables.docx"
     doc.write_bytes(generate("tables", 0))
-    rows = api.run("paragraphs.list", {"doc": str(doc)}).result["paragraphs"]
+    rows = api.run("para.list", {"doc": str(doc)}).result["paragraphs"]
     cells = [r for r in rows if "cell" in r]
     assert cells
     for r in cells:  # the corpus writes "R<row>C<col>" into each cell
@@ -161,19 +161,19 @@ def test_table_cells_and_story_aware_locate_outline_stats(tmp_path: Path) -> Non
     notes.write_bytes(generate("notes", 0))
     every = _rows(notes)
     note = next(r for r in every if r.get("story") == "footnote")
-    located = api.run("locate", {"doc": str(notes), "at": note["at"]}).result["paragraphs"]
+    located = api.run("para.locate", {"doc": str(notes), "at": note["at"]}).result["paragraphs"]
     assert located[0]["at"] == note["at"]
     assert located[0]["note"] == note["note"]
     assert located[0]["mark"]["at"] == note["note"]["of"]  # where the mark sits
 
     headers = tmp_path / "headers.docx"
     headers.write_bytes(generate("headers", 0))
-    plain = api.run("outline", {"doc": str(headers)}).result["headings"]
-    wide = api.run("outline", {"doc": str(headers), "stories": ALL}).result["headings"]
+    plain = api.run("doc.outline", {"doc": str(headers)}).result["headings"]
+    wide = api.run("doc.outline", {"doc": str(headers), "stories": ALL}).result["headings"]
     assert plain == wide  # the headers kind has headings in the body only
 
-    body_only = api.run("stats", {"doc": str(notes)}).result
-    counted = api.run("stats", {"doc": str(notes), "stories": ALL}).result
+    body_only = api.run("doc.stats", {"doc": str(notes)}).result
+    counted = api.run("doc.stats", {"doc": str(notes), "stories": ALL}).result
     assert "stories" not in body_only
     assert {k: v for k, v in counted.items() if k != "stories"} == body_only
     assert counted["stories"]["notes"]["stories"] == 6
@@ -186,12 +186,12 @@ def test_find_cursor_across_stories(tmp_path: Path) -> None:
     doc = tmp_path / "notes.docx"
     doc.write_bytes(generate("notes", 0))
     query = {"doc": str(doc), "query": "the", "ignore_case": True, "limit": 3}
-    whole = api.run("find", {**query, "limit": 200, "stories": ALL}).result["matches"]
+    whole = api.run("text.find", {**query, "limit": 200, "stories": ALL}).result["matches"]
     pages: list[str] = []
     cursor = None
     while True:
         request = {**query, "stories": ALL} | ({"cursor": cursor} if cursor else {})
-        reply = api.run("find", request)
+        reply = api.run("text.find", request)
         pages += [m["at"] for m in reply.result["matches"]]
         cursor = reply.next_cursor
         if cursor is None:
@@ -199,6 +199,6 @@ def test_find_cursor_across_stories(tmp_path: Path) -> None:
     assert pages == [m["at"] for m in whole]
     assert any(at.startswith("fn") for at in pages)
     # The same stories in another order resume the same search.
-    first = api.run("find", {**query, "stories": ALL})
+    first = api.run("text.find", {**query, "stories": ALL})
     again = {**query, "stories": ["headers", "notes", "body"], "cursor": first.next_cursor}
-    assert api.run("find", again).result["matches"]
+    assert api.run("text.find", again).result["matches"]

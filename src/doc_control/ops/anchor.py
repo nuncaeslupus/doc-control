@@ -99,7 +99,7 @@ def anchor_create(request: dict[str, Any]) -> Reply:
                 "description": "best: verbatim matches first, then fuzzy ones (match says which)."
                 " exact: only places holding the quote verbatim or, when none does, in the"
                 " normalised text (soft hyphens and zero-width characters ignored, whitespace"
-                " collapsed, as text.normalized) or at a fold level of match_level; anything"
+                " collapsed, as text.normalize) or at a fold level of match_level; anything"
                 " else is ANCHOR_NOT_FOUND.",
             },
             "match_level": {

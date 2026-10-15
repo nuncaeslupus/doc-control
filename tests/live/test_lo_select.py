@@ -22,12 +22,12 @@ def _run(op: str, request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _rows(doc: Path) -> list[dict[str, Any]]:
-    """The ``locate`` row and file-engine text of a sample of paragraphs."""
+    """The ``para.locate`` row and file-engine text of a sample of paragraphs."""
     with api.open(doc) as handle:
         paragraphs = handle.paragraphs()
 
     def locate(at: str) -> dict[str, Any]:
-        row: dict[str, Any] = _run("locate", {"doc": str(doc), "at": at})["paragraphs"][0]
+        row: dict[str, Any] = _run("para.locate", {"doc": str(doc), "at": at})["paragraphs"][0]
         return row
 
     rows = []
@@ -70,7 +70,7 @@ def test_select_matches_file_engine_text(live: LibreOffice, lo_home: Path, kind:
             for how, ask in asks.items():
                 try:
                     got = _run("live.select", {**base, **ask, "front": False})
-                    seen = _run("live.selection", base)
+                    seen = _run("live.get_selection", base)
                 except DocControlError as err:
                     mismatches.append((f"{how} {row['at']}", err.code.value))
                     continue
@@ -118,7 +118,7 @@ def test_stale_address_and_missing_phrase_are_refused(live: LibreOffice, lo_home
 
 
 def test_find_phrase_reads_past_tracked_deletions(live: LibreOffice, lo_home: Path) -> None:
-    """A phrase is matched against what the writer sees, as ``locate`` builds it."""
+    """A phrase is matched against what the writer sees, as ``para.locate`` builds it."""
     doc = make_docx(
         lo_home / "deleted.docx",
         "Alpha bravo charlie.",
@@ -130,8 +130,8 @@ def test_find_phrase_reads_past_tracked_deletions(live: LibreOffice, lo_home: Pa
         at = [p["at"] for p in handle.paragraphs()]
         cuts = [(0, 5, 11), (2, 3, 17), (3, 5, 20)]
         ops = [{"op": "text.replace", "at": f"{at[n]}:{a}-{b}", "text": ""} for n, a, b in cuts]
-        handle.run("batch", {"ops": ops})
-        rows = handle.run("locate", {})["paragraphs"]
+        handle.run("doc.batch", {"ops": ops})
+        rows = handle.run("para.locate", {})["paragraphs"]
         assert [p["text"] for p in handle.paragraphs()][::2] == ["Alpha charlie.", "Zed end."]
     base = {"doc": str(doc)}
     _run("live.open", base)
@@ -165,7 +165,7 @@ def test_deletion_across_a_paragraph_mark_reads_as_the_file_engine(
     with api.open(doc) as handle:
         at = [p["at"] for p in handle.paragraphs()]
         cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[2]}:13", "text": ""}
-        handle.run("batch", {"ops": [cut]})
+        handle.run("doc.batch", {"ops": [cut]})
         rows = handle.paragraphs()
     assert [p["text"] for p in rows][1:3] == ["Keep one", "stays two."]
     base = {"doc": str(doc)}
@@ -194,7 +194,7 @@ def test_paragraphs_wholly_inside_a_deletion_read_as_the_file_engine(
     with api.open(doc) as handle:
         at = [p["at"] for p in handle.paragraphs()]
         cut = {"op": "text.replace", "at": f"{at[1]}:8..{at[4]}:13", "text": ""}
-        handle.run("batch", {"ops": [cut]})
+        handle.run("doc.batch", {"ops": [cut]})
         rows = handle.paragraphs()
     base = {"doc": str(doc)}
     _run("live.open", base)

@@ -32,16 +32,16 @@ def _run(name: str, request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _story(doc: Path, key: str) -> list[dict[str, Any]]:
-    rows = _run("paragraphs.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
+    rows = _run("para.list", {"doc": str(doc), "stories": ALL})["paragraphs"]
     return [r for r in rows if r["at"].startswith(key + "/")]
 
 
 def _batch(doc: Path, ops: list[dict[str, Any]]) -> dict[str, Any]:
-    return _run("batch", {"doc": str(doc), "ops": ops})
+    return _run("doc.batch", {"doc": str(doc), "ops": ops})
 
 
 def _revisions(doc: Path, key: str) -> list[dict[str, Any]]:
-    rows = _run("revisions.list", {"doc": str(doc), "stories": ALL})["revisions"]
+    rows = _run("revision.list", {"doc": str(doc), "stories": ALL})["revisions"]
     return [r for r in rows if r["at"].startswith(key + "/")]
 
 
@@ -114,7 +114,7 @@ def test_story_edits_round_trip_through_libreoffice(tmp_path: Path) -> None:
                 for k in keys
             ]
             _batch(doc, replace_ops)
-            _run("undo", {"doc": str(doc)})
+            _run("history.undo", {"doc": str(doc)})
             if doc.read_bytes() != original:
                 failures.append(f"{corpus}: undo of text.replace did not restore the file")
             _batch(doc, replace_ops)
@@ -143,18 +143,18 @@ def test_story_edits_round_trip_through_libreoffice(tmp_path: Path) -> None:
                     continue
                 _batch(doc, [{"op": "comment.add", "at": at, "text": f"Note on {k}"}])
                 rows = [
-                    c for c in _run("comments.list", {"doc": str(doc)})["comments"]
+                    c for c in _run("comment.list", {"doc": str(doc)})["comments"]
                     if c["text"] == f"Note on {k}"
                 ]  # fmt: skip
                 if not rows or not rows[0].get("at", "").startswith(k + "/"):
-                    failures.append(f"{k}: comments.list does not place the comment there")
+                    failures.append(f"{k}: comment.list does not place the comment there")
                 elif rows[0].get("story") != _kind(k):
-                    failures.append(f"{k}: comments.list story is {rows[0].get('story')}")
+                    failures.append(f"{k}: comment.list story is {rows[0].get('story')}")
 
             for k in keys:
                 types = {r["type"] for r in _revisions(doc, k)}
                 if not {"insert", "delete", "mark_insert"} <= types:
-                    failures.append(f"{k}: revisions.list shows {sorted(types)}")
+                    failures.append(f"{k}: revision.list shows {sorted(types)}")
 
             content, styles = _odt(doc, work)
             for k in keys:
@@ -204,7 +204,7 @@ def test_story_edits_round_trip_through_libreoffice(tmp_path: Path) -> None:
                     f"Gone {k}" in text for text in deleted
                 ):
                     failures.append(f"{k}: LibreOffice shows no deletion")
-            _run("undo", {"doc": str(doc)})
+            _run("history.undo", {"doc": str(doc)})
             if doc.read_bytes() != before_delete:
                 failures.append(f"{corpus}: undo of para.delete did not restore the file")
             _batch(doc, delete_ops)
@@ -218,7 +218,7 @@ def test_story_edits_round_trip_through_libreoffice(tmp_path: Path) -> None:
 
 def _addresses(doc: Path) -> dict[str, str]:
     out: dict[str, str] = {}
-    for row in _run("paragraphs.list", {"doc": str(doc), "stories": ALL})["paragraphs"]:
+    for row in _run("para.list", {"doc": str(doc), "stories": ALL})["paragraphs"]:
         out.setdefault(row["at"].split("/")[0] if "/" in row["at"] else "body", row["at"])
     return out
 
@@ -264,7 +264,7 @@ def test_two_notes_in_one_part_and_undo(tmp_path: Path) -> None:
     assert result["footprint"]["word/footnotes.xml"] == ["fn1/p1", "fn3/p1", "fn3/p2", "fn4/p1"]
     assert [r["text"] for r in _story(doc, "fn3")][1] == "Added to fn3"
     assert {r["type"] for r in _revisions(doc, "fn4")} == {"format"}
-    _run("undo", {"doc": str(doc)})
+    _run("history.undo", {"doc": str(doc)})
     assert doc.read_bytes() == original
 
 
@@ -274,7 +274,7 @@ def test_live_batch_refuses_story_addresses(tmp_path: Path) -> None:
     at = _addresses(doc)["fn2"]
     with pytest.raises(DocControlError) as err:
         api.run(
-            "batch",
+            "doc.batch",
             {
                 "doc": str(doc),
                 "engine": "live",

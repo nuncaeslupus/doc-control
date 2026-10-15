@@ -197,6 +197,6 @@ def test_imported_documents_pass_lint_and_libreoffice(tmp_path: Path) -> None:
 
 def test_registered() -> None:
     registry = load_operations()
-    assert registry["styleset.export-dotx"].kind == "write"
-    assert registry["styleset.import-dotx"].kind == "write"
-    assert "styleset.export-dotx" in REGISTRY
+    assert registry["styleset.export_dotx"].kind == "write"
+    assert registry["styleset.import_dotx"].kind == "write"
+    assert "styleset.export_dotx" in REGISTRY

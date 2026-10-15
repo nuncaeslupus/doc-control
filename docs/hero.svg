@@ -159,7 +159,7 @@
   <circle cx="94" cy="304" r="4.5" fill="#e0b84c"/>
   <circle cx="108" cy="304" r="4.5" fill="#7fbf7f"/>
   <text x="82" y="346" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#f2b632" text-anchor="start" letter-spacing="0" xml:space="preserve">$ </text>
-  <text x="97.05" y="346" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#e9e6f2" text-anchor="start" letter-spacing="0" xml:space="preserve">doc-control batch --json '{</text>
+  <text x="97.05" y="346" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#e9e6f2" text-anchor="start" letter-spacing="0" xml:space="preserve">doc-control doc.batch --json '{</text>
   <text x="82" y="366" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#c9bff0" text-anchor="start" letter-spacing="0" xml:space="preserve">  "doc"</text>
   <text x="134.675" y="366" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#e9e6f2" text-anchor="start" letter-spacing="0" xml:space="preserve">: </text>
   <text x="149.72500000000002" y="366" font-family="'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#f2d29b" text-anchor="start" letter-spacing="0" xml:space="preserve">"novel.docx"</text>

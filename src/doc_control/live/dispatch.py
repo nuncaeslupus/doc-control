@@ -43,7 +43,7 @@ def apps() -> list[dict[str, Any]]:
     for a in adapters():
         try:
             found.append(a.probe())
-        except Exception as err:  # a broken install must not take `capabilities` down
+        except Exception as err:  # a broken install must not take `server.capabilities` down
             found.append(
                 {
                     "app": a.app,

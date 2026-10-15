@@ -1,4 +1,4 @@
-"""Layout facts for `para.get` and `outline` (D-18), registered through the
+"""Layout facts for `para.get` and `doc.outline` (D-18), registered through the
 :data:`doc_control.ops.read.PARA_FACTS` and :data:`doc_control.ops.read.OUTLINE_FACTS` hooks.
 
 The definitions live in :mod:`doc_control.model.layout`.
@@ -328,7 +328,7 @@ def _check_plan(plan: dict[str, Any]) -> None:
 
 
 def _row_props(row: dict[str, Any]) -> dict[str, Any]:
-    """A `sections.list` row as the section properties the writer takes."""
+    """A `section.list` row as the section properties the writer takes."""
     return {
         "break": row["break"],
         "page_number_start": row["page_numbers"]["start"],

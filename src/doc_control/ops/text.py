@@ -1,4 +1,4 @@
-"""Text views: ``text.normalized``.
+"""Text views: ``text.normalize``.
 
 Two inputs, exactly one of which must be given (otherwise ``SCHEMA_INVALID``):
 
@@ -186,7 +186,7 @@ _RESULT = (
 )
 
 
-OP = "text.normalized"
+OP = "text.normalize"
 
 
 @operation(

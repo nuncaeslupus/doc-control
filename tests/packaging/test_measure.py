@@ -13,13 +13,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "packaging" / "spike" / "measure.py"
 
-# A stand-in for a frozen doc-control: `capabilities` prints an ok envelope, `mcp` answers
+# A stand-in for a frozen doc-control: `server.capabilities` prints an ok envelope, `mcp` answers
 # newline-delimited JSON-RPC on stdio like `doc_control.mcp.serve`.
 STUB = r"""
 import json, sys
 
-if sys.argv[1:] == ["capabilities"]:
-    print(json.dumps({"ok": True, "op": "capabilities", "result": {}}))
+if sys.argv[1:] == ["server.capabilities"]:
+    print(json.dumps({"ok": True, "op": "server.capabilities", "result": {}}))
     sys.exit(0)
 if sys.argv[1:] == ["mcp"]:
     for line in sys.stdin:
@@ -29,7 +29,7 @@ if sys.argv[1:] == ["mcp"]:
         if msg["method"] == "initialize":
             result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}}
         elif msg["method"] == "tools/list":
-            result = {"tools": [{"name": "capabilities", "inputSchema": {}}]}
+            result = {"tools": [{"name": "server_capabilities", "inputSchema": {}}]}
         else:
             result = {}
         sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n")
