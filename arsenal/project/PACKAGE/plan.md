@@ -140,6 +140,7 @@ Every task builds or tests Windows artifacts on `windows-latest` in CI (`surface
 | T1 | `freezer_candidates_measured >= 2` | 2 (summed over the two matrix jobs, one candidate each) — PyInstaller: dist_mb 29.32, startup_ms_median 307.0 (181.6 on the earlier run), smoke_failures 0, build_minutes 0.2; Nuitka: dist_mb 40.24, startup_ms_median 245.3, smoke_failures 0, build_minutes 7.7 | `.github/workflows/freeze-spike.yml` run 38631660565 (`packaging/spike/measure.py --runs 10`) | 84de605 | windows-latest, Python 3.12 | 2026-10-14 |
 | T1 | first run (40aa765, run 38629330164) | `capabilities` smoke failed under both freezers: the CLI printed cp1252 into the pipe; fixed in this PR (`cli.py` writes UTF-8, `tests/test_cli_encoding.py`) | same workflow | 40aa765 | windows-latest | 2026-10-14 |
 | T2 | `frozen_exe_size_mb <= 40` | 29.54 (uncompressed one-folder build, 110 files); `packaging/smoke.py --frozen` passed: capabilities frozen, regex find ok | `.github/workflows/package.yml` via ci.yml, run 38643198602 | 9b8d88d | windows-latest, Python 3.12, PyInstaller 6.22.3 | 2026-10-14 |
+| T5 | `live_word_failures == 0` | 0 with the frozen exe (CI artifact `windows-frozen` of run 38667575655, 0.6.4, 82cdc33) as the MCP server; 0 with `python -m doc_control mcp`; the in-process suite (`scripts/live_word_check.py`) also 0 after the `match_level` fix in `deletions` | `scripts/live_word_frozen_check.py --exe doc-control.exe` | (this PR) | owner's PC, Windows 11, Word 16.0.17932 64-bit (no Word running before) | 2026-10-15 |
 
 ---
 
