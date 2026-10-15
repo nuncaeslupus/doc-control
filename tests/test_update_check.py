@@ -7,7 +7,7 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -43,9 +43,19 @@ class Counter:
         return _Response(json.dumps(RELEASE).encode())
 
 
+def _caps() -> dict[str, Any]:
+    return cast("dict[str, Any]", meta.capabilities({}))
+
+
+def _status() -> dict[str, Any]:
+    return cast("dict[str, Any]", live.status({}))
+
+
 @pytest.fixture
 def counter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Counter:
     c = Counter()
+    monkeypatch.setattr(live, "apps", lambda: [])  # no probe of a real Word
+    monkeypatch.setattr(live, "_open_documents", lambda _apps: [])
     monkeypatch.setattr(urllib.request, "urlopen", c)
     monkeypatch.setenv("DOC_CONTROL_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.delenv("DOC_CONTROL_UPDATE_CHECK", raising=False)
@@ -53,8 +63,8 @@ def counter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Counter:
 
 
 def test_no_request_when_off(counter: Counter, tmp_path: Path) -> None:
-    assert "update" not in meta.capabilities({})
-    assert "update" not in live.status({})
+    assert "update" not in _caps()
+    assert "update" not in _status()
     assert counter.calls == []
     assert not (tmp_path / "cache").exists()
 
@@ -75,7 +85,7 @@ def test_second_check_within_a_day_uses_cache(
         assert info["mcpb_url"] == "https://example.test/x.mcpb"
     update_check.update_info(now=1_000_000.0 + 25 * 3600)
     assert len(counter.calls) == 2
-    assert "update" in meta.capabilities({})
+    assert "update" in _caps()
 
 
 def test_failed_check_is_quiet(counter: Counter, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,5 +93,5 @@ def test_failed_check_is_quiet(counter: Counter, monkeypatch: pytest.MonkeyPatch
     counter.error = urllib.error.URLError("offline")
     info = update_check.update_info()
     assert info is not None and set(info) == {"error"}
-    assert "update" in meta.capabilities({})
-    assert "error" in live.status({})["update"]
+    assert "update" in _caps()
+    assert "error" in _status()["update"]
