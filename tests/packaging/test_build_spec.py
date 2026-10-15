@@ -29,7 +29,11 @@ def _analysis() -> dict[str, Any]:
         return None
 
     names = {"SPECPATH": str(SPEC.parent), "Analysis": Analysis}
-    names |= {"PYZ": build, "EXE": build, "COLLECT": build}
+
+    def exe(*args: Any, **kwargs: Any) -> None:
+        seen["icon"] = kwargs.get("icon")
+
+    names |= {"PYZ": build, "EXE": exe, "COLLECT": build}
     exec(compile(SPEC.read_text("utf-8"), str(SPEC), "exec"), names)
     return seen
 
@@ -47,6 +51,13 @@ def test_spec_names_hidden_imports_data_and_excludes() -> None:
     recipes = found["doc_control/recipes/bundled"]
     assert recipes and all(path.suffix == ".json" for path in recipes)
     assert found["doc_control/app"] == [ROOT / "src" / "doc_control" / "app" / "places.html"]
+    assert Path(seen["icon"]) == ROOT / "packaging" / "doc-control.ico"
+    assert Path(seen["icon"]).read_bytes()[:4] == bytes([0, 0, 1, 0])  # an ICO file
+
+
+def test_installer_uses_the_exe_icon() -> None:
+    iss = (ROOT / "packaging" / "installer" / "doc-control.iss").read_text("utf-8")
+    assert r"SetupIconFile=..\doc-control.ico" in iss
 
 
 def test_package_workflow_is_called_from_ci_and_checks_size() -> None:

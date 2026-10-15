@@ -34,6 +34,9 @@ DATAS = [
     (str(PACKAGE / "app" / "places.html"), "doc_control/app"),
 ]
 
+# The exe's icon: docs/logo.png at the sizes Explorer and the taskbar ask for.
+ICON = ROOT / "packaging" / "doc-control.ico"
+
 # Never shipped: the GUI toolkit and the test suite (with what only tests import).
 EXCLUDES = ["tkinter", "_tkinter", "tests", "pytest", "_pytest"]
 
@@ -53,6 +56,7 @@ exe = EXE(  # noqa: F821
     exclude_binaries=True,
     name="doc-control",
     console=True,
+    icon=str(ICON),
     upx=False,
     debug=False,
     strip=False,
