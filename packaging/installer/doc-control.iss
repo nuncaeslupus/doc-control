@@ -32,6 +32,7 @@ OutputBaseFilename=doc-control-{#AppVersion}-windows-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\doc-control.ico
 UninstallDisplayName=doc-control {#AppVersion}
 UninstallDisplayIcon={app}\doc-control.exe
 
