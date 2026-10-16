@@ -218,22 +218,29 @@ _CARET = re.compile(r"\^[A-Za-z]")
 
 def _walk(folder: Path, parts: list[str]) -> Path:
     """``folder`` joined with ``parts``, undoing OneDrive's caret escapes in a part that
-    is not there as written."""
-    here = folder
-    for part in parts:
-        here = here / _entry(here, part)
-    return here
+    is not there as written. Of the readings of a part, the first under which the rest
+    of the path exists wins, so a stray folder named with the escape as written (left
+    by an older release) does not hide the real one; with none, the first reading."""
+    if not parts:
+        return folder
+    fallback: Path | None = None
+    for name in _entries(folder, parts[0]):
+        found = _walk(folder / name, parts[1:])
+        if found.exists():
+            return found
+        fallback = fallback or found
+    assert fallback is not None  # _entries always gives a reading
+    return fallback
 
 
-def _entry(folder: Path, part: str) -> str:
-    """``part`` as written when it exists or has no ``^X``; else with the known escapes
-    undone when that exists; else the one entry of ``folder`` that fits with each
-    ``^X`` as any character; else the known escapes undone."""
-    if not _CARET.search(part) or (folder / part).exists():
-        return part
+def _entries(folder: Path, part: str) -> list[str]:
+    """The readings of ``part`` in order: as written when it exists or has no ``^X``;
+    with the known escapes undone when that exists; the one entry of ``folder`` that
+    fits with each ``^X`` as any character; and last the known escapes undone."""
+    if not _CARET.search(part):
+        return [part]
     decoded = _CARET.sub(lambda m: ONEDRIVE_ESCAPES.get(m.group(0), m.group(0)), part)
-    if (folder / decoded).exists():
-        return decoded
+    found = [name for name in (part, decoded) if (folder / name).exists()]
     pieces = re.split(r"(\^[A-Za-z])", part)
     fit = re.compile(
         "".join("." if _CARET.fullmatch(p) else re.escape(p) for p in pieces),
@@ -243,7 +250,10 @@ def _entry(folder: Path, part: str) -> str:
         names = [entry.name for entry in os.scandir(folder) if fit.fullmatch(entry.name)]
     except (OSError, ValueError):  # a NUL in an earlier part of the URL
         names = []
-    return names[0] if len(names) == 1 else decoded
+    if len(names) == 1:
+        found.append(names[0])
+    found.append(decoded)
+    return list(dict.fromkeys(found))
 
 
 @dataclass
