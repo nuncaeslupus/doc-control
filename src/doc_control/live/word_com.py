@@ -26,6 +26,7 @@ import importlib
 import importlib.util
 import itertools
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Iterator
@@ -205,8 +206,44 @@ def local_paths(name: str, mounts: list[tuple[str, str]]) -> list[Path]:
         url = urlsplit(prefix)
         if (url.hostname or "").endswith("docs.live.net") and not url.path.strip("/"):
             parts = parts[1:]  # a personal library's URL has the account id before the path
-        found.append(Path(folder, *parts))
+        found.append(_walk(Path(folder), parts))
     return found
+
+
+#: How OneDrive spells, in the URL Word reports, characters it does not keep as they
+#: are: a comma comes back as ``^J`` ("Smith, Jane" -> "Smith^J Jane").
+ONEDRIVE_ESCAPES = {"^J": ","}
+_CARET = re.compile(r"\^[A-Za-z]")
+
+
+def _walk(folder: Path, parts: list[str]) -> Path:
+    """``folder`` joined with ``parts``, undoing OneDrive's caret escapes in a part that
+    is not there as written."""
+    here = folder
+    for part in parts:
+        here = here / _entry(here, part)
+    return here
+
+
+def _entry(folder: Path, part: str) -> str:
+    """``part`` as written when it exists or has no ``^X``; else with the known escapes
+    undone when that exists; else the one entry of ``folder`` that fits with each
+    ``^X`` as any character; else the known escapes undone."""
+    if not _CARET.search(part) or (folder / part).exists():
+        return part
+    decoded = _CARET.sub(lambda m: ONEDRIVE_ESCAPES.get(m.group(0), m.group(0)), part)
+    if (folder / decoded).exists():
+        return decoded
+    pieces = re.split(r"(\^[A-Za-z])", part)
+    fit = re.compile(
+        "".join("." if _CARET.fullmatch(p) else re.escape(p) for p in pieces),
+        re.IGNORECASE | re.DOTALL,
+    )
+    try:
+        names = [entry.name for entry in os.scandir(folder) if fit.fullmatch(entry.name)]
+    except OSError:
+        names = []
+    return names[0] if len(names) == 1 else decoded
 
 
 @dataclass
