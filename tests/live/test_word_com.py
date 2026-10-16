@@ -191,6 +191,27 @@ def test_a_onedrive_name_is_the_local_file(tmp_path: Path) -> None:
     assert adapter.is_open(doc) and not adapter.is_open(tmp_path / "b.docx")
 
 
+def test_a_onedrive_caret_escape_is_the_folder_on_disk(tmp_path: Path) -> None:
+    """OneDrive writes a comma as ``^J`` in the URL Word reports (issue #337)."""
+    books = tmp_path / "OneDrive" / "Books"
+    (books / "Smith, Jane").mkdir(parents=True)
+    (books / "A; B").mkdir()
+    (books / "x^Jy").mkdir()  # a caret in a real name wins
+    mounts = [("https://d.docs.live.net", str(tmp_path / "OneDrive"))]
+    base = "https://d.docs.live.net/0123456789abcdef/Books"
+
+    def path(rest: str) -> Path:
+        [found] = local_paths(f"{base}/{rest}", mounts)
+        return found
+
+    assert path("Smith^J Jane/draft.docx") == books / "Smith, Jane" / "draft.docx"
+    assert path("Smith%5eJ%20Jane/draft.docx") == books / "Smith, Jane" / "draft.docx"
+    assert path("smith^j jane/a.docx").parent.exists()  # Windows names ignore case
+    assert path("A^Q B/a.docx") == books / "A; B" / "a.docx"  # an escape not in the table
+    assert path("x^Jy/a.docx") == books / "x^Jy" / "a.docx"
+    assert path("Gone^J Now/a.docx") == books / "Gone, Now" / "a.docx"  # nothing there yet
+
+
 def test_probe_never_imports_pywin32(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ADAPTER_MODULES["word"] == "word_com" and word_com.adapter().app == "word"
 
