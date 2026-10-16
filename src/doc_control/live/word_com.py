@@ -241,7 +241,7 @@ def _entry(folder: Path, part: str) -> str:
     )
     try:
         names = [entry.name for entry in os.scandir(folder) if fit.fullmatch(entry.name)]
-    except OSError:
+    except (OSError, ValueError):  # a NUL in an earlier part of the URL
         names = []
     return names[0] if len(names) == 1 else decoded
 
