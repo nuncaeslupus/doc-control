@@ -193,6 +193,14 @@ class DocStore:
         Raises ``SCHEMA_INVALID`` for a bad ``config.json`` and ``INTERNAL``
         for a corrupt ``id``, before any backup is taken.
         """
+        if not doc_path.parent.is_dir():
+            # A document path whose folder is missing is a misread path (a live engine's
+            # URL mapped wrong); creating the store would plant that folder on disk.
+            raise DocControlError(
+                ErrorCode.DOC_NOT_FOUND,
+                f"no folder {doc_path.parent} for the document {doc_path.name}",
+                path=str(doc_path),
+            )
         store = cls(store_dir(doc_path, env))
         # Read and validate everything first: an error path creates nothing.
         config = store._load_config()

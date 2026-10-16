@@ -212,6 +212,21 @@ def test_a_onedrive_caret_escape_is_the_folder_on_disk(tmp_path: Path) -> None:
     assert path("Gone^J Now/a.docx") == books / "Gone, Now" / "a.docx"  # nothing there yet
 
 
+def test_a_stray_caret_folder_does_not_hide_the_real_one(tmp_path: Path) -> None:
+    """An older release left a folder named with the escape as written beside the real
+    folder; the file is in the real one, so that is where the URL points."""
+    books = tmp_path / "OneDrive" / "Books"
+    (books / "Smith^J Jane" / ".doc-control").mkdir(parents=True)
+    (books / "Smith, Jane").mkdir()
+    (books / "Smith, Jane" / "draft.docx").write_bytes(b"")
+    mounts = [("https://d.docs.live.net", str(tmp_path / "OneDrive"))]
+    base = "https://d.docs.live.net/0123456789abcdef/Books"
+    [found] = local_paths(f"{base}/Smith^J Jane/draft.docx", mounts)
+    assert found == books / "Smith, Jane" / "draft.docx"
+    [found] = local_paths(f"{base}/Smith^J Jane/other.docx", mounts)
+    assert found == books / "Smith^J Jane" / "other.docx"  # no file anywhere: as written
+
+
 def test_probe_never_imports_pywin32(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ADAPTER_MODULES["word"] == "word_com" and word_com.adapter().app == "word"
 

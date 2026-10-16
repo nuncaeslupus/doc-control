@@ -209,7 +209,7 @@ toml = [
 
 [[package]]
 name = "doc-control"
-version = "0.8.2"
+version = "0.8.3"
 source = { editable = "." }
 
 [package.optional-dependencies]

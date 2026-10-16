@@ -52,6 +52,14 @@ def test_adjacent_store_layout(tmp_path: Path) -> None:
     assert not store.log_path.exists()  # the log itself is written by T13
 
 
+def test_a_document_in_a_missing_folder_gets_no_store(tmp_path: Path) -> None:
+    """A misread path must not plant its folder on disk to hold the history."""
+    with pytest.raises(DocControlError) as err:
+        DocStore.open(tmp_path / "Smith^J Jane" / "draft.docx")
+    assert err.value.code is ErrorCode.DOC_NOT_FOUND
+    assert not (tmp_path / "Smith^J Jane").exists()
+
+
 def test_document_id_is_a_uuid_and_persists(tmp_path: Path) -> None:
     doc = make_docx(tmp_path / "Novela.docx", "Hola")
     first = DocStore.open(doc).doc_id
