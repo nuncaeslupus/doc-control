@@ -135,7 +135,9 @@ class _Setting:
 
 def test_each_setting_is_put_back_though_another_fails(no_wait: list[float]) -> None:
     app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
-    doc: Any = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app, Windows=())
+    doc: Any = _Setting(
+        ("TrackRevisions",), TrackRevisions=False, Application=app, Windows=(), FullName="a.docx"
+    )
     with pytest.raises(RuntimeError), Word(app)._as(doc, "Rev Iewer"):
         assert (app.UserName, app.UserInitials, doc.TrackRevisions) == ("Rev Iewer", "RI", True)
         raise RuntimeError("mid-edit")
@@ -143,7 +145,9 @@ def test_each_setting_is_put_back_though_another_fails(no_wait: list[float]) -> 
     assert app.Options.UseLocalUserInfo is False
 
     # Tracking that cannot be turned on (it is locked) changes nothing of the writer's.
-    doc = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app, Windows=())
+    doc = _Setting(
+        ("TrackRevisions",), TrackRevisions=False, Application=app, Windows=(), FullName="a.docx"
+    )
     doc._set = 1
     adapter = Word(app)
     with pytest.raises(com_error), adapter._as(doc, "Rev Iewer"):
@@ -279,6 +283,68 @@ def test_an_edit_leaves_read_mode_first() -> None:
     """Word refuses every edit in Read Mode, so the edit leaves it, as Edit does."""
     window = SimpleNamespace(View=SimpleNamespace(ReadingLayout=True))
     app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
-    doc: Any = _Setting(TrackRevisions=False, Application=app, Windows=[window])
+    doc: Any = _Setting(TrackRevisions=False, Application=app, Windows=[window], FullName="a.docx")
     with Word(app)._as(doc, "Rev Iewer"):
         assert window.View.ReadingLayout is False
+
+
+_KEY = ("abcdefghij", 11, 2, 0)
+_GONE = [(2, 4, "cd"), (6, 8, "gh")]
+
+
+def _shift(start: int, end: int, text: str, before: Any, after: Any) -> Any:
+    """The deletions kept after a plain write of ``text`` over ``start``-``end`` in a
+    document whose state reads ``before``, then ``after``; None when they were dropped."""
+    word: Any = Word(object())
+    doc = SimpleNamespace(FullName="a.docx")
+    word._kept = {"a.docx": (_KEY, list(_GONE))}
+    states = [before, after]
+    word._state = lambda _doc: states.pop(0)
+    with word._shifting(doc, start, end, text):
+        pass
+    return word._kept.get("a.docx")
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "text", "after", "want"),
+    [
+        # 5-5 grows by 2: the deletion after it moves, the one before stays.
+        (5, 5, "xy", ("abcdexyfghij", 13, 2, 0), [(2, 4, "cd"), (8, 10, "gh")]),
+        # A write over 9-10 that shrinks by one moves nothing before it.
+        (9, 10, "", ("abcdefghi", 10, 2, 0), [(2, 4, "cd"), (6, 8, "gh")]),
+        # Inside a deletion, at its edge, or a length Word did not write: dropped.
+        (3, 3, "x", ("x", 12, 2, 0), None),
+        (6, 6, "x", ("x", 12, 2, 0), None),
+        (8, 8, "x", ("x", 12, 2, 0), None),
+        (5, 5, "xy", ("x", 12, 2, 0), None),
+        # A tracked change or a table that came or went: dropped.
+        (5, 5, "x", ("x", 12, 3, 0), None),
+        (5, 5, "x", ("x", 12, 2, 1), None),
+    ],
+)
+def test_a_plain_write_shifts_the_kept_deletions(
+    start: int, end: int, text: str, after: Any, want: Any
+) -> None:
+    kept = _shift(start, end, text, _KEY, after)
+    if want is None:
+        assert kept is None
+    else:
+        assert kept == (after, want)
+
+
+def test_kept_deletions_go_when_the_document_was_not_as_kept() -> None:
+    assert _shift(5, 5, "x", ("other", 11, 2, 0), ("x", 12, 2, 0)) is None
+
+
+def test_a_tracked_edit_drops_the_kept_deletions() -> None:
+    """Word may fold a tracked deletion into its neighbour and leave every count alike."""
+    app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
+    doc: Any = _Setting(TrackRevisions=False, Application=app, Windows=(), FullName="a.docx")
+    word: Any = Word(app)
+    word._kept = {"a.docx": (_KEY, list(_GONE))}
+    with word._as(doc, "Rev Iewer", track=False):
+        pass
+    assert "a.docx" in word._kept
+    with word._as(doc, "Rev Iewer"):
+        pass
+    assert "a.docx" not in word._kept

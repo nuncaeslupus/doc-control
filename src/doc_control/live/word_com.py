@@ -649,7 +649,10 @@ class Word:
         delta = after[1] - kept[0][1]
         if after[2:] != kept[0][2:] or delta != _units(text) - (end - start):
             return
-        if any(s < end and e > start for s, e, _ in kept[1]):
+        edge = start == end  # an insertion at a deletion's edge may land inside it
+        if any(
+            (s <= end and e >= start) if edge else (s < end and e > start) for s, e, _ in kept[1]
+        ):
             return
         moved = [(s + delta, e + delta, t) if s >= end else (s, e, t) for s, e, t in kept[1]]
         self._kept[name] = (after, moved)
@@ -888,6 +891,10 @@ class Word:
         changed: list[tuple[Any, str, Any]] = []
         self._models.clear()  # the positions it holds are about to move
         _editable(doc)
+        if track:
+            # Word may fold a tracked deletion into one next to it, which leaves the
+            # text, the end and the counts as they were: the kept deletions go.
+            self._kept.pop(str(doc.FullName), None)
         try:
             for (owner, setting, old), new in zip(was, now, strict=True):
                 # Refused (tracking is locked, Word is busy) before anything of the
