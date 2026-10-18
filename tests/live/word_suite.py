@@ -631,6 +631,71 @@ def plain(word: Word, home: Path) -> list[str]:
     return bad
 
 
+def kept(word: Word, home: Path) -> list[str]:
+    """Plain writes around tracked deletions move the deletions doc-control keeps, so the
+    next look at the document reads no revision again, and still finds what Word holds."""
+    bad = Failures()
+    texts = ["Alpha line one.", "Middle text here.", "Gamma line three."]
+    doc = make_docx(home / "kept.docx", *texts)
+    at = [p["at"] for p in _read(doc)]
+    cut = {"op": "text.replace", "at": f"{at[1]}:0-7", "text": ""}
+    _run("doc.batch", {"doc": str(doc), "ops": [cut]})
+
+    with _opened(doc) as base:
+        live = word._doc(doc)
+        name = str(live.FullName)
+        batch = {**base, "engine": "live", "author": AUTHOR, "tracked": False}
+
+        def fresh() -> list[tuple[int, int, str]]:
+            return sorted(
+                (int(r.Range.Start), int(r.Range.End), str(r.Range.Text or ""))
+                for r in live.Content.Revisions
+                if int(r.Type) in word_com._DELETED
+            )
+
+        def where(phrase: str) -> str:
+            found: str = _run("live.select", {**base, "find_phrase": phrase})["at"]
+            return found
+
+        where("text here")
+        steps: list[tuple[str, Callable[[], dict[str, Any]]]] = [
+            (
+                "longer before",
+                lambda: {"op": "text.replace", "at": f"{where('Alpha')}:0-5", "text": "ALPHA-ONE"},
+            ),
+            (
+                "shorter after",
+                lambda: {"op": "text.replace", "at": f"{where('Gamma')}:0-10", "text": "G"},
+            ),
+            (
+                "paragraph before",
+                lambda: {"op": "para.insert", "after": where("ALPHA-ONE"), "text": "New."},
+            ),
+        ]
+        # The cache is the adapter's own: through another process (the frozen exe) only
+        # what Word holds can be checked.
+        inside = isinstance(_runner[-1], InProcess)
+        for what, op in steps:
+            _run("doc.batch", {**batch, "ops": [op()]})
+            if not inside:
+                got = _run("live.select", {**base, "find_phrase": "text here"})
+                bad.check(got["text"] == "text here.", f"{what}: past the deletion", got)
+                continue
+            held = word._kept.get(name)
+            bad.check(held is not None, f"{what}: deletions not kept")
+            if held is None:
+                continue
+            bad.check(held[1] == fresh(), f"{what}: kept deletions", held[1], fresh())
+            got = _run("live.select", {**base, "find_phrase": "text here"})
+            bad.check(got["text"] == "text here.", f"{what}: past the deletion", got)
+            bad.check(word._kept.get(name) is held, f"{what}: deletions read again")
+        _run("live.save", base)
+
+    want = ["ALPHA-ONE line one.", "New.", "text here.", "G three."]
+    bad.check(_texts(doc) == want, "text", _texts(doc))
+    return bad
+
+
 def _as_file(bad: Failures, word: Word, doc: Path, where: str) -> None:
     """The open document reads, paragraph by paragraph, as the file engine reads the file."""
     rows = _read(doc)
@@ -856,6 +921,7 @@ SCENARIOS: list[Callable[[Word, Path], list[str]]] = [
     marks,
     refused_batch,
     plain,
+    kept,
     buried,
     linked,
     named,

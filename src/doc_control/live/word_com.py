@@ -42,6 +42,10 @@ from doc_control.live.protocol import LiveUnavailable, Span
 BUSY_TIMEOUT = 5.0
 #: Seconds a reading of the document is taken as current (see ``Word._model``).
 TRUST = 0.25
+#: Seconds the tracked deletions read from Word are kept (``_deletions``): long enough for
+#: one request's reads and writes, short enough that the writer's own deletions, which
+#: Word may fold into one already there and leave every count alike, are read again.
+KEEP = 30.0
 #: RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER: Word is busy, ask again.
 _BUSY = frozenset({-2147418111, -2147417846})
 #: RPC_S_SERVER_UNAVAILABLE, RPC_S_CALL_FAILED, RPC_E_DISCONNECTED, CO_E_OBJNOTCONNECTED:
@@ -138,6 +142,15 @@ def _guard(method: _F) -> _F:
 def _units(text: str) -> int:
     """Positions ``text`` takes in Word, which counts UTF-16 units."""
     return len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def _editable(doc: Any) -> None:
+    """Out of Read Mode, where Word refuses every edit, as the writer's own Edit does. A
+    window whose view cannot be read or set is left as it is: the edit then says why."""
+    for window in doc.Windows:
+        with contextlib.suppress(Exception):
+            if window.View.ReadingLayout:
+                window.View.ReadingLayout = False
 
 
 def _clean(text: str) -> str:
@@ -285,6 +298,9 @@ class Word:
         self._word: Any = application
         self._wrote = False
         self._models: dict[str, _Model] = {}
+        #: Per document: its state (see ``_state``) and its tracked deletions in it.
+        self._kept: dict[str, tuple[tuple[str, int, int, int], list[tuple[int, int, str]]]] = {}
+        self._kept_at = 0.0  # when they were read from Word
         self._mounts: list[tuple[str, str]] | None = None
 
     # -- the application ---------------------------------------------------------
@@ -292,6 +308,7 @@ class Word:
     def _forget(self) -> None:
         self._word = self._given
         self._models.clear()
+        self._kept.clear()
 
     def _application(self, start: bool = False) -> Any:
         if self._word is not None:
@@ -407,6 +424,7 @@ class Word:
             raise LiveUnavailable(
                 f"Word opened {path.name} read-only (another window or program holds it)"
             )
+        _editable(doc)
 
     @_guard
     def dirty(self, path: Path) -> bool:
@@ -540,24 +558,14 @@ class Word:
         # ``paragraphs`` and ``selection``, which start a request, always compare.
         if cached is not None and not fresh and time.monotonic() - cached.checked < TRUST:
             return cached
-        text = self._read(doc)
-        revisions = doc.Content.Revisions
-        key = (text, int(doc.Content.End), int(revisions.Count), int(doc.Tables.Count))
+        key = self._state(doc)
+        text = key[0]
         if cached is not None and cached.key[:4] == key:
             window = doc.ActiveWindow.View.RevisionsFilter
             if cached.key[4:] == (int(window.Markup), int(window.View)):
                 cached.checked = time.monotonic()
                 return cached
-        # ponytail: every tracked change is read (7 ms each) each time the document
-        # changes; keep the list and read only the new ones if a heavily revised
-        # manuscript makes live edits slow.
-        deleted: list[tuple[int, int, str]] = []
-        if key[2]:
-            for revision in revisions:
-                if int(revision.Type) in _DELETED:
-                    rng = revision.Range
-                    deleted.append((int(rng.Start), int(rng.End), str(rng.Text or "")))
-            deleted.sort()
+        deleted = self._deletions(doc, name, key)
         # A range's text holds the deleted text only when the window shows it; the ends
         # of a deleted table's cells and rows show in every view, so they tell nothing.
         told = next((d for d in deleted if d[2].replace(_CELL_END, "")), None)
@@ -602,6 +610,69 @@ class Word:
         self._models = {name: model}
         return model
 
+    def _state(self, doc: Any) -> tuple[str, int, int, int]:
+        """What a model is kept for: the text, where it ends, and how many tracked changes
+        and tables the document holds."""
+        return (
+            self._read(doc),
+            int(doc.Content.End),
+            int(doc.Content.Revisions.Count),
+            int(doc.Tables.Count),
+        )
+
+    def _deletions(
+        self, doc: Any, name: str, key: tuple[str, int, int, int]
+    ) -> list[tuple[int, int, str]]:
+        """The tracked deletions (start, end, text), in order. Word hands them out slowly
+        (20-45 ms each in a novel: a manuscript under review takes seconds), so they are
+        read only when the document is not as they were last kept; ``_shifting`` keeps
+        them through a plain write."""
+        kept = self._kept.get(name)
+        if kept is not None and kept[0] == key and time.monotonic() - self._kept_at < KEEP:
+            return kept[1]
+        deleted: list[tuple[int, int, str]] = []
+        if key[2]:
+            for revision in doc.Content.Revisions:
+                if int(revision.Type) in _DELETED:
+                    rng = revision.Range
+                    deleted.append((int(rng.Start), int(rng.End), str(rng.Text or "")))
+            deleted.sort()
+        self._kept = {name: (key, deleted)}
+        self._kept_at = time.monotonic()
+        return deleted
+
+    @contextmanager
+    def _shifting(self, doc: Any, start: int, end: int, text: str) -> Iterator[None]:
+        """A plain write of ``text`` over ``start``-``end``: the tracked deletions after it
+        move by what it adds, and none other changes, so the kept ones are moved rather than
+        read again. Anything else (a deletion inside the range or at its edge, where the
+        new text may land inside it, a length Word did not write as asked) drops them. They
+        only spare a read: a Word too busy to be read around the write drops them too,
+        rather than fail a write that was made."""
+        name = str(doc.FullName)
+        kept = self._kept.pop(name, None)
+        before = self._quietly(doc) if kept else None
+        yield
+        if kept is None or before != kept[0]:
+            return
+        after = self._quietly(doc)
+        if after is None:
+            return
+        delta = after[1] - kept[0][1]
+        if after[2:] != kept[0][2:] or delta != _units(text) - (end - start):
+            return
+        if any(s <= end and e >= start for s, e, _ in kept[1]):
+            return
+        moved = [(s + delta, e + delta, t) if s >= end else (s, e, t) for s, e, t in kept[1]]
+        self._kept[name] = (after, moved)
+
+    def _quietly(self, doc: Any) -> tuple[str, int, int, int] | None:
+        """``_state``, or None when Word cannot be read just now."""
+        try:
+            return self._state(doc)
+        except Exception:
+            return None
+
     def _container(self, doc: Any, model: _Model, inside: Any) -> Any:
         """The container of the paragraph last added to ``model``, whose Word paragraph is
         in ``inside``: deleted marks hidden, a paragraph before a table reads as one with
@@ -644,7 +715,10 @@ class Word:
         """A Word range over ``span`` and the text it covers, deletions left out."""
         for fresh in (False, True):
             if fresh:
+                # The writer's own edit (a deletion Word folded into its neighbour) can
+                # leave the key as it was: read everything again.
                 self._models.clear()
+                self._kept.pop(str(doc.FullName), None)
             model = self._model(doc, fresh)
             rng, text = self._spanned(doc, model, span)
             start, end = int(rng.Start), int(rng.End)
@@ -835,6 +909,11 @@ class Word:
         now = [track, True, author, _initials(author)]
         changed: list[tuple[Any, str, Any]] = []
         self._models.clear()  # the positions it holds are about to move
+        _editable(doc)
+        if track:
+            # Word may fold a tracked deletion into one next to it, which leaves the
+            # text, the end and the counts as they were: the kept deletions go.
+            self._kept.pop(str(doc.FullName), None)
         try:
             for (owner, setting, old), new in zip(was, now, strict=True):
                 # Refused (tracking is locked, Word is busy) before anything of the
@@ -888,7 +967,9 @@ class Word:
     ) -> None:
         doc = self._doc(path)
         rng = self._edited(doc, span, replace=True)
-        with self._as(doc, author, track=tracked):
+        start, end = int(rng.Start), int(rng.End)
+        kept = contextlib.nullcontext() if tracked else self._shifting(doc, start, end, text)
+        with self._as(doc, author, track=tracked), kept:
             if text:
                 rng.Text = text
             elif int(rng.End) > int(rng.Start):  # Delete on no text takes the next character
@@ -904,7 +985,9 @@ class Word:
             raise LiveUnavailable(f"the open document has no paragraph {after + 1}")
         self._range(doc, Span(max(after, 0), max(after, 0)))  # the model is the document's
         low, high, _ = self._gaps(doc, self._model(doc), max(after, 0))
-        with self._as(doc, author, track=tracked):
+        at = low if after < 0 else high
+        kept = contextlib.nullcontext() if tracked else self._shifting(doc, at, at, "\r" + text)
+        with self._as(doc, author, track=tracked), kept:
             if after < 0:
                 doc.Range(low, low).InsertAfter(text + "\r")
             else:
@@ -921,6 +1004,7 @@ class Word:
         doc = self._doc(path)
         self._wrote = True
         self._models.pop(str(doc.FullName), None)
+        self._kept.pop(str(doc.FullName), None)
         doc.Close(_NO_SAVE)
 
 
