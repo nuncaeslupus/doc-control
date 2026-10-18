@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -134,7 +135,7 @@ class _Setting:
 
 def test_each_setting_is_put_back_though_another_fails(no_wait: list[float]) -> None:
     app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
-    doc: Any = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app)
+    doc: Any = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app, Windows=())
     with pytest.raises(RuntimeError), Word(app)._as(doc, "Rev Iewer"):
         assert (app.UserName, app.UserInitials, doc.TrackRevisions) == ("Rev Iewer", "RI", True)
         raise RuntimeError("mid-edit")
@@ -142,7 +143,7 @@ def test_each_setting_is_put_back_though_another_fails(no_wait: list[float]) -> 
     assert app.Options.UseLocalUserInfo is False
 
     # Tracking that cannot be turned on (it is locked) changes nothing of the writer's.
-    doc = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app)
+    doc = _Setting(("TrackRevisions",), TrackRevisions=False, Application=app, Windows=())
     doc._set = 1
     adapter = Word(app)
     with pytest.raises(com_error), adapter._as(doc, "Rev Iewer"):
@@ -272,3 +273,12 @@ def test_word_error_when_frozen_names_no_pip(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.delattr(word_com.sys, "frozen")
     with pytest.raises(LiveUnavailable, match="pip install"):
         Word()._application()
+
+
+def test_an_edit_leaves_read_mode_first() -> None:
+    """Word refuses every edit in Read Mode, so the edit leaves it, as Edit does."""
+    window = SimpleNamespace(View=SimpleNamespace(ReadingLayout=True))
+    app: Any = _Setting(UserName="Ana", UserInitials="A", Options=_Setting(UseLocalUserInfo=False))
+    doc: Any = _Setting(TrackRevisions=False, Application=app, Windows=[window])
+    with Word(app)._as(doc, "Rev Iewer"):
+        assert window.View.ReadingLayout is False
