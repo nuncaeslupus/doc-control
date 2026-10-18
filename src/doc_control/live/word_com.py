@@ -699,7 +699,10 @@ class Word:
         """A Word range over ``span`` and the text it covers, deletions left out."""
         for fresh in (False, True):
             if fresh:
+                # The writer's own edit (a deletion Word folded into its neighbour) can
+                # leave the key as it was: read everything again.
                 self._models.clear()
+                self._kept.pop(str(doc.FullName), None)
             model = self._model(doc, fresh)
             rng, text = self._spanned(doc, model, span)
             start, end = int(rng.Start), int(rng.End)

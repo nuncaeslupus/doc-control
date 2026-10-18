@@ -348,3 +348,23 @@ def test_a_tracked_edit_drops_the_kept_deletions() -> None:
     with word._as(doc, "Rev Iewer"):
         pass
     assert "a.docx" not in word._kept
+
+
+def test_a_second_look_reads_the_deletions_again() -> None:
+    """A writer's deletion Word folds into its neighbour leaves the key alike: when a range
+    does not read as its model says, the retry drops the kept deletions too."""
+    word: Any = Word(object())
+    doc = SimpleNamespace(FullName="a.docx")
+    word._kept = {"a.docx": (_KEY, list(_GONE))}
+    kept_at: list[bool] = []
+
+    def model(_doc: Any, fresh: bool = False) -> Any:
+        kept_at.append("a.docx" in word._kept)
+        return SimpleNamespace(hidden=True, deletions=[])
+
+    word._model = model
+    word._spanned = lambda _doc, _model, _span: (SimpleNamespace(Start=0, End=3), "abc")
+    word._read = lambda _doc, a, b: "xyz"
+    with pytest.raises(LiveUnavailable):
+        word._range(doc, SimpleNamespace(start=0))
+    assert kept_at == [True, False]
