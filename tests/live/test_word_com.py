@@ -353,6 +353,18 @@ def test_a_word_too_busy_to_read_after_the_write_drops_them_quietly() -> None:
     assert "a.docx" not in word._kept
 
 
+def test_kept_deletions_are_read_again_after_a_while() -> None:
+    """The writer's own deletion Word folds into one already there leaves the key alike."""
+    word: Any = Word(object())
+    doc = SimpleNamespace(FullName="a.docx")
+    key = ("abcdefghij", 11, 0, 0)
+    word._kept = {"a.docx": (key, list(_GONE))}
+    word._kept_at = word_com.time.monotonic()
+    assert word._deletions(doc, "a.docx", key) == _GONE
+    word._kept_at -= word_com.KEEP
+    assert word._deletions(doc, "a.docx", key) == []
+
+
 def test_kept_deletions_go_when_the_document_was_not_as_kept() -> None:
     assert _shift(5, 5, "x", ("other", 11, 2, 0), ("x", 12, 2, 0)) is None
 

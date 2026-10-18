@@ -42,6 +42,10 @@ from doc_control.live.protocol import LiveUnavailable, Span
 BUSY_TIMEOUT = 5.0
 #: Seconds a reading of the document is taken as current (see ``Word._model``).
 TRUST = 0.25
+#: Seconds the tracked deletions read from Word are kept (``_deletions``): long enough for
+#: one request's reads and writes, short enough that the writer's own deletions, which
+#: Word may fold into one already there and leave every count alike, are read again.
+KEEP = 30.0
 #: RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER: Word is busy, ask again.
 _BUSY = frozenset({-2147418111, -2147417846})
 #: RPC_S_SERVER_UNAVAILABLE, RPC_S_CALL_FAILED, RPC_E_DISCONNECTED, CO_E_OBJNOTCONNECTED:
@@ -296,6 +300,7 @@ class Word:
         self._models: dict[str, _Model] = {}
         #: Per document: its state (see ``_state``) and its tracked deletions in it.
         self._kept: dict[str, tuple[tuple[str, int, int, int], list[tuple[int, int, str]]]] = {}
+        self._kept_at = 0.0  # when they were read from Word
         self._mounts: list[tuple[str, str]] | None = None
 
     # -- the application ---------------------------------------------------------
@@ -623,7 +628,7 @@ class Word:
         read only when the document is not as they were last kept; ``_shifting`` keeps
         them through a plain write."""
         kept = self._kept.get(name)
-        if kept is not None and kept[0] == key:
+        if kept is not None and kept[0] == key and time.monotonic() - self._kept_at < KEEP:
             return kept[1]
         deleted: list[tuple[int, int, str]] = []
         if key[2]:
@@ -633,6 +638,7 @@ class Word:
                     deleted.append((int(rng.Start), int(rng.End), str(rng.Text or "")))
             deleted.sort()
         self._kept = {name: (key, deleted)}
+        self._kept_at = time.monotonic()
         return deleted
 
     @contextmanager
