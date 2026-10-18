@@ -141,10 +141,12 @@ def _units(text: str) -> int:
 
 
 def _editable(doc: Any) -> None:
-    """Out of Read Mode, where Word refuses every edit, as the writer's own Edit does."""
+    """Out of Read Mode, where Word refuses every edit, as the writer's own Edit does. A
+    window whose view cannot be read or set is left as it is: the edit then says why."""
     for window in doc.Windows:
-        if window.View.ReadingLayout:
-            window.View.ReadingLayout = False
+        with contextlib.suppress(Exception):
+            if window.View.ReadingLayout:
+                window.View.ReadingLayout = False
 
 
 def _clean(text: str) -> str:

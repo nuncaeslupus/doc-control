@@ -672,8 +672,15 @@ def kept(word: Word, home: Path) -> list[str]:
                 lambda: {"op": "para.insert", "after": where("ALPHA-ONE"), "text": "New."},
             ),
         ]
+        # The cache is the adapter's own: through another process (the frozen exe) only
+        # what Word holds can be checked.
+        inside = isinstance(_runner[-1], InProcess)
         for what, op in steps:
             _run("doc.batch", {**batch, "ops": [op()]})
+            if not inside:
+                got = _run("live.select", {**base, "find_phrase": "text here"})
+                bad.check(got["text"] == "text here.", f"{what}: past the deletion", got)
+                continue
             held = word._kept.get(name)
             bad.check(held is not None, f"{what}: deletions not kept")
             if held is None:
