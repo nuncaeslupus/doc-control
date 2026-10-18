@@ -637,25 +637,33 @@ class Word:
     def _shifting(self, doc: Any, start: int, end: int, text: str) -> Iterator[None]:
         """A plain write of ``text`` over ``start``-``end``: the tracked deletions after it
         move by what it adds, and none other changes, so the kept ones are moved rather than
-        read again. Anything else (a deletion inside the range, a length Word did not
-        write as asked) drops them."""
+        read again. Anything else (a deletion inside the range or at its edge, where the
+        new text may land inside it, a length Word did not write as asked) drops them. They
+        only spare a read: a Word too busy to be read around the write drops them too,
+        rather than fail a write that was made."""
         name = str(doc.FullName)
         kept = self._kept.pop(name, None)
-        before = self._state(doc) if kept else None
+        before = self._quietly(doc) if kept else None
         yield
         if kept is None or before != kept[0]:
             return
-        after = self._state(doc)
+        after = self._quietly(doc)
+        if after is None:
+            return
         delta = after[1] - kept[0][1]
         if after[2:] != kept[0][2:] or delta != _units(text) - (end - start):
             return
-        edge = start == end  # an insertion at a deletion's edge may land inside it
-        if any(
-            (s <= end and e >= start) if edge else (s < end and e > start) for s, e, _ in kept[1]
-        ):
+        if any(s <= end and e >= start for s, e, _ in kept[1]):
             return
         moved = [(s + delta, e + delta, t) if s >= end else (s, e, t) for s, e, t in kept[1]]
         self._kept[name] = (after, moved)
+
+    def _quietly(self, doc: Any) -> tuple[str, int, int, int] | None:
+        """``_state``, or None when Word cannot be read just now."""
+        try:
+            return self._state(doc)
+        except Exception:
+            return None
 
     def _container(self, doc: Any, model: _Model, inside: Any) -> Any:
         """The container of the paragraph last added to ``model``, whose Word paragraph is

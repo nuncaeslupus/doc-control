@@ -316,6 +316,9 @@ def _shift(start: int, end: int, text: str, before: Any, after: Any) -> Any:
         (3, 3, "x", ("x", 12, 2, 0), None),
         (6, 6, "x", ("x", 12, 2, 0), None),
         (8, 8, "x", ("x", 12, 2, 0), None),
+        # A replacement next to a deletion, on either side: its text may land inside.
+        (4, 5, "xy", ("x", 12, 2, 0), None),
+        (5, 6, "xy", ("x", 12, 2, 0), None),
         (5, 5, "xy", ("x", 12, 2, 0), None),
         # A tracked change or a table that came or went: dropped.
         (5, 5, "x", ("x", 12, 3, 0), None),
@@ -330,6 +333,24 @@ def test_a_plain_write_shifts_the_kept_deletions(
         assert kept is None
     else:
         assert kept == (after, want)
+
+
+def test_a_word_too_busy_to_read_after_the_write_drops_them_quietly() -> None:
+    """The write was made: a failed read after it must not report it as failed."""
+    word: Any = Word(object())
+    doc = SimpleNamespace(FullName="a.docx")
+    word._kept = {"a.docx": (_KEY, list(_GONE))}
+    states: list[Any] = [_KEY]
+
+    def state(_doc: Any) -> Any:
+        if not states:
+            raise RuntimeError("Call was rejected by callee.")
+        return states.pop(0)
+
+    word._state = state
+    with word._shifting(doc, 5, 5, "x"):
+        pass
+    assert "a.docx" not in word._kept
 
 
 def test_kept_deletions_go_when_the_document_was_not_as_kept() -> None:
