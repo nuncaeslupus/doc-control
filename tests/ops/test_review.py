@@ -94,11 +94,31 @@ COMMENTS_EXTENDED = (
 )
 
 
+OFFICE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml"
+#: The comment parts' content types and relationships: without them a comment reference
+#: points nowhere and LibreOffice refuses the file.
+PARTS_TYPES = CONTENT_TYPES.replace(
+    "</Types>",
+    f'<Override PartName="/word/comments.xml" ContentType="{WORD}.comments+xml"/>'
+    f'<Override PartName="/word/commentsExtended.xml" ContentType="{WORD}.commentsExtended+xml"/>'
+    "</Types>",
+)
+DOCUMENT_RELS = (
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    f'<Relationship Id="rId1" Type="{OFFICE}/comments" Target="comments.xml"/>'
+    '<Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/'
+    'commentsExtended" Target="commentsExtended.xml"/>'
+    "</Relationships>"
+)
+
+
 def reviewed(path: Path, body: list[str] = BODY, comments: str = COMMENTS) -> Path:
     document = f"<w:document {NS}><w:body>{''.join(body)}</w:body></w:document>"
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("[Content_Types].xml", CONTENT_TYPES)
+        zf.writestr("[Content_Types].xml", PARTS_TYPES)
         zf.writestr("_rels/.rels", RELS)
+        zf.writestr("word/_rels/document.xml.rels", DOCUMENT_RELS)
         zf.writestr("word/document.xml", document)
         zf.writestr("word/comments.xml", comments)
         zf.writestr("word/commentsExtended.xml", COMMENTS_EXTENDED)
