@@ -145,6 +145,7 @@ OPERATION_MODULES: dict[str, str] = {
     "revision.accept": "direct",
     "revision.list": "read",
     "revision.reject": "direct",
+    "review.list": "read",
     "section.list": "sections",
     "server.capabilities": "meta",
     "server.help": "meta",

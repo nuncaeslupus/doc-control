@@ -115,7 +115,7 @@ Returns (`result`):
 
 ## `comment.list` (read)
 
-List the comments in thread order (each root comment, then its replies) with id, author, date, text (clipped at 1,000 characters), resolved state and the address where each starts, including comments in notes and headers. Filter with `resolved` (true or false) and `author` (exact). Use the ids to reply or resolve with doc.batch (comment.reply, comment.resolve); use revision.list for tracked changes instead. Read-only; paged: a reply is capped at about 8,000 bytes (limit up to 1,000), continue with `cursor` set to the reply's `next`.
+List the comments in thread order (each root comment, then its replies) with id, author, date, text (clipped at 1,000 characters), quote (the text the comment covers, clipped at 200), resolved state and the address where each starts, including comments in notes and headers. Filter with `resolved` (true or false) and `author` (exact). Use the ids to reply or resolve with doc.batch (comment.reply, comment.resolve); use revision.list for tracked changes instead, review.list for comments and changes together by paragraph. Read-only; paged: a reply is capped at about 8,000 bytes (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1045,6 +1045,25 @@ Returns (`result`):
 | `skipped` | array | yes | Proposed edits left out, with why. |
 | `batch` | object | yes | The doc.batch request to apply: pass it as is. |
 
+## `review.list` (read)
+
+Read a reviewed document in one go: the body's comments and tracked insertions and deletions grouped by paragraph, in document order. Each paragraph gives its address, its text as it reads now, its comment threads (id, author, date, text, quote: the text the comment covers, resolved, replies) and its changes: a deletion and an insertion by one author right next to each other are one `replace` with `old`, `new` and both `ids`, others a lone `insert` or `delete`. `totals` counts them by kind and by author. `author` keeps that author's changes and the threads they wrote in. Use the ids with revision.accept / revision.reject (both of a replace) and doc.batch comment.reply / comment.resolve; revision.list adds formatting, moves, table changes and notes. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000 paragraphs), continue with `cursor` set to the reply's `next`.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `doc` | string | yes | Path to the .docx. |
+| `author` | string |  | Only this author's. |
+| `limit` | integer |  | Most items to return; a response is also capped at about 8,000 bytes. |
+| `cursor` | string |  | The `next` value of the previous response, to continue the list. |
+
+Returns (`result`):
+
+| Key | Type | Always | Meaning |
+|---|---|---|---|
+| `total` | integer | yes | Paragraphs with comments or changes, across pages. |
+| `totals` | object | yes | What the whole list holds (every page repeats it). |
+| `paragraphs` | array | yes | This page of paragraphs, in document order. |
+
 ## `revision.accept` (write)
 
 Accept tracked changes, making them plain text: by `ids` (from revision.list), by revision `author`, in a paragraph or run (`at`, p3#a1b2c3d4..p9#e5f6a7b8), or `all`. Not itself a tracked change: on the file engine the file is backed up first and the write is logged for history.undo; dry_run previews counts; expect.sha256 refuses a changed file. Use revision.reject to drop changes instead, doc.batch to accept and reject in one write. Returns counts and the revisions resolved.
@@ -1080,7 +1099,7 @@ Returns (`result`):
 
 ## `revision.list` (read)
 
-List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, type, author, date, paragraph address and text (clipped at 200 characters). Filter by `author` or `type`; stories notes or headers adds their changes. Use the ids with revision.accept or revision.reject; doc.stats counts changes by type. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
+List the tracked changes (insertions, deletions, moves, formatting, table rows and cells) in document order, each with id, type, author, date, paragraph address and text (clipped at 200 characters). A deletion and an insertion by one author right next to each other are one replacement: the insertion names the deletion in `replaces`, the deletion the insertion in `replaced_by`. Filter by `author` or `type`; stories notes or headers adds their changes. Use the ids with revision.accept or revision.reject (both halves to resolve a replacement); doc.stats counts changes by type, review.list groups changes and comments by paragraph. Read-only; paged: about 8,000 bytes per reply (limit up to 1,000), continue with `cursor` set to the reply's `next`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|

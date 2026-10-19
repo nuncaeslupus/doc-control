@@ -94,6 +94,16 @@ with api.open("Novela.docx") as doc:
     chapters = doc.run("doc.segment", {"unit": "chapters"})["chapters"]
 ```
 
+A document back from a reviewer reads in one call: `review.list` gives each paragraph with
+comments or tracked changes, in order, with its text, its comment threads (each with the
+text it covers, `quote`) and its changes, a deletion and insertion side by side shown as one
+replacement (`old`, `new`), plus totals by author. `comment.list` and `revision.list` give
+the same facts as flat lists.
+
+```bash
+doc-control review.list --json '{"doc": "Novela.docx", "author": "Editor"}'
+```
+
 Recipes propose batches of fixes (Spanish typography, quotes, dashes, spacing, empty
 paragraphs and more): `recipe.list`, then `recipe.run` returns a batch to review and apply.
 

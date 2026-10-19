@@ -1,5 +1,5 @@
 """Read operations: `doc.info`, `doc.outline`, `doc.stats`, `para.get`, `style.list`, `style.get`,
-`comment.list`, `revision.list`.
+`comment.list`, `revision.list`, `review.list`.
 
 None of them writes: the document is opened, read and closed. Lists are capped at
 about 8,000 bytes and continue with `next` (see :mod:`doc_control.ops.paging`).
@@ -25,8 +25,10 @@ from doc_control.inprocess import budget
 from doc_control.model.address import parse_range
 from doc_control.model.annotations import (
     REVISION_TYPES,
+    Comment,
     read_comments,
     read_revisions,
+    replacements,
 )
 from doc_control.model.document import Document
 from doc_control.model.format import para_format, run_format
@@ -50,6 +52,7 @@ _DOC: dict[str, Any] = {"type": "string", "minLength": 1, "description": "Path t
 _OUTLINE_TEXT = 160
 _COMMENT_TEXT = 1000
 _REVISION_TEXT = 200
+_QUOTE_TEXT = 200
 _FONT_LIMIT = 20
 _STYLE_TYPES = ["paragraph", "character", "table", "numbering"]
 
@@ -712,6 +715,11 @@ _COMMENT_LIST_OUTPUT = outputs.result(
             date=outputs.nullable("string", "Date (ISO 8601)."),
             text=outputs.string("Text, clipped at 1,000 characters."),
             truncated=outputs.boolean("True when text was clipped."),
+            quote=outputs.string(
+                "Text its range covers as the document reads now (insertions in, deletions "
+                'out), clipped at 200 characters; "" for a comment on a point.'
+            ),
+            quote_truncated=outputs.boolean("True when quote was clipped."),
             resolved=outputs.boolean("Marked done."),
             reply_to=outputs.string("Id of the comment it answers."),
             at=outputs.string("Address of the paragraph where its range starts."),
@@ -721,15 +729,24 @@ _COMMENT_LIST_OUTPUT = outputs.result(
 )
 
 
+def _put_quote(row: dict[str, Any], comment: Comment) -> None:
+    quote, clipped = _clip(comment.quote, _QUOTE_TEXT)
+    row["quote"] = quote
+    if clipped:
+        row["quote_truncated"] = True
+
+
 @operation(
     "comment.list",
     "read",
     (
         "List the comments in thread order (each root comment, then its replies) with id, "
-        "author, date, text (clipped at 1,000 characters), resolved state and the address "
-        "where each starts, including comments in notes and headers. Filter with `resolved` "
-        "(true or false) and `author` (exact). Use the ids to reply or resolve with doc.batch "
-        "(comment.reply, comment.resolve); use revision.list for tracked changes instead. "
+        "author, date, text (clipped at 1,000 characters), quote (the text the comment "
+        "covers, clipped at 200), resolved state and the address where each starts, "
+        "including comments in notes and headers. Filter with `resolved` (true or false) and "
+        "`author` (exact). Use the ids to reply or resolve with doc.batch (comment.reply, "
+        "comment.resolve); use revision.list for tracked changes instead, review.list for "
+        "comments and changes together by paragraph. "
         "Read-only; paged: a reply is capped at about 8,000 bytes (limit up to 1,000), "
         "continue with `cursor` set to the reply's `next`."
     ),
@@ -757,6 +774,7 @@ def comments_list(request: dict[str, Any]) -> Reply:
         }
         if clipped:
             row["truncated"] = True
+        _put_quote(row, c)
         if c.reply_to is not None:
             row["reply_to"] = c.reply_to
         if c.at is not None:
@@ -781,6 +799,13 @@ _REVISION_LIST_OUTPUT = outputs.result(
             at=outputs.string("Address of its paragraph."),
             text=outputs.string("Text it inserts or deletes, clipped at 200 characters."),
             truncated=outputs.boolean("True when text was clipped."),
+            replaces=outputs.string(
+                "On an insertion: id of the deletion it replaces (same author, right next to it)."
+            ),
+            replaced_by=outputs.string(
+                "On a deletion: id of the insertion that replaces it (same author, right next "
+                "to it)."
+            ),
             story=outputs.string("footnote, endnote, header or footer when not in the body."),
         ),
     ),
@@ -793,9 +818,13 @@ _REVISION_LIST_OUTPUT = outputs.result(
     (
         "List the tracked changes (insertions, deletions, moves, formatting, table rows and "
         "cells) in document order, each with id, type, author, date, paragraph address and "
-        "text (clipped at 200 characters). Filter by `author` or `type`; stories notes or "
-        "headers adds their changes. Use the ids with revision.accept or revision.reject; "
-        "doc.stats counts changes by type. Read-only; paged: about 8,000 bytes per reply "
+        "text (clipped at 200 characters). A deletion and an insertion by one author right "
+        "next to each other are one replacement: the insertion names the deletion in "
+        "`replaces`, the deletion the insertion in `replaced_by`. Filter by `author` or "
+        "`type`; stories notes or headers adds their changes. Use the ids with "
+        "revision.accept or revision.reject (both halves to resolve a replacement); "
+        "doc.stats counts changes by type, review.list groups changes and comments by "
+        "paragraph. Read-only; paged: about 8,000 bytes per reply "
         "(limit up to 1,000), continue with `cursor` set to the reply's `next`."
     ),
     _list_schema(
@@ -818,6 +847,7 @@ def revisions_list(request: dict[str, Any]) -> Reply:
     others = tuple(k for k in kinds if k != "body")
     for story in list_stories(doc.pkg, others) if others else []:
         found += [(r, story.kind) for r in read_revisions(doc.story_view(story.key))]
+    pairs = replacements([r for r, _ in found])
     rows: list[dict[str, Any]] = []
     for r, story_kind in found:
         if "author" in request and r.author != request["author"]:
@@ -836,10 +866,199 @@ def revisions_list(request: dict[str, Any]) -> Reply:
             row["text"] = text
         if clipped:
             row["truncated"] = True
+        if (r.at, r.id) in pairs:
+            row["replaces" if r.type == "insert" else "replaced_by"] = pairs[r.at, r.id]
         if story_kind:
             row["story"] = story_kind
         rows.append(row)
     return paged("revision.list", doc, request, "revisions", rows)
+
+
+# -- review ----------------------------------------------------------------
+
+_REVIEW_KINDS = ("comments", "insert", "delete", "replace")
+_REVIEW_COUNTS = {
+    "comments": outputs.integer("Comments, replies included."),
+    "insert": outputs.integer("Lone insertions."),
+    "delete": outputs.integer("Lone deletions."),
+    "replace": outputs.integer("Replacements (a deletion and an insertion together)."),
+}
+_REVIEW_REPLY = outputs.obj(
+    "A reply.",
+    id=outputs.string("Comment id."),
+    author=outputs.string("Author."),
+    date=outputs.nullable("string", "Date (ISO 8601)."),
+    text=outputs.string("Text, clipped at 1,000 characters."),
+    truncated=outputs.boolean("True when text was clipped."),
+    resolved=outputs.boolean("Marked done."),
+)
+_REVIEW_OUTPUT = outputs.result(
+    ("total", "totals", "paragraphs"),
+    total=outputs.integer("Paragraphs with comments or changes, across pages."),
+    totals=outputs.obj(
+        "What the whole list holds (every page repeats it).",
+        **_REVIEW_COUNTS,
+        by_author=outputs.mapping("Author -> the same four counts for that author."),
+    ),
+    paragraphs=outputs.arr(
+        "This page of paragraphs, in document order.",
+        outputs.obj(
+            "A paragraph with comments or tracked changes.",
+            at=outputs.ADDRESS,
+            text=outputs.string(
+                "Its text as it reads now (insertions in, deletions out), clipped at 1,000 "
+                "characters."
+            ),
+            truncated=outputs.boolean("True when text was clipped."),
+            comments=outputs.arr(
+                "Comment threads whose range starts here (present when any).",
+                outputs.obj(
+                    "A comment thread's root.",
+                    id=outputs.string("Comment id."),
+                    author=outputs.string("Author."),
+                    date=outputs.nullable("string", "Date (ISO 8601)."),
+                    text=outputs.string("Text, clipped at 1,000 characters."),
+                    truncated=outputs.boolean("True when text was clipped."),
+                    quote=outputs.string(
+                        'Text the comment covers, clipped at 200 characters; "" on a point.'
+                    ),
+                    quote_truncated=outputs.boolean("True when quote was clipped."),
+                    resolved=outputs.boolean("Marked done."),
+                    replies=outputs.arr("Its replies, in order (present when any).", _REVIEW_REPLY),
+                ),
+            ),
+            changes=outputs.arr(
+                "Tracked insertions and deletions here, in text order (present when any).",
+                outputs.obj(
+                    "A change.",
+                    type=outputs.string("insert, delete or replace."),
+                    id=outputs.string("Revision id (insert, delete)."),
+                    ids=outputs.strings("Revision ids of a replace: [deletion, insertion]."),
+                    author=outputs.string("Author."),
+                    date=outputs.nullable("string", "Date (ISO 8601)."),
+                    text=outputs.string("Text inserted or deleted (insert, delete)."),
+                    old=outputs.string("Text deleted (replace)."),
+                    new=outputs.string("Text inserted (replace)."),
+                    truncated=outputs.boolean("True when a text was clipped at 200 characters."),
+                ),
+            ),
+        ),
+    ),
+)
+
+
+@operation(
+    "review.list",
+    "read",
+    (
+        "Read a reviewed document in one go: the body's comments and tracked insertions and "
+        "deletions grouped by paragraph, in document order. Each paragraph gives its address, "
+        "its text as it reads now, its comment threads (id, author, date, text, quote: the "
+        "text the comment covers, resolved, replies) and its changes: a deletion and an "
+        "insertion by one author right next to each other are one `replace` with `old`, "
+        "`new` and both `ids`, others a lone `insert` or `delete`. `totals` counts them by "
+        "kind and by author. `author` keeps that author's changes and the threads they wrote "
+        "in. Use the ids with revision.accept / revision.reject (both of a replace) and "
+        "doc.batch comment.reply / comment.resolve; revision.list adds formatting, moves, "
+        "table changes and notes. Read-only; paged: about 8,000 bytes per reply (limit up "
+        "to 1,000 paragraphs), continue with `cursor` set to the reply's `next`."
+    ),
+    _list_schema(
+        author={"type": "string", "minLength": 1, "description": "Only this author's."},
+    ),
+    output=_REVIEW_OUTPUT,
+)
+def review_list(request: dict[str, Any]) -> Reply:
+    doc = Document(request["doc"])
+    author = request.get("author")
+    numbers = {str(p.address): i for i, p in enumerate(doc.index.paragraphs)}
+    groups: dict[int, dict[str, Any]] = {}
+    totals: dict[str, Any] = dict.fromkeys(_REVIEW_KINDS, 0)
+    by_author: dict[str, dict[str, int]] = {}
+
+    def count(who: str, kind: str) -> None:
+        totals[kind] += 1
+        by_author.setdefault(who, dict.fromkeys(_REVIEW_KINDS, 0))[kind] += 1
+
+    def group(at: str) -> dict[str, Any] | None:
+        if at not in numbers:
+            return None
+        return groups.setdefault(numbers[at], {"at": at})
+
+    threads: dict[str, list[Comment]] = {}  # root id -> the root, then its replies
+    root_of: dict[str, str] = {}
+    for c in read_comments(doc):
+        root = root_of.get(c.reply_to, c.reply_to) if c.reply_to else None
+        if root is None or root not in threads:
+            root = c.id
+        root_of[c.id] = root
+        threads.setdefault(root, []).append(c)
+    for thread in threads.values():
+        if author is not None and all(c.author != author for c in thread):
+            continue
+        # a thread goes where its root's range starts; one in a note or header is left out
+        place = group(thread[0].at or "") if thread[0].story is None else None
+        if place is None:
+            continue
+        row = _review_comment(thread[0])
+        _put_quote(row, thread[0])
+        row["resolved"] = thread[0].resolved
+        if len(thread) > 1:
+            row["replies"] = [{**_review_comment(c), "resolved": c.resolved} for c in thread[1:]]
+        place.setdefault("comments", []).append(row)
+        for c in thread:
+            count(c.author, "comments")
+
+    revisions = read_revisions(doc)
+    pairs = replacements(revisions)
+    by_key = {(r.at, r.id): r for r in revisions}
+    done: set[tuple[str, str]] = set()
+    for r in revisions:
+        key = (r.at, r.id)
+        if r.type not in ("insert", "delete") or key in done:
+            continue
+        if author is not None and r.author != author:
+            continue
+        place = group(r.at)
+        if place is None:
+            continue
+        change: dict[str, Any]
+        if key in pairs:
+            other = by_key[r.at, pairs[key]]
+            done.add((r.at, other.id))
+            gone, added = (r, other) if r.type == "delete" else (other, r)
+            old, old_clipped = _clip(gone.text, _REVISION_TEXT)
+            new, new_clipped = _clip(added.text, _REVISION_TEXT)
+            change = {"type": "replace", "ids": [gone.id, added.id], "author": r.author}
+            change.update(date=r.date, old=old, new=new)
+            clipped = old_clipped or new_clipped
+            kind = "replace"
+        else:
+            text, clipped = _clip(r.text, _REVISION_TEXT)
+            change = {"type": r.type, "id": r.id, "author": r.author, "date": r.date, "text": text}
+            kind = r.type
+        if clipped:
+            change["truncated"] = True
+        place.setdefault("changes", []).append(change)
+        count(r.author, kind)
+
+    rows: list[dict[str, Any]] = []
+    for i in sorted(groups):
+        text, clipped = _clip(doc.index.paragraphs[i].text, _COMMENT_TEXT)
+        head: dict[str, Any] = {"at": groups[i]["at"], "text": text}
+        if clipped:
+            head["truncated"] = True
+        rows.append({**head, **{k: v for k, v in groups[i].items() if k != "at"}})
+    totals["by_author"] = by_author
+    return paged("review.list", doc, request, "paragraphs", rows, {"totals": totals})
+
+
+def _review_comment(c: Comment) -> dict[str, Any]:
+    text, clipped = _clip(c.text, _COMMENT_TEXT)
+    row: dict[str, Any] = {"id": c.id, "author": c.author, "date": c.date, "text": text}
+    if clipped:
+        row["truncated"] = True
+    return row
 
 
 # Layout facts register themselves on the hooks above; operations loaded one at a time
