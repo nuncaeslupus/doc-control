@@ -287,13 +287,21 @@ def _run_live(request: dict[str, Any], recipe: dict[str, Any]) -> Reply:
     texts = guarded(adapter.paragraphs, path)
     paragraphs = [(Address(n + 1, fingerprint(t)), t) for n, t in enumerate(texts) if t]
     proposal = propose(recipe, paragraphs)
+    # A paragraph whose edits are not all live-supported keeps none of them: half a fix
+    # (the spaces of a fake centring gone, the centring not done) is worse than none.
+    blocked = {str(op["at"]).split(":", 1)[0] for op in proposal.ops if op["op"] not in LIVE_KINDS}
     ops: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     for op in proposal.ops:
-        if op["op"] in LIVE_KINDS:
+        if str(op["at"]).split(":", 1)[0] not in blocked:
             ops.append(op)
         else:
-            skipped.append({"op": op["op"], "at": op["at"], "reason": "not supported live"})
+            reason = (
+                "not supported live"
+                if op["op"] not in LIVE_KINDS
+                else "paired with an edit not supported live"
+            )
+            skipped.append({"op": op["op"], "at": op["at"], "reason": reason})
     warnings = [*proposal.warnings, *(f"SKIPPED: {s['at']} {s['reason']}" for s in skipped)]
     edited = {str(op["at"]).split(":", 1)[0] for op in ops}
     result: dict[str, Any] = {

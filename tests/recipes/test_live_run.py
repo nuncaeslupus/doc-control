@@ -57,3 +57,22 @@ def test_live_run_refuses_a_recipe_that_looks_at_styles(tmp_path: Path) -> None:
         )
     assert envelope["error"]["code"] == "ENGINE_UNAVAILABLE"
     assert "file engine" in envelope["error"]["details"]["reason"]
+
+
+def test_live_run_skips_every_edit_of_a_paragraph_it_cannot_fix_whole(tmp_path: Path) -> None:
+    # fake-centring removes the spaces and centres: live cannot centre, so it does neither.
+    doc = make_docx(tmp_path / "novel.docx", "One.")
+    fake = FakeAdapter({str(doc): ["          Centred.", "Two  spaces."]})
+    with using(fake):
+        fake.open(doc)
+        envelope, _ = execute(
+            load_operations(),
+            "recipe.run",
+            {"doc": str(doc), "recipe": "fake-centring", "engine": "live"},
+        )
+    result = envelope["result"]
+    assert result["batch"]["ops"] == [] and result["paragraphs"] == {}
+    assert [(s["op"], s["reason"]) for s in result["skipped"]] == [
+        ("text.replace", "paired with an edit not supported live"),
+        ("format.apply", "not supported live"),
+    ]
