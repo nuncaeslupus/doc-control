@@ -1,7 +1,7 @@
 name: Release
 
-# Publishes to PyPI through trusted publishing (environment `pypi`, which requires an
-# approval before each publish), so no token is stored. Two ways in:
+# Publishes to PyPI through trusted publishing (environment `pypi`), so no token is
+# stored. Two ways in:
 #  - merge a change to `version` in pyproject.toml into main: if tag v<version> does not
 #    exist yet, the workflow builds, publishes, then creates the tag and a GitHub release;
 #  - push a tag vX.Y.Z by hand that matches pyproject.toml.

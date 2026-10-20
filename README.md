@@ -8,7 +8,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/doc-control)](https://pypi.org/project/doc-control/)
 [![CI](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml/badge.svg)](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/nuncaeslupus/doc-control/blob/main/LICENSE)
 [![doc-control MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/nuncaeslupus/doc-control/badges/score.svg)](https://glama.ai/mcp/servers/nuncaeslupus/doc-control)
 
 <p align="center">
@@ -44,7 +44,7 @@ Every release on the [latest release page](https://github.com/nuncaeslupus/doc-c
 carries a Claude Desktop extension and an installer. Both install for the current user,
 need no admin rights, work with any Claude account (the free plan included) and drive
 Microsoft Word live. Full guide (checksums, updates, uninstalling):
-[docs/install-windows.md](docs/install-windows.md).
+[docs/install-windows.md](https://github.com/nuncaeslupus/doc-control/blob/main/docs/install-windows.md).
 
 ### Claude Desktop extension (`.mcpb`)
 
@@ -140,7 +140,7 @@ An agent can drive the CLI directly. It never prompts and reads stdin only with
 `--json -`. It prints exactly one JSON envelope on stdout: `{"ok": true, "result": ...}`
 or `{"ok": false, "error": {"code", "message", "hint", "details"}}`.
 Exit codes: `0` success, `1` operation error, `2` usage error (unknown operation or
-invalid request). Error codes are listed in [docs/errors.md](docs/errors.md).
+invalid request). Error codes are listed in [docs/errors.md](https://github.com/nuncaeslupus/doc-control/blob/main/docs/errors.md).
 
 The intended loop: read (`doc.outline`, `para.list`, `text.find`), build one `doc.batch`,
 run it with `"dry_run": true` to get the preview, apply it, and point the writer to
@@ -248,10 +248,10 @@ Everything runs locally. With the update check off (the default), nothing leaves
 
 ## Documentation
 
-- [Operation reference](docs/operations.md) and [error reference](docs/errors.md), generated from the code
-- [Windows install](docs/install-windows.md)
-- [Checking results in real Word](docs/real-word-check.md)
-- [Design decisions](docs/decisions.md)
+- [Operation reference](https://github.com/nuncaeslupus/doc-control/blob/main/docs/operations.md) and [error reference](https://github.com/nuncaeslupus/doc-control/blob/main/docs/errors.md), generated from the code
+- [Windows install](https://github.com/nuncaeslupus/doc-control/blob/main/docs/install-windows.md)
+- [Checking results in real Word](https://github.com/nuncaeslupus/doc-control/blob/main/docs/real-word-check.md)
+- [Design decisions](https://github.com/nuncaeslupus/doc-control/blob/main/docs/decisions.md)
 
 ## Development
 
@@ -272,4 +272,4 @@ see `CLAUDE.md`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/nuncaeslupus/doc-control/blob/main/LICENSE).

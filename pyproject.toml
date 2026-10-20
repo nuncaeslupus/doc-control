@@ -1,6 +1,6 @@
 [project]
 name = "doc-control"
-version = "0.10.0"
+version = "0.10.1"
 description = "Deterministic, LLM-first control of Word documents: addresses, anchors, tracked-change batches and a safety layer."
 readme = "README.md"
 license = "MIT"
