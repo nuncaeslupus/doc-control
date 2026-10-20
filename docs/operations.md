@@ -1024,7 +1024,7 @@ Returns (`result`):
 
 ## `recipe.run` (write)
 
-Run a cleanup recipe (a name from recipe.list, or an inline `definition`) over the document and return the edits it proposes as a ready doc.batch request (`batch`, guarded by expect.sha256), repeating until the text is stable. Writes nothing itself: review the proposal, then apply it with doc.batch (dry_run there to preview). RECIPE_INVALID for an unknown or invalid recipe; edits that would touch unsupported content are listed under skipped. Refused for .txt/.md/.odt sources, which cannot be written.
+Run a cleanup recipe (a name from recipe.list, or an inline `definition`) over the document and return the edits it proposes as a ready doc.batch request (`batch`, guarded by expect.sha256), repeating until the text is stable. Writes nothing itself: review the proposal, then apply it with doc.batch (dry_run there to preview). RECIPE_INVALID for an unknown or invalid recipe; edits that would touch unsupported content are listed under skipped. engine live reads the document open in the app (text-only recipes) and returns a live batch without expect, plus the text of each paragraph it edits. Refused for .txt/.md/.odt sources, which cannot be written.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -1032,6 +1032,7 @@ Run a cleanup recipe (a name from recipe.list, or an inline `definition`) over t
 | `recipe` | string |  | Name from recipe.list. |
 | `definition` | object |  | An inline declarative recipe (same schema as a stored one). |
 | `dry_run` | boolean |  | Accepted for symmetry; recipe.run never writes. |
+| `engine` | `file` \| `live` |  | `live` reads the document open in Word or LibreOffice (see live.open) and returns a live doc.batch. |
 
 Returns (`result`):
 
@@ -1044,6 +1045,7 @@ Returns (`result`):
 | `stable` | boolean | yes | Whether it reached a fixed point. |
 | `skipped` | array | yes | Proposed edits left out, with why. |
 | `batch` | object | yes | The doc.batch request to apply: pass it as is. |
+| `paragraphs` | object |  | Live only: the open document's text of each paragraph an edit touches, by address. |
 
 ## `review.list` (read)
 
