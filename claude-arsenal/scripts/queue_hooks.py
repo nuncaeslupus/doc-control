@@ -563,10 +563,13 @@ def plan_prune_claims(
     done = {t["id"] for t in tasks if str(t.get("status") or "") in TERMINAL}
     head = f"refs/heads/{prefix.strip('/')}/"
     actions: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for ref in refs:
         name = str(ref.get("ref") or "")
-        if not name.startswith(head):
+        # A ref listed twice is deleted once; the second DELETE would 422.
+        if not name.startswith(head) or name in seen:
             continue
+        seen.add(name)
         task_id = CLAIM_ATTEMPT_RE.sub("", name[len(head) :])
         if task_id in done:
             actions.append({"kind": "delete-ref", "ref": name, "task": task_id})
@@ -661,9 +664,17 @@ class Api:
         ]
 
     def matching_refs(self, prefix: str) -> list[dict[str, Any]]:
-        """Every ref under `refs/heads/<prefix>/`. An empty list when there are none."""
+        """Every ref under `refs/heads/<prefix>/`. An empty list when there are none.
+
+        One request, not `paginate()`: this endpoint ignores `page` and
+        `per_page` and returns the whole list every time. Paging it collected
+        the same refs ten times over, flagged 121 claims as truncated at 1,210,
+        and prune-claims then DELETEd each ref once and 422'd on the nine
+        copies: a red run whenever more than 100 refs existed.
+        """
         quoted = urllib.parse.quote(prefix.strip("/"), safe="/")
-        return self.paginate(f"/repos/{self.repo}/git/matching-refs/heads/{quoted}/")
+        refs = self.request("GET", f"/repos/{self.repo}/git/matching-refs/heads/{quoted}/")
+        return refs if isinstance(refs, list) else []
 
     def open_prs(self) -> list[dict[str, Any]]:
         return self.paginate(f"/repos/{self.repo}/pulls?state=open")

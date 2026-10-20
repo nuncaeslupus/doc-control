@@ -14,7 +14,7 @@ number points to, and holds the ones for a slow gate and a slow review round.
 - [The shapes, and where the remedy is written](#the-shapes-and-where-the-remedy-is-written)
 - [Phases: reading an `a:b` row](#phases-reading-an-ab-row) — what is inside a boundary, and recording your own
 - [What these numbers cannot tell you](#what-these-numbers-cannot-tell-you) — and how to get the rest
-- [Making the gate faster](#making-the-gate-faster) — parallel tests, the long pole, spawn-bound suites, caching inputs
+- [Making the gate faster](#making-the-gate-faster) — parallel tests, the long pole, spawn-bound suites, caching inputs, cheaper tests, not adding tests the suite has to carry
 - [Making a review round cheaper](#making-a-review-round-cheaper) — recording checks already run, scoping mutation runs
 
 ---
@@ -232,6 +232,50 @@ run the whole gate). Inputs are safe to cache, in two kinds:
 
 Under `pytest-xdist`, a `session`-scoped fixture runs once **per worker**, not
 once per run, so size the saving accordingly.
+
+### Making the tests themselves cheaper
+
+Measure first: `pytest --durations=0`, summed **per file**, since under
+`loadfile` the slowest file is the floor. On one suite a single test was a fifth
+of all test time. The repeated fixes, in the order they paid:
+
+- **Reuse the product's own selection.** A test that rebuilds by hand the list a
+  driver runs (modules, connectors, fixtures) drifts from it, and can include the
+  driver itself, so everything runs twice. Import the product's discovery
+  function instead; that also covers what is added later.
+- **Memoise pure helpers per test module.** When many tests parse or scan the
+  same immutable input, wrap the pure helper in `functools.cache` with a
+  module-scoped `monkeypatch`. Never cache inside a test that measures time or
+  counts calls; that test is about the uncached path.
+- **One end-to-end pipeline test, not several.** A test that regenerates the
+  whole pipeline in subprocesses (every artefact, twice, to diff the result) can
+  outweigh the rest of its file. Keep one, run its independent steps in
+  parallel, and assert finer properties on the cheap unit seams.
+- **An exhaustive sweep states its cost.** Iterating over a whole space (every
+  code point, every combination) is worth it when the property cannot be
+  sampled. Note its runtime beside it, keep the per-item work minimal, and
+  prefer a derived representative set when the space has a known structure.
+
+### Not adding tests the suite has to carry forever
+
+Every test is paid for on every run, by every worker, for the life of the repo.
+A test earns its place by catching a product regression no existing test
+catches.
+
+- **One test per behaviour, not per finding.** Answer a review finding by fixing
+  the code and pinning that behaviour once. A new case for each finding
+  enumerates instances and never reaches the last one; a closed rule (derive the
+  cases from the type, the grammar or the spec's own production) replaces the
+  list.
+- **No tests whose subject is the process.** Tests about the repository's own
+  gates, naming, evidence keys or review mechanics, rather than the product,
+  grow with every process change and catch nothing a user would see. Propose one
+  to the owner before writing it.
+- **Check for an existing pin before adding one.** If a deliberate revert of the
+  fix already turns a test red, a second test for the same line adds runtime and
+  nothing else.
+- **Scope runs while editing.** Run the touched module's tests during the edit
+  loop and leave the full suite to CI; the full suite once per push is enough.
 
 ## Making a review round cheaper
 
