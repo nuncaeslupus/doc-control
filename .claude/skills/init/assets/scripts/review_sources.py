@@ -26,7 +26,9 @@ skipped | paused). A bot is `absent` once it has been silent on this head for
 bot-wait-min after the head push. With --trigger, a skipped, paused or
 first-time absent bot gets its `bot-triggers` comment once per head (recorded
 under tmp/arsenal-review/pr-<N>/), and is pending for one more wait; silence
-after that is final. A rate-limited bot is never pinged.
+after that is final. A notice the bot posts after that trigger is its answer to
+it (an acknowledgement), so it waits that one wait too; only a rate limit there
+is final. A rate-limited bot is never pinged.
 
 Head push time: GitHub does not expose it directly, so it is the earliest
 check run or status reported on the head SHA (CI starts on push), never earlier
@@ -88,6 +90,12 @@ NOTICES: list[tuple[str, str, str | None]] = [
         r"free[- ](tier|plan)\b[^.\n]{0,80}\b(limit|cap|quota|reached|exhausted)",
         None,
     ),
+    # A bot acknowledging an on-demand command ("Review triggered.") before the
+    # review lands. Ahead of the skip rows: the acknowledgement often explains
+    # when the command applies ("only when automatic reviews are paused"), and
+    # that explanation is not a statement about this PR.
+    ("in-progress", r"review\s+triggered", None),
+    ("in-progress", r"review\s+(has\s+been\s+)?(requested|queued|started)", None),
     ("paused", r"reviews?\s+paused", None),
     ("skipped", r"does not receive automatic reviews", None),
     ("skipped", r"reviews?\s+skipped", None),
@@ -407,6 +415,18 @@ def classify_bot(
     trig = _trigger_file(state_dir, login, head)
     triggered = parse_ts(trig.read_text(encoding="utf-8").strip()) if trig.is_file() else None
     triggered_s = triggered.isoformat() if triggered else ""
+
+    # A notice the bot posted after our own trigger on this head answers that
+    # trigger: an acknowledgement, whatever its wording. Only a rate limit is
+    # final there; anything else waits one bot-wait-min like an in-progress
+    # notice and then ends as absent, never as a final skip (#513).
+    if triggered is not None:
+        notices = [
+            (ts, "in-progress", phrase, f"{where}, after trigger")
+            if ts > triggered and kind != "rate-limited"
+            else (ts, kind, phrase, where)
+            for ts, kind, phrase, where in notices
+        ]
 
     if notices:
         ts, kind, phrase, where = max(notices, key=lambda n: n[0])

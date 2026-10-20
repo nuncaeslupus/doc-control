@@ -20,6 +20,11 @@ Load when a package is being published to PyPI or TestPyPI. Pre-merge
 production sign-off (compatibility, observability, rollback) belongs to the
 `ship` skill; the two compose.
 
+Load [automated release](references/automated-release.md) when the project
+should publish from CI on a version bump instead of by hand (setting up or
+fixing a `release.yml`, trusted publishing, an approval gate) — it holds the
+workflow, the owner's one-time setup, and when to prefer it over this runbook.
+
 ## Step 1 — Pre-flight
 
 From the project root:
