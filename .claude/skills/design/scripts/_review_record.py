@@ -28,8 +28,10 @@ import subprocess
 from pathlib import Path
 
 # `<project>-<spec|plan>-notes-<date>-r<N>.md` (older readers) or
-# `<repo>-<doc>-v<N>-<date>-notes.md` (the reader's own naming).
-NOTES_RE = re.compile(r"[\w.-]+-(?:(?:spec|plan)-notes-[\w.-]+|v\d+-\d{4}-\d{2}-\d{2}-notes)\.md")
+# `<repo>-<doc>-v<N>-<YYYY-MM-DD[-HHMM]>-notes.md` (the reader's own naming).
+NOTES_RE = re.compile(
+    r"[\w.-]+-(?:(?:spec|plan)-notes-[\w.-]+|v\d+-\d{4}-\d{2}-\d{2}(?:-\d{4})?-notes)\.md"
+)
 REVISION_RE = re.compile(r"^\*\*Revision\*\*:\s*r?(\d+)\b", re.MULTILINE)
 STATUS_RE = re.compile(r"^\*\*Status\*\*:\s*(.+)$", re.MULTILINE)
 APPROVED_RE = re.compile(r"^approved\b[^()]*\(([^)]*)\)(.*)$", re.IGNORECASE)

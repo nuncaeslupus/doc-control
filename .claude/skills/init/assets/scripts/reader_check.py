@@ -24,7 +24,7 @@ A spec or plan is any of: `status/specification.md`, `status/plan.md`,
 `<home>/project/*/{spec,plan}.md`, `docs/**/specs/*.md`, `docs/**/plans/*.md`
 (`<home>` is `ARSENAL_HOME`, default `arsenal`).
 
-Its reader is `<dir>/<repo>-<doc>-v<N>-<date>-reader.html`, <doc> being `spec` /
+Its reader is `<dir>/<repo>-<doc>-v<N>-<stamp>-reader.html`, <doc> being `spec` /
 `plan` for the canonical documents and the stem otherwise — or, from before
 readers were dated, `<dir>/<stem>-reader.html` / `<dir>/{spec,plan}-reader.html`
 (plus `docs/spec-reader/` for a workspace spec). A reader current for the
@@ -50,9 +50,9 @@ from pathlib import Path, PurePosixPath
 
 META_RE = re.compile(r'<meta name="arsenal-source-sha256" content="([0-9a-f ]*)">')
 # `<project>-<spec|plan>-notes-<date>-r<N>.md` (older readers), or the reader's own
-# naming, `<repo>-<doc>-v<N>-<date>-notes.md`.
+# naming, `<repo>-<doc>-v<N>-<YYYY-MM-DD[-HHMM]>-notes.md`.
 EXPORT_RE = re.compile(r"^(?P<prefix>.+)-(?:spec|plan)-notes-.+\.md$")
-DATED_EXPORT_RE = re.compile(r"^(?P<stem>.+)-v\d+-\d{4}-\d{2}-\d{2}-notes\.md$")
+DATED_EXPORT_RE = re.compile(r"^(?P<stem>.+)-v\d+-\d{4}-\d{2}-\d{2}(?:-\d{4})?-notes\.md$")
 # Localized names a desktop gives the Downloads folder, beside whatever
 # `xdg-user-dir DOWNLOAD` and XDG_DOWNLOAD_DIR report.
 DOWNLOAD_NAMES = ("Downloads", "Download", "Descargas", "Téléchargements", "Scaricati")

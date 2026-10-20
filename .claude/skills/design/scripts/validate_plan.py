@@ -7,11 +7,14 @@ Implementation tasks, Evidence log, and Sign-off sections exist, that the task
 table carries the required columns (including the measurable Gate), and that the
 Evidence log table carries the columns gate-check's run_gate.py expects.
 
-It also holds the `### Dependency graph` to the task table: a ```drawspec graph's
-edges must be exactly the Depends column's (sync_plan_graph.py draws it), and
-every edge one has and the other lacks is named. A graph that is not a drawspec
-fence (the ASCII art earlier templates seeded) is a warning — printed as a
-`  ! ` line with the fix, exit code unaffected.
+It also holds the `### Dependency graph` to the task table: every Depends entry
+must be reachable in the ```drawspec graph (a path counts, so the transitive
+reduction sync_plan_graph.py draws, split by phase past drawspec's budget, is
+accepted), and every graph edge must be declared or implied by Depends; each
+one that is not is named. It never demands an edge set create_reader.py would
+refuse to draw. A graph that is not a drawspec fence (the ASCII art earlier
+templates seeded), or one fence past drawspec's one-flow budget, is a warning —
+printed as a `  ! ` line with the fix, exit code unaffected.
 
 It is otherwise deliberately shallow: gate values and evidence completeness are
 checked by the `gate-check` skill (run_gate.py), not here. This script only verifies the

@@ -120,6 +120,9 @@ creates `arsenal/project/<NAME>/` stubs and updates `arsenal/project/overview.md
   declare `requires:` wait until it is run by hand; tasks without `requires:` are
   eligible everywhere.
 - **The injected block belongs in the root `CLAUDE.md`**, not a nested one.
+- **README credit.** Init adds a "built with claude-arsenal" badge under
+  `README.md`'s title once and records `attribution = true`; a host that deletes
+  the block keeps it deleted, and `attribution = false` stops it being added.
 - **Refresh only moves forward.** When the host's bundle is newer than this
   skill's copy, init writes nothing and says so; update the plugin instead.
   `--allow-downgrade` is for recovering a broken install.

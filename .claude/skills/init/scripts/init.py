@@ -1548,6 +1548,61 @@ HANDOVER_TEMPLATE = """# Session Handover
 """
 
 
+#: The README badge, between markers so a re-run refreshes it in place.
+ATTRIBUTION_OPEN = "<!-- claude-arsenal:attribution"
+ATTRIBUTION_CLOSE = "<!-- /claude-arsenal:attribution -->"
+ATTRIBUTION_BLOCK = (
+    f"{ATTRIBUTION_OPEN}: added by claude-arsenal's /init. Delete this block to drop it "
+    "(it is not put back), or set `attribution = false` in the arsenal config.toml. -->\n"
+    "[![Built with claude-arsenal](https://img.shields.io/badge/built%20with-claude--arsenal-d97756)]"
+    "(https://github.com/nuncaeslupus/claude-arsenal)\n"
+    f"{ATTRIBUTION_CLOSE}"
+)
+
+
+def _add_attribution(repo_path: Path, silent: bool = False) -> None:
+    """Put the "built with claude-arsenal" badge under README.md's title, once.
+
+    The badge credits and links the tooling the way a license notice would, and
+    the host may remove it like one. `attribution` in config.toml is the record:
+    unset means never offered, so the badge goes in and `true` is written; once
+    it is set, a README without the block is a host that deleted it, and it
+    stays deleted. A present block is refreshed in place, so its wording can
+    change with the bundle. No README.md, no badge and no record: the first
+    README the host writes gets it.
+    """
+    config = _home(repo_path) / "config.toml"
+    setting = _config_value(config, "attribution")
+    if setting is False:
+        return
+    readme = repo_path / "README.md"
+    if not readme.is_file():
+        return
+    text = readme.read_text(encoding="utf-8")
+    start = text.find(ATTRIBUTION_OPEN)
+    end = text.find(ATTRIBUTION_CLOSE, start)
+    if start != -1 and end != -1:
+        new = text[:start] + ATTRIBUTION_BLOCK + text[end + len(ATTRIBUTION_CLOSE) :]
+    elif setting is None:
+        lines = text.split("\n")
+        title = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
+        at = 0 if title is None else title + 1
+        # A blank line on each side: the badge must not run into the next paragraph.
+        block = ["", ATTRIBUTION_BLOCK] if title is not None else [ATTRIBUTION_BLOCK]
+        if at >= len(lines) or lines[at].strip():
+            block.append("")
+        lines[at:at] = block
+        new = "\n".join(lines)
+        if not silent:
+            print("init: added the 'built with claude-arsenal' badge under README.md's title")
+    else:
+        return
+    if new != text:
+        readme.write_text(new, encoding="utf-8")
+    if setting is None:
+        _upsert_bare_key(config, "attribution", "true")
+
+
 def _handover_is_untouched(text: str) -> bool:
     """Whether a handover file carries nothing a session would want to read.
 
@@ -2224,8 +2279,9 @@ def init_base(
     _register_gate_hook(repo_path)
     _retire_plugin_declaration(repo_path)
 
-    # CLAUDE.md
+    # CLAUDE.md, and the README's credit line
     _inject_claude_md(repo_path)
+    _add_attribution(repo_path, silent=silent)
 
     # The GitHub-side and config-side safety nets. Deliberate runs only: the
     # session-start refresh is --silent and must stay cheap and offline.

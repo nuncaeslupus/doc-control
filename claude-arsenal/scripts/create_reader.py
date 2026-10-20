@@ -7,11 +7,12 @@ Auto-discovers spec source(s):
   3. auto (no flags): looks for arsenal/project/*/spec.md,
                       then falls back to status/specification.md
 
-Outputs are named `<repo>-<doc>-v<N>-<date>` so a downloaded reader says what it
+Outputs are named `<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>` so a downloaded reader says what it
 is: <repo> is the git toplevel's directory name, <doc> is `spec` / `plan` for the
 canonical documents and the input stem for any other (so documents sharing a
 directory keep separate readers), N is the document's `**Revision**:` header line
-(1 without one), and the date is today's. Written to --output-dir (default: the
+(1 without one), and the stamp is the local date and time of the run
+($SOURCE_DATE_EPOCH, read as UTC, when set). Written to --output-dir (default: the
 single input's directory, or docs/spec-reader/ in workspace mode):
   <name>-reader.html    self-contained HTML reader, one note field after each section
                         that has body text (none on a bare heading); notes auto-save
@@ -21,12 +22,15 @@ single input's directory, or docs/spec-reader/ in workspace mode):
 Earlier generated readers of the same document in that directory are removed, and
 so is an earlier annotated file whose slots are all still empty.
 
-The Export button names its download the same way, with the export's date:
-`<repo>-<doc>-v<N>-<date>-notes.md`.
+The Export button names its download the same way, stamped with the export's time:
+`<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>-notes.md`.
+Raw tags whose content a browser swallows (<title>, <script>, <style>, <textarea>…)
+are escaped, so a bare placeholder like <title> shows as text instead of hiding the
+rest of the document.
 A fenced ```drawspec block (a drawspec JSON document) is validated and rendered to
 inline SVG in the HTML; the annotated Markdown keeps the JSON source. The command is
 $ARSENAL_DRAWSPEC when set, else `drawspec` on PATH, else `uvx --from
-git+https://github.com/nuncaeslupus/drawspec drawspec`. A diagram that fails
+'drawspec>=0.2,<0.3' drawspec` (PyPI). A diagram that fails
 validation, or no way to run drawspec, fails the run — nothing is written. A document
 with no drawspec fence never runs it.
 The HTML carries a digest of every source it rendered, which is how
@@ -59,7 +63,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -103,7 +107,8 @@ def normalize_list_indent(text: str) -> str:
 # diagram means, laid out and rendered by the tool — rather than as hand-written SVG
 # or ASCII art. The HTML reader shows the render; the Markdown keeps the source.
 DRAWSPEC_ENV = "ARSENAL_DRAWSPEC"
-DRAWSPEC_REPO = "git+https://github.com/nuncaeslupus/drawspec"
+# PyPI, pinned to a known-good range so a host's reader does not change under it.
+DRAWSPEC_PACKAGE = "drawspec>=0.2,<0.3"
 DRAWSPEC_OPEN_RE = re.compile(r"^(?P<ind>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*drawspec[ \t]*$")
 _drawspec_cmd: list[str] | None = None
 
@@ -113,7 +118,7 @@ class DrawspecError(Exception):
 
 
 def drawspec_command() -> list[str]:
-    """$ARSENAL_DRAWSPEC, else `drawspec` on PATH, else uvx from the git repo."""
+    """$ARSENAL_DRAWSPEC, else `drawspec` on PATH, else uvx from PyPI (pinned range)."""
     global _drawspec_cmd
     if _drawspec_cmd is not None:
         return _drawspec_cmd
@@ -125,12 +130,12 @@ def drawspec_command() -> list[str]:
     elif shutil.which("drawspec"):
         cmd = ["drawspec"]
     elif shutil.which("uvx"):
-        cmd = ["uvx", "--quiet", "--from", DRAWSPEC_REPO, "drawspec"]
+        cmd = ["uvx", "--quiet", "--from", DRAWSPEC_PACKAGE, "drawspec"]
     else:
         raise DrawspecError(
             "this document has ```drawspec diagrams, and drawspec cannot be run here. "
-            f"Install uv (uvx runs it from {DRAWSPEC_REPO}), put `drawspec` on PATH, "
-            f"or set ${DRAWSPEC_ENV} to the command"
+            f"Install uv (uvx runs {DRAWSPEC_PACKAGE!r} from PyPI), `pip install drawspec` "
+            f"to put it on PATH, or set ${DRAWSPEC_ENV} to the command"
         )
     _drawspec_cmd = cmd
     return cmd
@@ -186,10 +191,41 @@ def extract_drawspec(text: str) -> tuple[str, list[tuple[str, str]]]:
     return "\n".join(out), blocks
 
 
+# Elements whose content the browser does not render as body text: a bare
+# `<title>` placeholder in prose became the page's title and hid everything after
+# it (#517). Code spans and fences are already escaped by markdown; this catches
+# the raw tags it passes through. Applied before drawspec SVG goes in, so a
+# diagram's own <title>/<style> survive.
+SWALLOWING_TAG_RE = re.compile(
+    r"<(/?)(title|script|style|textarea|iframe|noscript|noembed|noframes|xmp|plaintext)\b",
+    re.IGNORECASE,
+)
+
+
+def escape_swallowing_tags(html: str) -> str:
+    return SWALLOWING_TAG_RE.sub(r"&lt;\1\2", html)
+
+
+FIELD_LINE_RE = re.compile(r"^\*\*[^*\n]+\*\*:")
+
+
+def break_field_lines(text: str) -> str:
+    """Keep a run of `**Key**: value` header lines one per line in HTML.
+
+    Markdown joins consecutive lines into one paragraph, so a spec's
+    `**Revision**` / `**Status**` lines rendered as a single run-on sentence.
+    """
+    lines = text.split("\n")
+    for i in range(len(lines) - 1):
+        if FIELD_LINE_RE.match(lines[i]) and FIELD_LINE_RE.match(lines[i + 1]):
+            lines[i] = lines[i].rstrip() + "  "
+    return "\n".join(lines)
+
+
 def render_md(text: str, where: str = "") -> str:
     text, diagrams = extract_drawspec(text)
     _md.reset()
-    html = _md.convert(normalize_list_indent(text))
+    html = escape_swallowing_tags(_md.convert(normalize_list_indent(break_field_lines(text))))
     for n, (token, source) in enumerate(diagrams, 1):
         label = f"{where}, drawspec block {n}" if where else f"drawspec block {n}"
         run_drawspec("validate", source, label)
@@ -203,7 +239,7 @@ def render_md(text: str, where: str = "") -> str:
 
 def render_inline(text: str) -> str:
     _md.reset()
-    out = _md.convert(text).strip()
+    out = escape_swallowing_tags(_md.convert(text).strip())
     if out.startswith("<p>") and out.endswith("</p>"):
         out = out[3:-4]
     return out
@@ -427,9 +463,19 @@ def repo_name(cwd: Path) -> str:
     return Path(top).name if top else cwd.resolve().name
 
 
-def output_stem(repo: str, doc: str, version: int, gen_date: str) -> str:
-    """`<repo>-<doc>-v<N>-<date>`: what a reader is, readable from a Downloads folder."""
-    return f"{slug(repo)}-{slug(doc)}-v{version}-{gen_date}"
+def generation_time() -> datetime:
+    """Now, local time — or $SOURCE_DATE_EPOCH (UTC) when set, for reproducible output."""
+    epoch = os.environ.get("SOURCE_DATE_EPOCH", "").strip()
+    if epoch.isdigit():
+        return datetime.fromtimestamp(int(epoch), tz=UTC)
+    return datetime.now()
+
+
+def output_stem(repo: str, doc: str, version: int, stamp: str) -> str:
+    """`<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>`: what a reader is, readable from a
+    Downloads folder. The time, not just the date, keeps two documents reviewed the
+    same day (one per workspace) and a regenerated reader apart (#517)."""
+    return f"{slug(repo)}-{slug(doc)}-v{version}-{stamp}"
 
 
 GENERATED_SUFFIXES = ("-reader.html", "-annotated.md")
@@ -438,10 +484,12 @@ EMPTY_SLOT = "> _(your notes here — replace this line)_"
 
 
 def superseded(out_dir: Path, prefix: str, legacy: str, keep: set[Path]) -> list[Path]:
-    """Earlier readers of the same document in out_dir: other versions and dates, and
-    the undated `<legacy>-reader.html` / `-annotated.md` names used before."""
+    """Earlier readers of the same document in out_dir: other versions and stamps
+    (`YYYY-MM-DD-HHMM`, or the date-only `YYYY-MM-DD` used before), and the undated
+    `<legacy>-reader.html` / `-annotated.md` names used before that."""
     dated = re.compile(
-        rf"^{re.escape(prefix)}-v\d+-\d{{4}}-\d{{2}}-\d{{2}}-(?:reader\.html|annotated\.md)$"
+        rf"^{re.escape(prefix)}-v\d+-\d{{4}}-\d{{2}}-\d{{2}}(?:-\d{{4}})?"
+        r"-(?:reader\.html|annotated\.md)$"
     )
     found = {f for f in out_dir.glob(f"{prefix}-v*") if dated.match(f.name)}
     found |= {
@@ -614,17 +662,30 @@ def build_html(
     """The self-contained HTML reader.
 
     `export_stem` is `<repo>-<doc>-v<N>`, the part of the reader's own filename
-    before the date; the Export button appends the export's date and `-notes.md`.
+    before the stamp; the Export button appends the export's own stamp and `-notes.md`.
     """
     seed_notes = seed_notes or {}
     total_notes = sum(has_note_field(it, seed_notes) for _, p in parts for it in p["items"])
     # `ns_key` is the output stem when it is not the kind: two design docs in
     # one folder are two readers, and a namespace keyed on the kind alone let
     # one's notes surface under the other's headings.
-    ls_ns = slug(title) + f"-{ns_key or doc_slug}-v1:"
+    # The revision is part of it too. Every file:// page shares one localStorage
+    # origin, so a namespace fixed at `-v1` brought revision N's notes, already
+    # applied, back into revision N+1's empty fields. A rebuild of the same
+    # revision keeps its notes; carrying unapplied ones forward is `--notes`.
+    ls_ns = slug(title) + f"-{ns_key or doc_slug}-v{doc_version(parts)}:"
 
+    # One document is one part: its sections go straight into the contents and
+    # under the page title, without a part band repeating the title a third time.
+    single = len(parts) == 1
     toc = ['<details class="toc" open><summary>Contents</summary>']
-    for _kind, p in parts:
+    if single:
+        toc.append('<ul class="toc-flat">')
+        for it in parts[0][1]["items"]:
+            cls = "" if it["level"] == 2 else ' class="sub"'
+            toc.append(f'<li{cls}><a href="#{it["domid"]}">{esc(it["toc"])}</a></li>')
+        toc.append("</ul>")
+    for _kind, p in [] if single else parts:
         head = esc(p["title"])
         if p["part_label"] != single_label:
             head = f"{esc(p['part_label'])} — {head}"
@@ -644,10 +705,11 @@ def build_html(
         badge_cls = kind
         badge_label = p["part_label"]
         body.append('<section class="part">')
-        body.append(
-            f'<h2 class="part-title"><span class="badge {badge_cls}">{esc(badge_label)}</span>'
-            f"{part_head}</h2>"
-        )
+        if not single:
+            body.append(
+                f'<h2 class="part-title"><span class="badge {badge_cls}">{esc(badge_label)}</span>'
+                f"{part_head}</h2>"
+            )
         for it in p["items"]:
             tag = "h3" if it["level"] == 2 else "h4"
             noted = has_note_field(it, seed_notes)
@@ -691,7 +753,7 @@ def build_html(
     page = page.replace("__DOC_LABEL__", esc(single_label))
     # The export lands in the reviewer's Downloads beside everything else they saved
     # that week, so its name says what it annotates the way the reader's does:
-    # `yourproject-spec-v3-2026-10-12-notes.md`, not a bare `spec-notes-…`.
+    # `yourproject-spec-v3-2026-10-12-1735-notes.md`, not a bare `spec-notes-…`.
     if export_stem is None:
         export_stem = f"{slug(title)}-{doc_slug}-v{doc_version(parts)}"
     page = page.replace(
@@ -775,6 +837,8 @@ CSS = r"""
   --card:#ffffff;--accent:#0f766e;--accent2:#9a4a0b;--chip:#e8efed;
   --note:#fffaf0;--note-line:#d9a441;--note-fg:#7a3b06;--code:#f1eee8;--link:#0f766e;
   --measure:70ch;
+  --serif:Charter,"Bitstream Charter","Iowan Old Style","Sitka Text",Cambria,Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 @media(prefers-color-scheme:dark){
   :root{
@@ -787,9 +851,14 @@ CSS = r"""
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;background:var(--bg);color:var(--fg);
-  font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font:17px/1.65 var(--sans);
   padding-bottom:96px;
 }
+/* The document reads in a book face; the reader's own chrome (bars, buttons,
+   headings, notes) stays in the UI face, so the two never blur together. */
+.sec-body{font-family:var(--serif);font-size:1.06em;line-height:1.7}
+.sec-body table,.sec-body pre{font-family:var(--sans)}
+.sec-body pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .wrap{max-width:calc(var(--measure) + 120px);margin:0 auto;padding:0 16px}
 a{color:var(--link);text-underline-offset:2px}
 code{background:var(--code);padding:.08em .35em;border-radius:5px;font-size:.86em;
@@ -818,8 +887,8 @@ pre code{background:none;padding:0;font-size:1em}
 #warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
 #warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
 @media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
-.hero{padding:26px 0 6px}
-.hero h1{font-size:1.75rem;line-height:1.2;margin:.1em 0 .3em;letter-spacing:-.01em}
+.hero{padding:34px 0 8px}
+.hero h1{font-size:2rem;line-height:1.15;margin:.1em 0 .3em;letter-spacing:-.02em}
 .hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
 .help{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 14px;margin:14px 0}
 .help summary{cursor:pointer;font-weight:600;padding:10px 0}
@@ -831,7 +900,11 @@ pre code{background:none;padding:0;font-size:1em}
 .toc-part>summary{cursor:pointer;padding:9px 2px;font-weight:600;font-size:14px}
 .toc-part ul{margin:.1em 0 .7em;padding-left:1.1em}
 .toc-part li{margin:.22em 0;font-size:13.5px;line-height:1.4}
-.toc-part a{text-decoration:none}
+.toc-part a,.toc-flat a{text-decoration:none}
+.toc-flat{margin:.1em 0 .8em;padding-left:1.1em}
+.toc-flat li{margin:.25em 0;font-size:14px;line-height:1.4;break-inside:avoid}
+.toc-flat li.sub{margin-left:1.1em;font-size:13px}
+.toc-flat a:hover{text-decoration:underline}
 .toc-part a:hover{text-decoration:underline}
 .part{margin:30px 0}
 .part-title{font-size:1.45rem;line-height:1.25;border-bottom:2px solid var(--accent);
@@ -843,7 +916,7 @@ pre code{background:none;padding:0;font-size:1em}
 /* Two heading levels, told apart by size, weight and a rule: a ## section opens
    with a full-width rule; a ### section sits indented under it on a side rule. */
 .sec{scroll-margin-top:72px}
-.sec.l2{padding:14px 0 4px;border-top:1px solid var(--line);margin-top:10px}
+.sec.l2{padding:22px 0 6px;border-top:1px solid var(--line);margin-top:18px}
 .part>.sec.l2:first-of-type{border-top:none;margin-top:0}
 .sec.l3{margin:6px 0 6px 2px;padding:2px 0 2px 14px;border-left:3px solid var(--line)}
 .sec-h{margin:6px 0 8px;line-height:1.3}
@@ -865,25 +938,38 @@ h4 .chip{font-size:11px;color:var(--muted)}
 .sec-body blockquote p{margin:.3em 0}
 .sec-body figure.drawspec{margin:.8em 0;overflow-x:auto}
 .sec-body figure.drawspec svg{display:block;max-width:100%;height:auto;margin:0 auto}
-.sec-body table{border-collapse:collapse;font-size:13.5px;line-height:1.45;margin:.6em 0;
-  display:block;max-width:100%;overflow-x:auto}
-.sec-body th,.sec-body td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
-.sec-body th{background:var(--chip);font-weight:700}
+.sec-body table{border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;margin:.8em 0;
+  display:block;width:max-content;max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.sec-body th,.sec-body td{border-bottom:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}
+.sec-body tr:last-child td{border-bottom:none}
+.sec-body tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--chip) 45%,transparent)}
+.sec-body th{background:var(--chip);font-weight:700;font-size:12.5px;letter-spacing:.02em}
 .sec-body strong{font-weight:700}
 /* The note field: the one thing on the page that is the reviewer's, so it must
-   not read as more document. Dashed while empty, solid once written in. */
-.note{max-width:var(--measure);background:var(--note);border:1.5px dashed var(--note-line);
-  border-left:4px solid var(--note-line);border-radius:10px;padding:8px 12px;margin:12px 0 18px}
-.note:focus-within{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 30%,transparent)}
-.note-head{display:flex;align-items:center;gap:8px;margin-bottom:2px;cursor:text}
+   not read as more document — but an empty one must not shout over the text
+   either. Empty: a quiet dashed margin slip. Focused: it opens into a writing
+   card. Written in: a solid amber card that stands out on a skim. */
+.note{max-width:var(--measure);background:transparent;border:1.5px dashed var(--note-line);
+  border-radius:10px;padding:6px 12px;margin:14px 0 20px;opacity:.78;
+  transition:background .15s,box-shadow .15s,opacity .15s,padding .15s}
+.note:hover{opacity:1}
+.note:focus-within,.note.filled{opacity:1;background:var(--note);border-style:solid;
+  border-left:4px solid var(--note-line);padding:10px 14px}
+.note:focus-within{box-shadow:0 0 0 3px color-mix(in srgb,var(--note-line) 28%,transparent),0 6px 20px #0000000f}
+.note-head{display:flex;align-items:center;gap:8px;cursor:text}
 .note-ico{color:var(--note-fg);font-weight:800}
-.note-label{font-size:11.5px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.06em}
+.note-label{font-size:11px;font-weight:800;color:var(--note-fg);text-transform:uppercase;letter-spacing:.07em}
 .note-ref{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.note-ta{width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
-  resize:none;outline:none;line-height:1.5;padding:2px 0;overflow:hidden;min-height:1.6em}
-.note-ta::placeholder{color:var(--muted);opacity:1}
-.note.filled{border-style:solid}
+/* While empty the label row collapses into the placeholder line beside the icon. */
+.note:not(.filled):not(:focus-within){display:flex;align-items:center;gap:8px}
+.note:not(.filled):not(:focus-within) .note-label,
+.note:not(.filled):not(:focus-within) .note-ref{display:none}
+.note:focus-within .note-head,.note.filled .note-head{margin-bottom:4px}
+.note-ta{display:block;width:100%;border:none;background:transparent;color:var(--fg);font:inherit;font-size:16px;
+  resize:none;outline:none;line-height:1.55;padding:2px 0;overflow:hidden;min-height:1.6em}
+.note:focus-within .note-ta{min-height:4.8em}
+.note-ta::placeholder{color:var(--muted);opacity:1;font-style:italic}
 .fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .fab .btn{box-shadow:0 4px 14px #0003}
 .modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
@@ -969,8 +1055,9 @@ JS = r"""
   function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},1900);}
   function pad(n){return n<10?'0'+n:''+n;}
   function today(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
-  // Named like the reader, <repo>-<doc>-v<N>-<date>-notes.md, the date being the export's.
-  function exportName(){return '__EXPORT_STEM__-'+today()+'-notes.md';}
+  function stamp(){var d=new Date();return today()+'-'+pad(d.getHours())+pad(d.getMinutes());}
+  // Named like the reader, <repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>-notes.md, stamped at export.
+  function exportName(){return '__EXPORT_STEM__-'+stamp()+'-notes.md';}
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
@@ -1203,6 +1290,7 @@ def _main() -> int:
     cwd = Path.cwd()
     single_label, doc_slug = DEFAULT_DOC_KIND[1], DEFAULT_DOC_KIND[2]
     out_base = ""
+    ns_key = ""
 
     if args.input:
         spec_path = Path(args.input)
@@ -1216,6 +1304,12 @@ def _main() -> int:
         # one `spec-reader.html`, and each regeneration would stale the other.
         if spec_path.stem.lower() not in CANONICAL_STEMS:
             out_base = spec_path.stem
+        # Workspace specs are all `spec.md`: without the workspace in the key,
+        # one workspace's notes came up in another's reader.
+        ws_name = spec_path.resolve().parent.name
+        ns_key = out_base or (
+            f"{slug(ws_name)}-{doc_slug}" if ws_name not in ("status", cwd.resolve().name) else ""
+        )
         default_out = spec_path.parent
     elif args.input_dir:
         ws_dir = Path(args.input_dir)
@@ -1239,17 +1333,19 @@ def _main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     title = args.name or infer_title(cwd)
-    gen_date = date.today().isoformat()
+    now = generation_time()
+    gen_date = now.date().isoformat()
+    gen_stamp = now.strftime("%Y-%m-%d-%H%M")
 
-    # `<repo>-<doc>-v<N>-<date>-reader.html`: a reader that says what it is from a
+    # `<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>-reader.html`: a reader that says what it is from a
     # Downloads folder or a chat attachment, and an export named the same way.
     # The doc is the kind for the canonical spec/plan and the stem otherwise, so
     # two design docs sharing a folder still get separate readers.
     repo = repo_name(cwd)
     doc = out_base or doc_slug
     version = doc_version(parts)
-    stem = output_stem(repo, doc, version, gen_date)
-    export_stem = stem[: -len(gen_date) - 1]
+    stem = output_stem(repo, doc, version, gen_stamp)
+    export_stem = stem[: -len(gen_stamp) - 1]
     if args.output:
         base = html_file.name.removesuffix(".html").removesuffix("-reader")
         md_file = out_dir / f"{base}-annotated.md"
@@ -1292,7 +1388,7 @@ def _main() -> int:
         seed_notes,
         single_label,
         doc_slug,
-        ns_key=out_base or None,
+        ns_key=ns_key or out_base or None,
         export_stem=export_stem,
     )
     md_out = build_markdown(parts, title, gen_date, seed_notes, single_label)
