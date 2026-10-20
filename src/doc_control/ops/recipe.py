@@ -5,6 +5,12 @@ request (``doc``, ``ops`` and ``expect.sha256``), so applying a recipe is always
 separate, reviewable ``doc.batch`` call. ``dry_run`` is accepted for symmetry with ``doc.batch``
 and changes nothing. A recipe is a stored one (``recipe``: name) or an inline
 ``definition``; both go through the same strict validation (``RECIPE_INVALID``).
+
+``engine: "live"`` reads the paragraph texts from the document open in Word or
+LibreOffice instead of the file (which Word may hold to itself, as it does a document
+opened from OneDrive) and returns a ``doc.batch`` for the live engine: the same ops and
+addresses, no ``expect`` (the open document has no file hash). Recipes that look at styles
+or neighbours (``match.where``) need the file engine.
 """
 
 from __future__ import annotations
@@ -39,6 +45,13 @@ _RUN: dict[str, Any] = {
         "dry_run": {
             "type": "boolean",
             "description": "Accepted for symmetry; recipe.run never writes.",
+        },
+        "engine": {
+            "enum": ["file", "live"],
+            "description": (
+                "`live` reads the document open in Word or LibreOffice (see live.open) and "
+                "returns a live doc.batch."
+            ),
         },
     },
     "required": ["doc"],
@@ -182,7 +195,13 @@ _RUN_OUTPUT = outputs.result(
         "The doc.batch request to apply: pass it as is.",
         doc=outputs.string("The document."),
         ops=outputs.arr("The proposed edits.", {"type": "object"}),
-        expect=outputs.obj("Guards the batch.", sha256=outputs.string("The file hash read.")),
+        expect=outputs.obj(
+            "Guards the batch (file engine only).", sha256=outputs.string("The file hash read.")
+        ),
+        engine=outputs.string("live when the open document was read."),
+    ),
+    paragraphs=outputs.obj(
+        "Live only: the open document's text of each paragraph an edit touches, by address."
     ),
 )
 
@@ -196,7 +215,9 @@ _RUN_OUTPUT = outputs.result(
         "by expect.sha256), repeating until the text is stable. Writes nothing itself: review the "
         "proposal, then apply it with doc.batch (dry_run there to preview). RECIPE_INVALID for an "
         "unknown or invalid recipe; edits that would touch unsupported content are listed under "
-        "skipped. Refused for .txt/.md/.odt sources, which cannot be written."
+        "skipped. engine live reads the document open in the app (text-only recipes) and "
+        "returns a live batch without expect, plus the text of each paragraph it edits. "
+        "Refused for .txt/.md/.odt sources, which cannot be written."
     ),
     _RUN,
     output=_RUN_OUTPUT,
@@ -221,6 +242,8 @@ def recipe_run(request: dict[str, Any]) -> Reply:
                 f"no recipe named {request['recipe']!r}; list them with recipe.list",
             )
         recipe = found[1]
+    if request.get("engine") == "live":
+        return _run_live(request, recipe)
     doc = Document(Path(request["doc"]).as_posix())
     if "where" in recipe["match"]:
         # An empty paragraph whose deletion is already tracked is gone for the reader.
@@ -250,3 +273,38 @@ def recipe_run(request: dict[str, Any]) -> Reply:
         },
     }
     return Reply(result, doc=doc.envelope_doc(), warnings=warnings)
+
+
+def _run_live(request: dict[str, Any], recipe: dict[str, Any]) -> Reply:
+    """``recipe.run`` over the paragraph texts of the document open in a live app."""
+    from doc_control.live.dispatch import guarded, unavailable
+    from doc_control.model.address import Address, fingerprint
+    from doc_control.ops.live import LIVE_KINDS, held
+
+    if "where" in recipe["match"]:
+        raise unavailable(f"{recipe['recipe']}: a recipe with match.where needs the file engine")
+    adapter, path = held(request)
+    texts = guarded(adapter.paragraphs, path)
+    paragraphs = [(Address(n + 1, fingerprint(t)), t) for n, t in enumerate(texts) if t]
+    proposal = propose(recipe, paragraphs)
+    ops: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for op in proposal.ops:
+        if op["op"] in LIVE_KINDS:
+            ops.append(op)
+        else:
+            skipped.append({"op": op["op"], "at": op["at"], "reason": "not supported live"})
+    warnings = [*proposal.warnings, *(f"SKIPPED: {s['at']} {s['reason']}" for s in skipped)]
+    edited = {str(op["at"]).split(":", 1)[0] for op in ops}
+    result: dict[str, Any] = {
+        "recipe": recipe["recipe"],
+        "applied": False,
+        "matches": proposal.matches,
+        "passes": proposal.passes,
+        "stable": proposal.stable,
+        "skipped": skipped,
+        "batch": {"doc": request["doc"], "engine": "live", "ops": ops},
+        # The file may be held by the app, so para.get cannot show what an edit changes.
+        "paragraphs": {str(a): t for a, t in paragraphs if str(a) in edited},
+    }
+    return Reply(result, warnings=warnings)
