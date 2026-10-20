@@ -24,11 +24,11 @@ verification and undo on every write. It works on closed files and, through Libr
 Writer or Microsoft Word on Windows, on the document the writer has open. There is no AI
 inside: the agent decides, the writer approves.
 
-Pre-1.0: the API may still change.
+Not yet stable: the API may still change.
 
 ## Quick start
 
-Python 3.11+, no other dependencies.
+Python (the version in `pyproject.toml`), no other dependencies.
 
 ```bash
 pip install doc-control            # or run without installing: uvx doc-control ...
@@ -104,7 +104,7 @@ $ doc-control text.replace --json '{"doc": "story.docx", "at": "p1#bfa780f9:4-8"
 
 ### MCP server
 
-`doc-control mcp` serves all 68 operations as MCP tools over stdio, one tool per
+`doc-control mcp` serves 60+ operations as MCP tools over stdio, one tool per
 operation (`doc.batch` becomes `doc_batch`), with the same JSON Schemas and response
 envelope as the CLI. Every tool declares an `outputSchema`; a successful call also
 returns the envelope as `structuredContent`. Standard library only.
@@ -156,7 +156,7 @@ Word's Review pane. `history.undo` reverts a write.
   `history.restore` take `"tracked": false` (file engine only).
 - **Safety layer:** lock-file and on-disk change detection, backup before every write,
   read-back verification, automatic restore on failure, an operation log with undo.
-- **Two engines, one API.** The file engine edits a closed `.docx` with the Python standard
+- **File and live engines, one API.** The file engine edits a closed `.docx` with the Python standard
   library, rewriting only the parts it touches; reads also accept `.txt`, `.md` and `.odt`.
   The live engine drives the open document in LibreOffice Writer or Word (Windows, COM).
 - **Recipes** propose fix batches (Spanish typography, quotes, dashes, spacing, empty
@@ -243,7 +243,7 @@ Everything runs locally. With the update check off (the default), nothing leaves
 ## What it is not
 
 - Not an AI: no model calls, no judgment. It executes what the agent sends.
-- No live control on macOS yet; live `doc.batch` covers three edit types.
+- No live control on macOS yet; live `doc.batch` covers only some edit types.
 - An index is built by Word (F9); citation fields are never changed.
 
 ## Documentation
