@@ -359,6 +359,16 @@ SETTINGS: dict[str, Setting] = {
         "5.7.0",
         "Whose review marker clears a PR: distinct-session, or distinct-login for other logins",
     ),
+    # The "built with claude-arsenal" badge `/init` puts under the README's
+    # title, read by init.py and nowhere else. Like a license notice it says
+    # where the tooling came from and links to it, and like any notice the host
+    # may drop it: set false, or delete the block — once init has recorded
+    # `true` it never puts a deleted badge back.
+    "attribution": Setting(
+        True,
+        "5.10.0",
+        "Keep a 'built with claude-arsenal' badge in README.md; false (or deleting it) drops it.",
+    ),
     # The newest bundle version whose new settings this host has looked at.
     # `--new-settings` (run by `init.py` at every session start) prints one
     # NEW SETTING line per key added after it that the file does not set, and
@@ -426,6 +436,7 @@ READERS = {
     "listing-budget": "plugins/skill-workshop/skills/skill-workshop/scripts/audit_library.py",
     "queue-automation": "plugins/core/skills/init/scripts/init.py",
     "branch-protection": "plugins/core/skills/init/scripts/init.py",
+    "attribution": "plugins/core/skills/init/scripts/init.py",
     "import-label": "plugins/core/skills/init/assets/scripts/issue_import.py",
     "task-label": "plugins/core/skills/init/assets/scripts/queue_hooks.py",
     "claim-prefix": "plugins/core/skills/init/assets/scripts/queue_hooks.py",

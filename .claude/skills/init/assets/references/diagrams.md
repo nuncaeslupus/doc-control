@@ -49,10 +49,11 @@ drawspec validate diagram.json     # every violation, with its JSON pointer
 
 ## Running drawspec
 
-It is not on PyPI. `create_reader.py` uses, in order: the command in
-`ARSENAL_DRAWSPEC` (e.g. `ARSENAL_DRAWSPEC="uvx --from /path/to/drawspec
-drawspec"`), `drawspec` on `PATH`, then
-`uvx --from git+https://github.com/nuncaeslupus/drawspec drawspec`. With none of
+It is on PyPI (`pip install drawspec`, or `uvx drawspec`). `create_reader.py`
+uses, in order: the command in `ARSENAL_DRAWSPEC` (e.g. `ARSENAL_DRAWSPEC="uvx
+--from /path/to/drawspec drawspec"`), `drawspec` on `PATH`, then
+`uvx --from 'drawspec>=0.2,<0.3' drawspec` — pinned to a known-good range so a
+reader does not change under you. With none of
 those available, a document containing a `drawspec` fence fails with that hint
 rather than rendering without its picture. A document with no fence never runs
 drawspec, so it adds no dependency to any reader that does not draw.

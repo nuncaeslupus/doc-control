@@ -742,7 +742,9 @@ def apply_action(action: dict[str, Any], api: Api | None, *, tasks_dir: Path) ->
             print(f"queue_hooks: labelled #{number} `{name}`")
         elif kind == "delete-ref":
             ref = str(action["ref"])
-            api.request("DELETE", f"/repos/{api.repo}/git/{ref.removeprefix('refs/')}")
+            # The endpoint is `git/refs/heads/...`: the full ref, `refs/` included.
+            # Stripping it addressed `git/heads/...`, which 404s on every delete.
+            api.request("DELETE", f"/repos/{api.repo}/git/{ref}")
             print(f"queue_hooks: deleted claim ref {ref} ({action['task']})")
         elif kind == "create-issue":
             for name in action["labels"]:

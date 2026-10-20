@@ -18,6 +18,74 @@ being a changelog nobody reads.
 
 Format: `## [X.Y.Z] - YYYY-MM-DD`, newest first, plain bullets below.
 
+## [5.10.2] - 2026-10-20
+
+- **The scheduled queue job prunes finished claim refs again.** `prune-claims`
+  sent its `DELETE` to `git/heads/<claim>` instead of `git/refs/heads/<claim>`,
+  which GitHub answers with 404, so the "release abandoned claims, prune
+  finished ones" job failed on every run and claim refs piled up. After
+  updating, the next runs delete the backlog (a run capped by the truncation
+  guard leaves the rest to the next one).
+
+## [5.10.1] - 2026-10-14
+
+- **Spec and plan readers no longer share a name across documents (#517).**
+  Readers and their exports are stamped to the minute,
+  `<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>-reader.html` / `-notes.md`, so two
+  workspace specs reviewed the same day stay apart in Downloads. Earlier
+  date-only readers are still cleaned up and still recognised by the
+  validators. `SOURCE_DATE_EPOCH` pins the stamp.
+- **A bare placeholder no longer hides the rest of the reader.** Raw
+  `<title>`, `<script>`, `<style>`, `<textarea>` and similar tags outside code
+  are shown as text instead of swallowing everything after them.
+- **Opening a reader no longer fills it with old notes.** Notes saved in the
+  browser are keyed on the document's revision and, for workspace specs, the
+  workspace. Notes already applied to revision N no longer reappear in revision
+  N+1's reader, and one workspace's notes no longer show up in another's. To
+  carry unapplied notes forward, use `--notes <export>` as before. Notes typed
+  into a reader built before this update are not shown by a rebuilt one, so
+  export them first.
+- **The reader is easier to read and to annotate.** The document is set in a
+  book face. Empty note fields are a quiet single line that opens into a
+  writing card on focus, and a written note stands out as a solid card. A
+  single document gets flat contents with no repeated title band. Tables are
+  tidier, and `**Revision**` / `**Status**` header lines stay one per line.
+
+## [5.10.0] - 2026-10-13
+
+- **`/init` credits claude-arsenal in your README.** It adds a "built with
+  claude-arsenal" badge, linking the project, under `README.md`'s title, once,
+  between `claude-arsenal:attribution` markers that later refreshes update in
+  place. It works like a license notice you are free to drop: delete the block
+  and it is not put back, or set `attribution = false` in `arsenal/config.toml`
+  before it is added. Commit the README change with the refresh.
+- **`design` plans past drawspec's budget can be drawn again.** `sync_plan_graph.py`
+  now draws the Depends column's transitive reduction (an edge a longer path
+  already implies is left out), and a plan still past 15 nodes / 16 edges is
+  split into a phase overview plus one graph per phase, each within the budget.
+  `validate_plan.py` accepts a path for each dependency instead of a literal
+  edge, reads a split graph as one, and only **warns** on a fence too big to draw
+  — it no longer demands a graph `create_reader.py` refuses. Rerun
+  `sync_plan_graph.py --apply` on a plan whose reader stopped building.
+- **`create_reader.py` runs drawspec from PyPI.** The fallback after
+  `$ARSENAL_DRAWSPEC` and `drawspec` on PATH is now
+  `uvx --from 'drawspec>=0.2,<0.3' drawspec`, pinned so your reader does not
+  change under you; faster to fetch, and works where git over HTTPS is blocked.
+  `pip install drawspec` puts it on PATH.
+- **Review loop: a bot acknowledging your trigger is no longer read as a skip.**
+  `review_sources.py` classifies acknowledgements ("Review triggered", "review
+  requested/queued/started") as in progress, and anything a bot posts after the
+  loop's own trigger on the same head waits one `bot-wait-min` instead of ending
+  the loop `bot_skipped`; only a rate limit there is final. `pr-review-loop.md`
+  notes per-hour on-demand quotas: with several PRs open, trigger the one a bot
+  review is worth most on first.
+- **`pypi-release` documents an automated release** (`references/automated-release.md`):
+  a `release.yml` that publishes on a merged version bump (or a pushed `v*` tag,
+  checked against the version) with `twine check --strict`, PyPI trusted
+  publishing behind a `pypi` environment with a required reviewer, then
+  `gh release create` — plus the owner's one-time setup, SHA-pinned actions and
+  how to gate the release on green CI.
+
 ## [5.9.1] - 2026-10-13
 
 - `references/repo-housekeeping.md` now walks a package's **first publish** in
