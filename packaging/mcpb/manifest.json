@@ -16,7 +16,7 @@
   "homepage": "https://github.com/nuncaeslupus/doc-control",
   "documentation": "https://github.com/nuncaeslupus/doc-control#readme",
   "support": "https://github.com/nuncaeslupus/doc-control/issues",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "icon": "icon.png",
   "keywords": ["word", "docx", "documents", "tracked changes", "ooxml"],
   "server": {
