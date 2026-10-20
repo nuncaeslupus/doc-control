@@ -101,8 +101,9 @@ jobs:
 
   libreoffice:
     # LibreOffice headless round trip. REQUIRE_SOFFICE makes a missing soffice a failure,
-    # never a silent skip.
-    runs-on: ubuntu-latest
+    # never a silent skip. Pinned to 24.04 (LibreOffice 24.2): ubuntu-latest moved to 26.04,
+    # whose LibreOffice 26.2 trips the .odt parity gate.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       DOC_CONTROL_REQUIRE_SOFFICE: "1"
