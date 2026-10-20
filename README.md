@@ -6,29 +6,44 @@
 [![Built with claude-arsenal](https://img.shields.io/badge/built%20with-claude--arsenal-d97756)](https://github.com/nuncaeslupus/claude-arsenal)
 <!-- /claude-arsenal:attribution -->
 
+[![PyPI](https://img.shields.io/pypi/v/doc-control)](https://pypi.org/project/doc-control/)
+[![CI](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml/badge.svg)](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![doc-control MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/nuncaeslupus/doc-control/badges/score.svg)](https://glama.ai/mcp/servers/nuncaeslupus/doc-control)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nuncaeslupus/doc-control/main/docs/hero.png" width="100%" alt="doc-control: an agent sends one JSON batch that replaces a word and adds a comment; the open Word page shows the replacement as a tracked deletion and insertion with Accept and Reject buttons, and the comment in a margin balloon">
 </p>
 
-> Status: **file engine working** (pre-1.0; the API may still change). The live engine
-> drives LibreOffice Writer and Microsoft Word (Windows). See `status/specification.md` and `status/plan.md`.
+**Lets AI agents edit Word documents as tracked changes the writer can accept or reject.**
 
-A deterministic tool that lets AI agents work on Word documents quickly,
-precisely and safely, ideally live in the Word window the writer has open.
-Every content change is a tracked change the writer can accept or reject.
+An agent asked to fix a `.docx` usually rewrites the file and hopes nothing else moved.
+This tool gives it a deterministic interface instead: read the document by paragraph
+address, then send edits that land as tracked changes and comments, with a backup,
+verification and undo on every write. It works on closed files and, through LibreOffice
+Writer or Microsoft Word on Windows, on the document the writer has open. There is no AI
+inside: the agent decides, the writer approves.
 
-For anyone — writers and editors first — who wants an AI agent's help inside a
-Word document without a single silent change.
+Not yet stable: the API may still change.
+
+## Quick start
+
+Python (the version in `pyproject.toml`), no other dependencies.
+
+```bash
+pip install doc-control            # or run without installing: uvx doc-control ...
+doc-control text.find --json '{"doc": "story.docx", "query": "rain"}'
+```
+
+For live control of Word on Windows install `doc-control[live]` (adds pywin32);
+LibreOffice needs no extra package.
 
 ## Install without Python (Windows)
 
-No Python needed. Every release on the [latest release page](https://github.com/nuncaeslupus/doc-control/releases/latest)
-carries a Claude Desktop extension and an installer. Both install for the current Windows
-user only, need no admin rights, and work with any Claude account, the free plan included.
-They drive Microsoft Word live; LibreOffice live control still needs the Python install
-below. The full guide (checksums, updates, uninstalling, moving from `uvx`) is
+Every release on the [latest release page](https://github.com/nuncaeslupus/doc-control/releases/latest)
+carries a Claude Desktop extension and an installer. Both install for the current user,
+need no admin rights, work with any Claude account (the free plan included) and drive
+Microsoft Word live. Full guide (checksums, updates, uninstalling):
 [docs/install-windows.md](docs/install-windows.md).
 
 ### Claude Desktop extension (`.mcpb`)
@@ -36,9 +51,8 @@ below. The full guide (checksums, updates, uninstalling, moving from `uvx`) is
 1. Download `doc-control-X.Y.Z-windows-x64.mcpb` from the [latest release](https://github.com/nuncaeslupus/doc-control/releases/latest).
 2. Drag the file onto Claude Desktop's **Settings > Extensions** page and click **Install**.
 
-Claude Desktop then warns, in red, that the extension can access everything on your
-computer. Every local extension gets that warning; it is expected. Double-clicking the
-file does not install it: Windows only asks which program should open it.
+Claude Desktop warns that the extension can access everything on your computer; every
+local extension gets that warning. Double-clicking the file does not install it.
 
 ### Installer (`-setup.exe`), for the command line
 
@@ -47,43 +61,111 @@ file does not install it: Windows only asks which program should open it.
 3. If Windows SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway** (the installer is not code-signed).
 4. Click **Install**, **Next** and **Finish**, and open a new terminal: `doc-control server.capabilities` works there.
 
-To update, install the newer release the same way. To uninstall, remove the extension
-from **Settings > Extensions**, or the installer's copy from Windows **Settings > Apps**
-("doc-control X.Y.Z"). A winget package is coming.
+## Example
+
+A two-paragraph `story.docx`. Find a word, then replace it and comment on the next
+paragraph in one batch (long envelopes trimmed with `...`; the rest is actual output):
+
+```console
+$ doc-control text.find --json '{"doc": "story.docx", "query": "rain"}'
+{"api": "1.0", "ok": true, "op": "text.find", ..., "result": {"matches": [{"at": "p1#bfa780f9:4-8",
+ "text": "rain", "context": "The rain had not stopped since Tuesday…"}], "total": 1, ...}}
+
+$ doc-control doc.batch --json '{"doc": "story.docx", "ops": [
+    {"op": "text.replace", "at": "p1#bfa780f9:4-8", "text": "snow"},
+    {"op": "comment.add", "at": "p2#f8b24a64", "text": "Which window?"}]}'
+{"api": "1.0", "ok": true, "op": "doc.batch", ..., "result": {"applied": 2, "dry_run": false,
+ "preview": [{"op": 0, "at": "p1#bfa780f9:4-8", "before": "rain", "after": "snow"},
+             {"op": 1, "at": "p2#f8b24a64", "before": "Ana closed the window and waited.",
+              "after": "(comment c0 by Claude: Which window?)"}],
+ ..., "author": "Claude", "backup": ".../.doc-control/story.docx/backups/20261020T091845Z-0ff4dc24.docx",
+ "op_id": "h-000001"}, "warnings": [], "next": null}
+
+$ doc-control review.list --json '{"doc": "story.docx"}'
+{..., "result": {"totals": {"comments": 1, "insert": 0, "delete": 0, "replace": 1, ...},
+ "paragraphs": [{"at": "p1#c6f909ff", "text": "The snow had not stopped since Tuesday.",
+   "changes": [{"type": "replace", "ids": ["1", "2"], "author": "Claude", "old": "rain", "new": "snow", ...}]},
+  {"at": "p2#f8b24a64", "text": "Ana closed the window and waited.",
+   "comments": [{"id": "0", "author": "Claude", "text": "Which window?", "quote": "Ana closed the window and waited.", ...}]}]}, ...}
+```
+
+Word shows the replacement as a tracked deletion and insertion and the comment in the
+margin. Reusing the old address after the edit fails instead of guessing:
+
+```console
+$ doc-control text.replace --json '{"doc": "story.docx", "at": "p1#bfa780f9:4-8", "text": "fog"}'
+{"api": "1.0", "ok": false, "op": "text.replace", "error": {"code": "STALE_ADDRESS",
+ "message": "p1#bfa780f9 no longer matches the document",
+ "hint": "Re-read the paragraph (para.get) or resolve its anchor, then retry.",
+ "details": {"address": "p1#bfa780f9", "current": "p1#c6f909ff"}}}
+```
+
+## Use with AI agents
+
+### MCP server
+
+`doc-control mcp` serves 60+ operations as MCP tools over stdio, one tool per
+operation (`doc.batch` becomes `doc_batch`), with the same JSON Schemas and response
+envelope as the CLI. Every tool declares an `outputSchema`; a successful call also
+returns the envelope as `structuredContent`. Standard library only.
+
+```json
+{
+  "mcpServers": {
+    "doc-control": { "command": "uvx", "args": ["doc-control", "mcp"] }
+  }
+}
+```
+
+For live Word on Windows use `"args": ["--from", "doc-control[live]", "doc-control", "mcp"]`,
+or install the `.mcpb` extension above. `live_places` also ships an MCP Apps UI
+(a `ui://` page) whose buttons call `live_select`.
+
+| Group | Tools |
+|---|---|
+| Read | `doc_outline`, `para_list`, `para_get`, `para_locate`, `text_find`, `doc_stats`, `doc_segment`, `review_list`, `comment_list`, `revision_list` |
+| Edit (tracked) | `doc_batch`, `text_replace`, `para_insert`, `para_delete`, `comment_add`, `note_add`, `term_rename`, `table_row_insert`, `table_row_delete` |
+| Review | `revision_accept`, `revision_reject`, `doc_diff`, `doc_compare` |
+| Layout and fields | `layout_get`, `layout_apply`, `field_list`, `field_update`, `toc_insert`, `caption_add`, `xref_add`, `index_mark`, `index_insert` |
+| Styles | `style_*`, `styleset_*` |
+| Safety | `history_list`, `history_undo`, `history_restore`, `history_search`, ... |
+| Live window | `live_status`, `live_open`, `live_select`, `live_places`, `live_save`, `live_close`, ... |
+| Discovery | `server_capabilities`, `server_help`, `recipe_list`, `recipe_run` |
+
+`server_help` with `{"op": "<name>"}` returns any operation's schema and summary.
+
+### From the CLI
+
+An agent can drive the CLI directly. It never prompts and reads stdin only with
+`--json -`. It prints exactly one JSON envelope on stdout: `{"ok": true, "result": ...}`
+or `{"ok": false, "error": {"code", "message", "hint", "details"}}`.
+Exit codes: `0` success, `1` operation error, `2` usage error (unknown operation or
+invalid request). Error codes are listed in [docs/errors.md](docs/errors.md).
+
+The intended loop: read (`doc.outline`, `para.list`, `text.find`), build one `doc.batch`,
+run it with `"dry_run": true` to get the preview, apply it, and point the writer to
+Word's Review pane. `history.undo` reverts a write.
+
+## How it works
+
+- **Addresses, not offsets.** `p12#a7b2a7b2:4-10` is paragraph 12, its text fingerprint
+  and a character range. A changed paragraph gives `STALE_ADDRESS` with the current
+  address. `anchor.create` / `anchor.resolve` find a passage again after edits.
+- **Every content change is tracked**, authored by `DOC_CONTROL_AUTHOR` (default `Claude`).
+  For an edit the writer already approved, the text-editing operations and
+  `history.restore` take `"tracked": false` (file engine only).
+- **Safety layer:** lock-file and on-disk change detection, backup before every write,
+  read-back verification, automatic restore on failure, an operation log with undo.
+- **File and live engines, one API.** The file engine edits a closed `.docx` with the Python standard
+  library, rewriting only the parts it touches; reads also accept `.txt`, `.md` and `.odt`.
+  The live engine drives the open document in LibreOffice Writer or Word (Windows, COM).
+- **Recipes** propose fix batches (Spanish typography, quotes, dashes, spacing, empty
+  paragraphs): `recipe.list`, then `recipe.run` returns a batch to review and apply.
 
 ## Usage
 
-Install with `pip install doc-control` (or run it without installing: `uvx doc-control`).
-Python 3.11+, no other dependencies. To drive the Word that is open on Windows, install
-`doc-control[live]` (it adds pywin32); LibreOffice needs no extra package.
-
-Command line, JSON in and JSON out:
-
-```bash
-doc-control doc.outline --json '{"doc": "Novela.docx"}'
-doc-control text.find --json '{"doc": "Novela.docx", "query": "lluvia"}'
-doc-control doc.batch --json '{"doc": "Novela.docx", "ops": [
-  {"op": "text.replace", "at": "p12#a7b2a7b2:4-10", "text": "nieve"},
-  {"op": "comment.add", "at": "p40#c0ffee00", "text": "¿Seguro?"}]}'
-doc-control server.help doc.batch   # the JSON Schema of any operation
-```
-
-Every write is a tracked change by `DOC_CONTROL_AUTHOR` (default `Claude`), made after a
-backup and verified, with `history.undo` and `history.*` to go back. Addresses like
-`p12#a7b2a7b2` come from read results and fail loudly if the paragraph changed.
-One edit can also go straight to its own operation (`text.replace`, `para.insert`,
-`para.delete`, `comment.add`, `revision.accept`, `revision.reject`), which runs it as a
-one-edit `doc.batch`.
-
-For a change the writer has already approved in the chat, `batch`, `term.rename` and
-`restore` take `"tracked": false`: the same edit with this call's own revisions accepted in
-the same verified write, so no revision mark is left (other tracked changes stay; a paragraph
-that holds one is refused). Tracked stays the default. `undo` of a plain write restores the
-backup, so it works only while the document is exactly as that write left it (later edits must
-be undone first; otherwise BATCH_CONFLICT). A plain edit inside a tracked-inserted table row is
-allowed; rejecting that row later removes the plain text too. File engine only for now.
-
-From Python, a document can be held open for many reads, with whole results:
+Operations are named `resource.action`; any single edit operation runs as a one-edit
+`doc.batch`. `doc-control server.help <op>` prints an operation's schema. From Python:
 
 ```python
 from doc_control import api
@@ -94,54 +176,27 @@ with api.open("Novela.docx") as doc:
     chapters = doc.run("doc.segment", {"unit": "chapters"})["chapters"]
 ```
 
-A document back from a reviewer reads in one call: `review.list` gives each paragraph with
-comments or tracked changes, in order, with its text, its comment threads (each with the
-text it covers, `quote`) and its changes, a deletion and insertion side by side shown as one
-replacement (`old`, `new`), plus totals by author. `comment.list` and `revision.list` give
-the same facts as flat lists.
-
-```bash
-doc-control review.list --json '{"doc": "Novela.docx", "author": "Editor"}'
-```
-
-Recipes propose batches of fixes (Spanish typography, quotes, dashes, spacing, empty
-paragraphs and more): `recipe.list`, then `recipe.run` returns a batch to review and apply.
-
 ### Notes, headers, footers and tables
 
-Reads cover the body only unless asked; `stories` opts in to the rest (`"notes"` for
-footnotes and endnotes, `"headers"` for headers and footers) on `para.list`,
-`text.find`, `para.locate`, `para.get`, `doc.outline`, `doc.stats` and `revision.list`.
-Their paragraphs carry an address with a prefix (`fn3/p1#0c9e0c9e`, `en2/…`, `hdr1.default/…`,
-`ftr1.first/…`) that the edit operations accept, so a tracked edit inside a footnote or a
-running header works like one in the body. A body read stays as fast as before.
+Reads cover the body unless `stories` adds `"notes"` (footnotes, endnotes) or
+`"headers"` (headers, footers). Those paragraphs carry prefixed addresses
+(`fn3/p1#0c9e0c9e`, `hdr1.default/...`) that edits accept.
 
 ```bash
 doc-control para.list --json '{"doc": "Tesis.docx", "stories": ["body", "notes"]}'
 doc-control text.replace --json '{"doc": "Tesis.docx", "at": "fn3/p1#0c9e0c9e:4-10", "text": "2019"}'
 doc-control note.add --json '{"doc": "Tesis.docx", "at": "p40#c0ffee00:17", "kind": "footnote", "text": "Ver el cap. 2."}'
-doc-control section.list --json '{"doc": "Tesis.docx"}'
-doc-control table.get --json '{"doc": "Tesis.docx", "table": 1}'
 doc-control table.row.insert --json '{"doc": "Tesis.docx", "table": 1, "after_row": 2, "cells": ["a", "b"]}'
-doc-control table.row.delete --json '{"doc": "Tesis.docx", "table": 1, "row": 4}'
 ```
 
-`note.add` inserts the reference mark and the note as tracked insertions (rejecting them
-removes both); the row operations write tracked row insertions and deletions. All of it is
-backed up, verified and undoable like any other write. `scripts/real_word_stories.py`
-checks it in real Word (see [docs/real-word-check.md](docs/real-word-check.md)).
+### Page layout and fields
 
-### Page layout: front matter, numbering, headers and fields
-
-`layout.get` returns the document's page plan: per section where it starts (`from`), its
-break, its page numbering and its header and footer text per kind (`default`, `first`,
-`even`; `null` inherits the previous section's). `layout.apply` takes a plan in the same
-shape and brings the document to it. This one gives a novel an unnumbered title page,
-then starts chapter 1 on a right-hand page numbered 1, with the chapter title in the odd
-headers and the book title in the even ones:
+`layout.get` returns the page plan per section (start, break, numbering, header and
+footer per kind); `layout.apply` brings the document to a plan in the same shape. This
+one gives a novel an unnumbered title page, then starts chapter 1 on a right-hand page
+numbered 1, with the chapter title in odd headers and the book title in even ones:
 
 ```bash
-doc-control layout.get --json '{"doc": "Novela.docx"}'
 doc-control layout.apply --json '{"doc": "Novela.docx", "untracked": true, "plan": {
   "version": 1, "two_sided": true, "mirror_margins": true,
   "sections": [
@@ -154,114 +209,66 @@ doc-control layout.apply --json '{"doc": "Novela.docx", "untracked": true, "plan
      "footer": {"default": "{PAGE}", "even": "{PAGE}"}}]}}'
 ```
 
-Each `from` is the address of the paragraph the section starts at (from `doc.outline` or
-`para.list`). `{PAGE}`, `{NUMPAGES}` and `{chapter}` (the current Heading 1) become
-fields. Keys left out stay as they are. Breaks and numbering go in as tracked changes;
-a new header or footer part and the two-sided and mirror settings cannot be tracked in
-Word, so the plan needs `untracked: true` (without it the answer names what needs it).
-Run it with `"dry_run": true` first to see the changes; nothing is written unless the
-plan read back from the result equals the request. A new section break adds a paragraph
-to carry it, so the addresses after it renumber: read them again with `layout.get`.
-
-Fields: `field.list` shows every field (TOC, PAGE, SEQ, REF, citations) and whether its
-result is stale; `toc.insert`, `caption.add`, `xref.add`, `index.mark` and
-`index.insert` add them as tracked insertions; `field.update` refreshes the TOC, page,
-sequence and reference results through headless LibreOffice (`ENGINE_UNAVAILABLE`
-without it; `set_update_on_open` asks Word to refresh them on open instead). An index is
-built by Word (F9); citation fields are never changed. `scripts/real_word_layout.py` checks the
-result in real Word (see [docs/real-word-check.md](docs/real-word-check.md)).
+`{PAGE}`, `{NUMPAGES}` and `{chapter}` become fields. Breaks and numbering are tracked;
+new header parts and two-sided settings cannot be tracked in Word, hence
+`untracked: true`. Try `"dry_run": true` first. `field.list`, `toc.insert`,
+`caption.add`, `xref.add` and `index.insert` handle fields; `field.update` refreshes them
+through headless LibreOffice.
 
 ### Live: the document the writer has open
 
-With LibreOffice Writer installed, the same front doors work on the open window: the
-writer sees each comment and tracked change appear, and saves when they choose.
-
 ```bash
 doc-control live.open --json '{"doc": "Novela.docx"}'
-doc-control live.select --json '{"doc": "Novela.docx", "find_phrase": "lluvia fina"}'
 doc-control doc.batch --json '{"doc": "Novela.docx", "engine": "live", "ops": [
   {"op": "comment.add", "at": "p40#c0ffee00", "text": "¿Seguro?"}]}'
 doc-control live.close --json '{"doc": "Novela.docx", "save": true}'
 ```
 
-Live `doc.batch` takes `comment.add`, `text.replace` and `para.insert`; anything else, or a
-machine with no app to drive, answers `ENGINE_UNAVAILABLE` with the reason
-(`live.status` lists the apps found). LibreOffice needs a Python its own bridge was
-built for: the system Python with `python3-uno` for a distribution's package, the
-Python version the snap bundles for the snap (`live.status` names it). Closing never
-drops unsaved work: a changed document needs `save` or `discard`.
+Live `doc.batch` takes `comment.add`, `text.replace` and `para.insert`. Without a usable
+app it answers `ENGINE_UNAVAILABLE` with the reason; `live.status` lists the apps found
+and, for LibreOffice, the Python its UNO bridge needs. Closing never drops unsaved work.
 
-Operations are named `resource.action` (`doc.outline`, `text.find`, `para.list`); the
-names used before 0.7.0 (`outline`, `find`, `paragraphs.list`…) still run but are no longer
-listed ([renamed operations](docs/operations.md#renamed-operations)).
+### Environment
 
-References: [operations](docs/operations.md) · [errors](docs/errors.md).
+| Variable | Effect |
+|---|---|
+| `DOC_CONTROL_AUTHOR` | Author of tracked changes and comments (default `Claude`) |
+| `DOC_CONTROL_STORE` | `appdata` keeps backups and history in the user store instead of `.doc-control/` beside the document |
+| `DOC_CONTROL_STORE_DIR` | Store root override |
+| `DOC_CONTROL_HOME` | User store and recipes folder |
+| `DOC_CONTROL_UPDATE_CHECK` | `1` asks GitHub Releases at most once a day and reports a newer version in `server.capabilities`; never downloads anything |
 
-## Planned shape
+Everything runs locally. With the update check off (the default), nothing leaves the machine.
 
-- **One core, two engines, one API**
-  - *File engine*: edits a closed `.docx` with the Python standard library only,
-    rewriting only the parts it touches. Read operations also take a `.txt`, `.md` or
-    `.odt` file (hard-wrapped text detected; Markdown `#` headings and OpenDocument
-    headings become Heading styles); writes refuse it.
-  - *Live engine*: controls the open document (LibreOffice Writer, and Word on
-    Windows over COM; Mac later).
-- **Two front doors**: a CLI with JSON in/out, and an MCP server
-  (`doc-control mcp`, stdio) for Claude Desktop / Cowork and other MCP clients.
-- **Safety first**: lock-file and on-disk change detection, backup before every
-  write, verification, automatic restore, operation log with undo, and
-  `unintended_changes == 0` as a gate.
-- **No AI inside.** Judgment belongs to the agent; approval belongs to the writer.
+## What it is not
 
-It will replace `docx-fixer`, whose rules become packs built on this tool, and
-serve `literary-critic` as its first downstream consumer.
+- Not an AI: no model calls, no judgment. It executes what the agent sends.
+- No live control on macOS yet; live `doc.batch` covers only some edit types.
+- An index is built by Word (F9); citation fields are never changed.
 
-## MCP server
-
-`doc-control mcp` serves every operation as an MCP tool over stdio, one tool per
-operation (`para.move` becomes `para_move`), with the same JSON Schemas and the
-same response envelope as the CLI. Every tool also declares an `outputSchema`, and a
-successful call returns the envelope as `structuredContent` too (an error has none). It
-needs nothing beyond the package itself:
-
-```json
-{
-  "mcpServers": {
-    "doc-control": { "command": "uvx", "args": ["doc-control", "mcp"] }
-  }
-}
-```
-
-To drive the Word a writer has open on Windows, the server needs the `live` extra:
-`"args": ["--from", "doc-control[live]", "doc-control", "mcp"]`.
-
-### Privacy and the update notice
-
-Everything runs on your machine and nothing leaves it, with one opt-in exception.
-If you set `DOC_CONTROL_UPDATE_CHECK=1` (the `.mcpb` setting "Check for updates"), it asks
-the GitHub Releases API for the latest version at most once a day, caches the answer in
-your local app data (`%LOCALAPPDATA%\doc-control` on Windows), and reports
-`update: {current, latest, mcpb_url, checked_at}` in `server.capabilities` and `live.status`.
-It never downloads or installs anything. Left off (the default), it makes no request.
-
-## Documents
+## Documentation
 
 - [Operation reference](docs/operations.md) and [error reference](docs/errors.md), generated from the code
-- [Initial research: tooling and risks](docs/research/01-tooling-and-risks.md)
+- [Windows install](docs/install-windows.md)
+- [Checking results in real Word](docs/real-word-check.md)
+- [Design decisions](docs/decisions.md)
 
 ## Development
 
-This repo uses [claude-arsenal](https://github.com/nuncaeslupus/claude-arsenal)
-(spec-driven workflow, gated tasks in `arsenal/tasks/`). See `CLAUDE.md`.
+```bash
+uv sync
+make check     # ruff, mypy, pytest, hygiene script
+```
+
+Work is planned as gated tasks with [claude-arsenal](https://github.com/nuncaeslupus/claude-arsenal);
+see `CLAUDE.md`.
 
 ## Related projects
 
-Same author:
-
-- [claude-arsenal](https://github.com/nuncaeslupus/claude-arsenal) — a Claude Code skill and plugin marketplace: specs before code, failing tests first, gates with numbers.
-- [literary-critic](https://github.com/nuncaeslupus/literary-critic) — lets an LLM index, analyse and advise on a full novel manuscript the way a professional editor would; doc-control's first planned consumer.
-- [drawspec](https://github.com/nuncaeslupus/drawspec) — declarative diagram spec → clean, themeable SVG; JSON with no coordinates, so an LLM can write it.
-- [integral-job-search](https://github.com/nuncaeslupus/integral-job-search) — a candidate-centred job search run as a conversation in Claude Code.
+- [claude-arsenal](https://github.com/nuncaeslupus/claude-arsenal) — spec-driven Claude Code workflow and gated task queue.
+- [drawspec](https://github.com/nuncaeslupus/drawspec) — declarative diagram spec → clean SVG/PNG/text, writable by LLMs; MCP server included.
+- [literary-critic](https://github.com/nuncaeslupus/literary-critic) — LLM manuscript analysis the way a professional editor would.
+- [integral-job-search](https://github.com/nuncaeslupus/integral-job-search) — candidate-centred job search run in Claude Code.
 
 ## License
 
