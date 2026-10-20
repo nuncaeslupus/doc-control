@@ -333,7 +333,7 @@ def title_block() -> list[str]:
     cells = [
         (0, "PROJECT", "doc-control"),
         (200, "SHEET", "Tracked edits for Word"),
-        (400, "LICENSE", "Apache-2.0"),
+        (400, "LICENSE", "MIT"),
     ]
     out = [
         f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{GROUND}" stroke="{DIM}" '

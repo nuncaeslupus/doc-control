@@ -8,7 +8,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/doc-control)](https://pypi.org/project/doc-control/)
 [![CI](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml/badge.svg)](https://github.com/nuncaeslupus/doc-control/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![doc-control MCP server – quality and maintenance score on Glama](https://glama.ai/mcp/servers/nuncaeslupus/doc-control/badges/score.svg)](https://glama.ai/mcp/servers/nuncaeslupus/doc-control)
 
 <p align="center">
@@ -272,4 +272,4 @@ see `CLAUDE.md`.
 
 ## License
 
-[Apache-2.0](LICENSE)
+MIT — see [LICENSE](LICENSE).

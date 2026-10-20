@@ -112,7 +112,7 @@ def test_winget_manifest_fields_match_release() -> None:
     assert "- doc-control" in files[f"{ident}.installer.yaml"]
 
     locale = _fields(files[f"{ident}.locale.en-US.yaml"])
-    assert locale["License"] == "Apache-2.0"
+    assert locale["License"] == "MIT"
     assert locale["Publisher"] == "nuncaeslupus"
     assert locale["PackageName"] == "doc-control"
     assert locale["LicenseUrl"].endswith(f"/blob/v{version}/LICENSE")
