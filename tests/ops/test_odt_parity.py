@@ -6,7 +6,9 @@ Gate: ``odt_parity_mismatches == 0`` over every corpus kind: the non-empty parag
 .odt's estimated page count is within one page of LibreOffice's own (``meta.xml``), as its
 soft page breaks are LibreOffice's layout (T59). Digits are masked in
 texts, because LibreOffice recalculates field results (page numbers, dates) on conversion;
-empty paragraphs are left out, because a paragraph deleted as a tracked change stays an
+a whole ``d MMMM yyyy`` date is masked first, because a DATE field becomes the day of the
+run, whose month name and day width differ from the result cached in the .docx; empty
+paragraphs are left out, because a paragraph deleted as a tracked change stays an
 empty paragraph in a .docx but is gone from an .odt.
 """
 
@@ -26,6 +28,13 @@ from tests.corpus.validator import soffice_path
 from tests.helpers import soffice_dir
 
 _DIGITS = re.compile(r"\d")
+#: The corpus's DATE field (``d MMMM yyyy``), whatever day LibreOffice recalculated it on.
+_MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
+_DATE = re.compile(rf"\b\d{{1,2}} (?:{_MONTHS}) \d{{4}}\b")
+
+
+def _mask(text: str) -> str:
+    return _DIGITS.sub("#", _DATE.sub("<date>", text))
 
 
 _PAGES = re.compile(rb'meta:page-count="([0-9]+)"')
@@ -34,13 +43,23 @@ _PAGES = re.compile(rb'meta:page-count="([0-9]+)"')
 def _facts(path: Path) -> tuple[list[tuple[Any, ...]], list[str], int]:
     with api.open(path) as doc:
         rows = [
-            (_DIGITS.sub("#", r["text"]), r["heading_level"], r["style_name"], r["centred"])
+            (_mask(r["text"]), r["heading_level"], r["style_name"], r["centred"])
             for r in doc.paragraphs()
             if r["text"]
         ]
         chapters = [c["text"] for c in doc.run("doc.segment", {"unit": "chapters"})["chapters"]]
         pages = doc.run("page.estimate", {})["page_count"]
     return rows, chapters, pages
+
+
+def test_mask_hides_only_the_recalculated_date() -> None:
+    assert _mask("Dated 12 October 2026 in the test.") == _mask(
+        "Dated 3 November 2027 in the test."
+    )
+    assert _mask("Dated 12 October 2026 in the test.") != _mask("Dated 12 October 2026 in a test.")
+    assert _mask("Page 3 of 12, in 2026") == "Page # of ##, in ####"
+    # Only a month name makes a date: other words between the numbers still count.
+    assert _mask("Section 1 starts 2026") != _mask("Section 1 ends 2026")
 
 
 def _libreoffice_pages(path: Path) -> int:
