@@ -326,7 +326,10 @@ def main(argv: list[str] | None = None) -> int:
     print("", file=sys.stderr)
     print("Open its issue handle with your GitHub tools:", file=sys.stderr)
     print(f"  title: {args.title}", file=sys.stderr)
-    print("  labels: arsenal:task", file=sys.stderr)
+    print(
+        f"  labels: arsenal:task (or your `task-label` setting), arsenal-id:{task_id}",
+        file=sys.stderr,
+    )
     print(f"  body:  {TASK_MARKER.format(task_id=task_id)}", file=sys.stderr)
     print(f"         Task defined in `{path}`", file=sys.stderr)
     return 0

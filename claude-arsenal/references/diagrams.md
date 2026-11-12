@@ -35,8 +35,7 @@ The JSON source lives in the document, in a fence tagged `drawspec`:
 ```
 ````
 
-The source is what gets reviewed and diffed; nothing rendered is committed
-beside it. `create_reader.py` draws it: each fence is validated, then rendered
+The source is what gets reviewed and diffed. `create_reader.py` draws it: each fence is validated, then rendered
 to inline SVG in the HTML reader, and the annotated Markdown keeps the JSON. A
 diagram drawspec refuses fails the reader run with the block named and drawspec's
 own message, and nothing is written — fix the JSON, regenerate.
@@ -47,10 +46,30 @@ Check one while writing it:
 drawspec validate diagram.json     # every violation, with its JSON pointer
 ```
 
+## On GitHub: render the fences after editing them
+
+GitHub does not know the `drawspec` fence and shows its JSON. After writing or
+editing a diagram in a document that lives in the repo (`status/specification.md`,
+`status/plan.md`, a workspace's `spec.md`/`plan.md`), run:
+
+```bash
+python3 claude-arsenal/scripts/render_diagrams.py status/plan.md   # any number of files
+```
+
+Each fence gets `diagrams/<doc>-<n>.svg` beside the document, an image line above
+it, and its source collapsed under "Diagram source". The SVG's ink follows the
+viewer's light or dark scheme. Commit the SVGs with the document; they are derived,
+so never edit one by hand. A rerun is a no-op, and it removes the SVG of a deleted
+fence. `--check` writes nothing and exits 1 when anything is stale, which suits a
+CI step. The HTML reader drops the image line and the wrapper and draws each fence
+itself, as before. `sync_plan_graph.py --apply` rewrites the graph fence, so run
+this after it.
+
 ## Running drawspec
 
-It is on PyPI (`pip install drawspec`, or `uvx drawspec`). `create_reader.py`
-uses, in order: the command in `ARSENAL_DRAWSPEC` (e.g. `ARSENAL_DRAWSPEC="uvx
+It is on PyPI (`pip install drawspec`, or `uvx drawspec`). `render_diagrams.py`
+needs drawspec 0.4 or later (`uvx --from 'drawspec>=0.4,<0.5'` by default).
+`create_reader.py` uses, in order: the command in `ARSENAL_DRAWSPEC` (e.g. `ARSENAL_DRAWSPEC="uvx
 --from /path/to/drawspec drawspec"`), `drawspec` on `PATH`, then
 `uvx --from 'drawspec>=0.2,<0.3' drawspec` — pinned to a known-good range so a
 reader does not change under you. With none of

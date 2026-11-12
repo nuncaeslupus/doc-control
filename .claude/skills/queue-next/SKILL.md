@@ -1,6 +1,6 @@
 ---
 name: queue-next
-description: Picks the next unblocked task and runs the worker loop, optionally scoped by tag, workspace or title text (/queue-next [TAG … | WORKSPACE | text]). Use when the user wants to resume work. Not for a repo without init (init).
+description: Claims the next unblocked queue task and runs the worker loop, optionally scoped by tag, workspace or title. Use when the user wants to resume work. Not for adding tasks.
 user-invocable: true
 argument-hint: "[CAPABILITY | TAG … | WORKSPACE | search-text]"
 metadata:
@@ -23,14 +23,9 @@ CANARY: queue-next-loaded-2026-06-13-fb78d23e-b2c3d4e5f6a7b8c9
 
 ## The loop
 
-**1. Fetch the task issues.** List issues labelled `arsenal:task`, open and
-closed — a closed-as-completed issue is what satisfies a dependency. Request
-`number`, `title`, `state`, `labels`, `assignees`, plus `state_reason` where the
-surface returns it, and leave out `body`: the resolver matches titles when bodies
-are absent, and bodies are most of the fetch. Without `state_reason`, a closed
-issue reads as done unless it carries `arsenal:cancelled`. `github_channel.sh --detect` (in `claude-arsenal/bin/`) prints `gh`,
-`rest` or `none`; on `none`, use the built-in GitHub tools, because skipping the
-fetch means picking up work another agent already holds.
+**1. Fetch the task issues** as `claude-arsenal/AGENTS.md` session-start steps 1–2 say
+(no `body`). Add `state_reason` where the surface returns it: without it, a closed issue
+reads as done unless it carries `arsenal:cancelled`.
 
 **2. Ask for the next task.** One call, one line of output:
 
@@ -48,30 +43,17 @@ gate; fix the task file before working it, since a prose gate checks nothing.
 **3. Check nobody else holds it.** Read the task's issue and skip it if it is
 closed, assigned, or labelled `arsenal:claimed`.
 
-**4. Claim it** with `claim_task.sh <task-id>` (in `claude-arsenal/bin/`):
-
-- `won <ref>` → claimed.
-- `lost` → another agent got there first; take the next task.
-- `manual POST <path> <body>` → make that exact call with the built-in GitHub
-  tools. 201 means won, 422 means lost.
-- `error:` → misconfiguration; stop and tell the user.
-
-Then self-assign the issue, add `arsenal:claimed`, and comment with the session
-id from `CLAUDE_CODE_REMOTE_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID` locally).
-When neither is set, say so in the comment rather than writing an id, because a
-made-up id points the next reader at a session that does not exist.
+**4. Claim it** with `claim_task.sh <task-id>` and obey the result exactly as
+`claude-arsenal/AGENTS.md` § Claiming — the contract says (`lost` → take the next task;
+`error:` → stop and tell the user).
 
 Load `references/claim-gotchas.md` when a claim is refused, looks stale, or a
 task needs a retry attempt. In short: `lost` is final, stale claims are released
 only by `queue_hooks.py sweep-claims`, and a retry needs
 `ARSENAL_CLAIM_STALE_OK=1` once the first attempt is known stale.
 
-**5. Work the task, then open its PR with `open_task_pr.sh`.** It writes
-`Closes #<issue>` into the PR body and the commit message and moves the task
-file into `arsenal/tasks/_history/` in the same diff, so merging closes the
-issue, archives the task and unblocks dependents in one step. A session told to
-push only to one designated branch passes `--branch <that-branch>`: the commit
-lands there instead of a new `arsenal/…` branch, with every check still run.
+**5. Work the task, then open its PR with `open_task_pr.sh`** (AGENTS.md § Completion).
+A session told to push only to one designated branch passes `--branch <that-branch>`.
 
 **6. Loop back to step 2.**
 
@@ -101,8 +83,7 @@ nothing can check it:
 
 ## Gotchas
 
-- **Task files are read from the default branch**, so every agent computes the
-  same graph; a task on an unmerged branch is not in the queue yet.
+- **A task on an unmerged branch is not in the queue yet** — task files are read from the default branch.
 - **A task with no issue handle is invisible.** `arsenal-queue.yml` opens
   handles automatically where installed; otherwise run `handle_sync.py` (in
   `claude-arsenal/scripts/`) and create the ones it lists.

@@ -66,6 +66,28 @@ PREFIX="${PREFIX:-arsenal/claims}"
 
 _fail() { echo "error: $1" >&2; exit 2; }
 
+# Serialized in-place mode: the worker runs in THIS checkout and open_task_pr.sh
+# commits it with `git add -A`, so anything already changed here — a user's own
+# settings edit, a large untracked dir — would ride into the task's PR (#546).
+# A linked worktree has no such residue by construction, which is why the check
+# keys on the in-place sentinel. ARSENAL_ALLOW_SHARED_ADD=1 is the same operator
+# escape hatch open_task_pr.sh honours.
+session_dir="${ARSENAL_SESSION_DIR:-${ARSENAL_HOME:-arsenal}/session}"
+if [[ "${ARSENAL_ALLOW_SHARED_ADD:-}" != "1" ]] \
+    && { [[ "${ARSENAL_WORKTREE_ISOLATION:-}" == "unavailable" ]] \
+        || [[ "$(tr -d '[:space:]' 2>/dev/null < "${session_dir}/worktree_isolation")" == "unavailable" ]]; }; then
+    dirty="$(git status --porcelain 2>/dev/null)"
+    if [[ -n "${dirty}" ]]; then
+        echo "error: in-place mode commits this whole checkout, and it already has changes" >&2
+        echo "       no task made:" >&2
+        sed 's/^/         /' <<<"${dirty}" | head -20 >&2
+        echo "       They are not yours to move: ask the user to commit or stash them" >&2
+        echo "       (git stash push -u), or to list a directory of theirs in" >&2
+        echo "       .git/info/exclude, then claim again." >&2
+        exit 2
+    fi
+fi
+
 slug="$(bash "${CHANNEL}" --slug)" || _fail "cannot determine owner/repo from remote '${REMOTE}'"
 
 # The claim ref points at the default branch head. Any commit would do — the

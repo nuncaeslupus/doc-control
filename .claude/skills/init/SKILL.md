@@ -1,6 +1,6 @@
 ---
 name: init
-description: Sets up claude-arsenal/ in a host repo or registers a workspace (--workspace); safe to re-run. Use when the user wants the arsenal installed, refreshed or a workspace added. Not for adding tasks (queue-add) or resuming work (queue-next).
+description: Installs or refreshes claude-arsenal/ in a host repo, or adds a workspace. Use when the user wants the arsenal set up, updated or a workspace added. Not for queueing tasks.
 user-invocable: true
 argument-hint: "[--repo-path PATH] [--profile NAME] [--sections A,B] [--no-branch-protection] [--interview] [--workspace NAME] [--root PATH] [--spec PATH] [--plan PATH]"
 ---
@@ -40,23 +40,42 @@ sections directly instead.
 
 ## Setup interview
 
-On a first install, or when the user asks to redo setup (`/init --interview`), ask
-these in one AskUserQuestion with the defaults first, and let the user skip it. An
-upgrade does not ask again, because the answers are already in `arsenal/config.toml`.
+On a first install, whenever init prints `SETUP INTERVIEW PENDING` (no
+`setup-interview` in `arsenal/config.toml`, on any run, `--silent` included), or when
+the user asks to redo setup (`/init --interview`), ask these in one AskUserQuestion
+with the defaults first, before picking up other work. Answering records
+`setup-interview` with the date; a user who skips it gets `--interview-declined`,
+which records `"declined"`, and neither is asked again.
 
 1. How often should a session stop to ask? `ask-when-blocked` (default), `ask-often`,
    `autonomous`.
 2. How deep should local verification go? `balanced` (default), `fast`, `strict`.
 3. Minutes per review round (10) and minutes to wait on a silent review bot (20)?
-4. Which manual review triggers to post? Offer what `init.py --suggest-bot-triggers`
-   prints for the configured bots.
+4. Which review bots post on this repo's PRs (`review-bots`; none means CI-only)? Then
+   which manual review triggers to post: offer what `init.py --suggest-bot-triggers`
+   prints for them. CodeRabbit skips auto-review on repos under 10
+   stars; on a public repo recommend `@coderabbitai review` (about one on-demand
+   review per hour). On a private Free-plan repo it posts only a summary, so the
+   local adversarial review stands in.
+5. Who approves what, by risk tier? `solo-trust` (agent merges all; high-risk flagged
+   to ratify), `solo-gated` (a human approves medium and high), `team` (0/1/2 humans),
+   `manual`, or skip to keep merge-policy alone. Optionally, paths that always need a human.
+   With `solo-trust` or `solo-gated`, also ask whether a digest approval counts as the
+   user's (`--digest-decisions true`): needed when PRs are opened with their own account.
+6. How far must a PR get before the agent merges it (`--merge-policy`)? `always` (the
+   local gates are the bar), `after-ci` (default: every required check reported green),
+   `after-review` (a review landed and its comments are answered; CI not consulted),
+   `after-ci-and-review` (both), `never` (a human merges). Say that whichever is chosen,
+   the agent merges by itself once `merge_ready.sh` passes, without asking.
 
 Pass only what was answered; a skipped question writes nothing and keeps its default:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/init.py" --repo-path . --autonomy autonomous \
   --verification balanced --review-budget-min 10 --bot-wait-min 20 \
-  --bot-triggers "coderabbitai[bot]=@coderabbitai review"
+  --review-bots "reviewbot[bot]" --bot-triggers "reviewbot[bot]=@reviewbot review" --review-preset solo-trust \
+  --merge-policy after-ci-and-review
+python3 "${CLAUDE_SKILL_DIR}/scripts/init.py" --repo-path . --interview-declined  # skipped
 ```
 
 ## After a first install — questions init prints
@@ -112,7 +131,8 @@ creates `arsenal/project/<NAME>/` stubs and updates `arsenal/project/overview.md
 
 - **Upstream owns `claude-arsenal/`, the host owns `arsenal/`.** Re-runs overwrite
   stale bundle files by checksum and never touch `arsenal/` (tasks, project data,
-  settings).
+  settings). A file or vendored skill with *uncommitted* changes is left as is and
+  reported `MODIFIED LOCALLY`; relay that line, since the user must commit or discard it.
 - **Cloud sessions need the commit.** A cloud session runs on a fresh clone and
   never sees `~/.claude/`, so what reaches it is the vendored `.claude/skills/`
   and the hooks in `.claude/settings.json` — commit both.

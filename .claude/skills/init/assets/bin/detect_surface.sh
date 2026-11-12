@@ -35,7 +35,9 @@ main() {
     fi
 
     if command -v redis-cli &>/dev/null 2>&1; then
-        if timeout 2 redis-cli ping 2>/dev/null | grep -q PONG; then
+        # Stock macOS has no `timeout`; fall back to an unbounded ping there.
+        _t=(); command -v timeout &>/dev/null && _t=(timeout 2)
+        if ${_t[@]+"${_t[@]}"} redis-cli ping 2>/dev/null | grep -q PONG; then
             caps+=("\"services:redis\"")
         fi
     fi

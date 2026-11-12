@@ -1,13 +1,14 @@
 # CI minutes — the local gates are the CI
 
 Read this when a repo's GitHub Actions minutes run out (or are about to), when
-choosing `merge-policy` for a private repo, or when writing the host's own CI
+choosing `merge-policy` for a private repo, when CI is slow, or when writing the host's own CI
 workflow. It is the frugal default, not a ban on CI: a repo with minutes to spare
 can keep every workflow it has.
 
 - [Where the minutes go](#where-the-minutes-go)
 - [Two gate levels](#two-gate-levels) — `host-gate` once, `preflight-gate` per round
 - [Host CI: once per PR, not per push](#host-ci-once-per-pr-not-per-push)
+- [CI defaults](#ci-defaults) — one version, Linux only, nothing twice
 - [merge-policy when minutes are not guaranteed](#merge-policy-when-minutes-are-not-guaranteed)
 - [What the queue workflow bills](#what-the-queue-workflow-bills)
 - [Measuring it](#measuring-it)
@@ -107,6 +108,38 @@ A check that is **required** by branch protection and triggered only on `opened`
 blocks every PR that was pushed to after opening, until someone dispatches it.
 Either dispatch before merge as above, or do not make that check required.
 
+## CI defaults
+
+What a host CI workflow looks like unless the project has a reason otherwise.
+Measured across several host repos, these — not the number of tests — were
+where slow and expensive CI came from. Each is a default; the override case is
+named, and an override is written as a comment in the workflow.
+
+| Default | Override when |
+|---|---|
+| **Pull requests run one language version: the oldest the project supports.** Newer versions rarely break what the oldest passes. | A PR changes version-conditional code or the supported range — dispatch the full matrix once on that branch. |
+| **Pull requests run Linux only.** Windows bills x2 and macOS x10. | The PR touches platform-specific code — gate the extra leg on the files changed, inside a job, so required checks still report. |
+| **The full version/OS matrix, release and installer builds, and the slow test tier run on the default branch, nightly or on tags** — never per PR push. | A release-packaging change: dispatch that job once on the branch. |
+| **A superseded run is cancelled** (`concurrency` + `cancel-in-progress`, as in the block above). | Runs on the default branch that a release or tag step reads — give each its own group. |
+| **Every job has `timeout-minutes`**, a few times its normal duration. A hang otherwise bills for six hours. | None. |
+| **No step runs twice.** A typecheck followed by a build that typechecks is one step; a deploy or pages workflow depends on CI (`workflow_run`, `needs`) rather than repeating its tests; two jobs do not both install and build the same thing. | A second run that proves something different (bare interpreter versus dev toolchain) — say which in a comment. |
+| **The test runner runs in parallel** across the runner's cores (`pytest -n auto`, the runner's worker setting). | Tests that share state they cannot yet give up — mark those serial, not the suite. |
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        # one version on pull requests; the full range on the default branch
+        version: ${{ fromJSON(github.event_name == 'pull_request' && '["<oldest>"]' || '["<oldest>", "<newest>"]') }}
+```
+
+`scripts/ci_shape.py` (§ Measuring it) checks the ones a file spells out. The
+matching defaults for the tests themselves — what is owed, fixtures built once,
+the slow tier — are in the `execution` skill's `references/test-cost.md`.
+
 ## merge-policy when minutes are not guaranteed
 
 `after-ci` treats an absent check as "wait" — correctly, since absent is not
@@ -146,3 +179,16 @@ python3 claude-arsenal/scripts/usage_report.py --actions --repo o/r --since 2026
 Per workflow: runs, runs that billed, estimated minutes. It is an estimate from
 job timings; the repository's billing page is the authority. Needs `gh`, and
 says so without it.
+
+```bash
+python3 claude-arsenal/scripts/ci_shape.py            # add --fail-on-problems to gate on it
+```
+
+Reads `.github/workflows/` and prints, per push/PR workflow, which of the
+*CI defaults* it misses: no `cancel-in-progress`, jobs with no `timeout-minutes`,
+a `matrix` with more than one language version or OS on a workflow pull requests
+trigger, a macOS or Windows runner on the pull-request path; and as NOTEs, the
+same `run:` command in two jobs, and no path filter (a filtered workflow that
+carries a required check blocks the PRs it skips).
+Run it after writing or changing a workflow, and when CI feels slow, before
+suspecting the tests.

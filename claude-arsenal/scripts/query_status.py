@@ -198,6 +198,11 @@ def main(argv: list[str] | None = None) -> int:
         help="a branch, not the default: an archived task whose issue is still open is the "
         "documented in-flight state, not drift",
     )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="stamp `status: merged` on archived task files whose issue closed as completed",
+    )
     args = parser.parse_args(argv)
 
     # "I did not ask GitHub" and "GitHub has no handle for this" are different
@@ -355,10 +360,23 @@ def main(argv: list[str] | None = None) -> int:
                     "the PR merged without closing it; close it as completed"
                 )
         elif task.get("status") not in TERMINAL and actual == "done":
-            problems.append(
-                f"{task['id']}: {where} is closed as completed but the task file is still live "
-                f"in {args.tasks_dir} — move it to _history/ with `status: merged`"
-            )
+            # An archive written before `status:` was required is already where
+            # it belongs; telling it to move to _history/ names a no-op (#554).
+            path = Path(task["path"])
+            if "_history" in path.parts and args.fix:
+                text = path.read_text(encoding="utf-8")
+                path.write_text(text.replace("---\n", "---\nstatus: merged\n", 1), encoding="utf-8")
+                notes.append(f"{task['id']}: stamped `status: merged` on {path}")
+            elif "_history" in path.parts:
+                problems.append(
+                    f"{task['id']}: {where} is closed as completed but its archived file has "
+                    "no `status:` — add `status: merged` (or rerun with --fix)"
+                )
+            else:
+                problems.append(
+                    f"{task['id']}: {where} is closed as completed but the task file is still "
+                    f"live in {args.tasks_dir} — move it to _history/ with `status: merged`"
+                )
 
     # The derived answer, for anything outside this repo that needs it.
     #

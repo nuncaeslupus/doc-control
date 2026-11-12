@@ -69,9 +69,27 @@ it is their call to make, not an assumption to act on while waiting.
 The export is named like the reader, `<repo>-<doc>-v<N>-<YYYY-MM-DD-HHMM>-notes.md`, N
 being the document's `**Revision**` header line and the stamp the export's. When one
 arrives — a path in `~/Downloads`, an upload, a paste — move it into the
-document's directory beside the reader. Applying it makes the next revision: bump `**Revision**`, add a
+document's directory beside the reader. Before touching the document, bake the
+notes into a reviewed copy, so they stay in the repo beside the text they were
+written on, read-only and full length, not only in a Markdown file:
+
+```bash
+create_reader.py --input <doc> --output-dir <its dir> --notes <the export> --bake
+```
+
+That writes `<repo>-<doc>-v<N>-<stamp>-reviewed.html` and nothing else; a rebuild
+does not remove it. Run it before the bump, while the text still matches the notes.
+Applying the export makes the next revision: bump `**Revision**`, add a
 `**Revision log**` line naming the export, regenerate the reader, and commit the
-export **in the same commit** as that revision. Left in Downloads it is gone by
+export and the reviewed copy **in the same commit** as that revision.
+
+**Before that commit, read both for personal data, with the same weight as the
+commit itself.** Notes are free text from a private review; once committed they
+are in history, and on a public repo published. Redact names of real people,
+email addresses, phone numbers, account handles and home paths (`/home/<user>`);
+when a note loses its meaning without one, ask the reviewer. `--bake` warns on
+emails and home paths it finds in the notes. It cannot see names, so the read is
+still yours. Left in Downloads it is gone by
 the next session; `query_status.py` names any export of this project's still
 sitting in a Downloads folder (`~/Downloads`, `~/Descargas`, the XDG download
 dir, …) that the repo does not track.
@@ -86,4 +104,55 @@ it on the plan.
 
 To re-seed a rebuilt reader with previous notes, pass `--notes <the returned
 file>`; the export carries its own note data, so hand back the file the reviewer
-sent, unrenamed.
+sent, unrenamed. It also names the document it came from: `--notes` refuses an
+export of another document (exit 2), and the page's **Import** button, which
+restores an export into the reader after storage was lost, asks before loading one.
+
+A note under `> ¶ “…”` was taken on that exact paragraph, list item or table
+(the ✎ beside it), not on the section as a whole: act on the quoted text. One
+reading `(text changed since this note)` was taken on a paragraph a later
+revision rewrote; it is shown at the end of its section.
+
+Pictures and SVG diagrams in a reader zoom in place: a tap or click widens one to
+the window (a wide screen shows more of it) and pushes the note field down, pinch or Ctrl+wheel zooms the
+picture only, a second tap fits it again. Local images are embedded, so the HTML
+works alone from a Downloads folder or a phone.
+
+## A screens review — optional, when pictures say it faster
+
+A project with a user interface can review screenshots or mockups before, or
+alongside, the spec. Offer it at the start of spec work when the problem is about
+what a screen shows or how a flow feels; do it whenever the user asks for
+screenshots. It is the same reader over a `screens.md` beside the spec:
+
+```markdown
+# <Project> — screens
+
+**Revision**: 1
+
+## S01 · <screen name>
+
+One or two sentences: what this screen is for, and what to look at.
+
+![<screen name>](shots/s01.png)
+
+- Optional numbered callouts, when the picture needs them.
+```
+
+One `##` per screen, so each gets its own note field; the ✎ on the summary or a
+callout notes that exact line. Mark the picture itself (arrows, numbered badges)
+when the project calls for it; a plain capture is enough when the summary says
+where to look.
+
+Capture with what the project already runs: its own screenshot tooling, a test
+runner's screenshot step, or a headless browser such as
+`chromium --headless --screenshot=shots/s01.png --window-size=1280,800 <url>`.
+Keep captures near the size they are viewed at (about 1280 px wide; a phone
+capture at its own width); every image is embedded in the HTML, so a dozen
+full-resolution captures make a page slow to open on a phone. Then:
+
+```bash
+create_reader.py --input <dir>/screens.md --output-dir <dir> --name "<Project>"
+```
+
+The returned export follows every rule above: commit it, bake it, apply it.

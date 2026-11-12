@@ -1,6 +1,6 @@
 ---
 name: dep-upgrade
-description: Upgrades a uv project's dependencies safely — uv lock --upgrade, pip-audit, the test gate, breakage classified. Use when the user wants dependencies upgraded or checked for vulnerabilities. Not for adding one dependency (uv add) or publishing (pypi-release).
+description: Upgrades a uv project's dependencies behind pip-audit and tests. Use when the user wants dependencies upgraded or vuln-checked. Not for adding one (uv add).
 argument-hint: "uv.lock.bak uv.lock"
 user-invocable: true
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: coverage-gaps
-description: Ranks the highest-value missing tests from coverage.py's coverage.json; cheaper than mutmut-report. Use when the user asks what tests are missing or where coverage gaps are. Not for running the suite or non-Python coverage.
+description: Ranks the most valuable missing tests from coverage.py's coverage.json. Use when the user asks which tests are missing. Not for non-Python code.
 argument-hint: "--input coverage.json --limit N"
 user-invocable: true
 metadata:

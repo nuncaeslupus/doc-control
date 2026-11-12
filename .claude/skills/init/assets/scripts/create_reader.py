@@ -55,8 +55,10 @@ Usage (run from repo root):
 """
 
 import argparse
+import base64
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import shlex
@@ -111,6 +113,14 @@ DRAWSPEC_ENV = "ARSENAL_DRAWSPEC"
 DRAWSPEC_PACKAGE = "drawspec>=0.2,<0.3"
 DRAWSPEC_OPEN_RE = re.compile(r"^(?P<ind>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*drawspec[ \t]*$")
 _drawspec_cmd: list[str] | None = None
+# What render_diagrams.py writes around a fence for GitHub: an image of the diagram and
+# a collapsed wrapper for the source. The reader draws the fence itself, so it drops both.
+SOURCE_OPEN = "<details><summary>Diagram source</summary>"
+GITHUB_RENDER_RE = re.compile(
+    r"^[ \t]*(!\[[^\]]*\]\([^)]*\)[ \t]*<!-- drawspec-render -->|"
+    + re.escape(SOURCE_OPEN)
+    + r")[ \t]*$"
+)
 
 
 class DrawspecError(Exception):
@@ -186,6 +196,17 @@ def extract_drawspec(text: str) -> tuple[str, list[tuple[str, str]]]:
             for ln in lines[i + 1 : j]
         ]
         blocks.append((token, "\n".join(body)))
+        # Drop what render_diagrams.py wrote around the fence for GitHub: the image
+        # before it, and the collapsed wrapper whose close follows it.
+        wrapped = False
+        while out and (not out[-1].strip() or GITHUB_RENDER_RE.match(out[-1])):
+            wrapped |= SOURCE_OPEN in out.pop()
+        if wrapped:
+            k = j + 1
+            while k < len(lines) and not lines[k].strip():
+                k += 1
+            if k < len(lines) and lines[k].strip() == "</details>":
+                j = k
         out += ["", m.group("ind") + token, ""]
         i = j + 1
     return "\n".join(out), blocks
@@ -222,6 +243,12 @@ def break_field_lines(text: str) -> str:
     return "\n".join(lines)
 
 
+# The reader is light only; an SVG's own dark-mode ink would go pale on its white page.
+DARK_MEDIA_RE = re.compile(
+    r"@media\s*\(prefers-color-scheme:\s*dark\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}"
+)
+
+
 def render_md(text: str, where: str = "") -> str:
     text, diagrams = extract_drawspec(text)
     _md.reset()
@@ -232,7 +259,7 @@ def render_md(text: str, where: str = "") -> str:
         svg = run_drawspec("render", source, label).strip()
         if not svg.startswith("<svg"):
             raise DrawspecError(f"{label}: drawspec render produced no SVG")
-        figure = f'<figure class="drawspec">{svg}</figure>'
+        figure = f'<figure class="drawspec">{DARK_MEDIA_RE.sub("", svg)}</figure>'
         html = html.replace(f"<p>{token}</p>", figure).replace(token, figure)
     return html
 
@@ -334,9 +361,36 @@ def parse_doc(raw: str) -> tuple[str, str, list[dict]]:
     return h1, intro_md, sections
 
 
+IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\ssrc=")([^"]+)(")')
+
+
+def inline_images(html: str, base: Path, where: str) -> str:
+    """Embed each local image as a data: URI, so the reader stays one file.
+
+    A screens review is opened from a Downloads folder or a phone, where a relative
+    `shots/s01.png` resolves to nothing. Remote and data: sources are left alone; a
+    missing file is warned about and left as written.
+    """
+
+    def swap(m: re.Match[str]) -> str:
+        src = m.group(2)
+        if re.match(r"^(?:[a-z][a-z0-9+.-]*:|//)", src, re.I):
+            return m.group(0)
+        f = base / src.replace("%20", " ")
+        if not f.is_file():
+            print(f"⚠  {where}: image {src} not found — left as a link", file=sys.stderr)
+            return m.group(0)
+        mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+        data = base64.b64encode(f.read_bytes()).decode("ascii")
+        return f"{m.group(1)}data:{mime};base64,{data}{m.group(3)}"
+
+    return IMG_SRC_RE.sub(swap, html)
+
+
 def build_part(file_md: str, code: str, part_label: str, title: str, source: str = "") -> dict:
     """Parse one document into a structured part with stable ids/labels."""
     where = source or title
+    base = Path(source).parent if source else Path.cwd()
     h1, intro_md, sections = parse_doc(file_md)
     items: list[dict] = []
     used: set[str] = set()
@@ -361,7 +415,7 @@ def build_part(file_md: str, code: str, part_label: str, title: str, source: str
                 "title_html": "Preamble &amp; scope",
                 "label": "Preamble & scope",
                 "level": 2,
-                "body_html": render_md(intro_md, f"{where} § preamble"),
+                "body_html": inline_images(render_md(intro_md, f"{where} § preamble"), base, where),
                 "toc": "Preamble & scope",
                 "raw_body": intro_md,
             }
@@ -393,7 +447,9 @@ def build_part(file_md: str, code: str, part_label: str, title: str, source: str
                 "title_html": title_html,
                 "label": label,
                 "level": s["level"],
-                "body_html": render_md(s["body_md"], f"{where} § {strip_inline_md(heading)}"),
+                "body_html": inline_images(
+                    render_md(s["body_md"], f"{where} § {strip_inline_md(heading)}"), base, where
+                ),
                 "toc": toc,
                 "raw_body": s["body_md"],
             }
@@ -412,7 +468,7 @@ def build_part(file_md: str, code: str, part_label: str, title: str, source: str
 # The input stem decides which document this is, the same way it already decides the
 # title. A plan and a spec want different badges and different output filenames, and
 # nothing else about the reader changes between them.
-DOC_KINDS = {"plan": ("PLAN", "Plan", "plan")}
+DOC_KINDS = {"plan": ("PLAN", "Plan", "plan"), "screens": ("SCREENS", "Screens", "screens")}
 # The header line `specify` / `design` write, read only above the first section.
 REVISION_RE = re.compile(r"^\*\*Revision\*\*:\s*r?(\d+)\b", re.MULTILINE)
 
@@ -431,7 +487,7 @@ def source_digest(raw: str) -> str:
 
 DEFAULT_DOC_KIND = ("SPEC", "Specification", "spec")
 # Stems whose reader is `<kind>-reader.html`; any other stem gets `<stem>-reader.html`.
-CANONICAL_STEMS = {"spec", "specification", "plan"}
+CANONICAL_STEMS = {"spec", "specification", "plan", "screens"}
 
 
 def doc_kind(stem: str) -> tuple[str, str, str]:
@@ -591,6 +647,14 @@ def infer_title(cwd: Path) -> str:
 # mid-line — a note is rendered as `> …` prose, and a note that mentions the
 # marker also carries it inside a JSON string, which cannot hold a raw newline.
 MARKER_RE = re.compile(r"^[ \t]*<!--[ \t]*SPEC-NOTES-DATA\s*", re.MULTILINE)
+DOC_LINE_RE = re.compile(r"^<!-- SPEC-NOTES-DOC (\S+) -->$", re.MULTILINE)
+VERSION_RE = re.compile(r"-v\d+$")
+# What a reviewed copy must not carry into git history unread: an email address, or
+# a home directory that names its user. Names of people cannot be matched; the
+# reference asks for a read of the notes as well.
+PERSONAL_RE = re.compile(
+    r"[\w.+-]+@[\w-]+\.[\w.-]+|/home/[^/\s]+|/Users/[^/\s]+|[A-Za-z]:\\Users\\[^\\\s]+"
+)
 
 
 def read_notes(path: Path) -> dict:
@@ -658,8 +722,12 @@ def build_html(
     doc_slug: str = "spec",
     ns_key: str | None = None,
     export_stem: str | None = None,
+    baked: bool = False,
 ) -> str:
     """The self-contained HTML reader.
+
+    `baked` renders the seed notes as read-only boxes in place of note fields:
+    the reviewed copy committed beside the export (`--bake`).
 
     `export_stem` is `<repo>-<doc>-v<N>`, the part of the reader's own filename
     before the stamp; the Export button appends the export's own stamp and `-notes.md`.
@@ -678,7 +746,7 @@ def build_html(
     # One document is one part: its sections go straight into the contents and
     # under the page title, without a part band repeating the title a third time.
     single = len(parts) == 1
-    toc = ['<details class="toc" open><summary>Contents</summary>']
+    toc = ['<details class="toc"><summary>Contents</summary>']
     if single:
         toc.append('<ul class="toc-flat">')
         for it in parts[0][1]["items"]:
@@ -714,7 +782,12 @@ def build_html(
             tag = "h3" if it["level"] == 2 else "h4"
             noted = has_note_field(it, seed_notes)
             cls = f"sec l{it['level']}" + ("" if noted else " bare")
-            body.append(f'<article class="{cls}" id="{it["domid"]}">')
+            # Block notes (✎ beside each paragraph, list item or table) are
+            # created in the browser; the article carries the label they take.
+            body.append(
+                f'<article class="{cls}" id="{it["domid"]}" data-ref="{esc(it["key"])}" '
+                f'data-label="{esc(it["label"])}" data-part="{part_head}">'
+            )
             body.append(
                 f'<{tag} class="sec-h"><span class="chip">{esc(it["chip"])}</span>'
                 f'<span class="sec-title">{it["title_html"]}</span></{tag}>'
@@ -760,8 +833,17 @@ def build_html(
         "__JS__",
         JS.replace("__LS_NS__", ls_ns)
         .replace("__EXPORT_STEM__", export_stem)
-        .replace("__DOC_LABEL__", single_label),
+        .replace("__DOC_LABEL__", single_label)
+        .replace("__BAKED__", "true" if baked else "false"),
     )
+    if baked:
+        page = page.replace("(annotatable)</title>", "(reviewed)</title>")
+        page = page.replace("annotatable reader ·", "reviewed copy ·")
+        page = page.replace(
+            "<p>Read at your own pace and leave a note on any point you want to discuss.</p>",
+            "<p>Reviewed copy: the notes returned on this revision, in place beside what "
+            "they are about. Read-only.</p>",
+        )
     page = page.replace(
         "__SEED_NOTES__",
         json.dumps(seed_notes, ensure_ascii=False).replace("<", "\\u003c"),
@@ -824,9 +906,44 @@ def build_markdown(
                     out.append(f"> {line}")
             else:
                 out.append("> _(your notes here — replace this line)_")
+            for _key, quote, note in block_notes(seed_notes, it["domid"]):
+                out.append(">")
+                out.append(f"> ¶ _“{quote}”_" if quote else "> ¶ _(text changed since this note)_")
+                for line in note.split("\n"):
+                    out.append(f"> {line}")
             out.append("")
         out.append("")
+    # Block notes whose section is gone (heading renamed or removed) — the reader
+    # shows them under "Unplaced notes"; so does this edition.
+    known = {it["domid"] for _, p in parts for it in p["items"]}
+    lost = sorted(
+        {k.split("~")[0] for k in seed_notes if "~" in k and k.split("~")[0] not in known}
+    )
+    rows = [row for domid in lost for row in block_notes(seed_notes, domid)]
+    if rows:
+        out += ["## Unplaced notes — their section changed", "", "> **✎ Notes** · `unplaced`"]
+        for _key, quote, note in rows:
+            out.append(">")
+            out.append(f"> ¶ _“{quote}”_" if quote else "> ¶ _(text changed since this note)_")
+            for line in note.split("\n"):
+                out.append(f"> {line}")
+        out.append("")
     return "\n".join(out)
+
+
+def block_notes(notes: dict, domid: str) -> list[tuple[str, str, str]]:
+    """(key, quoted anchor, note) for the block notes of one section, in key order.
+
+    A block note's key is `<domid>~<hash of the block's text>`; its anchor text
+    travels beside it as `<key>~q`, so the export still says which paragraph a
+    note is about after the paragraph itself changed.
+    """
+    rows = []
+    for key, note in notes.items():
+        if not key.startswith(domid + "~") or key.endswith("~q") or not note.strip():
+            continue
+        rows.append((key, notes.get(key + "~q", "").strip(), note.strip()))
+    return sorted(rows)
 
 
 # ---------------------------------------------------------------- CSS / JS / HTML template
@@ -840,19 +957,12 @@ CSS = r"""
   --serif:Charter,"Bitstream Charter","Iowan Old Style","Sitka Text",Cambria,Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
-@media(prefers-color-scheme:dark){
-  :root{
-    --bg:#16151a;--fg:#ebe9e4;--muted:#aaa69f;--line:#34313a;
-    --card:#1e1d23;--accent:#5eead4;--accent2:#fbbf24;--chip:#24302f;
-    --note:#221d12;--note-line:#8a6a22;--note-fg:#fcd34d;--code:#26242b;--link:#7ff0dc;
-  }
-}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;background:var(--bg);color:var(--fg);
   font:17px/1.65 var(--sans);
-  padding-bottom:96px;
+  padding-bottom:48px;
 }
 /* The document reads in a book face; the reader's own chrome (bars, buttons,
    headings, notes) stays in the UI face, so the two never blur together. */
@@ -876,17 +986,14 @@ pre code{background:none;padding:0;font-size:1em}
 .btn:active{transform:translateY(1px)}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-@media(prefers-color-scheme:dark){.btn.primary{color:#06201d}}
 .count{font-size:12px;color:var(--muted);white-space:nowrap;font-weight:600}
 .savestate{font-size:12px;font-weight:700;white-space:nowrap;transition:color .2s}
 .savestate.ok{color:var(--accent)}
 .savestate.warn{color:#9a4a0b}
-@media(prefers-color-scheme:dark){.savestate.warn{color:#fbbf24}}
 .statusbar{border-bottom:1px solid var(--line);background:var(--card)}
 .statusbar .wrap{padding:7px 16px;font-size:12px;color:var(--muted)}
 #warnbar{display:none;background:#fff4e5;border-bottom:1px solid var(--note-line);color:#7c2d12}
 #warnbar .wrap{padding:10px 16px;font-size:13px;line-height:1.45}
-@media(prefers-color-scheme:dark){#warnbar{background:#3a2a0e;color:#fde68a;border-color:#6b531c}}
 .hero{padding:34px 0 8px}
 .hero h1{font-size:2rem;line-height:1.15;margin:.1em 0 .3em;letter-spacing:-.02em}
 .hero p{color:var(--muted);margin:.3em 0;max-width:var(--measure)}
@@ -970,8 +1077,6 @@ h4 .chip{font-size:11px;color:var(--muted)}
   resize:none;outline:none;line-height:1.55;padding:2px 0;overflow:hidden;min-height:1.6em}
 .note:focus-within .note-ta{min-height:4.8em}
 .note-ta::placeholder{color:var(--muted);opacity:1;font-style:italic}
-.fab{position:fixed;right:14px;bottom:16px;z-index:40;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
-.fab .btn{box-shadow:0 4px 14px #0003}
 .modal{position:fixed;inset:0;z-index:60;background:#0008;display:none;align-items:center;justify-content:center;padding:16px}
 .modal.open{display:flex}
 .modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:680px;width:100%;
@@ -982,29 +1087,57 @@ h4 .chip{font-size:11px;color:var(--muted)}
   background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,monospace;padding:10px;resize:vertical}
 .modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .hidden-input{display:none}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:70;background:#111;color:#fff;
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:32px;z-index:70;background:#111;color:#fff;
   padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
 .toast.show{opacity:.96}
-/* Phone width: smaller type, no floating column over the text, the hint dropped. */
+/* Phone width: smaller type, the hint dropped. */
 @media(max-width:600px){
-  body{font-size:16px;padding-bottom:76px}
+  body{font-size:16px}
   .hero h1{font-size:1.45rem}
   .part-title{font-size:1.25rem}
   h3.sec-h{font-size:1.15rem}
   h4.sec-h{font-size:1rem}
   .sec.l3{padding-left:10px}
   .statusbar .hint{display:none}
-  .fab{left:0;right:0;bottom:0;flex-direction:row;justify-content:flex-end;gap:6px;padding:8px 10px;
-    flex-wrap:wrap;background:var(--bg);border-top:1px solid var(--line)}
-  .fab .btn{box-shadow:none;padding:7px 9px}
-  .toast{bottom:64px}
+  .topbar .btn{padding:7px 9px}
+  .toast{bottom:24px}
 }
-@media print{.topbar,.statusbar,.fab,.help,.note:not(.filled){display:none}}
+/* Block notes: a faint ✎ in the right margin of every paragraph, item and table. */
+.bn-host{position:relative}
+.bn-btn{position:absolute;top:0;right:-34px;width:26px;height:26px;border-radius:7px;border:1px solid transparent;
+  background:transparent;color:var(--note-fg);font-size:14px;line-height:1;cursor:pointer;opacity:.3;padding:0}
+.bn-host:hover>.bn-btn,.bn-btn:focus-visible,.bn-btn.has{opacity:1;border-color:var(--note-line);background:var(--note)}
+.bn-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.note.bnote{margin:6px 0 12px}
+li>.note.bnote{margin:6px 0}
+@media(max-width:820px){.bn-host{padding-right:30px}.bn-btn{right:0}}
+@media print{.topbar,.statusbar,.help,.bn-btn,.note:not(.filled){display:none}}
+/* Pictures: full column width, zoomed in place (see the zoom script). The frame
+   scrolls sideways; its height follows the picture, so the page scrolls past it. */
+.sec-body p:has(img){max-width:none}
+.zwrap{margin:.6em 0}
+.zbox{overflow-x:auto;overflow-y:hidden;touch-action:pan-x pan-y;border:1px solid var(--line);border-radius:8px;
+  background:#fff;overscroll-behavior-x:contain}
+.zbox>img,.zbox>svg{display:block;margin:0 auto;width:100%;max-width:none!important;height:auto;cursor:zoom-in;-webkit-user-drag:none;user-select:none}
+.zwrap.on .zbox>img,.zwrap.on .zbox>svg{cursor:zoom-out}
+.zbar{display:none;position:sticky;top:58px;z-index:5;align-items:center;gap:6px;padding:4px 0;background:var(--bg)}
+.zwrap.on .zbar{display:flex}
+.zbar button{font:inherit;font-size:14px;min-width:34px;height:30px;border:1px solid var(--line);border-radius:7px;
+  background:var(--card);color:var(--fg);cursor:pointer}
+.zpct{font-size:12px;color:var(--muted);min-width:3.4em;text-align:center}
+.zhint{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Reviewed copy (--bake): the notes as text, no controls. */
+.note-text{white-space:pre-wrap;font-size:16px;line-height:1.55;overflow-wrap:anywhere}
+body.baked #btn-import,body.baked #btn-export,body.baked .savestate,body.baked .statusbar,body.baked .help,
+body.baked .bn-btn,body.baked #warnbar{display:none!important}
 """
 
 JS = r"""
 (function(){
   var NS = '__LS_NS__';
+  // A reviewed copy (--bake) shows only the notes it was built with: nothing from
+  // this browser's storage, nothing editable.
+  var BAKED = __BAKED__;
   var tas = Array.prototype.slice.call(document.querySelectorAll('.note-ta'));
 
   function autoGrow(t){t.style.height='auto';t.style.height=(t.scrollHeight)+'px';}
@@ -1019,9 +1152,13 @@ JS = r"""
   var WARN='⚠ Not saving — tap Save / Export';
   function nowStamp(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
   function setState(txt,cls){var el=document.getElementById('savestate');if(el){el.textContent=txt;el.className='savestate '+(cls||'');}}
-  window.addEventListener('beforeunload',function(e){if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
+  // An edit still inside the 350 ms debounce is saved on the way out, so closing
+  // the page right after typing (no blur) no longer loses it (#541).
+  function flushSaves(){Object.keys(pending).forEach(function(k){clearTimeout(saveTimers[k]);save(pending[k]);});pending={};}
+  window.addEventListener('pagehide',flushSaves);
+  window.addEventListener('beforeunload',function(e){flushSaves();if(!lsOK&&dirty){e.preventDefault();e.returnValue='';}});
 
-  var saveTimers={};
+  var saveTimers={},pending={};
   function save(t){
     if(!lsOK){dirty=true;setState(WARN,'warn');return;}
     var k=NS+t.dataset.key;
@@ -1030,25 +1167,147 @@ JS = r"""
       // touched" and the loader falls back to the seed, so removing it brought a
       // seeded note back after the reviewer had deliberately cleared it (#477).
       localStorage.setItem(k,t.value.trim()===''?'':t.value);
+      // A block note keeps its quote beside it, so it still says what it was
+      // about after its paragraph changes (export and re-seed read `<key>~q`).
+      if(t.closest('.bnote')){localStorage.setItem(k+'~q',t.dataset.quote||'');}
       dirty=true;setState('✓ Saved '+nowStamp(),'ok');
     }catch(e){dirty=true;lsOK=false;document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
   }
   var SEED=(typeof SPEC_SEED_NOTES!=='undefined')?SPEC_SEED_NOTES:{};
-  tas.forEach(function(t){
+  function wire(t){
     // Seed first, then let storage override it. With the read inside the same
     // try as the seed, a throwing localStorage skipped the seed too and the
     // reader came up empty exactly when it could save nothing (#477).
     if(Object.prototype.hasOwnProperty.call(SEED,t.dataset.key)){
       var sv=SEED[t.dataset.key];if(typeof sv==='string'){t.value=sv;}}
-    try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}
+    if(!BAKED){try{var v=localStorage.getItem(NS+t.dataset.key);if(v!=null){t.value=v;}}catch(e){}}
     autoGrow(t);setFilled(t);
     t.addEventListener('input',function(){
-      autoGrow(t);setFilled(t);updateCount();
-      clearTimeout(saveTimers[t.dataset.key]);
-      saveTimers[t.dataset.key]=setTimeout(function(){save(t);},350);
+      autoGrow(t);setFilled(t);updateCount();dirty=true;
+      var k=t.dataset.key;pending[k]=t;
+      clearTimeout(saveTimers[k]);
+      saveTimers[k]=setTimeout(function(){delete pending[k];save(t);},350);
     });
-    t.addEventListener('blur',function(){save(t);});
+    t.addEventListener('blur',function(){
+      save(t);
+      // An emptied block note folds away again; its ✎ stays to reopen it.
+      var box=t.closest('.bnote');
+      if(box&&t.value.trim()===''){closeBlock(box);}
+    });
+  }
+  tas.forEach(wire);
+
+  // ---- Block notes: a ✎ beside every paragraph, list item and table. The key is
+  // the section id plus a hash of the block's text, so a note stays with its
+  // paragraph when others are added around it; `<key>~q` carries the quoted text.
+  function hash(s){var h=5381;for(var i=0;i<s.length;i++){h=((h<<5)+h+s.charCodeAt(i))|0;}return (h>>>0).toString(36);}
+  function plain(el){var c=el.cloneNode(true);
+    Array.prototype.forEach.call(c.querySelectorAll('.bn-btn,.bnote,ul,ol'),function(x){x.remove();});
+    return c.textContent.replace(/\s+/g,' ').trim();}
+  function quoteOf(text){return text.length>90?text.slice(0,87)+'…':text;}
+  var hosts={},blockBtn={};
+  function hostsOf(body){
+    var out=[];
+    Array.prototype.forEach.call(body.children,function(el){
+      var tag=el.tagName;
+      if(tag==='UL'||tag==='OL'){Array.prototype.forEach.call(el.querySelectorAll('li'),function(li){out.push(li);});return;}
+      if(tag==='HR')return;
+      if(tag==='TABLE'||tag==='PRE'||tag==='FIGURE'){
+        // These scroll sideways; the ✎ goes on a wrapper so it does not scroll away.
+        var w=document.createElement('div');el.parentNode.insertBefore(w,el);w.appendChild(el);el=w;}
+      out.push(el);
+    });
+    return out;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('article.sec'),function(art){
+    var body=art.querySelector(':scope > .sec-body');if(!body)return;
+    var seen={};
+    hostsOf(body).forEach(function(el){
+      var text=plain(el);if(text==='')return;
+      var h=hash(text);seen[h]=(seen[h]||0)+1;
+      var key=art.id+'~'+h+(seen[h]>1?'-'+seen[h]:'');
+      el.classList.add('bn-host');el.dataset.bkey=key;el.dataset.quote=quoteOf(text);
+      var b=document.createElement('button');
+      b.type='button';b.className='bn-btn';b.textContent='✎';
+      b.title='Note on this';b.setAttribute('aria-label','Add a note on this point');
+      b.addEventListener('click',function(e){e.preventDefault();openBlock(key,true);});
+      el.appendChild(b);hosts[key]=el;blockBtn[key]=b;
+    });
   });
+  // A key with no `~` is a section note whose section is gone; it goes to the
+  // unplaced area, never into whatever element happens to share its id (#541).
+  function openBlock(key,focus,quote){
+    var t=null;tas.forEach(function(x){if(x.dataset.key===key)t=x;});
+    if(!t){
+      var host=hosts[key],art=key.indexOf('~')<0?null:document.getElementById(key.split('~')[0]);
+      if(!host&&!art)art=unplaced();
+      var q=host?host.dataset.quote:(quote||'');
+      var box=document.createElement('div');box.className='note bnote';
+      var head=document.createElement('label');head.className='note-head';
+      var ico=document.createElement('span');ico.className='note-ico';ico.textContent='✎';
+      var lab=document.createElement('span');lab.className='note-label';lab.textContent='Your note';
+      var ref=document.createElement('span');ref.className='note-ref';
+      ref.textContent=host?'¶ '+q:(q?'¶ (text changed) '+q:'¶ text changed since this note');
+      head.appendChild(ico);head.appendChild(lab);head.appendChild(ref);
+      t=document.createElement('textarea');t.className='note-ta';t.rows=1;
+      t.placeholder='Note on this point…';t.dataset.key=key;t.dataset.quote=q;
+      if(art){t.dataset.label=art.dataset.label||'';t.dataset.part=art.dataset.part||'';t.dataset.ref=art.dataset.ref||'';}
+      box.appendChild(head);box.appendChild(t);
+      if(host&&host.tagName==='LI'){host.appendChild(box);}
+      else if(host){host.parentNode.insertBefore(box,host.nextSibling);}
+      else{var sn=art.querySelector(':scope > .note');art.insertBefore(box,sn);}
+      tas.push(t);wire(t);
+      if(blockBtn[key])blockBtn[key].classList.add('has');
+      updateCount();
+    }
+    if(focus)t.focus();
+    return t;
+  }
+  // Notes whose section no longer exists (a heading renamed or removed) are never
+  // dropped: they collect here, after the document, and still export.
+  function unplaced(){
+    var u=document.getElementById('bn-unplaced');
+    if(!u){u=document.createElement('article');u.id='bn-unplaced';u.className='sec l2';
+      u.dataset.label='Unplaced notes';u.dataset.ref='unplaced';u.dataset.part='Unplaced notes';
+      var h=document.createElement('h3');h.className='sec-h';h.textContent='Unplaced notes — their section changed';
+      u.appendChild(h);var parts=document.querySelectorAll('section.part');
+      var last=parts[parts.length-1];(last||document.body).appendChild(u);}
+    return u;
+  }
+  function closeBlock(box){
+    var t=box.querySelector('.note-ta');var i=tas.indexOf(t);if(i>=0)tas.splice(i,1);
+    if(blockBtn[t.dataset.key])blockBtn[t.dataset.key].classList.remove('has');
+    box.remove();updateCount();
+  }
+  // Reopen every block note that has text, from the seed or this browser —
+  // including one whose paragraph changed, which lands at the end of its section.
+  (function(){
+    var keys={};
+    Object.keys(SEED).forEach(function(k){keys[k]=1;});
+    if(!BAKED){try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);
+      if(k&&k.indexOf(NS)===0)keys[k.slice(NS.length)]=1;}}catch(e){}}
+    Object.keys(keys).sort().forEach(function(k){
+      if(/~q$/.test(k))return;
+      var v=null;
+      if(!BAKED){try{v=localStorage.getItem(NS+k);}catch(e){}}
+      if(v==null&&typeof SEED[k]==='string')v=SEED[k];
+      var q=null;try{q=localStorage.getItem(NS+k+'~q');}catch(e){}
+      if(q==null&&typeof SEED[k+'~q']==='string')q=SEED[k+'~q'];
+      if(v&&v.trim()!=='')openBlock(k,false,q||'');
+    });
+  })();
+  // Reviewed copy: each note becomes its text at full length, and an empty field goes.
+  if(BAKED){
+    document.body.classList.add('baked');
+    tas.forEach(function(t){
+      var box=t.closest('.note');
+      if(t.value.trim()===''){box.remove();return;}
+      var d=document.createElement('div');d.className='note-text';d.textContent=t.value;
+      t.replaceWith(d);box.classList.add('filled');
+      var lab=box.querySelector('.note-label');if(lab)lab.textContent='Review note';
+    });
+    return;
+  }
   updateCount();
   if(lsOK){setState('✓ Auto-saving','ok');}else{document.getElementById('warnbar').style.display='block';setState(WARN,'warn');}
 
@@ -1061,12 +1320,15 @@ JS = r"""
 
   function buildExport(){
     var byPart={},order=[],data={},n=0;
-    tas.forEach(function(t){
+    // Document order, so a block note sits beside its section's own note.
+    tas.slice().sort(function(a,b){return a.compareDocumentPosition(b)&4?-1:1;}).forEach(function(t){
       var v=t.value.trim();if(v==='')return;n++;
       data[t.dataset.key]=t.value;
+      if(t.closest('.bnote')){data[t.dataset.key+'~q']=t.dataset.quote||'';}
       var part=t.dataset.part||'Other';
       if(!byPart[part]){byPart[part]=[];order.push(part);}
-      byPart[part].push({label:t.dataset.label,ref:keyFromDom(t.dataset.key,t),note:t.value});
+      byPart[part].push({label:t.dataset.label,ref:t.dataset.ref||keyFromDom(t.dataset.key,t),
+                         quote:t.closest('.bnote')?(t.dataset.quote||''):null,note:t.value});
     });
     var lines=['# __DOC_LABEL__ notes','','_Exported '+today()+' · '+n+' note'+(n===1?'':'s')+'._','',
       '> Send this file back to continue the review. Notes are embedded as data at the bottom','> so importing this file restores them in the reader.',''];
@@ -1074,10 +1336,13 @@ JS = r"""
       lines.push('## '+part,'');
       byPart[part].forEach(function(it){
         lines.push('**'+it.label+'**  `'+it.ref+'`');
+        if(it.quote!==null){lines.push(it.quote?'> ¶ _“'+it.quote+'”_':'> ¶ _(text changed since this note)_','>');}
         it.note.split('\n').forEach(function(ln){lines.push('> '+ln);});
         lines.push('');
       });
     });
+    // Which page wrote this, so an import into a different page can say so.
+    lines.push('<!-- SPEC-NOTES-DOC __EXPORT_STEM__ -->');
     lines.push('<!-- SPEC-NOTES-DATA');
     lines.push(JSON.stringify(data));
     lines.push('-->');
@@ -1094,8 +1359,15 @@ JS = r"""
 
   var modal=document.getElementById('modal');
   var modalTa=document.getElementById('modal-ta');
-  function openModal(text){modalTa.value=text;modal.classList.add('open');}
-  function closeModal(){modal.classList.remove('open');}
+  // A real dialog: focus moves in and comes back, and the page behind is inert
+  // so Tab cannot wander off under the overlay (#541).
+  var modalReturn=null;
+  function setInert(on){Array.prototype.forEach.call(document.body.children,function(c){if(c!==modal)c.inert=on;});}
+  function openModal(text){modalTa.value=text;modalReturn=document.activeElement;
+    modal.classList.add('open');setInert(true);document.getElementById('modal-copy').focus();}
+  function closeModal(){if(!modal.classList.contains('open'))return;
+    modal.classList.remove('open');setInert(false);
+    if(modalReturn&&modalReturn.focus)modalReturn.focus();modalReturn=null;}
 
   document.getElementById('btn-export').addEventListener('click',function(){
     var r=buildExport();
@@ -1112,7 +1384,6 @@ JS = r"""
     setState('Download requested '+nowStamp(),'ok');
     toast('Download requested — '+r.n+' note'+(r.n===1?'':'s'));
   });
-  document.getElementById('btn-export2').addEventListener('click',function(){document.getElementById('btn-export').click();});
 
   document.getElementById('modal-copy').addEventListener('click',function(){
     // Success is reported only once a copy actually happened: the legacy
@@ -1130,6 +1401,7 @@ JS = r"""
   document.getElementById('modal-dl').addEventListener('click',function(){download(exportName(),modalTa.value);toast('Download requested');});
   document.getElementById('modal-close').addEventListener('click',closeModal);
   modal.addEventListener('click',function(e){if(e.target===modal)closeModal();});
+  modal.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
 
   // buildExport only ever writes strings, but an import takes whatever the file
   // holds: an object arrives as "[object Object]", an array joins on commas,
@@ -1139,6 +1411,12 @@ JS = r"""
   // anything that is not a string and say how many were skipped.
   function applyData(obj){
     var applied=0,skipped=0;
+    // Every note gets a textarea first — including a section note whose section
+    // is gone, which lands under "Unplaced notes" instead of being dropped (#541).
+    Object.keys(obj).forEach(function(k){
+      if(!/~q$/.test(k)&&typeof obj[k]==='string'&&obj[k].trim()!==''){
+        openBlock(k,false,typeof obj[k+'~q']==='string'?obj[k+'~q']:'');}
+    });
     tas.forEach(function(t){
       if(!Object.prototype.hasOwnProperty.call(obj,t.dataset.key))return;
       var v=obj[t.dataset.key];
@@ -1163,6 +1441,9 @@ JS = r"""
         else{obj=JSON.parse(txt);}
       }catch(err){obj=null;}
       if(!obj){toast('Could not read notes from that file');return;}
+      var dm=/^<!-- SPEC-NOTES-DOC (\S+) -->/m.exec(txt);
+      if(dm&&dm[1]!=='__EXPORT_STEM__'&&
+         !confirm('That file holds notes for '+dm[1]+', not for this page (__EXPORT_STEM__). Import anyway?'))return;
       var r=applyData(obj);
       toast('Imported '+r.applied+' note'+(r.applied===1?'':'s')+
             (r.skipped?' ('+r.skipped+' skipped — not text)':''));
@@ -1170,14 +1451,68 @@ JS = r"""
     rd.readAsText(f);e.target.value='';
   });
   document.getElementById('btn-import').addEventListener('click',function(){document.getElementById('file-import').click();});
+})();
 
-  document.getElementById('btn-clear').addEventListener('click',function(){
-    if(!confirm('Clear ALL notes from this browser? Export first if you want to keep them.'))return;
-    tas.forEach(function(t){t.value='';save(t);autoGrow(t);setFilled(t);});
-    updateCount();toast('All notes cleared');
+// ---- Pictures and SVG diagrams zoom in place, never over the page. Tap or click one: it
+// widens to the window (a wide screen shows more of it), grows, and pushes the text below it down, so scrolling on reaches the note field
+// at its normal size. Pinch, Ctrl+wheel or a trackpad pinch on the picture zooms the
+// picture only; one finger (or a mouse drag) pans it. Tap again: back to fit.
+(function(){
+  var FIRST=2.5,MAX=12;
+  Array.prototype.forEach.call(document.querySelectorAll('.sec-body img,.sec-body svg'),function(img){
+    if(img.parentNode.closest('svg,button'))return;
+    var wrap=document.createElement('div');wrap.className='zwrap';
+    var bar=document.createElement('div');bar.className='zbar';
+    bar.innerHTML='<button type="button" data-z="out" aria-label="Zoom out">−</button>'+
+      '<span class="zpct"></span><button type="button" data-z="in" aria-label="Zoom in">+</button>'+
+      '<button type="button" data-z="fit">Fit</button>'+
+      '<span class="zhint">tap the picture to zoom out · pinch or Ctrl+wheel zooms it</span>';
+    var box=document.createElement('div');box.className='zbox';
+    img.parentNode.insertBefore(wrap,img);wrap.appendChild(bar);wrap.appendChild(box);box.appendChild(img);
+    img.tabIndex=0;img.title='Tap to zoom';
+    var s=1;
+    // s is relative to the column; zoomed, the frame spans the window less a 16px gutter.
+    function col(){return wrap.parentNode.clientWidth;}
+    function span(){var W=document.documentElement.clientWidth-32;
+      wrap.style.width=W+'px';wrap.style.marginLeft=(16-wrap.parentNode.getBoundingClientRect().left)+'px';}
+    // Scale to ns, keeping the point under (cx,cy) where it was on screen.
+    function set(ns,cx,cy){
+      ns=Math.max(1,Math.min(MAX,ns));
+      var r=img.getBoundingClientRect(),fx=(cx-r.left)/r.width,fy=(cy-r.top)/r.height;
+      s=ns;wrap.classList.toggle('on',s>1);
+      if(s>1)span();else{wrap.style.width='';wrap.style.marginLeft='';}
+      img.style.width=s>1?(col()*s)+'px':'';
+      var r2=img.getBoundingClientRect();
+      box.scrollLeft+=r2.left+fx*r2.width-cx;
+      window.scrollBy(0,r2.top+fy*r2.height-cy);
+      bar.querySelector('.zpct').textContent=Math.round(s*100)+'%';
+    }
+    function mid(){var r=box.getBoundingClientRect();
+      return[r.left+r.width/2,(Math.max(r.top,0)+Math.min(r.bottom,innerHeight))/2];}
+    // First tap: the window's full width on a wide screen; FIRST on a phone, where the column already is the window.
+    function toggle(cx,cy){var r=(document.documentElement.clientWidth-32)/col();set(s>1?1:(r>1.5?r:FIRST),cx,cy);}
+    var drag=null,moved=false;
+    img.addEventListener('click',function(e){if(moved){moved=false;return;}toggle(e.clientX,e.clientY);});
+    img.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();var m=mid();toggle(m[0],m[1]);}});
+    bar.addEventListener('click',function(e){var z=e.target.dataset&&e.target.dataset.z;if(!z)return;var m=mid();
+      set(z==='in'?s*1.5:z==='out'?s/1.5:1,m[0],m[1]);});
+    box.addEventListener('wheel',function(e){if(!e.ctrlKey)return;e.preventDefault();
+      set(s*Math.exp(-Math.max(-50,Math.min(50,e.deltaY))*0.01),e.clientX,e.clientY);},{passive:false});
+    // Two fingers on the picture zoom the picture; the page's own pinch is off here.
+    var pin=null;
+    function dist(t){return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);}
+    box.addEventListener('touchstart',function(e){if(e.touches.length===2)pin={d:dist(e.touches),s:s};},{passive:true});
+    box.addEventListener('touchmove',function(e){if(!pin||e.touches.length!==2)return;e.preventDefault();
+      set(pin.s*dist(e.touches)/pin.d,(e.touches[0].clientX+e.touches[1].clientX)/2,(e.touches[0].clientY+e.touches[1].clientY)/2);},{passive:false});
+    box.addEventListener('touchend',function(e){if(e.touches.length<2)pin=null;});
+    // A mouse drag pans a zoomed picture: sideways in its frame, up and down the page.
+    img.addEventListener('pointerdown',function(e){if(e.pointerType!=='mouse'||s===1)return;
+      e.preventDefault();drag=[e.clientX,e.clientY];moved=false;});
+    addEventListener('pointermove',function(e){if(!drag)return;var dx=e.clientX-drag[0],dy=e.clientY-drag[1];
+      if(Math.abs(dx)+Math.abs(dy)>4)moved=true;box.scrollLeft-=dx;window.scrollBy(0,-dy);drag=[e.clientX,e.clientY];});
+    addEventListener('pointerup',function(){drag=null;});
+    addEventListener('resize',function(){if(s>1){wrap.style.marginLeft='';span();img.style.width=(col()*s)+'px';}});
   });
-
-  document.getElementById('btn-top').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});
 })();
 """
 
@@ -1186,7 +1521,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light">
 <meta name="arsenal-source-sha256" content="__SOURCE_SHA__">
 <title>__TITLE__ — __DOC_LABEL__ (annotatable)</title>
 <style>__CSS__</style>
@@ -1196,6 +1531,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <div class="wrap">
     <div class="brand">__TITLE__ — __DOC_LABEL__<small>annotatable reader · __GEN_DATE__</small></div>
     <span class="savestate ok" id="savestate">✓ Auto-saving</span>
+    <button class="btn" id="btn-import">Import</button>
     <button class="btn primary" id="btn-export">Save / Export</button>
   </div>
 </div>
@@ -1211,27 +1547,21 @@ HTML_TEMPLATE = r"""<!doctype html>
     <summary>How to annotate (tap)</summary>
     <ul>
       <li>Tap the note field under any section and type. Each note is tagged so your feedback maps to an exact point.</li>
+      <li>Tap <strong>✎</strong> at the right of any paragraph, list item or table to note on that exact spot — the box opens right below it, with the text still in view.</li>
       <li><strong>Notes save automatically</strong> in this browser as you type.</li>
       <li><strong>Save / Export</strong> downloads a Markdown file of your notes — the copy to send back. Tap whenever you pause, especially on a phone.</li>
       <li><strong>Import</strong> reloads notes from a file you exported earlier (after clearing the browser or switching devices).</li>
-      <li><strong>Clear</strong> erases every note in this browser. Export first.</li>
     </ul>
   </details>
   __TOC__
   __BODY__
 </div>
 
-<div class="fab">
-  <button class="btn" id="btn-top" title="Back to top">↑ Top</button>
-  <button class="btn" id="btn-import">Import</button>
-  <button class="btn" id="btn-clear">Clear</button>
-  <button class="btn primary" id="btn-export2">💾 Save / Export</button>
-</div>
 <input type="file" id="file-import" class="hidden-input" accept=".md,.markdown,.json,text/markdown,application/json">
 
 <div class="modal" id="modal">
-  <div class="modal-card">
-    <h3>Your notes</h3>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">Your notes</h3>
     <p>Downloaded as a Markdown file. You can also copy the text below and paste it back.</p>
     <textarea id="modal-ta" readonly></textarea>
     <div class="modal-actions">
@@ -1283,9 +1613,18 @@ def _main() -> int:
         "Markdown is written beside it as <stem>-annotated.md",
     )
     parser.add_argument(
+        "--bake",
+        action="store_true",
+        help="with --notes: write only <name>-reviewed.html, the notes shown read-only "
+        "in place — the reviewed copy committed beside the export",
+    )
+    parser.add_argument(
         "--name", metavar="TEXT", help="project name for the reader title (default: git repo name)"
     )
     args = parser.parse_args()
+    if args.bake and not args.notes:
+        print("✗ --bake needs --notes <the returned export>", file=sys.stderr)
+        return 2
 
     cwd = Path.cwd()
     single_label, doc_slug = DEFAULT_DOC_KIND[1], DEFAULT_DOC_KIND[2]
@@ -1376,10 +1715,47 @@ def _main() -> int:
                 return 2
         else:
             seed_notes = loaded
+            # An export names the page that wrote it. Another document's notes would
+            # land under whatever headings share their ids; a revision apart is the
+            # normal re-seed, so only the repo and document are compared.
+            m = DOC_LINE_RE.search(notes_path.read_text(encoding="utf-8"))
+            if m and VERSION_RE.sub("", m.group(1)) != VERSION_RE.sub("", export_stem):
+                print(
+                    f"✗ {notes_path} holds notes for {m.group(1)}, not {export_stem}",
+                    file=sys.stderr,
+                )
+                return 2
             print(f"ℹ  seeding from {notes_path} ({len(seed_notes)} notes)", file=sys.stderr)
     elif args.notes:
         print(f"✗ {notes_path} does not exist", file=sys.stderr)
         return 2
+
+    if args.bake:
+        for key, text in seed_notes.items():
+            for hit in sorted(set(PERSONAL_RE.findall(text))):
+                print(f"⚠  note {key} holds {hit!r}: redact it before committing", file=sys.stderr)
+        if not args.output:
+            html_file = out_dir / f"{stem}-reviewed.html"
+        html_file.write_text(
+            build_html(
+                parts,
+                title,
+                gen_date,
+                seed_notes,
+                single_label,
+                doc_slug,
+                ns_key=ns_key or out_base or None,
+                export_stem=export_stem,
+                baked=True,
+            ),
+            encoding="utf-8",
+        )
+        print(
+            f"✓ reviewed copy, {sum(1 for v in seed_notes.values() if v.strip())} note(s)",
+            file=sys.stderr,
+        )
+        print(f"  {html_file}", file=sys.stderr)
+        return 0
 
     html_out = build_html(
         parts,

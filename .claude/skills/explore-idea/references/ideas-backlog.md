@@ -50,7 +50,7 @@ Load when creating or updating `status/ideas.md`: on capture, when a decision ch
 ## Check it
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../init/assets/scripts/ideas_log.py" check --base HEAD
+python3 claude-arsenal/scripts/ideas_log.py check --base HEAD
 ```
 
 Exit 1 names a duplicate or malformed id, an unknown status or group, or (with `--base`)

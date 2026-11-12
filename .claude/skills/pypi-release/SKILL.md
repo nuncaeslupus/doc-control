@@ -1,6 +1,6 @@
 ---
 name: pypi-release
-description: Runs the PyPI release runbook (build, twine check, version bump, tag, upload), catching version drift and stale dist/. Use when the user wants a Python package published. Not for scaffolding (python-bootstrap) or dependency upgrades (dep-upgrade).
+description: Runs the PyPI release runbook — build, twine check, version bump, tag, upload. Use when the user wants a Python package published. Not for project scaffolding.
 argument-hint: "--tag vX.Y.Z"
 user-invocable: true
 metadata:

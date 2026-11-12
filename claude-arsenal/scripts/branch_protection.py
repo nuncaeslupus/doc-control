@@ -223,7 +223,17 @@ def _carry_over(existing: dict[str, Any], contexts: list[str]) -> dict[str, Any]
         "required_approving_review_count": reviews.get("required_approving_review_count", 0),
         "dismiss_stale_reviews": bool(reviews.get("dismiss_stale_reviews")),
         "require_code_owner_reviews": bool(reviews.get("require_code_owner_reviews")),
+        "require_last_push_approval": bool(reviews.get("require_last_push_approval")),
     }
+    # The PUT replaces the whole protection: a toggle left out is switched off.
+    for key in (
+        "required_linear_history",
+        "required_conversation_resolution",
+        "lock_branch",
+        "block_creations",
+    ):
+        if (existing.get(key) or {}).get("enabled"):
+            payload[key] = True
     if restr:
         payload["restrictions"] = {
             "users": [u.get("login") for u in restr.get("users", [])],

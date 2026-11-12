@@ -1,6 +1,6 @@
 ---
 name: gate-check
-description: Gives an objective PASS/FAIL, with measured numbers, on a task's acceptance gate from status/plan.md, or audits every gate. Use when the user asks whether a gate passed. Not for writing code (execution) or ranking missing tests (coverage-gaps).
+description: Reports PASS/FAIL with measured numbers on a plan task's acceptance gate, or audits all gates. Use when the user asks whether a gate passed. Not for writing code.
 user-invocable: true
 metadata:
   section: workflow

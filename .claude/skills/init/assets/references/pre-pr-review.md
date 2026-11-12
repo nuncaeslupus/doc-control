@@ -93,7 +93,7 @@ and writes a receipt bound to the digest of the reviewed tree.
 
 | Exit | Meaning | Do |
 |---|---|---|
-| 0 | CLEAR | Open the PR. |
+| 0 | CLEAR | Open the PR, then record it for the digest (`references/digest.md` § 1). |
 | 1 | BLOCK — a reviewer objected, and only that | Show the findings verbatim, fix the BLOCKERs, run a follow-up round (§ Rounds). |
 | 2 | No usable verdict, or `emit` refused the round | Not a pass and not a BLOCK. Ask again, or read what `emit` printed. |
 | 3 | The tree moved during the review | Re-emit and review the tree you have. |
