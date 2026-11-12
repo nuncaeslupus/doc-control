@@ -29,7 +29,8 @@ from tests.helpers import soffice_dir
 
 _DIGITS = re.compile(r"\d")
 #: The corpus's DATE field (``d MMMM yyyy``), whatever day LibreOffice recalculated it on.
-_DATE = re.compile(r"\b\d{1,2} [^\W\d_]+ \d{4}\b")
+_MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December"
+_DATE = re.compile(rf"\b\d{{1,2}} (?:{_MONTHS}) \d{{4}}\b")
 
 
 def _mask(text: str) -> str:
@@ -57,6 +58,8 @@ def test_mask_hides_only_the_recalculated_date() -> None:
     )
     assert _mask("Dated 12 October 2026 in the test.") != _mask("Dated 12 October 2026 in a test.")
     assert _mask("Page 3 of 12, in 2026") == "Page # of ##, in ####"
+    # Only a month name makes a date: other words between the numbers still count.
+    assert _mask("Section 1 starts 2026") != _mask("Section 1 ends 2026")
 
 
 def _libreoffice_pages(path: Path) -> int:
