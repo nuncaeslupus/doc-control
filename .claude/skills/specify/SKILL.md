@@ -1,6 +1,6 @@
 ---
 name: specify
-description: Investigates a problem or a feature with unclear impact and proposes options (validate_spec). Use when the user has a problem to understand before building. Not for already-scoped work (design), implementation (execution) or routine edits.
+description: Investigates a problem or an unclear-impact feature and proposes options. Use when the user has a problem to understand before building. Not for scoped work (design).
 metadata:
   section: workflow
   type: workflow
@@ -76,7 +76,7 @@ Output: a **comparison table** of options.
 
 - **Recommended option**: which and why
 - **Immediate next action**: first thing to do (e.g., "create branch, start with migration in service X")
-- **Gates check**: if the engineering-core skill is available, verify against its gates (objective, scope, impacted services, compatibility, risk, validation, release readiness)
+- **Gates check**: if the host repo has an engineering-standards skill, verify against its gates (objective, scope, impacted services, compatibility, risk, validation, release readiness)
 - **Open questions**: anything unresolved that needs input before starting
 - **Decisions log**: when the work came from `explore-idea`, carry its `D-N` rows here unchanged — superseded rows included
 
@@ -123,3 +123,7 @@ It finds the spec (`arsenal/project/*/spec.md` or `status/specification.md`), wr
 them. Load `claude-arsenal:core:init § references/annotatable-reader.md` when a
 returned notes export arrives, when recording approval, or when another document
 needs a reader.
+
+For a user-facing problem, ask once at the start whether a screens review (annotated
+screenshots, same reader) would help; when yes, or when the user asks for screenshots,
+load that reference's screens section.

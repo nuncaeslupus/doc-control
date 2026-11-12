@@ -21,7 +21,7 @@ one version-bump commit.
 
 ```bash
 # After fix/iss-A merges into main:
-bash "${CLAUDE_SKILL_DIR}/../init/assets/bin/rebase_stack.sh" fix/iss-B fix/iss-A
+bash claude-arsenal/bin/rebase_stack.sh fix/iss-B fix/iss-A
 ```
 
 `rebase_stack.sh <branch> <old-base>` finds the fork point, runs

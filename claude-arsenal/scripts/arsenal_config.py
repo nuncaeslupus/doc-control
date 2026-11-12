@@ -210,20 +210,15 @@ SETTINGS: dict[str, Setting] = {
     # by the github skill's query_pr_state.py, which watches for their :eyes:,
     # their line comments and their approval before a PR is callable.
     #
-    # The three shipped here are a starting value, not a claim about your repo:
-    # they are the ones this bundle was exercised against. A repo running a
-    # different reviewer had no way to say so short of passing --watch-bots at
-    # every call, and a repo running none at all had the loop wait for a signal
-    # that was never coming.
-    #
-    # An empty list is the documented way to say "no review bot here": the loop
-    # then runs CI-only, and `ready_to_merge` rests on green CI alone. That is
-    # the weaker gate, which is why it is opt-in rather than the default — a
-    # host that has a bot should not lose it by upgrading.
+    # Empty by default since 5.19.0: a shipped list of vendor bots made every
+    # repo running none of them wait on a signal that was never coming. Empty
+    # means CI-only — `ready_to_merge` rests on green CI alone — so a host with
+    # a bot lists it here (the setup interview asks); `since` is 5.19.0 so an
+    # existing host is told once that the default changed.
     "review-bots": Setting(
-        ["gemini-code-assist[bot]", "coderabbitai[bot]", "claude[bot]"],
-        BASELINE,
-        "Review bots the PR review loop waits on, by GitHub username; empty means CI-only.",
+        [],
+        "5.19.0",
+        "Review bots the PR loop waits on; empty (default since 5.19.0) means CI-only.",
     ),
     # The skills-listing character budget the auditor enforces. It is a real
     # constraint, but its value differs by surface and has changed over time,
@@ -359,6 +354,67 @@ SETTINGS: dict[str, Setting] = {
         "5.7.0",
         "Whose review marker clears a PR: distinct-session, or distinct-login for other logins",
     ),
+    # Who approves a PR, by risk tier — read by scripts/review_policy.py, which
+    # classifies the PR (low / medium / high) and turns the tier into what
+    # pr_audit.py waits for. Empty keeps merge-policy alone in charge, exactly as
+    # before the key existed. The presets, one line each:
+    #   solo-trust  agent merges every tier; high-tier merges flagged to ratify
+    #   solo-gated  a human approves medium and high
+    #   team        agent review on low, 1 human on medium, 2 on high
+    #   manual      no agent merges (merge-policy never)
+    "review.preset": Setting(
+        "",
+        "5.11.0",
+        "Who approves by risk tier (solo-trust, solo-gated, team, manual); empty = merge-policy.",
+    ),
+    # Globs that always need a human, whatever the preset says: any match makes
+    # the PR high-risk and requires at least one human approval.
+    "review.always-human-paths": Setting(
+        [],
+        "5.11.0",
+        "Globs whose change always needs a human approval, whatever review.preset says.",
+    ),
+    # Globs a PR must ONLY touch to be low-risk. Empty = the built-in docs/config
+    # set review_sources.py already uses. High is risk-paths / risk-lines.
+    "review.low-paths": Setting(
+        [],
+        "5.11.0",
+        "Globs a PR may only touch to be low-risk; empty = the built-in docs/config set.",
+    ),
+    # Per-tier override of the preset row: auto | agent | human:<N> | human-after.
+    "review.approval-low": Setting(
+        "",
+        "5.11.0",
+        "Approval for low-risk PRs (auto, agent, human:N, human-after); empty = preset row.",
+    ),
+    "review.approval-medium": Setting(
+        "",
+        "5.11.0",
+        "Approval for medium-risk PRs (auto, agent, human:N, human-after); empty = preset row.",
+    ),
+    "review.approval-high": Setting(
+        "",
+        "5.11.0",
+        "Approval for high-risk PRs (auto, agent, human:N, human-after); empty = preset row.",
+    ),
+    # When a digest approval counts as a human one (scripts/pr_audit.py): a
+    # `<!-- arsenal-decision: approve head=<sha> via=digest -->` marker written by
+    # apply_decisions.py from the human's exported decisions file. Off by default:
+    # the agent writes the marker, so the trust is in that file, not in GitHub.
+    # On lets solo-gated work when the agent opens PRs with the owner's account.
+    "review.digest-decisions": Setting(
+        False, "5.12.0", "Count a digest approval marker on the head as one human approval."
+    ),
+    # Where `digest.py render` puts the digest at its triggers (session end, the
+    # quota stop, every digest-every merges): file (HTML path printed), chat
+    # (Markdown printed), or both.
+    "digest-delivery": Setting(
+        "file", "5.12.0", "Where the review digest goes: file, chat or both."
+    ),
+    # Also render after this many merges in one session; 0 = only at session end.
+    "digest-every": Setting(
+        5, "5.12.0", "Render the review digest after this many merges; 0 = at session end only."
+    ),
     # The "built with claude-arsenal" badge `/init` puts under the README's
     # title, read by init.py and nowhere else. Like a license notice it says
     # where the tooling came from and links to it, and like any notice the host
@@ -378,15 +434,27 @@ SETTINGS: dict[str, Setting] = {
     "config-acknowledged": Setting(
         "", "5.7.0", "Newest bundle version whose new settings this host has acknowledged."
     ),
+    # Whether the /init setup interview has been answered: the date it was
+    # recorded, or "declined" when the user chose to skip it. Absent, init.py
+    # prints `SETUP INTERVIEW PENDING` on every run, --silent included. It used
+    # to be asked on a first install only, so a host installed before the
+    # interview existed (or one whose first install skipped it) was never asked
+    # at all, and its user repeated the same answers by hand every session.
+    "setup-interview": Setting(
+        "", "5.18.0", 'When the setup interview was answered (YYYY-MM-DD), or "declined".'
+    ),
 }
 
 DEFAULTS: dict[str, Any] = {key: s.default for key, s in SETTINGS.items()}
 
 # Keys the session-start notice never announces: acknowledging is the remedy the
 # notice itself names, so a line telling the host about it would be noise.
-NOTICE_EXEMPT = {"config-acknowledged", "home"}
+# `setup-interview` has its own, louder line (SETUP INTERVIEW PENDING), so a
+# NEW SETTING line for it would say the same thing twice.
+NOTICE_EXEMPT = {"config-acknowledged", "home", "setup-interview"}
 
 VERSION_REGEX = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+SETUP_INTERVIEW_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 ENUMS: dict[str, set[str]] = {
     # `after-review` is not a weaker `after-ci-and-review` — it is the other
@@ -406,7 +474,11 @@ ENUMS: dict[str, set[str]] = {
     "autonomy": {"ask-often", "ask-when-blocked", "autonomous"},
     "branch-protection": {"", "applied", "existing", "unavailable", "off"},
     "review.reviewer-identity": {"distinct-login", "distinct-session"},
+    "review.preset": {"", "solo-trust", "solo-gated", "team", "manual"},
+    "digest-delivery": {"file", "chat", "both"},
 }
+
+APPROVAL_REGEX = re.compile(r"^(|auto|agent|human-after|human:[1-9])$")
 
 CONFIG_RELPATH = "config.toml"
 
@@ -449,8 +521,18 @@ READERS = {
     "models.workers": "plugins/core/skills/init/assets/agents/worker.md",
     "models.reviewers": "plugins/core/skills/init/assets/agents/reviewer.md",
     "review.reviewer-identity": "plugins/core/skills/init/assets/scripts/pr_audit.py",
+    "review.preset": "plugins/core/skills/init/assets/scripts/review_policy.py",
+    "review.always-human-paths": "plugins/core/skills/init/assets/scripts/review_policy.py",
+    "review.low-paths": "plugins/core/skills/init/assets/scripts/review_policy.py",
+    "review.approval-low": "plugins/core/skills/init/assets/scripts/review_policy.py",
+    "review.digest-decisions": "plugins/core/skills/init/assets/scripts/pr_audit.py",
+    "digest-delivery": "plugins/core/skills/init/assets/scripts/digest.py",
+    "digest-every": "plugins/core/skills/init/assets/references/orchestrator-tick.md",
+    "review.approval-medium": "plugins/core/skills/init/assets/scripts/review_policy.py",
+    "review.approval-high": "plugins/core/skills/init/assets/scripts/review_policy.py",
     # Read here, by new_settings() below; init.py prints what it returns.
     "config-acknowledged": "plugins/core/skills/init/assets/scripts/arsenal_config.py",
+    "setup-interview": "plugins/core/skills/init/scripts/init.py",
     # `home` is the exception, and the only one: it names the directory holding
     # config.toml, so it cannot be read from config.toml. ARSENAL_HOME is the
     # channel, and FILE_ONLY_REJECTS below refuses the key in the file rather
@@ -592,7 +674,29 @@ def load(repo_root: Path | None = None) -> tuple[dict[str, Any], dict[str, str]]
             raise ConfigError(
                 f"{key} must be an integer >= 1, got {values[key]!r} (from {sources[key]})"
             )
-    for key in ("risk-paths", "bot-triggers", "bot-unavailable-notices"):
+    if not isinstance(values["review.digest-decisions"], bool):
+        raise ConfigError(
+            f"review.digest-decisions must be true or false, got "
+            f"{values['review.digest-decisions']!r} (from {sources['review.digest-decisions']})"
+        )
+    if type(values["digest-every"]) is not int or values["digest-every"] < 0:
+        raise ConfigError(
+            f"digest-every must be an integer >= 0, got {values['digest-every']!r} "
+            f"(from {sources['digest-every']})"
+        )
+    for key in ("review.approval-low", "review.approval-medium", "review.approval-high"):
+        if not isinstance(values[key], str) or not APPROVAL_REGEX.match(values[key]):
+            raise ConfigError(
+                f"{key}: {values[key]!r} is not auto, agent, human:<1-9> or human-after "
+                f"(from {sources[key]})"
+            )
+    for key in (
+        "risk-paths",
+        "bot-triggers",
+        "bot-unavailable-notices",
+        "review.always-human-paths",
+        "review.low-paths",
+    ):
         if not isinstance(values[key], list) or not all(isinstance(v, str) for v in values[key]):
             raise ConfigError(
                 f"{key} must be a list of strings, got {values[key]!r} (from {sources[key]})"
@@ -638,6 +742,16 @@ def load(repo_root: Path | None = None) -> tuple[dict[str, Any], dict[str, str]]
         raise ConfigError(
             f'config-acknowledged must be a version like "5.7.0", got {ack!r} '
             f"(from {sources['config-acknowledged']})"
+        )
+    # Quoted in the file: a bare TOML date (setup-interview = 2026-01-31) parses
+    # as a datetime.date, which every reader would then have to special-case.
+    done = values["setup-interview"]
+    if not isinstance(done, str) or (
+        done and done != "declined" and not SETUP_INTERVIEW_REGEX.match(done)
+    ):
+        raise ConfigError(
+            f'setup-interview must be a quoted date like "2026-01-31" or "declined", '
+            f"got {done!r} (from {sources['setup-interview']})"
         )
     for key in MODEL_KEYS:
         value = values[key]

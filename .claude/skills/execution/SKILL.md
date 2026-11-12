@@ -1,6 +1,6 @@
 ---
 name: execution
-description: Implements code changes from a design, with tests and merge-ready output. Use when the user is building what a design or task describes. Not for investigation (specify), design (design) or one-off scripts.
+description: Implements a planned task test-first, through to a merge-ready PR. Use when the user is building what a plan describes. Not for one-off scripts.
 metadata:
   section: workflow
   type: workflow
@@ -61,9 +61,20 @@ clock; load `claude-arsenal:core:init § references/performance-tuning.md` (§ T
 long pole) when a test file needs splitting. With `<!-- test-discipline: test-after -->` in the host `CLAUDE.md`, write
 the test alongside the change instead.
 
+A test is owed per failure mode of logic that branches, parses, has boundaries or
+can lose data, not per function; a module with such logic and no test file gets one.
+Write none that greps prose, re-runs a measurement a gate already runs, or pins a
+constant or glue. Build an expensive fixture once per module, and give a test slower
+than about a second a stated reason or a slow tier that does not run on every push.
+Load `references/test-cost.md` when a task adds more than a handful of tests or one
+of them is slow. When a task writes or changes a CI workflow, load
+`claude-arsenal:core:init § references/ci-minutes.md` (§ CI defaults) first.
+
 **GREEN.** Implement until the check passes:
 
 - Read the target code first and match its style, naming and structure.
+- Write the smallest change that passes the gate: needed at all → stdlib → already in
+  the repo → minimal new code (`claude-arsenal:core:init § references/lean-code.md`).
 - One concern per commit; type hints or strict types; handle errors explicitly;
   configuration through environment variables or constants.
 - Comments: match the file's density, default to none, and add one only for a *why*

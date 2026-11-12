@@ -6,7 +6,7 @@ task's state means. Nothing here has to be in context to start a session.
 ## Contents
 
 - [Task lifecycle](#task-lifecycle) — the states, and why none of them is stored
-- [Task format — the rest of it](#task-format--the-rest-of-it)
+- [Task format — the rest of it](#task-format--the-rest-of-it) — a full example, and the field rules
 - [State directory layout](#state-directory-layout)
 
 ---
@@ -27,6 +27,25 @@ cannot drift from reality, which is the entire class of bug the old queue doctor
 to detect.
 
 ## Task format — the rest of it
+
+````markdown
+---
+id: t-3f8a91c2
+label: "extract surface probe"
+title: "Extract the surface probe into its own script"
+priority: 5
+deps: [t-aaaa1111, t-bbbb2222]
+requires: [surface:cli]
+tags: [CLI]
+workspace: BACKEND
+max-attempts: 3
+---
+
+## Acceptance gate
+```bash
+bash tests/surface_probe_test.sh
+```
+````
 
 `priority` encodes **task size** — S=10, M=5, L=1, larger runs sooner — and nothing
 else. Build order belongs in `deps`. Only `id` and `title` are required.

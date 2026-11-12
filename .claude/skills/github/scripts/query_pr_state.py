@@ -40,7 +40,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-DEFAULT_BOTS = ["gemini-code-assist[bot]", "coderabbitai[bot]", "claude[bot]"]
+# Empty: a repo lists its own review bots in `review-bots` (none = CI-only).
+DEFAULT_BOTS: list[str] = []
 
 
 def _resolve_watch_bots(flag: str | None, repo_root: Path | None = None) -> list[str]:
@@ -588,6 +589,34 @@ def _classify(
     }
 
 
+# What the /loop does next, per state. Printed with the state so the loop prompt
+# stays one line instead of carrying this whole rubric into every tick.
+_REPLY = "gh api repos/{repo}/pulls/{pr}/comments/<id>/replies"
+NEXT_ACTION = {
+    "bot_commented": (
+        "Address each comment: agree -> fix; after the round's last fix run fast_gate.sh "
+        "once, push once, reply 'addressed in <sha>' via " + _REPLY + "; disagree -> reply "
+        "with rationale there; ambiguous -> reply asking + ping the user. Every fix or "
+        "dismissal gets a reply: --unresolved-only filters on it next tick."
+    ),
+    "bot_skipped": "Follow `decision`: local-review none -> continue; diff or full -> run one "
+    "pre-PR review round, then add --local-review-done.",
+    "conflicts": "Rebase onto (or merge) the base branch, resolve, push.",
+    "ci_failed": "Fetch the failing job log, fix, commit, push; reply on related comments.",
+    "ready_to_merge": "Stop: CronDelete the loop and hand back to the user.",
+    "merged": "Stop: CronDelete the loop and hand back to the user.",
+    "closed": "Stop: CronDelete the loop and hand back to the user.",
+}
+NEXT_ACTION["bot_rate_limited"] = NEXT_ACTION["bot_absent"] = NEXT_ACTION["bot_skipped"]
+
+
+def _emit(result: dict[str, Any], repo: str, pr: object) -> None:
+    action = NEXT_ACTION.get(str(result.get("state")), "Wait for the next tick.")
+    result["next"] = action.format(repo=repo, pr=pr)
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--pr", required=True, type=int, help="PR number")
@@ -596,8 +625,7 @@ def main() -> int:
         "--watch-bots",
         help=(
             "comma-separated bot usernames; empty disables bot tracking. "
-            "Defaults to `review-bots` in arsenal/config.toml, else "
-            f"{','.join(DEFAULT_BOTS)}"
+            "Defaults to `review-bots` in arsenal/config.toml, else none (CI-only)"
         ),
     )
     p.add_argument(
@@ -659,13 +687,11 @@ def main() -> int:
     pr_state = (pr.get("state") or "").upper()
     if pr_state == "MERGED":
         result = {"state": "merged", "exit_code": 0, "merged_at": pr.get("mergedAt")}
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _emit(result, f"{owner}/{name}", args.pr)
         return 0
     if pr_state == "CLOSED":
         result = {"state": "closed", "exit_code": 0, "closed_at": pr.get("closedAt")}
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _emit(result, f"{owner}/{name}", args.pr)
         return 0
 
     commits = pr.get("commits") or []
@@ -708,8 +734,7 @@ def main() -> int:
         args, head_ts, ci, reactions, reviews, line_comments, addressed_count, mergeable
     )
     result = _bot_fallback(args, result, repo)
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _emit(result, f"{owner}/{name}", args.pr)
     return int(result["exit_code"])
 
 

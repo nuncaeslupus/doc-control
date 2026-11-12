@@ -1,6 +1,6 @@
 ---
 name: explore-idea
-description: Shapes a vague idea one question at a time, with pros and cons and a kept decision log, then hands off to specify. Use when the user has an idea but no stated problem yet, or a list of ideas to sort or keep for later. Not for a problem already stated (specify).
+description: Shapes a vague idea one question at a time with a decision log, then hands off to specify. Use when the user has an idea but no stated problem, or ideas to sort. Not for a stated problem.
 metadata:
   section: workflow
   type: workflow
@@ -89,17 +89,8 @@ findings come back. Done when the prompt is in the reply and the decision is mar
 ### Step 6: Keep the decisions log
 
 Keep a numbered log, write it to the Decision log of `status/ideas.md` whenever a decision
-changes, and reprint it in chat:
-
-```markdown
-| ID  | Decision                    | Status          | Date       |
-|-----|-----------------------------|-----------------|------------|
-| D-1 | Web app first, mobile later | agreed          | 2026-09-29 |
-| D-2 | Several editors at once     | agreed          | 2026-09-29 |
-| D-3 | Hosting provider            | open (research) | 2026-09-29 |
-```
-
-Status is `agreed`, `open`, `open (research)` or `superseded by D-N`. Keep every row and
+changes, and reprint it in chat. When writing it, use the decision-log table and status values in
+[ideas backlog](references/ideas-backlog.md) (`D-N` ids, `agreed` / `open` / `open (research)` / `superseded by D-N`). Keep every row and
 its number, so the spec can say why a superseded decision changed.
 Done when the latest reply that changed a decision reprints the whole log and the file
 matches it (its `ideas_log.py check` passes).

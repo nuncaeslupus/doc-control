@@ -1,6 +1,6 @@
 ---
 name: queue-status
-description: Reports queue counts by status and audits for missing gates, missing issue handles and broken deps. Use when the user asks how the queue stands. Not for changing task status.
+description: Reports queue counts and flags missing gates, handles and broken deps. Use when the user asks how the queue stands. Not for changing task status.
 user-invocable: true
 argument-hint: "[--detail]"
 effort: low

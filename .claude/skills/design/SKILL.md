@@ -1,6 +1,6 @@
 ---
 name: design
-description: Defines the technical solution after discovery — contracts, task split, risks, sequencing (validate_plan). Use when the user is planning how to build scoped work. Not for investigation (specify), implementation (execution) or PR review (review).
+description: Turns an approved spec into contracts, risks and a gated task plan. Use when the user plans how to build scoped work. Not for investigation (specify).
 metadata:
   section: workflow
   type: workflow
@@ -12,12 +12,9 @@ CANARY: design-loaded-2026-05-19-e08675ccb0a5c932
 
 Owns sections 5–6 of `status/specification.md` (contracts, risks) and creates `status/plan.md` (task split). Reads sections 1–4 of `status/specification.md` to understand what the spec already covers.
 
-**Before Step 1 — the spec must be approved.** The `specify` skill's validator answers it:
-
-```bash
-python3 "${CLAUDE_SKILL_DIR}/../specify/scripts/validate_spec.py" \
-    --input status/specification.md --require-approved
-```
+**Before Step 1 — the spec must be approved.** The `specify` skill's validator
+answers it: `validate_spec.py --input status/specification.md --require-approved`
+(in that skill's `scripts/`).
 
 Anything but exit 0 means stop and hand the spec back for approval, because a plan
 written before approval is built on a draft.

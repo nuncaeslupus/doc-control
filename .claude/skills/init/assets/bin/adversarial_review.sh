@@ -109,6 +109,8 @@
 #      ARSENAL_QUEUE_REMOTE (default origin) — for resolving the default branch
 #      ARSENAL_REVIEW_DIR (packet dir, default tmp/arsenal-review)
 #      ARSENAL_REVIEW_MAX_DIFF_LINES (default 4000) — inline diff cap
+#      ARSENAL_REVIEW_UNTRACKED_BYTES (default 1048576) — untracked bytes expanded
+#        as diffs; files past it are fingerprinted, not inlined
 # Config: review-max-rounds (default 2) — the round cap; review-budget-min (10)
 #         and verification (balanced) are quoted in the packet's Budget line
 # Options: emit [--task <id>] [--intent <file>] [--checks <file>] [--base <ref>]
@@ -146,6 +148,12 @@ if ! [[ "${MAX_DIFF_LINES}" =~ ^[0-9]+$ ]] || (( MAX_DIFF_LINES < 1 )); then
     echo "adversarial_review: ARSENAL_REVIEW_MAX_DIFF_LINES must be a positive integer, got '${MAX_DIFF_LINES}'" >&2
     exit 2
 fi
+# ponytail: starting value — past ~1 MiB nothing more fits the 4000-line inline cap
+UNTRACKED_BYTES="${ARSENAL_REVIEW_UNTRACKED_BYTES:-1048576}"
+[[ "${UNTRACKED_BYTES}" =~ ^[0-9]+$ ]] || {
+    echo "adversarial_review: ARSENAL_REVIEW_UNTRACKED_BYTES must be a non-negative integer, got '${UNTRACKED_BYTES}'" >&2
+    exit 2
+}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || echo .)"
 # Git Bash: a native python.exe cannot open a `/c/...` path, and MSYS rewrites
 # one it is handed into a wrong `C:\c\...`. Resolve to `C:/...` once, here, so
@@ -349,7 +357,7 @@ _tracked_diff() {  # $1 = base
 # rendered as diffs against /dev/null without touching the index — `git add -N`
 # would mutate a tree this script has no business writing to.
 _untracked_diff() {
-    local p status
+    local p status size expanded=0 over=0
     while IFS= read -r -d '' p; do
         # `git ls-files --others` reports a nested git checkout as ONE directory
         # entry, and `git diff --no-index -- /dev/null <dir>` fails with status
@@ -380,6 +388,22 @@ _untracked_diff() {
             find "${p}" -type f -not -path '*/.git/*' 2>/dev/null | LC_ALL=C sort | while IFS= read -r _f; do
                 printf '+%s %s\n' "${_f}" "$(git hash-object "${_f}" 2>/dev/null || echo unreadable)"
             done
+            continue
+        fi
+        # A user's untracked bulk (a 48 MB `html/` nobody ignored) used to be
+        # rendered whole: emit then held it in one shell string and took over five
+        # minutes. Past the cap a file is fingerprinted — still in the digest, so a
+        # change to it still makes a receipt stale — and emit warns.
+        # Once over, every later file is capped too: no per-file `wc` past the cap.
+        # ponytail: one hash-object per capped file; batch via --stdin-paths if counts hurt
+        if (( ! over )); then
+            size=$(wc -c < "${p}" 2>/dev/null) || size=0
+            if (( expanded + size > UNTRACKED_BYTES )); then over=1; else expanded=$(( expanded + size )); fi
+        fi
+        if (( over )); then
+            printf 'diff --arsenal-untracked-capped %s\n--- /dev/null\n+++ b/%s\n' "${p}" "${p}"
+            printf '@@ not expanded: past the %s-byte untracked cap; open the file itself @@\n' "${UNTRACKED_BYTES}"
+            printf '+%s\n' "$(git hash-object "${p}" 2>/dev/null || echo unreadable)"
             continue
         fi
         # Status 1 means "the files differ", which is the whole point of asking,
@@ -567,7 +591,11 @@ cmd_emit() {
     base="$(_resolve_base)" || die "could not resolve a base commit to diff against. Pass --base <ref>."
 
     diff="$(_full_diff "${base}")" || die "could not read the diff against ${base} — refusing to build a packet from a partial tree"
-    [[ -z "${diff//[[:space:]]/}" ]] && {
+    capped="$(grep -c '^diff --arsenal-untracked-capped ' <<<"${diff}")"
+    (( capped )) && echo "adversarial_review: ${capped} untracked file(s) past ${UNTRACKED_BYTES} bytes were fingerprinted, not inlined (first: $(grep -m1 '^diff --arsenal-untracked-capped ' <<<"${diff}" | cut -d' ' -f3-)). If they are not part of this change, list them in .git/info/exclude." >&2
+    # A regex, not `${diff//[[:space:]]/}`: that substitution is quadratic in bash
+    # and took over two minutes on a 1 MB diff.
+    [[ "${diff}" =~ [^[:space:]] ]] || {
         echo "adversarial_review: no change against ${base:0:12} — nothing to review" >&2
         exit 3
     }
@@ -619,7 +647,7 @@ cmd_emit() {
             # opinion, it is shopping for one — what § Handling BLOCK forbids,
             # arriving by accident rather than by intent. Refuse it here, where
             # it costs nothing, instead of paying for a whole round to find out.
-            if [[ -z "${delta//[[:space:]]/}" ]]; then
+            if ! [[ "${delta}" =~ [^[:space:]] ]]; then
                 echo "adversarial_review: nothing has changed since round ${prev_round} read this tree." >&2
                 echo "adversarial_review: re-running the review on an unchanged tree is shopping for a verdict, not getting a second opinion — address the findings first." >&2
                 exit 2

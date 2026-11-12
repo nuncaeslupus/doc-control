@@ -45,7 +45,8 @@ lost when the trigger is deleted.
    2. CLEAR on that exact head → start the full gate (`fast_gate.sh --full`).
    3. Gate PASS, CI green, head unchanged → merge.
 5. **Regenerate evidence after each merge** with the tooling that owns it, since a
-   hand-edited number is one nothing measured.
+   hand-edited number is one nothing measured. Every `digest-every` merges, render
+   the review digest (`references/digest.md` § 2; `digest-every` = 0 turns this off).
 6. **Report**, in the shape below, and **stop**. Remaining work belongs to the next
    tick.
 

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Confirms a change is production-ready — compatibility, tests, observability, rollback. Use when the user wants release sign-off. Not for implementation (execution) or PR review (review).
+description: Confirms a change is production-ready — compatibility, tests, observability, rollback. Use when the user wants release sign-off. Not for PR review (review).
 metadata:
   section: workflow
   type: workflow
@@ -25,48 +25,23 @@ Reads `status/specification.md` to know what should be shipping. Confirms scope 
 
 - Does the change solve the stated problem?
 - All acceptance criteria satisfied?
-- Every task's **Gate** is recorded and met:
-
-  ```bash
-  python3 "${CLAUDE_SKILL_DIR}/../gate-check/scripts/run_gate.py" --input status/plan.md
-  ```
+- Every task's **Gate** is recorded and met — the `gate-check` skill's
+  `run_gate.py --input status/plan.md` answers it.
 
   Exit 1 is No-Go. Exit 0 still leaves each manual (`?`) gate to a human verdict; one not yet confirmed is No-Go. Exit 2 (no Gate column or usage error): confirm the plan path, then fall back to the acceptance criteria only for a plan that predates gates.
 - Every spec or plan the branch changed has a reader built from its current text (exit 1 is No-Go: regenerate the reader it names, hand the HTML over, and commit it with the document):
 
   ```bash
-  python3 "${CLAUDE_SKILL_DIR}/../init/assets/scripts/reader_check.py" branch
+  python3 claude-arsenal/scripts/reader_check.py branch
   ```
 - If partial delivery → is the partial state safe and functional?
 
-### Step 3: Compatibility check
+### Steps 3–6: Compatibility, tests, observability, deployment
 
-- [ ] Backwards compatible with previous API version (if API changes)
-- [ ] Database migration is forward-compatible (no destructive changes in same deploy)
-- [ ] Inter-service contracts maintained or migrated
-- [ ] Client notification sent (if public API changes)
-
-### Step 4: Test confirmation
-
-- [ ] All unit/integration tests pass (including the new tests written for this change). A gate receipt for this tree or green CI on the PR head is the evidence; run the full suite only when neither covers the tree.
-- [ ] E2E tests pass (if applicable)
-- [ ] Manual testing completed for high-risk paths
-- [ ] No flaky tests introduced
-
-### Step 5: Observability check
-
-- [ ] New endpoints have tracing instrumentation
-- [ ] Error conditions produce meaningful log entries
-- [ ] Business metrics updated (if applicable)
-- [ ] Alerts configured for new failure modes (if applicable)
-
-### Step 6: Deployment plan
-
-- [ ] Deployment order defined (if multi-service)
-- [ ] Feature flags configured (if gradual rollout)
-- [ ] Data migration tested (if applicable)
-- [ ] Rollback plan documented
-- [ ] On-call team aware (if high-risk)
+Before ticking anything, load `references/template.md` and walk its **Compatibility**, **Tests**,
+**Observability** and **Mitigation and rollback** checklists against the change; tick
+only what has evidence. For tests, a gate receipt for this tree or green CI on the PR head
+is the evidence — run the full suite only when neither covers the tree.
 
 ### Step 7: Adversarial reviewer gate
 
@@ -84,13 +59,13 @@ only if commits landed after the last reviewed tree. Protocol and exits:
 
 ### Step 8: Produce ship output
 
-Load `references/template.md` when producing the ship output document.
+When producing the ship output, fill in `references/template.md` (loaded at Step 3).
 
 ---
 
 ## Abbreviation
 
-**Abbreviated ship** = Steps 2 + 4 + 7 + Go/No-Go, where the host repo's
+**Abbreviated ship** = Step 2 + the Tests checklist from Steps 3–6 + Step 7 + Go/No-Go, where the host repo's
 `CLAUDE.md` allows it. Step 7 may be skipped only when that file carries
 `<!-- ship: adversarial-review=skip -->` and the change is docs-only or
 config-only; every code change runs it.

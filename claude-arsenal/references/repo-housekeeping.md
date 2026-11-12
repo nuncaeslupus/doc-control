@@ -95,8 +95,8 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       release: ${{ steps.v.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - id: v
         run: |
           ver=$(python3 -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
@@ -105,7 +105,7 @@ jobs:
       - if: steps.v.outputs.release
         run: make lint test && uv build
       - if: steps.v.outputs.release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: {name: dist, path: dist/, if-no-files-found: error}
   publish:
     needs: build
@@ -114,9 +114,9 @@ jobs:
     environment: pypi            # the name registered in step 1
     permissions: {id-token: write, contents: write}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: {name: dist, path: dist/}
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
       - env: {GH_TOKEN: "${{ github.token }}", VER: "${{ needs.build.outputs.version }}"}
         run: gh release create "v$VER" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --generate-notes dist/*
 ```

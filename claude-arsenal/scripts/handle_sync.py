@@ -41,6 +41,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from arsenal_config import setting
 from task_select import (
     ID_LABEL_PREFIX,
     TERMINAL,
@@ -178,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--tasks-dir", type=Path, default=default_tasks_dir())
     parser.add_argument("--issues", type=Path, required=True, help="JSON array of issues")
-    parser.add_argument("--label", default="arsenal:task")
+    parser.add_argument("--label", default=setting("task-label"))
     args = parser.parse_args(argv)
 
     payload = read_issue_payload(args.issues, "handle_sync")
@@ -203,9 +204,11 @@ def main(argv: list[str] | None = None) -> int:
     # `rows` is also empty when every missing task was held back, so the
     # all-clear used to be printable directly under a warning naming a task
     # that has no handle — and the reassuring line is the one that gets quoted.
-    if not rows and proposal_warnings:
+    # The by-title notice shares the list; only near-match warnings are hold-backs.
+    held = [w for w in proposal_warnings if "not proposing a second handle" in w]
+    if not rows and held:
         print(
-            f"handle_sync: nothing proposed — {len(proposal_warnings)} task(s) held back "
+            f"handle_sync: nothing proposed — {len(held)} task(s) held back "
             "as near-matches for an unresolved issue, listed above",
             file=sys.stderr,
         )

@@ -136,11 +136,18 @@ for i in range(1, len(parts), 2):
         if body:
             entries.append((v, parts[i], body))
 entries.sort(reverse=True)
-for _, ver, body in entries:
+# Capped: --check-only runs at every session start while an update is pending,
+# and a consumer a month behind would otherwise reprint tens of thousands of
+# tokens of release notes each time.
+shown, rest = entries[:5], entries[5:]
+for _, ver, body in shown:
     print()
     print(f'  --- new in {ver} ---')
     for line in body.splitlines():
         print(f'  {line}')
+if rest:
+    print()
+    print(f'  … {len(rest)} older entries (back to {rest[-1][1]}) — see CHANGELOG.md at v{sys.argv[2]}')
 " "${installed}" "${latest}" 2>/dev/null || true
 }
 

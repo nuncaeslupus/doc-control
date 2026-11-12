@@ -153,6 +153,6 @@ what the spec requires, what the code does, and the fix location.
 This applies to workers and solo sessions alike. A worker that spots a divergence
 outside its own task's scope flags it in its returned outcome; the orchestrator —
 the single queue writer — seeds the task (it never lets a worker push to the
-coordination branch). A solo session seeds the task directly.
+default branch). A solo session seeds the task directly.
 
 ---

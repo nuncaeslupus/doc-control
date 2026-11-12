@@ -1,6 +1,6 @@
 ---
 name: python-bootstrap
-description: Scaffolds or retrofits a Python project to the arsenal defaults (uv, ruff, strict mypy, standard Makefile, 3.12+). Use when the user sets up Python tooling. Not for publishing (pypi-release) or dependency upgrades (dep-upgrade).
+description: Scaffolds or retrofits a Python project with uv, ruff, strict mypy and a standard Makefile. Use when the user sets up Python tooling. Not for publishing.
 argument-hint: "[project_dir]"
 metadata:
   section: python
@@ -47,6 +47,10 @@ pyproject (ruff + mypy), Makefile and uv blocks. Apply only what the report flag
 - Remove `black` when adding `ruff format`, so the two do not fight.
 - On an untyped codebase, stage strict mypy with per-module
   `[[tool.mypy.overrides]]` rather than weakening the global block.
+
+When the retrofit writes or changes a CI workflow or the test target, load
+`claude-arsenal:core:init § references/ci-minutes.md` (§ CI defaults) first: one
+Python version and Linux only on pull requests, parallel pytest.
 
 Then run the project's `make lint` and `make test` (or `uv run ruff check .`
 and `uv run mypy .`) to confirm the new config is clean.

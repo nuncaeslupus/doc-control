@@ -7,7 +7,7 @@
 # Why: a worker is supposed to run in its own `isolation: worktree`. When that
 # isolation is silently unavailable (observed on some web sessions), the worker
 # runs in the orchestrator's shared tree instead: open_task_pr.sh checks out a
-# feature branch (moving the orchestrator's HEAD off the coordination branch),
+# feature branch (moving the orchestrator's HEAD off its host branch),
 # and a gate-failed worker can leave uncommitted edits sitting on the
 # orchestrator's own tree. Subsequent steps then run from the wrong branch (it guards on the recorded host
 # branch), and a stray `git commit -a` could sweep task code onto the queue

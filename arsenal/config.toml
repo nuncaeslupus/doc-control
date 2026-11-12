@@ -129,7 +129,6 @@ branch-protection = "existing"
 
 # Only CodeRabbit is installed on this repo; the default also waits on Gemini and Claude.
 review-bots = ["coderabbitai[bot]"]
-
 bot-triggers = ["coderabbitai[bot]=@coderabbitai review"]
 
 # New settings up to this bundle version were looked at; the defaults are kept.
@@ -137,18 +136,19 @@ config-acknowledged = "5.7.0"
 
 attribution = true
 
+setup-interview = "2026-11-12"
+
 [models]
 orchestrator = ""
 workers = "sonnet"
 reviewers = ""
 
 [skills]
+android = false
 extract = false
 python = true
 workflow = true
 
-# Host capability probes (detect_surface.sh): a task with `requires: [app:…]` is only
-# picked on a machine where the probe exits 0.
 [capabilities]
 "app:libreoffice" = "command -v soffice && python3 -c 'import uno'"
 "app:word" = "reg query 'HKCR\\Word.Application' >/dev/null 2>&1"

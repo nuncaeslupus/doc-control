@@ -64,6 +64,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import arsenal_config
+import review_policy
 
 # --- notice table --------------------------------------------------------------
 # Every phrase that turns a bot's text into a state lives here, so a vendor that
@@ -139,20 +140,8 @@ BOTS: dict[str, BotInfo] = {
 # A change made only of these is docs/config-only: nothing a test can exercise.
 # Kept narrow on purpose — workflow files, build config and lockfiles change
 # behaviour and are NOT in it.
-DOCS_ONLY_GLOBS = (
-    "*.md",
-    "*.mdx",
-    "*.rst",
-    "*.txt",
-    "docs/*",
-    "LICENSE*",
-    "CODEOWNERS",
-    ".github/CODEOWNERS",
-    ".gitignore",
-    ".editorconfig",
-    ".github/ISSUE_TEMPLATE/*",
-    ".github/PULL_REQUEST_TEMPLATE*",
-)
+# What counts as docs/config only is shared with review_policy.py's low tier.
+DOCS_ONLY_GLOBS = review_policy.DOCS_ONLY_GLOBS
 
 CI_FAIL = {"failure", "timed_out", "cancelled", "action_required", "startup_failure", "error"}
 
@@ -509,16 +498,30 @@ def classify_bot(
 
 # --- risk and decision ----------------------------------------------------------
 def assess_risk(
-    files: list[dict[str, Any]], risk_paths: list[str], risk_lines: int
+    files: list[dict[str, Any]],
+    risk_paths: list[str],
+    risk_lines: int,
+    human_paths: list[str] | None = None,
 ) -> tuple[bool, bool, int, list[str]]:
-    """(risk_high, docs_only, changed_lines, risky_paths)."""
+    """(risk_high, docs_only, changed_lines, risky_paths).
+
+    High is review_policy's high tier, so review depth and who approves agree.
+    """
+    cls = review_policy.classify(
+        files,
+        {
+            "risk-paths": risk_paths,
+            "risk-lines": risk_lines,
+            "review.always-human-paths": human_paths or [],
+            "review.low-paths": [],
+        },
+    )
     names = [str(f.get("filename", "")) for f in files]
-    lines = sum(int(f.get("additions", 0)) + int(f.get("deletions", 0)) for f in files)
     risky = [n for n in names if any(fnmatch.fnmatch(n, g) for g in risk_paths)]
     docs_only = bool(names) and all(
         any(fnmatch.fnmatch(n, g) for g in DOCS_ONLY_GLOBS) for n in names
     )
-    return bool(risky) or lines > risk_lines, docs_only, lines, risky
+    return cls["tier"] == "high", docs_only, cls["lines"], risky
 
 
 def decide(
@@ -662,7 +665,7 @@ def run(
             pr, repo, verdicts, trigger_map(cfg["bot-triggers"]), data["head"], state_dir, at
         )
     risk_high, docs_only, lines, risky = assess_risk(
-        data["files"], cfg["risk-paths"], int(cfg["risk-lines"])
+        data["files"], cfg["risk-paths"], int(cfg["risk-lines"]), cfg["review.always-human-paths"]
     )
     local, suite, reason = decide(
         cfg["verification"], ci.state, [v.state for v in verdicts], risk_high, docs_only

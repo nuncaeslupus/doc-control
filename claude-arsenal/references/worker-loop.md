@@ -10,7 +10,7 @@ A session that never spawns a worker never needs this file.
 - [Per-task PRs](#per-task-prs) — what a worker opens, and the web caveat
 - [Reading a precedent](#reading-a-precedent--shape-first-prose-on-demand) — how to follow an existing module without paying for all of it
 - [Credit guards](#credit-guards--set-before-any-task-tool-dispatch) — the single home of model dispatch
-- [Tuning knobs](#tuning-knobs) — every `ARSENAL_*` / `LOOP_*` env var
+- Tuning knobs — every `ARSENAL_*` / `LOOP_*` env var: `performance-tuning.md` § Tuning knobs
 - [Agent definitions](#agent-definitions)
 
 ---
@@ -33,7 +33,7 @@ dispatches that many workers at once. Run when the queue has open tasks:
 0. **Establish worker isolation (once per session).** Parallel fan-out is only
    safe when each worker runs in its own `git worktree`; without it, concurrent
    workers share one tree and clobber each other, and any worker moves the
-   orchestrator's HEAD off the coordination branch. The Task tool's
+   orchestrator's HEAD off its host branch. The Task tool's
    `isolation: worktree` flag is **silently ignored on some surfaces** (observed
    on Claude Code on the web), so the orchestrator must establish isolation
    empirically, not assume it:
@@ -41,7 +41,9 @@ dispatches that many workers at once. Run when the queue has open tasks:
      (exit 1), git worktrees do not work here at all → set
      `ARSENAL_MAX_WORKERS=1` and run **serialized in-place mode** for the whole
      session (one worker at a time; `worker_postcheck.sh` keeps the branch clean
-     between them).
+     between them). In this mode the task's PR commits the whole checkout, so
+     `claim_task.sh` refuses (exit 2) while `git status` shows changes no task
+     made; relay the paths to the user rather than stashing them yourself.
    - If it prints `available`, dispatch the **first batch as a single worker**.
      You no longer have to remember to: `task_select.py` returns one task unless
      the sentinel reads a proven `available`, and the first round is always
@@ -117,7 +119,7 @@ dispatches that many workers at once. Run when the queue has open tasks:
      ref — the web double-claim vector.
    - `lost` → another session claimed it; drop it from this batch.
    - `error: …` (exit 2) → **stop the loop and surface to the user.** A
-     misconfiguration, not a race (wrong branch, protected coordination branch,
+     misconfiguration, not a race (wrong branch, protected default branch,
      no upstream). Do **not** retry — it spins forever on a deadlock. Re-run
      the GitHub channel (`github_channel.sh --detect`), or fix the
      protection, then resume.
@@ -339,24 +341,6 @@ Write the printed model into each dispatch's own `model` argument. Why:
 a session cannot change its own model, so if it differs from the one you are
 running, say so once before dispatching. Empty means no opinion.
 
----
-
-## Tuning knobs
-
-| Env var | Default | Effect |
-|---------|---------|--------|
-| `ARSENAL_MAX_WORKERS` | `2` | Workers per batch. `2` is the validated git-push concurrency ceiling; higher N raises claim-race churn and PR/merge-conflict surface. **Forced to `1` when worktree isolation is unavailable** (loop step 0): parallel workers are unsafe sharing one tree. |
-| `ARSENAL_QUOTA_STOP_PCT` | `90` | Stop the loop before dispatch at/above this used-percentage on either window. |
-| `ARSENAL_MAX_ITERATIONS` | `50` | Always-available per-session dispatch-round cap (quota-independent). `0` disables it. |
-| `ARSENAL_RATE_LIMITS_FILE` | `<session>/rate_limits.json` | Where the quota guard reads its snapshot. Override it to feed quota from a surface with no statusLine — a cloud session writes this file for itself or the percentage guard never engages. See `references/quota-governance.md`. |
-| `ARSENAL_GATE_INHERIT_ENV` | _(unset)_ | Set `1` to run gate blocks with the caller's full environment instead of the hardened throwaway HOME + restricted PATH. |
-| `LOOP_WORKSPACE` | _(unset)_ | Workspace scope; set by `/queue-next` token inference. |
-| `LOOP_TAGS` | _(unset)_ | Comma/space-separated tag scope (ANDed); set by `/queue-next` token inference. |
-| `ARSENAL_QUEUE_REMOTE` | `origin` | Remote for claim refs + per-task pushes. |
-| `ARSENAL_CLAIM_PREFIX` | `arsenal/claims` | Ref namespace for atomic claim refs. |
-| `ARSENAL_HOME` | `arsenal` | Host-owned tree (tasks, specs, plans, config, session). |
-
----
 ---
 
 ## Agent definitions

@@ -105,6 +105,31 @@ On a private repo with metered Actions minutes, or no CI, `after-ci` waits
 forever once checks stop reporting; the local-gates setting for that case is in
 `references/ci-minutes.md`.
 
+**Risk tiers — who approves.** With `[review] preset` set, `merge_ready.sh` also
+asks `scripts/review_policy.py` what the PR's tier requires; `review_policy.py
+explain` prints the effective flow. The tier comes from the changed files: `high`
+on a `risk-paths` or `always-human-paths` match or more than `risk-lines` lines,
+`low` when every file is in `low-paths` (default: docs/config), else `medium`.
+
+| preset | low | medium | high |
+|---|---|---|---|
+| `solo-trust` | auto | agent | human-after |
+| `solo-gated` | auto | human:1 | human:1 |
+| `team` | agent | human:1 | human:2 |
+| `manual` | — no agent merges — | | |
+
+`agent` is a review clear on the head (bot review or adversarial CLEAR marker);
+`human:N` adds N approvals **on the head SHA** from distinct trusted non-bot users
+other than the author — a bot's or the author's approval counts zero, and an
+approval of an older commit is stale (so when the agent opens PRs with the
+owner's own account, `human:N` needs the agent on a separate GitHub identity);
+`human:N` also needs the agent review itself, not just N humans; `human-after` merges on the agent review and
+writes `Ratify: pending` for the human to confirm later. `approval-<tier>`
+overrides one row; an `always-human-paths` match always needs one human.
+`merge_ready.sh --body` carries the verdict as trailers on the merge commit:
+`Risk-tier`, `Reviewed-by`, `Approved-by`, `Ratify`. A waiting PR is not a
+blocked worker: report it and take the next task that does not depend on it.
+
 **Branch protection is the other half.** `merge-policy` governs what an agent
 waits for; it cannot stop a push that skips the PR. `/init` protects the default
 branch once (`scripts/branch_protection.py`, recorded as `branch-protection`),

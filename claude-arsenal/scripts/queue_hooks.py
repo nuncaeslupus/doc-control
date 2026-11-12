@@ -511,10 +511,15 @@ def plan_sweep_claims(
     never releases a claim — only age with nothing to show for it.
     """
     cutoff = now - timedelta(hours=max_age_hours)
+    # A hand-opened PR names its task by the body marker, not the branch.
     busy = {
         task_id
         for pr in open_prs
-        if (task_id := task_id_from_branch(str((pr.get("head") or {}).get("ref") or ""), known_ids))
+        if (
+            task_id := task_id_from_branch(str((pr.get("head") or {}).get("ref") or ""), known_ids)
+            or task_id_from_issue({"body": pr.get("body") or ""})
+        )
+        in known_ids
     }
 
     actions: list[dict[str, Any]] = []
@@ -858,6 +863,14 @@ def _archive(action: dict[str, Any], tasks_dir: Path) -> bool:
     ]
     for command in commands:
         result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0 and command[1] in ("add", "commit"):
+            print(
+                f"queue_hooks: could not {command[1]} the archive of {live.name} "
+                f"({result.stderr.strip() or result.stdout.strip()}) — not fatal, for the "
+                "same reason as a failed push",
+                file=sys.stderr,
+            )
+            return True
         if result.returncode != 0 and command[1] == "push":
             print(
                 f"queue_hooks: archived {live.name} but could not push "

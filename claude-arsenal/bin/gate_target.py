@@ -492,7 +492,7 @@ def _flag_values(args: list[str], flags: tuple[str, ...]) -> list[str]:
     return out
 
 
-def _names_skill_path(dest: str) -> str:
+def _names_skill_path(dest: str, cwd: str = "") -> str:
     """The skill path `dest` names, normalised, or "" when it names none.
 
     `plugins//core/skills/x`, `plugins/core/./skills/x` and
@@ -502,8 +502,11 @@ def _names_skill_path(dest: str) -> str:
     purely lexical on purpose — a PreToolUse hook must not touch the filesystem
     to answer, and resolving symlinks would make the answer depend on state the
     command has not created yet.
+
+    A relative `dest` is resolved against the session's `cwd`: after
+    `cd plugins/core/skills/init`, a bare `SKILL.md` is that skill's file.
     """
-    candidate = posixpath.normpath(dest.strip("'\""))
+    candidate = posixpath.normpath(posixpath.join(cwd, dest.strip("'\"")))
     return candidate if SKILL_PATH.match(candidate) else ""
 
 
@@ -546,7 +549,7 @@ def _destinations(cmd: list[str]) -> list[str]:
     return dests
 
 
-def bash_target(command: str) -> str:
+def bash_target(command: str, cwd: str = "") -> str:
     cmds = _simple_commands(_tokenise(command))
     # An interpreter whose program arrives on stdin — a heredoc, or the right of
     # a pipe — never has that program beside it: the tokeniser separates on both
@@ -558,12 +561,12 @@ def bash_target(command: str) -> str:
         _reads_stdin_source(*_command_head(_redirect_targets(c)[1])) for c in cmds
     ):
         for dest in _inline_source_targets(_strip_script_programs(command)):
-            named = _names_skill_path(dest)
+            named = _names_skill_path(dest, cwd)
             if named:
                 return named
     for cmd in cmds:
         for dest in _destinations(cmd):
-            named = _names_skill_path(dest)
+            named = _names_skill_path(dest, cwd)
             if named:
                 return named
     return ""
@@ -577,7 +580,7 @@ def main() -> int:
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input", {}) or {}
     if tool == "Bash":
-        print(bash_target(ti.get("command", "") or ""))
+        print(bash_target(ti.get("command", "") or "", str(payload.get("cwd") or "")))
     else:
         print(ti.get("file_path", "") or "")
     return 0
