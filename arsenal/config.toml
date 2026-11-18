@@ -135,8 +135,7 @@ bot-triggers = ["coderabbitai[bot]=@coderabbitai review"]
 config-acknowledged = "5.7.0"
 
 attribution = true
-
-setup-interview = "2026-11-12"
+setup-interview = "2026-11-18"
 
 [models]
 orchestrator = ""
