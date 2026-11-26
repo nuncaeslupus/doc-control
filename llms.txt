@@ -1,0 +1,18 @@
+# doc-control
+
+> Lets AI agents edit Word documents as tracked changes the writer can accept or reject.
+
+An agent reads a document by paragraph address, then sends edits that land as tracked changes and comments, with a backup, verification and undo on every write. It works on closed files and, through LibreOffice Writer or Microsoft Word on Windows, on the document the writer has open. There is no AI inside: the agent decides, the writer approves.
+
+## Docs
+
+- [README](https://github.com/nuncaeslupus/doc-control/blob/main/README.md)
+- [Operations](https://github.com/nuncaeslupus/doc-control/blob/main/docs/operations.md)
+- [Errors](https://github.com/nuncaeslupus/doc-control/blob/main/docs/errors.md)
+- [Windows install](https://github.com/nuncaeslupus/doc-control/blob/main/docs/install-windows.md)
+- [Design decisions](https://github.com/nuncaeslupus/doc-control/blob/main/docs/decisions.md)
+
+## Optional
+
+- [Contributing](https://github.com/nuncaeslupus/doc-control/blob/main/CONTRIBUTING.md)
+- [Security policy](https://github.com/nuncaeslupus/doc-control/blob/main/SECURITY.md)
