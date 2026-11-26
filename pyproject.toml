@@ -6,6 +6,24 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = []
+keywords = ["docx", "word", "tracked-changes", "mcp", "mcp-server", "llm", "ai-agents", "libreoffice", "document-editing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/nuncaeslupus/doc-control"
+Repository = "https://github.com/nuncaeslupus/doc-control"
+Issues = "https://github.com/nuncaeslupus/doc-control/issues"
 
 [project.optional-dependencies]
 # Driving Microsoft Word (the live engine on Windows). LibreOffice needs no package.
