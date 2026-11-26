@@ -273,3 +273,5 @@ see `CLAUDE.md`.
 ## License
 
 MIT — see [LICENSE](https://github.com/nuncaeslupus/doc-control/blob/main/LICENSE).
+
+More tools by the same author: [github.com/nuncaeslupus](https://github.com/nuncaeslupus).
